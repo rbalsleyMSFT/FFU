@@ -41,6 +41,7 @@ $VMDVDDrive = Get-VMDvdDrive -VMName $VMName
 Set-VMFirmware -VMName $VMName -FirstBootDevice $VMDVDDrive
 If(Get-HgsGuardian -Name 'Guardian'){
     Remove-HgsGuardian -Name 'Guardian'
+    Get-ChildItem -Path 'Cert:\LocalMachine\Shielded VM Local Certificates\' | Remove-Item
 }
 New-HgsGuardian -Name 'Guardian' -GenerateCertificates
 $owner = get-hgsguardian -Name 'Guardian'
