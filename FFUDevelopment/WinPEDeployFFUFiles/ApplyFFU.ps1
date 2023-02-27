@@ -482,6 +482,9 @@ else{
 #     Writelog "Failed to extend Windows partition and/or create recovery partition - LastExitCode = $LASTEXITCODE"
 # }
 
+#Set W: drive letter to Windows partition
+Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
+
 #Copy modified WinRE if folder exists, else copy inbox WinRE
 $WinRE = $USBDrive + "WinRE\winre.wim"
 If (Test-Path -Path $WinRE)

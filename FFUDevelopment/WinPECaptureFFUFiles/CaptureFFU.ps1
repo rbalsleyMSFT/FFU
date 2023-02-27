@@ -1,5 +1,5 @@
 #Modify the net use path to map the W: drive to the location you want to copy the FFU file to
-net use W: \\192.168.1.2\c$\temp /user:administrator p@ssw0rd
+net use W: \\192.168.1.2\c$\FFUDevelopment /user:administrator p@ssw0rd
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
@@ -29,7 +29,8 @@ else{
 }
 
 #If Office is installed, modify the file name of the FFU
-$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office' -ErrorAction SilentlyContinue | Out-Null
+#$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office' -ErrorAction SilentlyContinue | Out-Null
+$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office'
 if($Office){
     $ffuFilePath = "W:\$Name`_$DisplayVersion`_$SKU`_Office`_$BuildDate.ffu"
     $dismArgs = "/capture-ffu /imagefile=$ffuFilePath /capturedrive=\\.\PhysicalDrive0 /name:$Name$DisplayVersion$SKU /Compress:Default"
@@ -51,8 +52,6 @@ Remove-Variable Office
 reg unload "HKLM\FFU"
 
 Start-Process -FilePath dism.exe -ArgumentList $dismArgs -Wait -PassThru -ErrorAction Stop | Out-Null
-$dismOptArgs = "/optimize-ffu /imagefile:$ffuFilePath"
-Start-Process -FilePath dism.exe -ArgumentList $dismOptArgs -Wait -PassThru -ErrorAction Stop | Out-Null
 #Copy DISM log to Host
 xcopy X:\Windows\logs\dism\dism.log W:\ /Y | Out-Null
-shutdown /p
+wpeutil Shutdown
