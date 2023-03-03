@@ -1,12 +1,12 @@
 #Modify variables
-$rand = get-random
-$VMName = "_FFU-$rand"
 $VMPath = "c:\VM\$VMName"
-$VHDPath = "$VMPath\$VMName.vhdx"
 $ISOPath = "E:\software\ISOs\Windows\Windows 11\en-us_windows_11_consumer_editions_version_22h2_updated_feb_2023_x64_dvd_4fa87138.iso"
 $memory = 8GB
-$processors = 4
 $disksize = 30GB
+$processors = 4
+$rand = get-random
+$VMName = "_FFU-$rand"
+$VHDPath = "$VMPath\$VMName.vhdx"
 
 # 0. Delete old VMs and remove old certs
 
