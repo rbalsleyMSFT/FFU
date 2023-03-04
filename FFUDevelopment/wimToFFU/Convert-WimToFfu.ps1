@@ -276,6 +276,7 @@ function Get-OSPartition
     Write-Host "Done. OS partition at drive $($osPartition.DriveLetter):";
 
     Write-Host "Writing WIM at $WimPath to OS partition at drive $($osPartition.DriveLetter):...";
+    
     #Server 2019 is missing the Windows Overlay Filter (wof.sys), likely other Server SKUs are missing it as well. Script will error if trying to use the -compact switch on Server OSes
     if((Get-CimInstance Win32_OperatingSystem).Caption -match "Server"){
         Write-Host (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\");
