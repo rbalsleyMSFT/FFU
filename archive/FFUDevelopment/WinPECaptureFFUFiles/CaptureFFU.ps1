@@ -1,5 +1,5 @@
-#Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 62bffb7c-4350-426c-8151-58093bb90117
-net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 62bffb7c-4350-426c-8151-58093bb90117
+#Modify the net use path to map the W: drive to the location you want to copy the FFU file to
+net use W: \\192.168.1.2\c$\FFUDevelopment /user:administrator p@ssw0rd
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
@@ -14,13 +14,12 @@ $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersio
 $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
 $BuildDate = Get-Date -uformat %b%Y
 
-$SKU = switch ($SKU) {
-    Core { 'Home' }
-    Professional { 'Pro' }
-    ProfessionalEducation { 'Pro_Edu' }
-    Enterprise { 'Ent' }
-    Education { 'Edu' }
-    ProfessionalWorkstation { 'Pro_Wks' }
+$SKU = switch ($SKU){
+    Home {'Home'}
+    Professional {'Pro'}
+    ProfessionalEducation {'Pro_Edu'}
+    Enterprise {'Ent'}
+    Education {'Edu'}
 }
 
 if($CurrentBuild -ge 22000){
@@ -32,7 +31,7 @@ else{
 
 #If Office is installed, modify the file name of the FFU
 #$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office' -ErrorAction SilentlyContinue | Out-Null
-$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office' -ErrorAction SilentlyContinue
+$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office'
 if($Office){
     $ffuFilePath = "W:\$Name`_$DisplayVersion`_$SKU`_Office`_$BuildDate.ffu"
     $dismArgs = "/capture-ffu /imagefile=$ffuFilePath /capturedrive=\\.\PhysicalDrive0 /name:$Name$DisplayVersion$SKU /Compress:Default"
@@ -40,7 +39,7 @@ if($Office){
     
 }
 else{
-    $ffuFilePath = "W:\$Name`_$DisplayVersion`_$SKU`_Apps`_$BuildDate.ffu"
+    $ffuFilePath = "W:\$Name`_$DisplayVersion`_$SKU`_$BuildDate.ffu"
     $dismArgs = "/capture-ffu /imagefile=$ffuFilePath /capturedrive=\\.\PhysicalDrive0 /name:$Name$DisplayVersion$SKU /Compress:Default"
     
 }
@@ -56,7 +55,6 @@ reg unload "HKLM\FFU"
 Start-Process -FilePath dism.exe -ArgumentList $dismArgs -Wait -PassThru -ErrorAction Stop | Out-Null
 #Copy DISM log to Host
 xcopy X:\Windows\logs\dism\dism.log W:\ /Y | Out-Null
-
 #Remvove W: drive
-net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 62bffb7c-4350-426c-8151-58093bb90117
+net use W: /delete
 wpeutil Shutdown

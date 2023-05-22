@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+    <settings pass="auditUser">
+        <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <RunAsynchronous>
+                <RunAsynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Path>d:\InstallAppsandSysprep.cmd</Path>
+                </RunAsynchronousCommand>
+            </RunAsynchronous>
+        </component>
+    </settings>
+    <settings pass="oobeSystem">
+        <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <Reseal>
+                <Mode>Audit</Mode>
+            </Reseal>
+        </component>
+    </settings>
+    <cpi:offlineImage cpi:source="wim:c:/wimtoffu/win11_22h2_feb2023_consumer.wim#Windows 11 Pro" xmlns:cpi="urn:schemas-microsoft-com:cpi" />
+</unattend>

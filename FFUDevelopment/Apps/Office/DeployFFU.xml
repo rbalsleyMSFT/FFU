@@ -6,6 +6,8 @@
       <ExcludeApp ID="Lync" />
       <ExcludeApp ID="Publisher" />
       <ExcludeApp ID="Bing" />
+      <ExcludeApp ID="Teams" />
+      <ExcludeApp ID="Outlook" />
     </Product>
   </Add>
   <Property Name="SharedComputerLicensing" Value="0" />
