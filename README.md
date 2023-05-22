@@ -20,5 +20,6 @@ If you're not familiar with Github, you can click the Green code button above an
 
 If extracted correctly, your c:\FFUDevelopment folder should look like the following. If it does, go to c:\FFUDevelopment\Docs\BuildDeployFFU.docx to get started.
 
-![image](https://user-images.githubusercontent.com/53497092/221715560-0b9dd215-35a9-48b3-b7d2-b3fd6d39a11c.png)
+![image](https://github.com/rbalsleyMSFT/FFU/assets/53497092/5400a203-9c2e-42b2-b24c-ab8dfd922ba1)
+
 
