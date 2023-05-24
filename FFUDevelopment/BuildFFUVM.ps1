@@ -854,15 +854,16 @@ function New-FFU {
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
+    #Without this 120 second sleep, we sometimes see an error when mounting the FFU due to a file handle lock. Needed for both driver and optimize steps.
+    WriteLog 'Sleeping 2 minutes to prevent file handle lock'
+    Start-Sleep 120
+
     #Add drivers
     If ($InstallDrivers) {
         WriteLog 'Adding drivers'
         WriteLog "Creating $FFUDevelopmentPath\Mount directory"
         New-Item -Path "$FFUDevelopmentPath\Mount" -ItemType Directory -Force | Out-Null
         WriteLog "Created $FFUDevelopmentPath\Mount directory"
-        #Without this 120 second sleep, we sometimes see an error when mounting the FFU due to a file handle lock
-        WriteLog 'Sleeping 2 minutes to prevent file handle lock'
-        Start-Sleep 120
         WriteLog "Mounting $FFUFile to $FFUDevelopmentPath\Mount"
         Mount-WindowsImage -ImagePath $FFUFile -Index 1 -Path "$FFUDevelopmentPath\Mount" | Out-null
         WriteLog 'Mounting complete'
