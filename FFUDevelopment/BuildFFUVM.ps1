@@ -167,6 +167,7 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive
 )
+$version = '2305'
 
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
@@ -239,6 +240,7 @@ function LogVariableValues {
     )
 
     $allVariables = Get-Variable -Scope Script | Where-Object { $_.Name -notin $excludedVariables }
+    Writelog "Script version: $version"
     WriteLog 'Logging variables'
     foreach ($variable in $allVariables) {
         $variableName = $variable.Name
@@ -848,7 +850,8 @@ function New-FFU {
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
         WriteLog 'Capturing FFU from VHDX file'
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
         WriteLog 'FFU Capture complete'
         WriteLog 'Sleeping 60 seconds before dismount of VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
@@ -879,7 +882,8 @@ function New-FFU {
     }
     #Optimize FFU
     WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
-    Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
+    #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
+    Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
     WriteLog 'Optimizing FFU complete'
 
 }
@@ -1163,7 +1167,7 @@ try {
     $osPartitionDriveLetter = $osPartition[1].DriveLetter
     $WindowsPartition = $osPartitionDriveLetter + ":\"
 
-    $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+    #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
 
     WriteLog "All necessary partitions created."
 
