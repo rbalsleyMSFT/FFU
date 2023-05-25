@@ -8,7 +8,13 @@ While we use this in Education at Microsoft, other industries can use it as well
 # Updates
 2023-05-25
 
-Reverted a change to not require the Windows Insider ADK. This means there is no longer a need to enable test/flight signing and disable secureboot. **Please redownload if you downloaded prior to 2023-05-25.** If you're interested in the details, see [commit](https://github.com/rbalsleyMSFT/FFU/commit/a81261fa6b8f924f0652861a24d74bf78a156f9e)
+Reverted a change to not require the Windows Insider ADK. This means there is no longer a need to enable test/flight signing and disable Secure Boot. **Please redownload if you downloaded prior to 2023-05-25.** If you're interested in the details, see [commit](https://github.com/rbalsleyMSFT/FFU/commit/a81261fa6b8f924f0652861a24d74bf78a156f9e)
+
+If you did enable test/flight signing and disable Secure Boot and install the Insider ADK, do the following to revert the changes
+- Remove the Insider ADK and the Insider Windows PE Add-on
+- Open a command prompt as admin and run bcdedit /set testsigning off and reboot (the Test Mode water mark on the desktop should be removed. If it's not, run the command again and reboot a second time)
+- During the reboot you can also go into your BIOS/UEFI and re-enable Secure Boot
+- Install the released Windows 11 22H2 ADK and Windows PE Add-on
 
 2023-05-22
 
