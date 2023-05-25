@@ -6,6 +6,10 @@ This process will copy Windows in about 2-3 minutes to the target device, option
 While we use this in Education at Microsoft, other industries can use it as well. We esepcially see a need for something like this with partners who do re-imaging on behalf of customers. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
 # Updates
+2023-05-25
+
+Reverted a change to not require the Windows Insider ADK. This means there is no longer a need to enable test/flight signing and disable secureboot. **Please redownload if you downloaded prior to 2023-05-25.** If you're interested in the details, see [commit](https://github.com/rbalsleyMSFT/FFU/commit/a81261fa6b8f924f0652861a24d74bf78a156f9e)
+
 2023-05-22
 
 Automated most of the process
