@@ -1,5 +1,5 @@
-#Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 62bffb7c-4350-426c-8151-58093bb90117
-net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 62bffb7c-4350-426c-8151-58093bb90117
+#Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 0ef0258a-0447-496e-846f-23d2d1f0e334
+net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 0ef0258a-0447-496e-846f-23d2d1f0e334
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
@@ -16,11 +16,18 @@ $BuildDate = Get-Date -uformat %b%Y
 
 $SKU = switch ($SKU) {
     Core { 'Home' }
+    CoreN { 'HomeN'}
+    CoreSingleLanguage { 'HomeSL'}
     Professional { 'Pro' }
+    ProfessionalN { 'ProN'}
     ProfessionalEducation { 'Pro_Edu' }
+    ProfessionalEducationN { 'Pro_EduN' }
     Enterprise { 'Ent' }
+    EnterpriseN { 'EntN'}
     Education { 'Edu' }
+    EducationN { 'EduN'}
     ProfessionalWorkstation { 'Pro_Wks' }
+    ProfessionalWorkstationN { 'Pro_WksN' }
 }
 
 if($CurrentBuild -ge 22000){
@@ -57,6 +64,4 @@ Start-Process -FilePath dism.exe -ArgumentList $dismArgs -Wait -PassThru -ErrorA
 #Copy DISM log to Host
 xcopy X:\Windows\logs\dism\dism.log W:\ /Y | Out-Null
 
-#Remvove W: drive
-net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 62bffb7c-4350-426c-8151-58093bb90117
 wpeutil Shutdown

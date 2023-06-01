@@ -72,19 +72,39 @@ Product key for the Windows 10/11 edition specified in WindowsSKU. This will ove
 .PARAMETER BuildUSBDrive
 When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward.
 
+.PARAMETER WindowsRelease
+Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
+
+.PARAMETER WindowsArch
+String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.
+
+.PARAMETER WindowsLang
+String value in language-region format (e.g. en-us). This is used to identify which language of media to download. Default is en-us.
+
+.PARAMETER MediaType
+String value of either business or consumer. This is used to identify which media type to download. Default is consumer.
+
+.PARAMETER LogicalSectorBytes
+unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512.
+
 .EXAMPLE
-Command line for most people who want to create an FFU with Office and drivers and have never done it before. This assumes you have copied this script and associated files to the C:\FFUDevelopment folder. If you need to use another drive or folder, change the -FFUDevelopment parameter (e.g. -FFUDevelopment 'D:\FFUDevelopment')
+Command line for most people who want to create an FFU with Office and drivers and have downloaded their own ISO. This assumes you have copied this script and associated files to the C:\FFUDevelopment folder. If you need to use another drive or folder, change the -FFUDevelopment parameter (e.g. -FFUDevelopment 'D:\FFUDevelopment')
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
-.\BuildFFUVMv3.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+Command line for those who just want a FFU with no drivers, apps, or Office and have downloaded their own ISO.
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateCaptureMedia $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
-Command line for those who just want a FFU with no drivers, apps, or Office
-.\BuildFFUVMv3.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateCaptureMedia $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+Command line for those who just want a FFU with Apps and drivers, no Office and have downloaded their own ISO.
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
-Command line for those who just want a FFU with Apps and drivers, no Office
-.\BuildFFUVMv3.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+
+Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
 
 Command line with all parameters for reference
-.\BuildFFUVMv3.ps1 -ISOPath "C:\path_to_iso\Windows.iso" -WindowsSKU "Pro" -FFUDevelopmentPath "C:\FFUDevelopment" -InstallApps $true -InstallOffice $true -InstallDrivers $true -Memory 8GB -Disksize 30GB -Processors 4 -VMSwitchName "Your VM Switch Name" -VMLocation "C:\VMs" -FFUPrefix "_FFU" -FFUCaptureLocation "C:\FFUDevelopment\FFU" -ShareName "FFUCaptureShare" -Username "ffu_user" -VMHostIPAddress "Your IP Address" -CreateCaptureMedia $true -CreateDeploymentMedia $false -OptionalFeatures "NetFx3;TFTP" -ProductKey "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX -BuildUSBDrive $true -verbose"
+.\BuildFFUVM.ps1 -ISOPath "C:\path_to_iso\Windows.iso" -WindowsSKU "Pro" -FFUDevelopmentPath "C:\FFUDevelopment" -InstallApps $true -InstallOffice $true -InstallDrivers $true -Memory 8GB -Disksize 30GB -Processors 4 -VMSwitchName "Your VM Switch Name" -VMLocation "C:\VMs" -FFUPrefix "_FFU" -FFUCaptureLocation "C:\FFUDevelopment\FFU" -ShareName "FFUCaptureShare" -Username "ffu_user" -VMHostIPAddress "Your IP Address" -CreateCaptureMedia $true -CreateDeploymentMedia $false -OptionalFeatures "NetFx3;TFTP" -ProductKey "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'en-us' -MediaType 'consumer' -verbose"
 
 .NOTES
     Additional notes about your script.
@@ -99,7 +119,7 @@ param(
     [ValidateScript({ Test-Path $_ })]
     [string]$ISOPath,
     [ValidateScript({
-            $allowedSKUs = @('Home', 'Home_N', 'Home_SL', 'EDU', 'EDU_N', 'Pro', 'Pro_N', 'Pro_EDU', 'Pro_Edu_N', 'Pro_WKS', 'Pro_WKS_N')
+            $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')
             if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
         })]
     [string]$WindowsSKU = 'Pro',
@@ -126,7 +146,7 @@ param(
     [string]$Username = "ffu_user",
     [Parameter(Mandatory = $false)]
     [ValidateScript({
-            if ($InstallApps -and ($_ -eq $null)) {
+            if (($InstallApps -and ($_ -eq $null)) -or (-not ($ISOPath) -and ($_ -eq $null))) {
                 throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU"
             }
             return $true
@@ -165,9 +185,28 @@ param(
     })]
     [string]$OptionalFeatures,
     [string]$ProductKey,
-    [bool]$BuildUSBDrive
+    [bool]$BuildUSBDrive,
+    [Parameter(Mandatory = $false)]
+    [ValidateSet(10, 11)]
+    [int]$WindowsRelease = 11,
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('x86', 'x64')]
+    [string]$WindowsArch = 'x64',
+    [ValidateScript({
+        $allowedLang = @('ar-sa','bg-bg','cs-cz','da-dk','de-de','el-gr','en-gb','en-us','es-es','es-mx','et-ee','fi-fi','fr-ca','fr-fr','he-il','hr-hr','hu-hu',
+        'it-it','ja-jp','ko-kr','lt-lt','lv-lv','nb-no','nl-nl','pl-pl','pt-br','pt-pt','ro-ro','ru-ru','sk-sk','sl-si','sr-latn-rs','sv-se','th-th','tr-tr','uk-ua',
+        'zh-cn','zh-tw')
+        if ($allowedLang -contains $_) { $true } else { throw "Invalid WindowsLang value. Allowed values: $($allowedLang -join ', ')" }
+    })]
+    [Parameter(Mandatory = $false)]
+    [string]$WindowsLang = 'en-us',
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('consumer', 'business')]
+    [string]$MediaType = 'consumer',
+    [ValidateSet(512, 4096)]
+    [uint32]$LogicalSectorSizeBytes = 512
 )
-$version = '2305'
+$version = '2306.1'
 
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
@@ -335,6 +374,76 @@ Function Get-ADK {
         throw "Windows ADK is not installed or the installation path could not be found."
     }
 }
+function Get-WindowsESD {
+    param(
+        [Parameter(Mandatory=$false)]
+        [ValidateSet(10, 11)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateSet('x86', 'x64')]
+        [string]$WindowsArch,
+
+        [Parameter(Mandatory=$false)]
+        [string]$WindowsLang,
+
+        [Parameter(Mandatory=$false)]
+        [ValidateSet('consumer', 'business')]
+        [string]$MediaType
+    )
+    WriteLog "Downloading Windows $WindowsRelease ESD file"
+    WriteLog "Windows Architecture: $WindowsArch"
+    WriteLog "Windows Language: $WindowsLang"
+    WriteLog "Windows Media Type: $MediaType"
+
+    # Select cab file URL based on Windows Release
+    $cabFileUrl = if ($WindowsRelease -eq 10) {
+        'https://go.microsoft.com/fwlink/?LinkId=841361'
+    } else {
+        'https://go.microsoft.com/fwlink/?LinkId=2156292'
+    }
+
+    # Download cab file
+    WriteLog "Downloading Cab file"
+    $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
+    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath
+    WriteLog "Download succeeded"
+
+    # Extract XML from cab file
+    WriteLog "Extracting Products XML from cab"
+    $xmlFilePath = Join-Path $PSScriptRoot "products.xml"
+    Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath"
+    WriteLog "Products XML extracted"
+
+    # Load XML content
+    [xml]$xmlContent = Get-Content -Path $xmlFilePath
+
+    # Define the client type to look for in the FilePath
+    $clientType = if ($MediaType -eq 'consumer') { 'CLIENTCONSUMER' } else { 'CLIENTBUSINESS' }
+
+    # Find FilePath values based on WindowsArch, WindowsLang, and MediaType
+    foreach ($file in $xmlContent.MCT.Catalogs.Catalog.PublishedMedia.Files.File) {
+        if ($file.Architecture -eq $WindowsArch -and $file.LanguageCode -eq $WindowsLang -and $file.FilePath -like "*$clientType*") {
+            $esdFilePath = Join-Path $PSScriptRoot (Split-Path $file.FilePath -Leaf)
+            #Download if ESD file doesn't already exist
+            If (-not (Test-Path $esdFilePath)) {
+                #Required to fix slow downloads
+                $ProgressPreference = 'SilentlyContinue'
+                WriteLog "Downloading $($file.filePath) to $esdFIlePath"
+                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath
+                WriteLog "Download succeeded"
+                #Set back to show progress
+                $ProgressPreference = 'Continue'
+                WriteLog "Cleanup cab and xml file"
+                Remove-Item -Path $cabFilePath -Force
+                Remove-Item -Path $xmlFilePath -Force
+                WriteLog "Cleanup done"
+            }
+            return $esdFilePath
+        }
+    }
+}
+
 function Get-ODTURL {
 
     [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117'
@@ -428,23 +537,82 @@ function Get-WimIndex {
     )
     WriteLog "Getting WIM Index for Windows SKU: $WindowsSKU"
 
-    $wimindex = switch ($WindowsSKU) {
-        'Home' { 1 }
-        'Home_N' { 2 }
-        'Home_SL' { 3 }
-        'EDU' { 4 }
-        'EDU_N' { 5 }
-        'Pro' { 6 }
-        'Pro_N' { 7 }
-        'Pro_EDU' { 8 }
-        'Pro_Edu_N' { 9 }
-        'Pro_WKS' { 10 }
-        'Pro_WKS_N' { 11 }
-        Default { 6 }
+    If($ISOPath){
+        $wimindex = switch ($WindowsSKU) {
+            'Home' { 1 }
+            'Home_N' { 2 }
+            'Home_SL' { 3 }
+            'EDU' { 4 }
+            'EDU_N' { 5 }
+            'Pro' { 6 }
+            'Pro_N' { 7 }
+            'Pro_EDU' { 8 }
+            'Pro_Edu_N' { 9 }
+            'Pro_WKS' { 10 }
+            'Pro_WKS_N' { 11 }
+            Default { 6 }
+        }
     }
-    
+ 
     Writelog "WIM Index: $wimindex"
     return $WimIndex
+}
+
+function Get-Index {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsImagePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsSKU
+    )
+
+    
+    # Get the available indexes using Get-WindowsImage
+    $imageIndexes = Get-WindowsImage -ImagePath $WindowsImagePath
+    
+    # Get the ImageName of ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
+    $imageIndex4 = $imageIndexes | Where-Object ImageIndex -eq 4
+    $WindowsImage = $imageIndex4.ImageName.Substring(0, 10)
+    
+    # Concatenate $WindowsImage and $WindowsSKU (E.g. Windows 11 Pro)
+    $ImageNameToFind = "$WindowsImage $WindowsSKU"
+    
+    # Find the ImageName in all of the indexes in the image
+    $matchingImageIndex = $imageIndexes | Where-Object ImageName -eq $ImageNameToFind
+    
+    # Return the index that matches exactly
+    if ($matchingImageIndex) {
+        return $matchingImageIndex.ImageIndex
+    }
+    else {
+        # Look for either the number 10 or 11 in the ImageName
+        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -like "*10*") -or ($_.ImageName -like "*11*") }
+            
+        while ($true) {
+            # Present list of ImageNames to the end user if no matching ImageIndex is found
+            Write-Host "No matching ImageIndex found for $ImageNameToFind. Please select an ImageName from the list below:"
+    
+            $i = 1
+            $relevantImageIndexes | ForEach-Object {
+                Write-Host "$i. $($_.ImageName)"
+                $i++
+            }
+    
+            # Ask for user input
+            $inputValue = Read-Host "Enter the number of the ImageName you want to use"
+    
+            # Get selected ImageName based on user input
+            $selectedImage = $relevantImageIndexes[$inputValue - 1]
+    
+            if ($selectedImage) {
+                return $selectedImage.ImageIndex
+            }
+            else {
+                Write-Host "Invalid selection, please try again."
+            }
+        }
+    }
 }
 
 #Create VHDX
@@ -453,8 +621,7 @@ function New-ScratchVhdx {
         [Parameter(Mandatory = $true)]
         [string]$VhdxPath,
         [uint64]$SizeBytes = 30GB,
-        [ValidateSet(512, 4096)]
-        [uint32]$LogicalSectorSizeBytes = 512,
+        [uint32]$LogicalSectorSizeBytes,
         [switch]$Dynamic,
         [Microsoft.PowerShell.Cmdletization.GeneratedTypes.Disk.PartitionStyle]$PartitionStyle = [Microsoft.PowerShell.Cmdletization.GeneratedTypes.Disk.PartitionStyle]::GPT
     )
@@ -475,7 +642,7 @@ function New-SystemPartition {
     param(
         [Parameter(Mandatory = $true)]
         [ciminstance]$VhdxDisk,
-        [uint64]$SystemPartitionSize = 256MB
+        [uint64]$SystemPartitionSize = 260MB
     )
 
     WriteLog "Creating System partition..."
@@ -1103,6 +1270,13 @@ WriteLog 'Begin Logging'
 #Get script variable values
 LogVariableValues
 
+#Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
+#from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
+#This behavior doesn't happen with WIM files.
+If(-not ($ISOPath)){
+    $InstallApps = $true
+}        
+
 #Get Windows ADK
 try {
     $adkPath = Get-ADK
@@ -1153,17 +1327,24 @@ if ($InstallApps) {
 
 #Create VHDX
 try {
-    $wimPath = Get-WimFromISO
+    if($ISOPath){
+        $wimPath = Get-WimFromISO
+    }
+    else{
+        $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
+    }
+    #If index not specified by user, try and find based on WindowsSKU
+    if (-not($index) -and ($WindowsSKU)){
+        $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+    }
 
-    $WimIndex = Get-WimIndex -WindowsSKU $WindowsSKU
-    
-    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic
+    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
     $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
     
     New-MSRPartition -VhdxDisk $vhdxDisk
     
-    $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $WimIndex
+    $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
     $osPartitionDriveLetter = $osPartition[1].DriveLetter
     $WindowsPartition = $osPartitionDriveLetter + ":\"
 
@@ -1184,10 +1365,16 @@ try {
         WriteLog "Setting Windows Product Key"
         Set-WindowsProductKey -Path $WindowsPartition -ProductKey $ProductKey
     }
-
-    WriteLog 'Dismounting Windows ISO'
-    Dismount-DiskImage -ImagePath $ISOPath | Out-null
-    WriteLog 'Done'
+    If ($ISOPath) {
+        WriteLog 'Dismounting Windows ISO'
+        Dismount-DiskImage -ImagePath $ISOPath | Out-null
+        WriteLog 'Done'
+    }
+    else{
+        #Remove ESD file
+        Remove-Item -Path $wimPath -Force
+    }
+    
 
     If ($InstallApps) {
         #Copy Unattend file so VM Boots into Audit Mode
@@ -1206,9 +1393,15 @@ catch {
     WriteLog "Removing $VMPath"
     Remove-Item -Path $VMPath -Force -Recurse | Out-Null
     WriteLog 'Removal complete'
-    WriteLog 'Dismounting Windows ISO'
-    Dismount-DiskImage -ImagePath $ISOPath | Out-null
-    WriteLog 'Dismounting complete'
+    If ($ISOPath) {
+        WriteLog 'Dismounting Windows ISO'
+        Dismount-DiskImage -ImagePath $ISOPath | Out-null
+        WriteLog 'Done'
+    }
+    else{
+        #Remove ESD file
+        Remove-Item -Path $esdFilePath -Force
+    }
     throw $_
     
 }

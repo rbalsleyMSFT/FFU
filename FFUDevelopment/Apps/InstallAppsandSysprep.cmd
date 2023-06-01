@@ -9,5 +9,5 @@ REM Also kills the sysprep process in order to automate sysprep generalize
 del c:\windows\panther\unattend\unattend.xml /F /Q
 del c:\windows\panther\unattend.xml /F /Q
 taskkill /IM sysprep.exe
-timeout /t 5
+timeout /t 10
 c:\windows\system32\sysprep\sysprep.exe /quiet /generalize /oobe
