@@ -121,6 +121,7 @@ param(
     [ValidateScript({
             $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')
             if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
+            return $true
         })]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
@@ -145,44 +146,38 @@ param(
     [String]$ShareName = "FFUCaptureShare",
     [string]$Username = "ffu_user",
     [Parameter(Mandatory = $false)]
-    [ValidateScript({
-            if (($InstallApps -and ($_ -eq $null)) -or (-not ($ISOPath) -and ($_ -eq $null))) {
-                throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU"
-            }
-            return $true
-        })]
     [string]$VMHostIPAddress,
     [bool]$CreateCaptureMedia = $true,
     [bool]$CreateDeploymentMedia,
     [ValidateScript({
-        $allowedFeatures = @("Windows-Defender-Default-Definitions","Printing-PrintToPDFServices-Features","Printing-XPSServices-Features","TelnetClient","TFTP",
-        "TIFFIFilter","LegacyComponents","DirectPlay","MSRDC-Infrastructure","Windows-Identity-Foundation","MicrosoftWindowsPowerShellV2Root","MicrosoftWindowsPowerShellV2",
-        "SimpleTCP","NetFx4-AdvSrvs","NetFx4Extended-ASPNET45","WCF-Services45","WCF-HTTP-Activation45","WCF-TCP-Activation45","WCF-Pipe-Activation45","WCF-MSMQ-Activation45",
-        "WCF-TCP-PortSharing45","IIS-WebServerRole","IIS-WebServer","IIS-CommonHttpFeatures","IIS-HttpErrors","IIS-HttpRedirect","IIS-ApplicationDevelopment","IIS-Security",
-        "IIS-RequestFiltering","IIS-NetFxExtensibility","IIS-NetFxExtensibility45","IIS-HealthAndDiagnostics","IIS-HttpLogging","IIS-LoggingLibraries","IIS-RequestMonitor",
-        "IIS-HttpTracing","IIS-URLAuthorization","IIS-IPSecurity","IIS-Performance","IIS-HttpCompressionDynamic","IIS-WebServerManagementTools","IIS-ManagementScriptingTools",
-        "IIS-IIS6ManagementCompatibility","IIS-Metabase","WAS-WindowsActivationService","WAS-ProcessModel","WAS-NetFxEnvironment","WAS-ConfigurationAPI","IIS-HostableWebCore",
-        "WCF-HTTP-Activation","WCF-NonHTTP-Activation","IIS-StaticContent","IIS-DefaultDocument","IIS-DirectoryBrowsing","IIS-WebDAV","IIS-WebSockets","IIS-ApplicationInit",
-        "IIS-ISAPIFilter","IIS-ISAPIExtensions","IIS-ASPNET","IIS-ASPNET45","IIS-ASP","IIS-CGI","IIS-ServerSideIncludes","IIS-CustomLogging","IIS-BasicAuthentication",
-        "IIS-HttpCompressionStatic","IIS-ManagementConsole","IIS-ManagementService","IIS-WMICompatibility","IIS-LegacyScripts","IIS-LegacySnapIn","IIS-FTPServer","IIS-FTPSvc",
-        "IIS-FTPExtensibility","MSMQ-Container","MSMQ-DCOMProxy","MSMQ-Server","MSMQ-ADIntegration","MSMQ-HTTP","MSMQ-Multicast","MSMQ-Triggers","IIS-CertProvider",
-        "IIS-WindowsAuthentication","IIS-DigestAuthentication","IIS-ClientCertificateMappingAuthentication","IIS-IISCertificateMappingAuthentication","IIS-ODBCLogging",
-        "NetFx3","SMB1Protocol-Deprecation","MediaPlayback","WindowsMediaPlayer","Client-DeviceLockdown","Client-EmbeddedShellLauncher","Client-EmbeddedBootExp",
-        "Client-EmbeddedLogon","Client-KeyboardFilter","Client-UnifiedWriteFilter","HostGuardian","MultiPoint-Connector","MultiPoint-Connector-Services","MultiPoint-Tools"
-        ,"AppServerClient","SearchEngine-Client-Package","WorkFolders-Client","Printing-Foundation-Features","Printing-Foundation-InternetPrinting-Client",
-        "Printing-Foundation-LPDPrintService","Printing-Foundation-LPRPortMonitor","HypervisorPlatform","VirtualMachinePlatform","Microsoft-Windows-Subsystem-Linux",
-        "Client-ProjFS","Containers-DisposableClientVM",'Containers-DisposableClientVM','Microsoft-Hyper-V-All','Microsoft-Hyper-V','Microsoft-Hyper-V-Tools-All',
-        'Microsoft-Hyper-V-Management-PowerShell','Microsoft-Hyper-V-Hypervisor','Microsoft-Hyper-V-Services','Microsoft-Hyper-V-Management-Clients','DataCenterBridging',
-        'DirectoryServices-ADAM-Client','Windows-Defender-ApplicationGuard','ServicesForNFS-ClientOnly','ClientForNFS-Infrastructure','NFS-Administration','Containers','Containers-HNS',
-        'Containers-SDN','SMB1Protocol','SMB1Protocol-Client','SMB1Protocol-Server','SmbDirect')
-        $inputFeatures = $_ -split ';'
-        foreach ($feature in $inputFeatures) {
-            if (-not ($allowedFeatures -contains $feature)) {
-                throw "Invalid optional feature '$feature'. Allowed values: $($allowedFeatures -join ', ')"
+            $allowedFeatures = @("Windows-Defender-Default-Definitions", "Printing-PrintToPDFServices-Features", "Printing-XPSServices-Features", "TelnetClient", "TFTP",
+                "TIFFIFilter", "LegacyComponents", "DirectPlay", "MSRDC-Infrastructure", "Windows-Identity-Foundation", "MicrosoftWindowsPowerShellV2Root", "MicrosoftWindowsPowerShellV2",
+                "SimpleTCP", "NetFx4-AdvSrvs", "NetFx4Extended-ASPNET45", "WCF-Services45", "WCF-HTTP-Activation45", "WCF-TCP-Activation45", "WCF-Pipe-Activation45", "WCF-MSMQ-Activation45",
+                "WCF-TCP-PortSharing45", "IIS-WebServerRole", "IIS-WebServer", "IIS-CommonHttpFeatures", "IIS-HttpErrors", "IIS-HttpRedirect", "IIS-ApplicationDevelopment", "IIS-Security",
+                "IIS-RequestFiltering", "IIS-NetFxExtensibility", "IIS-NetFxExtensibility45", "IIS-HealthAndDiagnostics", "IIS-HttpLogging", "IIS-LoggingLibraries", "IIS-RequestMonitor",
+                "IIS-HttpTracing", "IIS-URLAuthorization", "IIS-IPSecurity", "IIS-Performance", "IIS-HttpCompressionDynamic", "IIS-WebServerManagementTools", "IIS-ManagementScriptingTools",
+                "IIS-IIS6ManagementCompatibility", "IIS-Metabase", "WAS-WindowsActivationService", "WAS-ProcessModel", "WAS-NetFxEnvironment", "WAS-ConfigurationAPI", "IIS-HostableWebCore",
+                "WCF-HTTP-Activation", "WCF-NonHTTP-Activation", "IIS-StaticContent", "IIS-DefaultDocument", "IIS-DirectoryBrowsing", "IIS-WebDAV", "IIS-WebSockets", "IIS-ApplicationInit",
+                "IIS-ISAPIFilter", "IIS-ISAPIExtensions", "IIS-ASPNET", "IIS-ASPNET45", "IIS-ASP", "IIS-CGI", "IIS-ServerSideIncludes", "IIS-CustomLogging", "IIS-BasicAuthentication",
+                "IIS-HttpCompressionStatic", "IIS-ManagementConsole", "IIS-ManagementService", "IIS-WMICompatibility", "IIS-LegacyScripts", "IIS-LegacySnapIn", "IIS-FTPServer", "IIS-FTPSvc",
+                "IIS-FTPExtensibility", "MSMQ-Container", "MSMQ-DCOMProxy", "MSMQ-Server", "MSMQ-ADIntegration", "MSMQ-HTTP", "MSMQ-Multicast", "MSMQ-Triggers", "IIS-CertProvider",
+                "IIS-WindowsAuthentication", "IIS-DigestAuthentication", "IIS-ClientCertificateMappingAuthentication", "IIS-IISCertificateMappingAuthentication", "IIS-ODBCLogging",
+                "NetFx3", "SMB1Protocol-Deprecation", "MediaPlayback", "WindowsMediaPlayer", "Client-DeviceLockdown", "Client-EmbeddedShellLauncher", "Client-EmbeddedBootExp",
+                "Client-EmbeddedLogon", "Client-KeyboardFilter", "Client-UnifiedWriteFilter", "HostGuardian", "MultiPoint-Connector", "MultiPoint-Connector-Services", "MultiPoint-Tools"
+                , "AppServerClient", "SearchEngine-Client-Package", "WorkFolders-Client", "Printing-Foundation-Features", "Printing-Foundation-InternetPrinting-Client",
+                "Printing-Foundation-LPDPrintService", "Printing-Foundation-LPRPortMonitor", "HypervisorPlatform", "VirtualMachinePlatform", "Microsoft-Windows-Subsystem-Linux",
+                "Client-ProjFS", "Containers-DisposableClientVM", 'Containers-DisposableClientVM', 'Microsoft-Hyper-V-All', 'Microsoft-Hyper-V', 'Microsoft-Hyper-V-Tools-All',
+                'Microsoft-Hyper-V-Management-PowerShell', 'Microsoft-Hyper-V-Hypervisor', 'Microsoft-Hyper-V-Services', 'Microsoft-Hyper-V-Management-Clients', 'DataCenterBridging',
+                'DirectoryServices-ADAM-Client', 'Windows-Defender-ApplicationGuard', 'ServicesForNFS-ClientOnly', 'ClientForNFS-Infrastructure', 'NFS-Administration', 'Containers', 'Containers-HNS',
+                'Containers-SDN', 'SMB1Protocol', 'SMB1Protocol-Client', 'SMB1Protocol-Server', 'SmbDirect')
+            $inputFeatures = $_ -split ';'
+            foreach ($feature in $inputFeatures) {
+                if (-not ($allowedFeatures -contains $feature)) {
+                    throw "Invalid optional feature '$feature'. Allowed values: $($allowedFeatures -join ', ')"
+                }
             }
-        }
-    $true
-    })]
+            return $true
+        })]
     [string]$OptionalFeatures,
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
@@ -193,11 +188,12 @@ param(
     [ValidateSet('x86', 'x64')]
     [string]$WindowsArch = 'x64',
     [ValidateScript({
-        $allowedLang = @('ar-sa','bg-bg','cs-cz','da-dk','de-de','el-gr','en-gb','en-us','es-es','es-mx','et-ee','fi-fi','fr-ca','fr-fr','he-il','hr-hr','hu-hu',
-        'it-it','ja-jp','ko-kr','lt-lt','lv-lv','nb-no','nl-nl','pl-pl','pt-br','pt-pt','ro-ro','ru-ru','sk-sk','sl-si','sr-latn-rs','sv-se','th-th','tr-tr','uk-ua',
-        'zh-cn','zh-tw')
-        if ($allowedLang -contains $_) { $true } else { throw "Invalid WindowsLang value. Allowed values: $($allowedLang -join ', ')" }
-    })]
+            $allowedLang = @('ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee', 'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu',
+                'it-it', 'ja-jp', 'ko-kr', 'lt-lt', 'lv-lv', 'nb-no', 'nl-nl', 'pl-pl', 'pt-br', 'pt-pt', 'ro-ro', 'ru-ru', 'sk-sk', 'sl-si', 'sr-latn-rs', 'sv-se', 'th-th', 'tr-tr', 'uk-ua',
+                'zh-cn', 'zh-tw')
+            if ($allowedLang -contains $_) { $true } else { throw "Invalid WindowsLang value. Allowed values: $($allowedLang -join ', ')" }
+            return $true
+        })]
     [Parameter(Mandatory = $false)]
     [string]$WindowsLang = 'en-us',
     [Parameter(Mandatory = $false)]
@@ -206,11 +202,7 @@ param(
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512
 )
-$version = '2306.1'
-
-if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
-    throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
-}
+$version = '2306.1.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -376,18 +368,18 @@ Function Get-ADK {
 }
 function Get-WindowsESD {
     param(
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [ValidateSet(10, 11)]
         [int]$WindowsRelease,
 
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [ValidateSet('x86', 'x64')]
         [string]$WindowsArch,
 
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [string]$WindowsLang,
 
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         [ValidateSet('consumer', 'business')]
         [string]$MediaType
     )
@@ -399,7 +391,8 @@ function Get-WindowsESD {
     # Select cab file URL based on Windows Release
     $cabFileUrl = if ($WindowsRelease -eq 10) {
         'https://go.microsoft.com/fwlink/?LinkId=841361'
-    } else {
+    }
+    else {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
     }
 
@@ -519,7 +512,7 @@ function Get-WimFromISO {
     # Check for install.wim or install.esd
     $wimPath = (Get-ChildItem $sourcesFolder\install.* | Where-Object { $_.Name -match "install\.(wim|esd)" }).FullName
 
-    if($wimPath) {
+    if ($wimPath) {
         WriteLog "The path to the install file is: $wimPath"
     }
     else {
@@ -537,7 +530,7 @@ function Get-WimIndex {
     )
     WriteLog "Getting WIM Index for Windows SKU: $WindowsSKU"
 
-    If($ISOPath){
+    If ($ISOPath) {
         $wimindex = switch ($WindowsSKU) {
             'Home' { 1 }
             'Home_N' { 2 }
@@ -1267,15 +1260,32 @@ Write-Host "FFU build process has begun. This process can take 20 minutes or mor
 Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
 
 WriteLog 'Begin Logging'
-#Get script variable values
-LogVariableValues
 
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
 #from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
 #This behavior doesn't happen with WIM files.
-If(-not ($ISOPath)){
+If (-not ($ISOPath) -and (-not ($InstallApps))) {
     $InstallApps = $true
-}        
+    WriteLog "Script will download Windows media. Setting `$InstallApps to `$true to build VM to capture FFU. Must do this when using MCT ESD."
+}   
+
+if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
+    throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
+}
+if (($InstallApps -and ($VMSwitchName -eq ''))) {
+    throw "If variable InstallApps is set to `$true, VMSwitchName must also be set to capture the FFU. Please set -VMSwitchName and try again."
+}
+
+if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
+    throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU. Please set -VMHostIPAddress and try again."
+}
+
+if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
+    throw "netfx3 specified as an optional feature, however Windows ISO isn't defined. Unable to get netfx3 source files from downloaded ESD media. Please specify a Windows ISO in the ISOPath parameter."
+}
+
+#Get script variable values
+LogVariableValues    
 
 #Get Windows ADK
 try {
@@ -1327,14 +1337,14 @@ if ($InstallApps) {
 
 #Create VHDX
 try {
-    if($ISOPath){
+    if ($ISOPath) {
         $wimPath = Get-WimFromISO
     }
-    else{
+    else {
         $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
     }
     #If index not specified by user, try and find based on WindowsSKU
-    if (-not($index) -and ($WindowsSKU)){
+    if (-not($index) -and ($WindowsSKU)) {
         $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
     }
 
@@ -1370,7 +1380,7 @@ try {
         Dismount-DiskImage -ImagePath $ISOPath | Out-null
         WriteLog 'Done'
     }
-    else{
+    else {
         #Remove ESD file
         Remove-Item -Path $wimPath -Force
     }
@@ -1398,9 +1408,11 @@ catch {
         Dismount-DiskImage -ImagePath $ISOPath | Out-null
         WriteLog 'Done'
     }
-    else{
+    else {
         #Remove ESD file
-        Remove-Item -Path $esdFilePath -Force
+        WriteLog "Deleting ESD file"
+        Remove-Item -Path $wimPath -Force
+        WriteLog "ESD File deleted"
     }
     throw $_
     
@@ -1517,17 +1529,17 @@ If ($CreateDeploymentMedia) {
     
     }
 }
-If($BuildUSBDrive){
-    try{
-        If(Test-Path -Path "$FFUDevelopmentPath\WinPE_FFU_Deploy.iso"){
+If ($BuildUSBDrive) {
+    try {
+        If (Test-Path -Path "$FFUDevelopmentPath\WinPE_FFU_Deploy.iso") {
             New-DeploymentUSB -CopyFFU
         }
-        else{
+        else {
             WriteLog "$BuildUSBDrive set to true, however unable to find WinPE_FFU_Deploy.iso. USB drive not built."
         }
         
     }
-    catch{
+    catch {
         Write-Host 'Building USB deployment drive failed'
         Writelog "Building USB deployment drive failed with error $_"
         throw $_
