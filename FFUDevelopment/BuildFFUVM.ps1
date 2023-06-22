@@ -4,7 +4,7 @@
 
 <#
 .SYNOPSIS
-A PowerShell script to create a Windows 10/11 FFU file. Test
+A PowerShell script to create a Windows 10/11 FFU file. 
 
 .DESCRIPTION
 This script creates a Windows 10/11 FFU and USB drive to help quickly get a Windows device reimaged. FFU can be customized with drivers, apps, and additional settings. 
