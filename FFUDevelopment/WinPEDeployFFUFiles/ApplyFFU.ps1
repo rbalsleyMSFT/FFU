@@ -117,7 +117,9 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
+$version = '2306.1.2'
 WriteLog 'Begin Logging'
+WriteLog "Script version: $version"
 
 #Find PhysicalDrive
 $PhysicalDeviceID = Get-HardDrive
@@ -543,7 +545,7 @@ If ($PPKGFileToInstall){
     }
 }
 #Set DeviceName
-If ($PrefixToUse){
+If ($computername){
     try{
         $PantherDir = 'w:\windows\panther'
         If (Test-Path -Path $PantherDir){
