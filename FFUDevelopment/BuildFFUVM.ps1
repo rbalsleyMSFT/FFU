@@ -202,7 +202,7 @@ param(
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512
 )
-$version = '2306.1.2'
+$version = '2309.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1009,11 +1009,10 @@ function New-FFU {
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        WriteLog 'Capturing FFU from VHDX file'
         #Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
         Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
         WriteLog 'FFU Capture complete'
-        WriteLog 'Sleeping 60 seconds before dismount of VHDX'
+        #WriteLog 'Sleeping 60 seconds before dismount of VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
@@ -1149,6 +1148,11 @@ Function Get-WindowsVersionInfo {
     
     WriteLog "Unloading registry"
     Invoke-Process reg "unload HKLM\FFU"
+    #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
+    WriteLog 'Sleep 15 seconds to allow registry to completely unload'
+    Start-sleep 15
+
+
 
     return @{
 

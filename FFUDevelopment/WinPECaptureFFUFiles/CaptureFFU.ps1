@@ -1,5 +1,5 @@
-#Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 0ef0258a-0447-496e-846f-23d2d1f0e334
-net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user 0ef0258a-0447-496e-846f-23d2d1f0e334
+#Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user ddb1f077-3eed-433c-b4d9-7b8cd54ce727
+net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user ddb1f077-3eed-433c-b4d9-7b8cd54ce727
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
@@ -59,6 +59,9 @@ Remove-Variable CurrentBuild
 Remove-Variable DisplayVersion
 Remove-Variable Office
 reg unload "HKLM\FFU"
+#This prevents Critical Process Died errors you can have during deployment of the FFU - may not happen during capture from WinPE, but adding here to be consistent with VHDX capture
+WriteLog 'Sleep 15 seconds to allow registry to completely unload'
+Start-sleep 15
 
 Start-Process -FilePath dism.exe -ArgumentList $dismArgs -Wait -PassThru -ErrorAction Stop | Out-Null
 #Copy DISM log to Host
