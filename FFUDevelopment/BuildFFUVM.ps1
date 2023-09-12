@@ -202,7 +202,7 @@ param(
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512
 )
-$version = '2309.1'
+$version = '2309.2'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1149,8 +1149,8 @@ Function Get-WindowsVersionInfo {
     WriteLog "Unloading registry"
     Invoke-Process reg "unload HKLM\FFU"
     #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
-    WriteLog 'Sleep 15 seconds to allow registry to completely unload'
-    Start-sleep 15
+    WriteLog 'Sleep 60 seconds to allow registry to completely unload'
+    Start-sleep 60
 
 
 
@@ -1162,96 +1162,208 @@ Function Get-WindowsVersionInfo {
         SKU            = $SKU
     }
 }
+# Function New-DeploymentUSB {
+#     param(
+#         [switch]$CopyFFU
+#     )
+#     WriteLog "CopyFFU is set to $CopyFFU"
+#     # Set your FFUDevelopmentPath here
+#     $BuildUSBPath = $FFUDevelopmentPath
+
+#     # Get the first removable USB drive
+#     $USBDrive = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+
+#     if ($null -eq $USBDrive) {
+#         Writelog "No USB drive found"
+#         exit 1
+#     }
+
+#     # Format the USB drive
+#     $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
+#     $ScriptBlock = {
+#         param($DiskNumber)
+#         Clear-Disk -Number $DiskNumber -RemoveData -Confirm:$false
+#         Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+#         #Check for other partitions since, apparently, Clear-Disk doesn't remove all of them
+#         Get-Disk $disknumber | Get-Partition | Remove-Partition -Confirm:$false
+#         $Disk = Get-Disk -Number $DiskNumber
+#         $Disk | Set-Disk -PartitionStyle MBR
+#         $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
+#         $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
+#         Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "Boot" -Confirm:$false
+#         Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "Deploy" -Confirm:$false
+#     }
+#     WriteLog 'Partitioning USB Drive'
+#     Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
+#     WriteLog 'Done'
+
+#     # Mount the ISO and copy the contents to the boot partition
+#     $BootPartitionDriveLetter = (get-volume -FileSystemLabel Boot).DriveLetter + ":\"  
+#     $ISOMountPoint = (Mount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" -PassThru | Get-Volume).DriveLetter + ":\"
+#     WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
+#     Copy-Item -Path "$ISOMountPoint\*" -Destination $BootPartitionDriveLetter -Recurse -Force | Out-Null
+#     Dismount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" | Out-Null
+
+#     # Copy FFU files if switch is provided
+#     if ($CopyFFU.IsPresent) {
+#         WriteLog 'Copying FFU files'
+#         $DeployPartitionDriveLetter = (get-volume -FileSystemLabel Deploy).DriveLetter + ":\"  
+#         $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+
+#         if ($FFUFiles.Count -eq 1) {
+#             WriteLog "Copying $($FFUFiles.FullName) to $DeployPartitionDriveLetter this could take a few minutes"
+#             Copy-Item -Path $FFUFiles.FullName -Destination $DeployPartitionDriveLetter -Force | Out-Null
+#             Writelog 'Copy complete'
+#         }
+#         elseif ($FFUFiles.Count -gt 1) {
+#             WriteLog "Multiple FFU files found:"
+#             Write-Host "Multiple FFU files found:"
+#             for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
+#                 WriteLog ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
+#                 Write-Host ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
+#             }
+#             WriteLog "A: Copy all FFU files"
+#             Write-Host "A: Copy all FFU files"
+#             $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+
+#             if ($inputChoice -eq 'A') {
+#                 WriteLog "Copying All FFU files to $DeployPartitionDriveLetter this could take a few minutes"
+#                 Write-Host "Copying All FFU files to $DeployPartitionDriveLetter this could take a few minutes"
+#                 Copy-Item -Path $FFUFiles.FullName -Destination $DeployPartitionDriveLetter -Force | Out-Null
+#                 Writelog 'Copy complete'
+#                 Write-Host 'Copy complete'
+#             }
+#             elseif ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
+#                 $selectedIndex = $inputChoice - 1
+#                 WriteLog "Copying $($FFUFiles[$selectedIndex].FullName) to $DeployPartitionDriveLetter this could take a few minutes"
+#                 Write-Host "Copying $($FFUFiles[$selectedIndex].FullName) to $DeployPartitionDriveLetter this could take a few minutes"
+#                 Copy-Item -Path $FFUFiles[$selectedIndex].FullName -Destination $DeployPartitionDriveLetter -Force | Out-Null
+#                 Writelog 'Copy complete'
+#                 Write-Host 'Copy complete'
+#             }
+#             else {
+#                 WriteLog "Invalid choice. No FFU file copied"
+#                 Write-Host 'Invalid choice. No FFU file copied'
+#             }
+#         }
+#         else {
+#             WriteLog "No FFU files found in the current directory."
+#         }
+#     }
+
+#     WriteLog "USB drive prepared successfully."
+# }
+
 Function New-DeploymentUSB {
     param(
         [switch]$CopyFFU
     )
     WriteLog "CopyFFU is set to $CopyFFU"
     # Set your FFUDevelopmentPath here
-    $BuildUSBPath = $FFUDevelopmentPath
+    $BuildUSBPath = $PSScriptRoot
+    WriteLog "BuildUSBPath is $BuildUSBPath"
+    $counter = 0
 
-    # Get the first removable USB drive
-    $USBDrive = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+    # Get removable drives
+    $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+    If ($USBDrives -and ($null -eq $USBDrives.count)) {
+        $USBDrivesCount = 1
+    }
+    else {
+        $USBDrivesCount = $USBDrives.Count
+    }
+    WriteLog "Found $USBDrivesCount USB drives"
 
-    if ($null -eq $USBDrive) {
-        Writelog "No USB drive found"
+    if ($null -eq $USBDrives) {
+        WriteLog "No removable USB drive found."
         exit 1
     }
 
-    # Format the USB drive
-    $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
-    $ScriptBlock = {
-        param($DiskNumber)
-        Clear-Disk -Number $DiskNumber -RemoveData -Confirm:$false
-        Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
-        #Check for other partitions since, apparently, Clear-Disk doesn't remove all of them
-        Get-Disk $disknumber | Get-Partition | Remove-Partition -Confirm:$false
-        $Disk = Get-Disk -Number $DiskNumber
-        $Disk | Set-Disk -PartitionStyle MBR
-        $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
-        $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
-        Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "Boot" -Confirm:$false
-        Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "Deploy" -Confirm:$false
-    }
-    WriteLog 'Partitioning USB Drive'
-    Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
-    WriteLog 'Done'
-
-    # Mount the ISO and copy the contents to the boot partition
-    $BootPartitionDriveLetter = (get-volume -FileSystemLabel Boot).DriveLetter + ":\"  
-    $ISOMountPoint = (Mount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" -PassThru | Get-Volume).DriveLetter + ":\"
-    WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
-    Copy-Item -Path "$ISOMountPoint\*" -Destination $BootPartitionDriveLetter -Recurse -Force | Out-Null
-    Dismount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" | Out-Null
-
-    # Copy FFU files if switch is provided
-    if ($CopyFFU.IsPresent) {
-        WriteLog 'Copying FFU files'
-        $DeployPartitionDriveLetter = (get-volume -FileSystemLabel Deploy).DriveLetter + ":\"  
-        $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
-
-        if ($FFUFiles.Count -eq 1) {
-            WriteLog "Copying $($FFUFiles.FullName) to $DeployPartitionDriveLetter this could take a few minutes"
-            Copy-Item -Path $FFUFiles.FullName -Destination $DeployPartitionDriveLetter -Force | Out-Null
-            Writelog 'Copy complete'
+    foreach ($USBDrive in $USBDrives) {
+        $Counter++
+        WriteLog "Fromatting drive $Counter out of $USBDrivesCount"
+        # Format the USB drive
+        $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
+        WriteLog "Disk number is $DiskNumber"
+        #Delete these two lines
+        # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false 
+        # Get-Disk -number $disknumber | select *
+        $ScriptBlock = {
+            param($DiskNumber)
+            Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+            #Check for other partitions since, apparently, Clear-Disk doesn't remove all of them
+            Get-Disk $disknumber | Get-Partition | Remove-Partition
+            $Disk = Get-Disk -Number $disknumber
+            $Disk | Set-Disk -PartitionStyle MBR
+            #Initialize-Disk -Number $DiskNumber -PartitionStyle MBR
+            $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
+            $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
+            Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false
+            Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false
         }
-        elseif ($FFUFiles.Count -gt 1) {
-            WriteLog "Multiple FFU files found:"
-            Write-Host "Multiple FFU files found:"
-            for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
-                WriteLog ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
-                Write-Host ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
+        WriteLog 'Partitioning USB Drive'
+        Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
+        WriteLog 'Done'
+    
+        # Mount the ISO and copy the contents to the boot partition
+        $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+        $ISOMountPoint = (Mount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" -PassThru | Get-Volume).DriveLetter + ":\"
+        WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
+        # Copy-Item -Path "$ISOMountPoint\*" -Destination $BootPartitionDriveLetter -Recurse -Force | Out-Null
+        robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
+        Dismount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" | Out-Null
+    
+        # Copy FFU files if switch is provided
+        if ($CopyFFU.IsPresent) {
+            WriteLog 'Copying FFU files'
+            #$DeployPartitionDriveLetter = (get-volume -FileSystemLabel Deploy).DriveLetter + ":\"  
+            $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+            $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+    
+            if ($FFUFiles.Count -eq 1) {
+                WriteLog ("Copying " + $FFUFiles.FullName + " to $DeployPartitionDriveLetter this could take a few minutes")
+                # Copy-Item -Path $FFUFiles.FullName -Destination $DeployPartitionDriveLetter -Force
+                robocopy $(Split-Path $FFUFiles.FullName -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFiles.FullName -Leaf) /COPYALL /R:5 /W:5 /J
+    
             }
-            WriteLog "A: Copy all FFU files"
-            Write-Host "A: Copy all FFU files"
-            $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
-
-            if ($inputChoice -eq 'A') {
-                WriteLog "Copying All FFU files to $DeployPartitionDriveLetter this could take a few minutes"
-                Write-Host "Copying All FFU files to $DeployPartitionDriveLetter this could take a few minutes"
-                Copy-Item -Path $FFUFiles.FullName -Destination $DeployPartitionDriveLetter -Force | Out-Null
-                Writelog 'Copy complete'
-                Write-Host 'Copy complete'
-            }
-            elseif ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
-                $selectedIndex = $inputChoice - 1
-                WriteLog "Copying $($FFUFiles[$selectedIndex].FullName) to $DeployPartitionDriveLetter this could take a few minutes"
-                Write-Host "Copying $($FFUFiles[$selectedIndex].FullName) to $DeployPartitionDriveLetter this could take a few minutes"
-                Copy-Item -Path $FFUFiles[$selectedIndex].FullName -Destination $DeployPartitionDriveLetter -Force | Out-Null
-                Writelog 'Copy complete'
-                Write-Host 'Copy complete'
+            elseif ($FFUFiles.Count -gt 1) {
+                WriteLog "Multiple FFU files found:"
+                for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
+                    WriteLog ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
+                }
+                WriteLog "A: Copy all FFU files"
+                $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+    
+                if ($inputChoice -eq 'A') {
+                    WriteLog "Copying All FFU files to $DeployPartitionDriveLetter this could take a few minutes"
+                    # Copy-Item -Path $FFUFiles.FullName -Destination $DeployPartitionDriveLetter -Force
+                    robocopy $(Split-Path $FFUFiles.FullName -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFiles.FullName -Leaf) /COPYALL /R:5 /W:5 /J
+                }
+                elseif ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
+                    $selectedIndex = $inputChoice - 1
+                    WriteLog ("Copying " + $FFUFiles[$selectedIndex].FullName + " to $DeployPartitionDriveLetter this could take a few minutes")
+                    # Copy-Item -Path $FFUFiles[$selectedIndex].FullName -Destination $DeployPartitionDriveLetter -Force
+                    robocopy $(Split-Path $FFUFiles[$selectedIndex].FullName -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFiles[$selectedIndex].FullName -Leaf) /COPYALL /R:5 /W:5 /J
+                }
+                else {
+                    WriteLog "Invalid choice. No FFU file copied."
+                }
             }
             else {
-                WriteLog "Invalid choice. No FFU file copied"
-                Write-Host 'Invalid choice. No FFU file copied'
+                WriteLog "No FFU files found in the current directory."
             }
         }
-        else {
-            WriteLog "No FFU files found in the current directory."
+        Set-Volume -FileSystemLabel "TempBoot" -NewFileSystemLabel "Boot"
+        Set-Volume -FileSystemLabel "TempDeploy" -NewFileSystemLabel "Deploy"
+        #Remove drive letter (so we don't run out of drive letters)
+        If ($USBDrivesCount -gt 1) {
+            & mountvol $BootPartitionDriveLetter /D
+            & mountvol $DeployPartitionDriveLetter /D 
         }
+        WriteLog "Drive $counter completed"
     }
-
-    WriteLog "USB drive prepared successfully."
+    
+    WriteLog "USB Drives completed"
 }
 
 ###END FUNCTIONS
