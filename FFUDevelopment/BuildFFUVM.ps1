@@ -1281,10 +1281,10 @@ Function New-DeploymentUSB {
 
     foreach ($USBDrive in $USBDrives) {
         $Counter++
-        WriteLog "Fromatting drive $Counter out of $USBDrivesCount"
+        WriteLog "Fromatting USB drive $Counter out of $USBDrivesCount"
         # Format the USB drive
         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
-        WriteLog "Disk number is $DiskNumber"
+        WriteLog "Physical Disk number is $DiskNumber for USB drive $Counter out of $USBDrivesCount"
         #Delete these two lines
         # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false 
         # Get-Disk -number $disknumber | select *
