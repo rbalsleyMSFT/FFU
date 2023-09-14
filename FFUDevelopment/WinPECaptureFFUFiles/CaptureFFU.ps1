@@ -60,9 +60,7 @@ Remove-Variable DisplayVersion
 Remove-Variable Office
 reg unload "HKLM\FFU"
 #This prevents Critical Process Died errors you can have during deployment of the FFU - may not happen during capture from WinPE, but adding here to be consistent with VHDX capture
-WriteLog 'Sleep 60 seconds to allow registry to completely unload'
 Start-sleep 60
-
 Start-Process -FilePath dism.exe -ArgumentList $dismArgs -Wait -PassThru -ErrorAction Stop | Out-Null
 #Copy DISM log to Host
 xcopy X:\Windows\logs\dism\dism.log W:\ /Y | Out-Null
