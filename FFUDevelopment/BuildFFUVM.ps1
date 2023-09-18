@@ -200,7 +200,12 @@ param(
     [ValidateSet('consumer', 'business')]
     [string]$MediaType = 'consumer',
     [ValidateSet(512, 4096)]
-    [uint32]$LogicalSectorSizeBytes = 512
+    [uint32]$LogicalSectorSizeBytes = 512,
+    #Will be used in future release
+    [bool]$CopyDrivers,
+    [bool]$CopyPPKG,
+    [bool]$CopyUnattend,
+    [bool]$RemoveFFU
 )
 $version = '2309.2'
 
