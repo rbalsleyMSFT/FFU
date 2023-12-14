@@ -207,7 +207,7 @@ param(
     [bool]$CopyUnattend,
     [bool]$RemoveFFU
 )
-$version = '2309.2'
+$version = '2312.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1067,6 +1067,7 @@ function Remove-FFUVM {
         WriteLog "Removing VM: $VMName"
         Remove-VM -Name $VMName -Force
         WriteLog 'Removal complete'
+        $VMPath = $FFUVM.Path
         WriteLog "Removing $VMPath"
         Remove-Item -Path $VMPath -Force -Recurse
         WriteLog 'Removal complete'
@@ -1119,6 +1120,9 @@ Function Remove-FFUUserShare {
 }
 
 Function Get-WindowsVersionInfo {
+    #This sleep prevents CBS/CSI corruption which causes issues with Windows update after deployment. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for. This seems to affect VHDX-only captures, not VM captures. 
+    WriteLog 'Sleep 60 seconds before opening registry to grab Windows version info '
+    Start-sleep 60
     WriteLog "Getting Windows Version info"
     #Load Registry Hive
     $Software = "$osPartitionDriveLetter`:\Windows\System32\config\software"
@@ -1156,8 +1160,6 @@ Function Get-WindowsVersionInfo {
     #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
     WriteLog 'Sleep 60 seconds to allow registry to completely unload'
     Start-sleep 60
-
-
 
     return @{
 
@@ -1283,6 +1285,17 @@ Function New-DeploymentUSB {
 
 function Get-FFUEnvironment {
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
+    # Check for running VMs that start with '_FFU-' and are in the 'Off' state
+    $vms = Get-VM
+
+    # Loop through each VM
+    foreach ($vm in $vms) {
+        # Check if the VM name starts with '_FFU-' and the state is 'Off'
+        if ($vm.Name.StartsWith("_FFU-") -and $vm.State -eq 'Off') {
+            # If conditions are met, delete the VM
+            Remove-FFUVM -VMName $vm.Name
+        }
+    }
     # Check for MSFT Virtual disks where location contains FFUDevelopment in the path
     $disks = Get-Disk -FriendlyName *virtual*
     foreach ($disk in $disks) {
