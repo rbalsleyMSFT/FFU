@@ -131,7 +131,7 @@ param(
     [Parameter(Mandatory = $false)]
     [ValidateScript({
             if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
-                throw "InstallDrivers is set to `$true, but either the Drivers folder is missing or empty"
+                throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
             }
             return $true
         })]
@@ -201,13 +201,21 @@ param(
     [string]$MediaType = 'consumer',
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512,
-    #Will be used in future release
+    [bool]$Optimize = $true,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({
+            if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
+                throw 'CopyDrivers is set to $true, but either the Drivers folder is missing or empty'
+            }
+            return $true
+        })]
     [bool]$CopyDrivers,
+    #Will be used in future release
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
     [bool]$RemoveFFU
 )
-$version = '2312.1'
+$version = '2401.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -627,6 +635,7 @@ function New-ScratchVhdx {
     WriteLog "Creating new Scratch VHDX..."
 
     $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
+    # $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Fixed
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
@@ -1035,7 +1044,12 @@ function New-FFU {
         Mount-WindowsImage -ImagePath $FFUFile -Index 1 -Path "$FFUDevelopmentPath\Mount" | Out-null
         WriteLog 'Mounting complete'
         WriteLog 'Adding drivers - This will take a few minutes, please be patient'
-        Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$FFUDevelopmentPath\Drivers" -Recurse | Out-null
+        try {
+            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$FFUDevelopmentPath\Drivers" -Recurse -ErrorAction SilentlyContinue | Out-null
+        }
+        catch {
+            WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+        }
         WriteLog 'Adding drivers complete'
         WriteLog "Dismount $FFUDevelopmentPath\Mount"
         Dismount-WindowsImage -Path "$FFUDevelopmentPath\Mount" -Save | Out-Null
@@ -1045,10 +1059,13 @@ function New-FFU {
         WriteLog 'Folder removed'
     }
     #Optimize FFU
-    WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
-    #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
-    Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
-    WriteLog 'Optimizing FFU complete'
+    if($Optimize -eq $true){
+        WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
+        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
+        Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
+        WriteLog 'Optimizing FFU complete'
+    }
+    
 
 }
 function Remove-FFUVM {
@@ -1218,6 +1235,8 @@ Function New-DeploymentUSB {
         }
         else {
             WriteLog "No FFU files found in the current directory."
+            Write-Error "No FFU files found in the current directory."
+            Return
         }
     }
 
@@ -1262,6 +1281,10 @@ Function New-DeploymentUSB {
                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
                     robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                 }
+                if ($CopyDrivers -eq $true) {
+                    WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
+                    robocopy "$FFUDevelopmentPath\Drivers" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+                }
             }
             else {
                 WriteLog "No FFU file selected. Skipping copy."
@@ -1290,8 +1313,10 @@ function Get-FFUEnvironment {
 
     # Loop through each VM
     foreach ($vm in $vms) {
-        # Check if the VM name starts with '_FFU-' and the state is 'Off'
-        if ($vm.Name.StartsWith("_FFU-") -and $vm.State -eq 'Off') {
+        if ($vm.Name.StartsWith("_FFU-")) {
+            if ($vm.State -eq 'Running') {
+                Stop-VM -Name $vm.Name -TurnOff -Force
+            }
             # If conditions are met, delete the VM
             Remove-FFUVM -VMName $vm.Name
         }
@@ -1400,6 +1425,12 @@ if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
     throw "netfx3 specified as an optional feature, however Windows ISO isn't defined. Unable to get netfx3 source files from downloaded ESD media. Please specify a Windows ISO in the ISOPath parameter."
 }
+if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)){
+    $installdrivers = $false
+    WriteLog 'LogicalSectorSizeBytes is set to 4096, which is not supported for driver injection. Setting $installdrivers to $false'
+    WriteLog 'As a workaround, set -copydrivers $true to copy drivers to the deploy partition drivers folder'
+    WriteLog 'We are investigating this issue and will update the script if/when we have a fix'
+}
 
 #Get script variable values
 LogVariableValues    
@@ -1473,7 +1504,8 @@ try {
         $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
     }
 
-    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic -LogicalSectorSizeBytes $LogicalSectorSizeBytes
+    # $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic:$false -LogicalSectorSizeBytes $LogicalSectorSizeBytes
+    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
     $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
     
