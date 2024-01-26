@@ -131,7 +131,7 @@ param(
     [Parameter(Mandatory = $false)]
     [ValidateScript({
             if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
-                throw "InstallDrivers is set to `$true, but either the Drivers folder is missing or empty"
+                throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
             }
             return $true
         })]
@@ -200,9 +200,22 @@ param(
     [ValidateSet('consumer', 'business')]
     [string]$MediaType = 'consumer',
     [ValidateSet(512, 4096)]
-    [uint32]$LogicalSectorSizeBytes = 512
+    [uint32]$LogicalSectorSizeBytes = 512,
+    [bool]$Optimize = $true,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({
+            if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
+                throw 'CopyDrivers is set to $true, but either the Drivers folder is missing or empty'
+            }
+            return $true
+        })]
+    [bool]$CopyDrivers,
+    #Will be used in future release
+    [bool]$CopyPPKG,
+    [bool]$CopyUnattend,
+    [bool]$RemoveFFU
 )
-$version = '2309.2'
+$version = '2401.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -622,6 +635,7 @@ function New-ScratchVhdx {
     WriteLog "Creating new Scratch VHDX..."
 
     $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
+    # $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Fixed
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
@@ -1030,7 +1044,12 @@ function New-FFU {
         Mount-WindowsImage -ImagePath $FFUFile -Index 1 -Path "$FFUDevelopmentPath\Mount" | Out-null
         WriteLog 'Mounting complete'
         WriteLog 'Adding drivers - This will take a few minutes, please be patient'
-        Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$FFUDevelopmentPath\Drivers" -Recurse | Out-null
+        try {
+            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$FFUDevelopmentPath\Drivers" -Recurse -ErrorAction SilentlyContinue | Out-null
+        }
+        catch {
+            WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+        }
         WriteLog 'Adding drivers complete'
         WriteLog "Dismount $FFUDevelopmentPath\Mount"
         Dismount-WindowsImage -Path "$FFUDevelopmentPath\Mount" -Save | Out-Null
@@ -1040,10 +1059,13 @@ function New-FFU {
         WriteLog 'Folder removed'
     }
     #Optimize FFU
-    WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
-    #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
-    Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
-    WriteLog 'Optimizing FFU complete'
+    if($Optimize -eq $true){
+        WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
+        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
+        Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
+        WriteLog 'Optimizing FFU complete'
+    }
+    
 
 }
 function Remove-FFUVM {
@@ -1062,6 +1084,7 @@ function Remove-FFUVM {
         WriteLog "Removing VM: $VMName"
         Remove-VM -Name $VMName -Force
         WriteLog 'Removal complete'
+        $VMPath = $FFUVM.Path
         WriteLog "Removing $VMPath"
         Remove-Item -Path $VMPath -Force -Recurse
         WriteLog 'Removal complete'
@@ -1114,6 +1137,9 @@ Function Remove-FFUUserShare {
 }
 
 Function Get-WindowsVersionInfo {
+    #This sleep prevents CBS/CSI corruption which causes issues with Windows update after deployment. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for. This seems to affect VHDX-only captures, not VM captures. 
+    WriteLog 'Sleep 60 seconds before opening registry to grab Windows version info '
+    Start-sleep 60
     WriteLog "Getting Windows Version info"
     #Load Registry Hive
     $Software = "$osPartitionDriveLetter`:\Windows\System32\config\software"
@@ -1151,8 +1177,6 @@ Function Get-WindowsVersionInfo {
     #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
     WriteLog 'Sleep 60 seconds to allow registry to completely unload'
     Start-sleep 60
-
-
 
     return @{
 
@@ -1211,6 +1235,8 @@ Function New-DeploymentUSB {
         }
         else {
             WriteLog "No FFU files found in the current directory."
+            Write-Error "No FFU files found in the current directory."
+            Return
         }
     }
 
@@ -1255,6 +1281,10 @@ Function New-DeploymentUSB {
                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
                     robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                 }
+                if ($CopyDrivers -eq $true) {
+                    WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
+                    robocopy "$FFUDevelopmentPath\Drivers" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+                }
             }
             else {
                 WriteLog "No FFU file selected. Skipping copy."
@@ -1278,6 +1308,19 @@ Function New-DeploymentUSB {
 
 function Get-FFUEnvironment {
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
+    # Check for running VMs that start with '_FFU-' and are in the 'Off' state
+    $vms = Get-VM
+
+    # Loop through each VM
+    foreach ($vm in $vms) {
+        if ($vm.Name.StartsWith("_FFU-")) {
+            if ($vm.State -eq 'Running') {
+                Stop-VM -Name $vm.Name -TurnOff -Force
+            }
+            # If conditions are met, delete the VM
+            Remove-FFUVM -VMName $vm.Name
+        }
+    }
     # Check for MSFT Virtual disks where location contains FFUDevelopment in the path
     $disks = Get-Disk -FriendlyName *virtual*
     foreach ($disk in $disks) {
@@ -1382,6 +1425,12 @@ if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
     throw "netfx3 specified as an optional feature, however Windows ISO isn't defined. Unable to get netfx3 source files from downloaded ESD media. Please specify a Windows ISO in the ISOPath parameter."
 }
+if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)){
+    $installdrivers = $false
+    WriteLog 'LogicalSectorSizeBytes is set to 4096, which is not supported for driver injection. Setting $installdrivers to $false'
+    WriteLog 'As a workaround, set -copydrivers $true to copy drivers to the deploy partition drivers folder'
+    WriteLog 'We are investigating this issue and will update the script if/when we have a fix'
+}
 
 #Get script variable values
 LogVariableValues    
@@ -1455,7 +1504,8 @@ try {
         $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
     }
 
-    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic -LogicalSectorSizeBytes $LogicalSectorSizeBytes
+    # $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic:$false -LogicalSectorSizeBytes $LogicalSectorSizeBytes
+    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
     $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
     
