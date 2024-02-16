@@ -215,7 +215,7 @@ param(
     [bool]$CopyUnattend,
     [bool]$RemoveFFU
 )
-$version = '2401.1'
+$version = '2402.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1084,7 +1084,6 @@ function Remove-FFUVM {
         WriteLog "Removing VM: $VMName"
         Remove-VM -Name $VMName -Force
         WriteLog 'Removal complete'
-        $VMPath = $FFUVM.Path
         WriteLog "Removing $VMPath"
         Remove-Item -Path $VMPath -Force -Recurse
         WriteLog 'Removal complete'
@@ -1186,15 +1185,7 @@ Function Get-WindowsVersionInfo {
         SKU            = $SKU
     }
 }
-Function New-DeploymentUSB {
-    param(
-        [switch]$CopyFFU
-    )
-    WriteLog "CopyFFU is set to $CopyFFU"
-    $BuildUSBPath = $PSScriptRoot
-    WriteLog "BuildUSBPath is $BuildUSBPath"
-    $counter = 0
-
+Function Get-USBDrive{
     $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
     If ($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
@@ -1208,6 +1199,15 @@ Function New-DeploymentUSB {
         WriteLog "No removable USB drive found."
         exit 1
     }
+    return $USBDrives, $USBDrivesCount
+}
+Function New-DeploymentUSB {
+    param(
+        [switch]$CopyFFU
+    )
+    WriteLog "CopyFFU is set to $CopyFFU"
+    $BuildUSBPath = $PSScriptRoot
+    WriteLog "BuildUSBPath is $BuildUSBPath"
 
     $SelectedFFUFile = $null
 
@@ -1239,6 +1239,7 @@ Function New-DeploymentUSB {
             Return
         }
     }
+    $counter = 0
 
     foreach ($USBDrive in $USBDrives) {
         $Counter++
@@ -1430,6 +1431,9 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)){
     WriteLog 'LogicalSectorSizeBytes is set to 4096, which is not supported for driver injection. Setting $installdrivers to $false'
     WriteLog 'As a workaround, set -copydrivers $true to copy drivers to the deploy partition drivers folder'
     WriteLog 'We are investigating this issue and will update the script if/when we have a fix'
+}
+if ($BuildUSBDrive -eq $true) {
+    $USBDrives, $USBDrivesCount = Get-USBDrive
 }
 
 #Get script variable values
