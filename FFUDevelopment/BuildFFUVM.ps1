@@ -125,7 +125,7 @@ param(
         })]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
-    [string]$FFUDevelopmentPath = 'C:\FFUDevelopment',
+    [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
     [bool]$InstallOffice,
     [Parameter(Mandatory = $false)]
@@ -210,10 +210,11 @@ param(
             return $true
         })]
     [bool]$CopyDrivers,
+    [bool]$RemoveFFU,
     #Will be used in future release
     [bool]$CopyPPKG,
-    [bool]$CopyUnattend,
-    [bool]$RemoveFFU
+    [bool]$CopyUnattend
+
 )
 $version = '2402.1'
 
@@ -1392,6 +1393,12 @@ function Get-FFUEnvironment {
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
 }
+function Remove-FFU{
+    #Remove all FFU files in the FFUCaptureLocation
+    WriteLog "Removing all FFU files in $FFUCaptureLocation"
+    Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
+    WriteLog "Removal complete"
+}
 
 ###END FUNCTIONS
 
@@ -1705,6 +1712,17 @@ If ($BuildUSBDrive) {
         Writelog "Building USB deployment drive failed with error $_"
         throw $_
     }
+}
+If ($RemoveFFU){
+    try {
+        Remove-FFU
+    }
+    catch {
+        Write-Host 'Removing FFU files failed'
+        Writelog "Removing FFU files failed with error $_"
+        throw $_
+    }
+   
 }
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
