@@ -185,7 +185,9 @@ param(
     [ValidateSet(10, 11)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
-    [ValidateSet('x86', 'x64')]
+    [string]$WindowsVersion = '23h2',
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('x86', 'x64', 'arm64')]
     [string]$WindowsArch = 'x64',
     [ValidateScript({
             $allowedLang = @('ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee', 'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu',
@@ -211,6 +213,11 @@ param(
         })]
     [bool]$CopyDrivers,
     [bool]$RemoveFFU,
+    [bool]$UpdateLatestCU,
+    [bool]$UpdateLatestNet,
+    [bool]$UpdateLatestDefender,
+    [bool]$UpdateEdge,
+    [bool]$UpdateOneDrive,
     #Will be used in future release
     [bool]$CopyPPKG,
     [bool]$CopyUnattend
@@ -248,6 +255,10 @@ if (-not $VMPath) { $VMPath = "$VMLocation\$VMName" }
 if (-not $VHDXPath) { $VHDXPath = "$VMPath\$VMName.vhdx" }
 if (-not $FFUCaptureLocation) { $FFUCaptureLocation = "$FFUDevelopmentPath\FFU" }
 if (-not $LogFile) { $LogFile = "$FFUDevelopmentPath\FFUDevelopment.log" }
+if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
+if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
+if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
+if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -501,6 +512,117 @@ function Get-Office {
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
     }
 }
+function Get-KBLink {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name"
+    $kbids = $results.InputFields |
+    Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
+    Select-Object -ExpandProperty  ID
+
+    Write-Verbose -Message "$kbids"
+
+    if (-not $kbids) {
+        Write-Warning -Message "No results found for $Name"
+        return
+    }
+
+    $guids = $results.Links |
+    Where-Object ID -match '_link' |
+    Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
+    ForEach-Object { $_.id.replace('_link', '') } |
+    Where-Object { $_ -in $kbids }
+
+    if (-not $guids) {
+        Write-Warning -Message "No file found for $Name"
+        return
+    }
+
+    foreach ($guid in $guids) {
+        Write-Verbose -Message "Downloading information for $guid"
+        $post = @{ size = 0; updateID = $guid; uidInfo = $guid } | ConvertTo-Json -Compress
+        $body = @{ updateIDs = "[$post]" }
+        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body |
+        Select-Object -ExpandProperty Content |
+        Select-String -AllMatches -Pattern "http[s]?://[^']*\.microsoft\.com/[^']*|http[s]?://[^']*\.windowsupdate\.com/[^']*" |
+        Select-Object -Unique
+
+        foreach ($link in $links) {
+            $link.matches.value
+            #Filter out cab files
+            # #if ($link -notmatch '\.cab') {
+            #     $link.matches.value
+            # }
+                    
+        }
+    }
+}
+function Get-LatestWindowsKB {
+    param (
+        [ValidateSet(10, 11)]
+        [int]$WindowsRelease
+    )
+        
+    # Define the URL of the update history page based on the Windows release
+    if ($WindowsRelease -eq 11) {
+        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information'
+    }
+    else {
+        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/release-information'
+    }
+        
+    # Use Invoke-WebRequest to fetch the content of the page
+    $response = Invoke-WebRequest -Uri $updateHistoryUrl
+        
+    # Use a regular expression to find the KB article number
+    $kbArticleRegex = 'KB\d+'
+    $kbArticle = [regex]::Match($response.Content, $kbArticleRegex).Value
+        
+    return $kbArticle
+}
+
+function Save-KB {
+    [CmdletBinding()]
+    param(
+        [string[]]$Name,
+        [string]$Path
+    )
+
+    if ($WindowsArch -eq 'x64') {
+        [array]$WindowsArch = @("x64", "amd64")
+    }
+        
+    foreach ($kb in $name) {
+        $links = Get-KBLink -Name $kb
+        foreach ($link in $links) {
+            #Check if $WindowsArch is an array
+            if ($WindowsArch -is [array]) { 
+                #Some file names include either x64 or amd64
+                if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
+                    Start-BitsTransfer -Source $link -Destination $Path
+                    $fileName = ($link -split '/')[-1]
+                    break
+                }
+                elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+                    Write-Host "No architecture found in $link, assume it's for all architectures"
+                    Start-BitsTransfer -Source $link -Destination $Path
+                    $fileName = ($link -split '/')[-1]
+                    break
+                }
+            }
+            else {
+                if ($link -match $WindowsArch) {
+                    Start-BitsTransfer -Source $link -Destination $Path
+                    $fileName = ($link -split '/')[-1]
+                    break
+                }
+            }                
+        }
+    }
+    return $fileName
+}
 
 function New-AppsISO {
     #Create Apps ISO file
@@ -515,8 +637,7 @@ function New-AppsISO {
         WriteLog 'Cleaning up Office and ODT download'
         Remove-Item -Path $OfficeDownloadPath -Recurse -Force
         Remove-Item -Path "$ODTPath\setup.exe"
-    }
-    
+    }    
 }
 function Get-WimFromISO {
     #Mount ISO, get Wim file
@@ -1082,11 +1203,12 @@ function Remove-FFUVM {
         WriteLog 'Cleaning up VM'
         $certPath = 'Cert:\LocalMachine\Shielded VM Local Certificates\'
         $VMName = $FFUVM.Name
+        $Path = $FFUVM.Path
         WriteLog "Removing VM: $VMName"
         Remove-VM -Name $VMName -Force
         WriteLog 'Removal complete'
-        WriteLog "Removing $VMPath"
-        Remove-Item -Path $VMPath -Force -Recurse
+        WriteLog "Removing $Path"
+        Remove-Item -Path $Path -Force -Recurse
         WriteLog 'Removal complete'
         WriteLog "Removing HGSGuardian for $VMName" 
         Remove-HgsGuardian -Name $VMName -WarningAction SilentlyContinue
@@ -1197,7 +1319,8 @@ Function Get-USBDrive{
     WriteLog "Found $USBDrivesCount USB drives"
 
     if ($null -eq $USBDrives) {
-        WriteLog "No removable USB drive found."
+        WriteLog "No removable USB drive found. Exiting"
+        Write-Error "No removable USB drive found. Exiting"
         exit 1
     }
     return $USBDrives, $USBDrivesCount
@@ -1389,6 +1512,38 @@ function Get-FFUEnvironment {
         Invoke-Process reg "unload HKLM\FFU"
     }
 
+    #Remove FFU User and Share
+    $UserExists = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
+    if ($UserExists) {
+        WriteLog "Removing FFU User and Share"
+        Remove-FFUUserShare
+        WriteLog 'Removal complete'
+    }
+    #Clean up $KBPath
+    If (Test-Path -Path $KBPath) {
+        WriteLog "Removing $KBPath"
+        Remove-Item -Path $KBPath -Recurse -Force
+        WriteLog 'Removal complete'
+    }
+    #Clean up $DefenderPath
+    If (Test-Path -Path $DefenderPath) {
+        WriteLog "Removing $DefenderPath"
+        Remove-Item -Path $DefenderPath -Recurse -Force
+        WriteLog 'Removal complete'
+    }
+    #Clean up $OneDrivePath
+    If (Test-Path -Path $OneDrivePath) {
+        WriteLog "Removing $OneDrivePath"
+        Remove-Item -Path $OneDrivePath -Recurse -Force
+        WriteLog 'Removal complete'
+    }
+    #Clean up $EdgePath
+    If (Test-Path -Path $EdgePath) {
+        WriteLog "Removing $EdgePath"
+        Remove-Item -Path $EdgePath -Recurse -Force
+        WriteLog 'Removal complete'
+    }    
+
     Writelog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
@@ -1398,6 +1553,36 @@ function Remove-FFU{
     WriteLog "Removing all FFU files in $FFUCaptureLocation"
     Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
     WriteLog "Removal complete"
+}
+function Clear-InstallAppsandSysprep {
+    if ($UpdateLatestDefender) {
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\Defender*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Remove $DefenderPath
+        WriteLog "Removing $DefenderPath"
+        Remove-Item -Path $DefenderPath -Recurse -Force
+        WriteLog "Removal complete"
+
+    }
+    if ($UpdateOneDrive){
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Remove $OneDrivePath
+        WriteLog "Removing $OneDrivePath"
+        Remove-Item -Path $OneDrivePath -Recurse -Force
+        WriteLog "Removal complete"  
+    }
+    if($UpdateEdge){
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Edge install"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Remove $EdgePath
+        WriteLog "Removing $EdgePath"
+        Remove-Item -Path $EdgePath -Recurse -Force
+        WriteLog "Removal complete"
+    }
 }
 
 ###END FUNCTIONS
@@ -1460,7 +1645,9 @@ catch {
 #Check if environment is dirty
 If(Test-Path -Path "$FFUDevelopmentPath\dirty.txt"){
     Get-FFUEnvironment
-} 
+}
+WriteLog 'Creating dirty.txt file'
+New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
 #Create apps ISO for Office and/or 3rd party apps
 if ($InstallApps) {
@@ -1476,8 +1663,8 @@ if ($InstallApps) {
         
         if (-not $InstallOffice) {
             #Modify InstallAppsandSysprep.cmd to REM out the office install command
-            $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $cmdContent -replace '^(d:\\Office\\setup.exe /configure d:\\office\\DeployFFU.xml)', ("REM d:\Office\setup.exe /configure d:\office\DeployFFU.xml")
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(d:\\Office\\setup.exe /configure d:\\office\\DeployFFU.xml)', ("REM d:\Office\setup.exe /configure d:\office\DeployFFU.xml")
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
         }
         
@@ -1486,7 +1673,119 @@ if ($InstallApps) {
             Get-Office
             WriteLog 'Downloading M365 Apps/Office completed successfully'
         }
-        
+
+        #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
+        if ($UpdateLatestDefender) {
+            WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Definitions"
+            $Name = 'Update for Microsoft Defender Antivirus antimalware platform'
+            #Check if $DefenderPath exists, if not, create it
+            If (-not (Test-Path -Path $DefenderPath)) {
+                WriteLog "Creating $DefenderPath"
+                New-Item -Path $DefenderPath -ItemType Directory -Force | Out-Null
+            }
+            WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
+            $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
+            WriteLog "Latest Defender Platform and Definitions saved to $DefenderPath$KBFilePath"
+            #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Defender Update Platform
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Platform Update"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Defender Platform Update)', ("REM Install Defender Platform Update`r`nd:\Defender\$KBFilePath")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+
+            #Get Windows Security platform update
+            $Name = "Windows Security platform definition updates"
+            WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
+            $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
+            WriteLog "Latest Security Platform Update saved to $DefenderPath$KBFilePath"
+            #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Security Platform Update)', ("REM Install Windows Security Platform Update`r`nd:\Defender\$KBFilePath")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+
+            #Download latest Defender Definitions
+            WriteLog "Downloading latest Defender Definitions"
+            # Defender def updates can be found https://www.microsoft.com/en-us/wdsi/defenderupdates
+            if ($WindowsArch -eq 'x64'){
+                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=x64'
+            }
+            if ($WindowsArch -eq 'ARM64'){
+                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm'
+            }
+            try {
+                Start-BitsTransfer -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
+                WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
+            }
+            catch {
+                Write-Host "Downloading Defender Definitions Failed"
+                WriteLog "Downloading Defender Definitions Failed with error $_"
+                throw $_
+            }
+
+            #Modify InstallAppsandSysprep.cmd to add in $DefenderPath on the line after REM Install Defender Definitions
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Definitions"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Defender Definitions)', ("REM Install Defender Definitions`r`nd:\Defender\mpam-fe.exe")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+        }
+        #Download and Install OneDrive Per Machine
+        if($UpdateOneDrive){
+            #Check if $OneDrivePath exists, if not, create it
+            If (-not (Test-Path -Path $OneDrivePath)) {
+                WriteLog "Creating $OneDrivePath"
+                New-Item -Path $OneDrivePath -ItemType Directory -Force | Out-Null
+            }
+            WriteLog "Downloading latest OneDrive client"
+            $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
+            try {
+                Start-BitsTransfer -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
+                WriteLog "Defender Definitions downloaded to $OneDrivePath\OneDriveSetup.exe"
+            }
+            catch {
+                Write-Host "Downloading OneDrive client Failed"
+                WriteLog "Downloading OneDrive client Failed with error $_"
+                throw $_
+            }
+
+            #Modify InstallAppsandSysprep.cmd to add in $OneDrivePath on the line after REM Install Defender Definitions
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include OneDrive client"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install OneDrive Per Machine)', ("REM Install OneDrive Per Machine`r`nd:\OneDrive\OneDriveSetup.exe /allusers")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+        }
+
+        #Download and Install Edge Stable
+        if ($UpdateEdge) {
+            WriteLog "`$UpdateEdge is set to true, checking for latest Edge Stable $WindowsArch release"
+            $Name = "microsoft edge stable -extended $WindowsArch"
+            #Check if $EdgePath exists, if not, create it
+            If (-not (Test-Path -Path $EdgePath)) {
+                WriteLog "Creating $EdgePath"
+                New-Item -Path $EdgePath -ItemType Directory -Force | Out-Null
+            }
+            WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $EdgePath"
+            $KBFilePath = Save-KB -Name $Name -Path $EdgePath
+            $EdgeCABFilePath = "$EdgePath\$KBFilePath"
+            WriteLog "Latest Edge Stable $WindowsArch release saved to $EdgeCABFilePath"
+            
+            #Extract Edge cab file to same folder as $EdgeFilePath
+            $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
+            $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
+            WriteLog "Extracting $EdgeCABFilePath"
+            Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath"
+            WriteLog "Extraction complete"
+
+            #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Edge Stable
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Edge Stable $WindowsArch release"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Edge Stable)', ("REM Install Edge Stable`r`nd:\Edge\$EdgeMSIFileName /quiet /norestart")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+        }
         #Create Apps ISO
         WriteLog "Creating $AppsISO file"
         New-AppsISO
@@ -1501,8 +1800,6 @@ if ($InstallApps) {
 
 #Create VHDX
 try {
-    #Create dirty.txt file to track if environment is dirty or clean
-    New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
     if ($ISOPath) {
         $wimPath = Get-WimFromISO
@@ -1531,6 +1828,67 @@ try {
     WriteLog "All necessary partitions created."
 
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
+
+    #Update latest Cumulative Update
+    If ($UpdateLatestCU){
+        WriteLog "`$UpdateLatestCU is set to true, checking for latest CU"
+        $LatestKB = Get-LatestWindowsKB -WindowsRelease $WindowsRelease
+        WriteLog "Latest KB for Windows $WindowsRelease found: $LatestKB"
+        $Name = $LatestKB + " " + $WindowsVersion
+        #Check if $KBPath exists, if not, create it
+        If (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"
+            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "$LatestKB saved to $KBPath$KBFilePath"  
+    }
+
+    #Update Latest .NET Framework
+    if ($UpdateLatestNet){
+        Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
+        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $Architecture"
+        #Check if $KBPath exists, if not, create it
+        If (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"
+            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "Latest .NET saved to $KBPath$KBFilePath"
+    }
+    #Update Latest Security Platform Update
+    if($UpdateSecurityPlatform){
+        WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
+        $Name = "Windows Security platform definition updates"
+        #Check if $KBPath exists, if not, create it
+        If (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"
+            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "Latest Security Platform Update saved to $KBPath$KBFilePath"
+    }
+    
+    
+    #Add Windows packages
+    if ($UpdateLatestCU -or $UpdateLatestNet){
+        try {
+            WriteLog "Adding KBs to $WindowsPartition"
+            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+            WriteLog "KBs added to $WindowsPartition"
+            WriteLog "Removing $KBPath"
+            Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+        }
+        catch {
+            Write-Host "Adding KB to VHDX failed with error $_"
+            WriteLog "Adding KB to VHDX failed with error $_"
+            throw $_
+        }  
+    }
+
 
     #Enable Windows Optional Features (e.g. .Net3, etc)
     If ($OptionalFeatures) {
@@ -1683,6 +2041,17 @@ try {
 catch {
     Write-Host 'VM or vhdx cleanup failed'
     Writelog "VM or vhdx cleanup failed with error $_"
+    throw $_
+}
+
+#Clean up InstallAppsandSysprep.cmd
+try {
+    WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
+    Clear-InstallAppsandSysprep
+}
+catch {
+    Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
+    Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
     throw $_
 }
 #Create Deployment Media
