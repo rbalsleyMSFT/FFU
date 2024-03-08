@@ -212,6 +212,7 @@ param(
             return $true
         })]
     [bool]$CopyDrivers,
+    [bool]$CopyPEDrivers,
     [bool]$RemoveFFU,
     [bool]$UpdateLatestCU,
     [bool]$UpdateLatestNet,
@@ -221,7 +222,7 @@ param(
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
     [bool]$CopyAutopilot,
-    [boop]$CompactOS = $true
+    [bool]$CompactOS = $true
 )
 $version = '2402.1'
 
@@ -828,11 +829,11 @@ function New-OSPartition {
     if ((Get-CimInstance Win32_OperatingSystem).Caption -match "Server") {
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
-    if($CompactOS) {
+    if ($CompactOS) {
         WriteLog '$CompactOS is set to true, using -Compact switch to apply the WIM file to the OS partition.'
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\" -Compact)
     }
-    else{
+    else {
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
     
@@ -1078,8 +1079,17 @@ function New-PEMedia {
         WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
         Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
         WriteLog 'Copy complete'
-        # If you need to add drivers (storage/keyboard most likely), remove the '#' from the below line and change the /Driver:Path to a folder of drivers
-        # & dism /image:$WinPEFFUPath\mount /Add-Driver /Driver:<Path to Drivers folder e.g c:\drivers> /Recurse
+        #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
+        if ($CopyPEDrivers) {
+            WriteLog "Adding drivers to WinPE media"
+            try {
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\PEDrivers" -Recurse -ErrorAction SilentlyContinue | Out-null
+            }
+            catch {
+                WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+            }
+            WriteLog "Adding drivers complete"
+        }
         $WinPEISOName = 'WinPE_FFU_Deploy.iso'
         $Deploy = $false
     }
@@ -1185,7 +1195,7 @@ function New-FFU {
         WriteLog 'Folder removed'
     }
     #Optimize FFU
-    if($Optimize -eq $true){
+    if ($Optimize -eq $true) {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
         #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
         Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
@@ -1311,7 +1321,7 @@ Function Get-WindowsVersionInfo {
         SKU            = $SKU
     }
 }
-Function Get-USBDrive{
+Function Get-USBDrive {
     $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
     If ($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
@@ -1526,7 +1536,7 @@ function Get-FFUEnvironment {
     WriteLog 'Complete'
 
     #Clean up registry
-    if (Test-Path -Path 'HKLM:\FFU'){
+    if (Test-Path -Path 'HKLM:\FFU') {
         Writelog 'Found HKLM:\FFU, removing it'
         Invoke-Process reg "unload HKLM\FFU"
     }
@@ -1567,7 +1577,7 @@ function Get-FFUEnvironment {
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
 }
-function Remove-FFU{
+function Remove-FFU {
     #Remove all FFU files in the FFUCaptureLocation
     WriteLog "Removing all FFU files in $FFUCaptureLocation"
     Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
@@ -1584,7 +1594,7 @@ function Clear-InstallAppsandSysprep {
         WriteLog "Removal complete"
 
     }
-    if ($UpdateOneDrive){
+    if ($UpdateOneDrive) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -1593,7 +1603,7 @@ function Clear-InstallAppsandSysprep {
         Remove-Item -Path $OneDrivePath -Recurse -Force
         WriteLog "Removal complete"  
     }
-    if($UpdateEdge){
+    if ($UpdateEdge) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Edge install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -1637,7 +1647,7 @@ if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
     throw "netfx3 specified as an optional feature, however Windows ISO isn't defined. Unable to get netfx3 source files from downloaded ESD media. Please specify a Windows ISO in the ISOPath parameter."
 }
-if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)){
+if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
     $installdrivers = $false
     WriteLog 'LogicalSectorSizeBytes is set to 4096, which is not supported for driver injection. Setting $installdrivers to $false'
     WriteLog 'As a workaround, set -copydrivers $true to copy drivers to the deploy partition drivers folder'
@@ -1662,7 +1672,7 @@ catch {
 }
 
 #Check if environment is dirty
-If(Test-Path -Path "$FFUDevelopmentPath\dirty.txt"){
+If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
     Get-FFUEnvironment
 }
 WriteLog 'Creating dirty.txt file'
@@ -1727,10 +1737,10 @@ if ($InstallApps) {
             #Download latest Defender Definitions
             WriteLog "Downloading latest Defender Definitions"
             # Defender def updates can be found https://www.microsoft.com/en-us/wdsi/defenderupdates
-            if ($WindowsArch -eq 'x64'){
+            if ($WindowsArch -eq 'x64') {
                 $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=x64'
             }
-            if ($WindowsArch -eq 'ARM64'){
+            if ($WindowsArch -eq 'ARM64') {
                 $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm'
             }
             try {
@@ -1751,7 +1761,7 @@ if ($InstallApps) {
             WriteLog "Update complete"
         }
         #Download and Install OneDrive Per Machine
-        if($UpdateOneDrive){
+        if ($UpdateOneDrive) {
             #Check if $OneDrivePath exists, if not, create it
             If (-not (Test-Path -Path $OneDrivePath)) {
                 WriteLog "Creating $OneDrivePath"
@@ -1849,7 +1859,7 @@ try {
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
 
     #Update latest Cumulative Update
-    If ($UpdateLatestCU){
+    If ($UpdateLatestCU) {
         WriteLog "`$UpdateLatestCU is set to true, checking for latest CU"
         $LatestKB = Get-LatestWindowsKB -WindowsRelease $WindowsRelease
         WriteLog "Latest KB for Windows $WindowsRelease found: $LatestKB"
@@ -1865,7 +1875,7 @@ try {
     }
 
     #Update Latest .NET Framework
-    if ($UpdateLatestNet){
+    if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
         $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $Architecture"
         #Check if $KBPath exists, if not, create it
@@ -1878,7 +1888,7 @@ try {
         WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
     }
     #Update Latest Security Platform Update
-    if($UpdateSecurityPlatform){
+    if ($UpdateSecurityPlatform) {
         WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
         $Name = "Windows Security platform definition updates"
         #Check if $KBPath exists, if not, create it
@@ -1893,7 +1903,7 @@ try {
     
     
     #Add Windows packages
-    if ($UpdateLatestCU -or $UpdateLatestNet){
+    if ($UpdateLatestCU -or $UpdateLatestNet) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
             Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
@@ -2101,7 +2111,7 @@ If ($BuildUSBDrive) {
         throw $_
     }
 }
-If ($RemoveFFU){
+If ($RemoveFFU) {
     try {
         Remove-FFU
     }
