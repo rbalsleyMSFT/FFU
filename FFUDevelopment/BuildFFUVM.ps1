@@ -218,10 +218,10 @@ param(
     [bool]$UpdateLatestDefender,
     [bool]$UpdateEdge,
     [bool]$UpdateOneDrive,
-    #Will be used in future release
     [bool]$CopyPPKG,
-    [bool]$CopyUnattend
-
+    [bool]$CopyUnattend,
+    [bool]$CopyAutopilot,
+    [boop]$CompactOS = $true
 )
 $version = '2402.1'
 
@@ -557,7 +557,7 @@ function Get-KBLink {
             # }
                     
         }
-    }
+    }  
 }
 function Get-LatestWindowsKB {
     param (
@@ -828,8 +828,12 @@ function New-OSPartition {
     if ((Get-CimInstance Win32_OperatingSystem).Caption -match "Server") {
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
-    else {
+    if($CompactOS) {
+        WriteLog '$CompactOS is set to true, using -Compact switch to apply the WIM file to the OS partition.'
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\" -Compact)
+    }
+    else{
+        WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
     
     WriteLog 'Done'    
@@ -1203,12 +1207,11 @@ function Remove-FFUVM {
         WriteLog 'Cleaning up VM'
         $certPath = 'Cert:\LocalMachine\Shielded VM Local Certificates\'
         $VMName = $FFUVM.Name
-        $Path = $FFUVM.Path
         WriteLog "Removing VM: $VMName"
         Remove-VM -Name $VMName -Force
         WriteLog 'Removal complete'
-        WriteLog "Removing $Path"
-        Remove-Item -Path $Path -Force -Recurse
+        WriteLog "Removing $VMPath"
+        Remove-Item -Path $VMPath -Force -Recurse
         WriteLog 'Removal complete'
         WriteLog "Removing HGSGuardian for $VMName" 
         Remove-HgsGuardian -Name $VMName -WarningAction SilentlyContinue
@@ -1406,9 +1409,25 @@ Function New-DeploymentUSB {
                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
                     robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                 }
-                if ($CopyDrivers -eq $true) {
+                #Copy drivers using robocopy due to potential size
+                if ($CopyDrivers) {
                     WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
                     robocopy "$FFUDevelopmentPath\Drivers" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+                }
+                #Copy Unattend folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+                if ($CopyUnattend) {
+                    WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
+                    Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
+                }  
+                #Copy PPKG folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+                if ($CopyPPKG) {
+                    WriteLog "Copying PPKG folder to $DeployPartitionDriveLetter"
+                    Copy-Item -Path "$FFUDevelopmentPath\PPKG" -Destination $DeployPartitionDriveLetter -Recurse -Force
+                }
+                #Copy Autopilot folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+                if ($CopyAutopilot) {
+                    WriteLog "Copying Autopilot folder to $DeployPartitionDriveLetter"
+                    Copy-Item -Path "$FFUDevelopmentPath\Autopilot" -Destination $DeployPartitionDriveLetter -Recurse -Force
                 }
             }
             else {
@@ -1685,7 +1704,7 @@ if ($InstallApps) {
             }
             WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
             $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
-            WriteLog "Latest Defender Platform and Definitions saved to $DefenderPath$KBFilePath"
+            WriteLog "Latest Defender Platform and Definitions saved to $DefenderPath\$KBFilePath"
             #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Defender Update Platform
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Platform Update"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -1697,7 +1716,7 @@ if ($InstallApps) {
             $Name = "Windows Security platform definition updates"
             WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
             $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
-            WriteLog "Latest Security Platform Update saved to $DefenderPath$KBFilePath"
+            WriteLog "Latest Security Platform Update saved to $DefenderPath\$KBFilePath"
             #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -1842,7 +1861,7 @@ try {
         }
         WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "$LatestKB saved to $KBPath$KBFilePath"  
+        WriteLog "$LatestKB saved to $KBPath\$KBFilePath"  
     }
 
     #Update Latest .NET Framework
@@ -1856,7 +1875,7 @@ try {
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest .NET saved to $KBPath$KBFilePath"
+        WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
     }
     #Update Latest Security Platform Update
     if($UpdateSecurityPlatform){
@@ -1869,7 +1888,7 @@ try {
         }
         WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest Security Platform Update saved to $KBPath$KBFilePath"
+        WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
     }
     
     
