@@ -1,3 +1,4 @@
+
 #Requires -Modules Hyper-V, Storage
 #Requires -PSEdition Desktop
 #Requires -RunAsAdministrator
@@ -75,6 +76,9 @@ When set to $true, will partition and format a USB drive and copy the captured F
 .PARAMETER WindowsRelease
 Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
 
+.PARAMETER WindowsVersion
+String value of the Windows version to download. This is used to identify which version of Windows to download. Default is 23h2.
+
 .PARAMETER WindowsArch
 String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.
 
@@ -86,6 +90,54 @@ String value of either business or consumer. This is used to identify which medi
 
 .PARAMETER LogicalSectorBytes
 unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512.
+
+.PARAMETER Optimize
+When set to $true, will optimize the FFU file. Default is $true.
+
+.PARAMETER CopyDrivers
+When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the FFU. Default is $false.
+
+.PARAMETER CopyPEDrivers
+When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false.
+
+.PARAMETER RemoveFFU
+When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false.
+
+.PARAMETER UpdateLatestCU
+When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false.
+
+.PARAMETER UpdateLatestNet
+When set to $true, will download and install the latest .NET Framework for Windows 10/11. Default is $false.
+
+.PARAMETER UpdateLatestDefender
+When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false.
+
+.PARAMETER UpdateEdge
+When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false.
+
+.PARAMETER UpdateOneDrive
+When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per machine installation instead of per user. Default is $false.
+
+.PARAMETER CopyPPKG
+When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
+
+.PARAMETER CopyUnattend
+When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
+
+.PARAMETER CopyAutopilot
+When set to $true, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is $false.
+
+.PARAMETER CompactOS
+When set to $true, will compact the OS when building the FFU. Default is $true.
+
+.PARAMETER CleanupCaptureISO
+When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true.
+
+.PARAMETER CleanupDeployISO
+When set to $true, will remove the WinPE deployment ISO after the FFU has been captured. Default is $true.
+
+.PARAMETER CleanupAppsISO
+When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
 .EXAMPLE
 Command line for most people who want to create an FFU with Office and drivers and have downloaded their own ISO. This assumes you have copied this script and associated files to the C:\FFUDevelopment folder. If you need to use another drive or folder, change the -FFUDevelopment parameter (e.g. -FFUDevelopment 'D:\FFUDevelopment')
@@ -103,8 +155,8 @@ Command line for those who want to download the latest Windows 11 Pro x64 media 
 Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
 
-Command line with all parameters for reference
-.\BuildFFUVM.ps1 -ISOPath "C:\path_to_iso\Windows.iso" -WindowsSKU "Pro" -FFUDevelopmentPath "C:\FFUDevelopment" -InstallApps $true -InstallOffice $true -InstallDrivers $true -Memory 8GB -Disksize 30GB -Processors 4 -VMSwitchName "Your VM Switch Name" -VMLocation "C:\VMs" -FFUPrefix "_FFU" -FFUCaptureLocation "C:\FFUDevelopment\FFU" -ShareName "FFUCaptureShare" -Username "ffu_user" -VMHostIPAddress "Your IP Address" -CreateCaptureMedia $true -CreateDeploymentMedia $false -OptionalFeatures "NetFx3;TFTP" -ProductKey "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'en-us' -MediaType 'consumer' -verbose"
+Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 .NOTES
     Additional notes about your script.
@@ -112,6 +164,7 @@ Command line with all parameters for reference
 .LINK
     https://github.com/rbalsleyMSFT/FFU
 #>
+
 
 [CmdletBinding()]
 param(
@@ -222,7 +275,10 @@ param(
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
     [bool]$CopyAutopilot,
-    [bool]$CompactOS = $true
+    [bool]$CompactOS = $true,
+    [bool]$CleanupCaptureISO = $true,
+    [bool]$CleanupDeployISO = $true,
+    [bool]$CleanupAppsISO = $true
 )
 $version = '2402.1'
 
@@ -248,6 +304,8 @@ else {
 # Set default values for variables that depend on other parameters
 if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps.iso" }
 if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
+if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy.iso" }
+if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture.iso" }
 if (-not $OfficePath) { $OfficePath = "$AppsPath\Office" }
 if (-not $rand) { $rand = Get-Random }
 if (-not $VMLocation) { $VMLocation = "$FFUDevelopmentPath\VM" }
@@ -1115,13 +1173,10 @@ function New-FFU {
     #If $InstallApps = $true, configure the VM
     If ($InstallApps) {
         WriteLog 'Creating FFU from VM'
-        #Mount the Capture ISO to the VM
-        $CaptureISOPath = "$FFUDevelopmentPath\WinPE_FFU_Capture.iso"
-
-        WriteLog "Setting $CaptureISOPath as first boot device"
+        WriteLog "Setting $CaptureISO as first boot device"
         $VMDVDDrive = Get-VMDvdDrive -VMName $VMName
         Set-VMFirmware -VMName $VMName -FirstBootDevice $VMDVDDrive
-        Set-VMDvdDrive -VMName $VMName -Path $CaptureISOPath
+        Set-VMDvdDrive -VMName $VMName -Path $CaptureISO
         $VMSwitch = Get-VMSwitch -name $VMSwitchName
         WriteLog "Setting $($VMSwitch.Name) as VMSwitch"
         get-vm $VMName | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $VMSwitch.Name
@@ -1401,10 +1456,10 @@ Function New-DeploymentUSB {
         WriteLog 'Done'
 
         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
-        $ISOMountPoint = (Mount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" -PassThru | Get-Volume).DriveLetter + ":\"
+        $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
-        Dismount-DiskImage -ImagePath "$BuildUSBPath\WinPE_FFU_Deploy.iso" | Out-Null
+        Dismount-DiskImage -ImagePath $DeployISO | Out-Null
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
@@ -2097,11 +2152,11 @@ If ($CreateDeploymentMedia) {
 }
 If ($BuildUSBDrive) {
     try {
-        If (Test-Path -Path "$FFUDevelopmentPath\WinPE_FFU_Deploy.iso") {
+        If (Test-Path -Path $DeployISO) {
             New-DeploymentUSB -CopyFFU
         }
         else {
-            WriteLog "$BuildUSBDrive set to true, however unable to find WinPE_FFU_Deploy.iso. USB drive not built."
+            WriteLog "$BuildUSBDrive set to true, however unable to find $DeployISO. USB drive not built."
         }
         
     }
@@ -2121,6 +2176,45 @@ If ($RemoveFFU) {
         throw $_
     }
    
+}
+If ($CleanupCaptureISO) {
+    try {
+        If (Test-Path -Path $CaptureISO) {
+            WriteLog "Removing $CaptureISO"
+            Remove-Item -Path $CaptureISO -Force
+            WriteLog "Removal complete"
+        }     
+    }
+    catch {
+        Writelog "Removing $CaptureISO failed with error $_"
+        throw $_
+    }
+}
+If ($CleanupDeployISO) {
+    try {
+        If (Test-Path -Path $DeployISO) {
+            WriteLog "Removing $DeployISO"
+            Remove-Item -Path $DeployISO -Force
+            WriteLog "Removal complete"
+        }     
+    }
+    catch {
+        Writelog "Removing $DeployISO failed with error $_"
+        throw $_
+    }
+}
+If ($CleanupAppsISO) {
+    try {
+        If (Test-Path -Path $AppsISO) {
+            WriteLog "Removing $AppsISO"
+            Remove-Item -Path $AppsISO -Force
+            WriteLog "Removal complete"
+        }     
+    }
+    catch {
+        Writelog "Removing $AppsISO failed with error $_"
+        throw $_
+    }
 }
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
