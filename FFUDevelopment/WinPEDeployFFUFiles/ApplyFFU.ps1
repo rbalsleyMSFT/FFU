@@ -383,7 +383,7 @@ $Drivers = $USBDrive + "Drivers"
 If (Test-Path -Path $Drivers)
 {
     #Check if multiple driver folders found, if so, just select one folder to save time/space
-    $DriverFolders = Get-ChildItem -Path $Drivers
+    $DriverFolders = Get-ChildItem -Path $Drivers -directory
     $DriverFoldersCount = $DriverFolders.count
     If ($DriverFoldersCount -gt 1)
     {
