@@ -95,7 +95,7 @@ unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful
 When set to $true, will optimize the FFU file. Default is $true.
 
 .PARAMETER CopyDrivers
-When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the FFU. Default is $false.
+When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false.
 
 .PARAMETER CopyPEDrivers
 When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false.
