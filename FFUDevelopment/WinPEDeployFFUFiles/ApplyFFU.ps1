@@ -117,7 +117,7 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2401.1'
+$version = '2402.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
@@ -383,7 +383,7 @@ $Drivers = $USBDrive + "Drivers"
 If (Test-Path -Path $Drivers)
 {
     #Check if multiple driver folders found, if so, just select one folder to save time/space
-    $DriverFolders = Get-ChildItem -Path $Drivers
+    $DriverFolders = Get-ChildItem -Path $Drivers -directory
     $DriverFoldersCount = $DriverFolders.count
     If ($DriverFoldersCount -gt 1)
     {
