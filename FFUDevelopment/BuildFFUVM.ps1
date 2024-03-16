@@ -438,7 +438,7 @@ function Invoke-Process {
 }
 function Get-ADKURL {
     param (
-        [ValidateSet("Windows ADK", "WinPE Add-on")]
+        [ValidateSet("Windows ADK", "WinPE add-on")]
         [string]$ADKOption
     )
 
@@ -448,7 +448,7 @@ function Get-ADKURL {
     # Define specific URL patterns based on ADK options
     $ADKUrlPattern = @{
         "Windows ADK" = $basePattern + "Windows ADK"
-        "WinPE Add-on" = $basePattern + "Windows PE add-on for the Windows ADK"
+        "WinPE add-on" = $basePattern + "Windows PE add-on for the Windows ADK"
     }[$ADKOption]
 
     try {
@@ -491,7 +491,7 @@ function Get-ADKURL {
 }
 function Install-ADK {
     param (
-        [ValidateSet("Windows ADK", "WinPE Add-on")]
+        [ValidateSet("Windows ADK", "WinPE add-on")]
         [string]$ADKOption
     )
 
@@ -504,12 +504,12 @@ function Install-ADK {
 
         $installer = @{
             "Windows ADK" = "adksetup.exe"
-            "WinPE Add-on" = "adkwinpesetup.exe"
+            "WinPE add-on" = "adkwinpesetup.exe"
         }[$ADKOption]
 
         $feature = @{
             "Windows ADK" = "OptionId.DeploymentTools"
-            "WinPE Add-on" = "OptionId.WindowsPreinstallationEnvironment"
+            "WinPE add-on" = "OptionId.WindowsPreinstallationEnvironment"
         }[$ADKOption]
 
         $installerLocation = Join-Path $env:TEMP $installer
@@ -551,8 +551,8 @@ Function Get-ADK {
     else {
         WriteLog "ADK is not installed. Installing ADK now..."
         Install-ADK -ADKOption "Windows ADK"
-        WriteLog "Installing WinPE Add-on for Windows ADK..."
-        Install-ADK -ADKOption "WinPE Add-on"
+        WriteLog "Installing WinPE add-on for Windows ADK..."
+        Install-ADK -ADKOption "WinPE add-on"
         # throw "Windows ADK is not installed or the installation path could not be found."
     }
 }
