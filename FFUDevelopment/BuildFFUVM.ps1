@@ -472,7 +472,7 @@ function Get-ADKURL {
     }
     catch {
         WriteLog $_
-        Write-Host "Error occurred while retrieving ADK download URL"
+        Write-Error "Error occurred while retrieving ADK download URL"
         throw $_
     }
 }
@@ -484,8 +484,9 @@ function Install-ADK {
 
     try {
         $ADKUrl = Get-ADKURL -ADKOption $ADKOption
+        
         if ($null -eq $ADKUrl) {
-            return
+            throw "Failed to retrieve URL for $ADKOption. Please manually install it."
         }
 
         $installer = @{
@@ -498,24 +499,24 @@ function Install-ADK {
             "WinPE Add-on" = "OptionId.WindowsPreinstallationEnvironment"
         }[$ADKOption]
 
-        $ADKInstallFile = Join-Path $env:TEMP $installer
+        $installerLocation = Join-Path $env:TEMP $installer
 
-        WriteLog "Downloading $ADKOption from $ADKUrl to $ADKInstallFile"
-        Start-BitsTransfer -Source $ADKUrl -Destination $ADKInstallFile -ErrorAction Stop
-        WriteLog "$ADKOption downloaded to $ADKInstallFile"
+        WriteLog "Downloading $ADKOption from $ADKUrl to $installerLocation"
+        Start-BitsTransfer -Source $ADKUrl -Destination $installerLocation -ErrorAction Stop
+        WriteLog "$ADKOption downloaded to $installerLocation"
         
-        WriteLog "Installing $ADKOption with the $feature enabled"
-        Invoke-Process $ADKInstallFile "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature"
+        WriteLog "Installing $ADKOption with $feature enabled"
+        Invoke-Process $installerLocation "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature"
         
         WriteLog "$ADKOption installation completed."
+        WriteLog "Removing $installer from $installerLocation"
         # Clean up downloaded installation file
-        Remove-Item -Path $ADKInstallFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $installerLocation -Force -ErrorAction SilentlyContinue
     }
     catch {
-        Write-Error "Error occurred while installing $ADKOption : $_"
-    }
-    finally {
-        Get-ADK
+        WriteLog $_
+        Write-Error "Error occurred while installing $ADKOption. Please manually install it."
+        throw $_
     }
 }
 Function Get-ADK {
@@ -535,7 +536,11 @@ Function Get-ADK {
         }
     }
     else {
-        throw "Windows ADK is not installed or the installation path could not be found."
+        WriteLog "ADK is not installed. Installing ADK now..."
+        Install-ADK -ADKOption "Windows ADK"
+        WriteLog "Installing WinPE Add-on for Windows ADK..."
+        Install-ADK -ADKOption "WinPE Add-on"
+        # throw "Windows ADK is not installed or the installation path could not be found."
     }
 }
 function Get-WindowsESD {
