@@ -553,6 +553,9 @@ Function Get-ADK {
         Install-ADK -ADKOption "Windows ADK"
         WriteLog "Installing WinPE add-on for Windows ADK..."
         Install-ADK -ADKOption "WinPE add-on"
+        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
+        WriteLog "ADK located at $adkPath"
+        return $adkPath
         # throw "Windows ADK is not installed or the installation path could not be found."
     }
 }
