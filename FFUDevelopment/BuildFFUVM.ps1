@@ -436,6 +436,88 @@ function Invoke-Process {
     }
 	
 }
+function Get-ADKURL {
+    param (
+        [ValidateSet("Windows ADK", "WinPE Add-on")]
+        [string]$ADKOption
+    )
+
+    $basePattern = '<li><a href="(https://[^"]+)" data-linktype="external">Download the '
+
+    $ADKUrlPattern = @{
+        "Windows ADK" = $basePattern + "Windows ADK"
+        "WinPE Add-on" = $basePattern + "Windows PE add-on for the Windows ADK"
+    }[$ADKOption]
+
+    try {
+        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        $ADKMatch = [regex]::Match($ADKWebPage, $ADKUrlPattern)
+
+        if (-not $ADKMatch.Success) {
+            WriteLog "Failed to retrieve ADK download URL. Pattern match failed."
+            return
+        }
+
+        $ADKFWLink = $ADKMatch.Groups[1].Value
+        $FWLinkRequest = Invoke-WebRequest -Uri $ADKFWLink -Method Head -MaximumRedirection 0 -ErrorAction SilentlyContinue
+
+        if ($FWLinkRequest.StatusCode -ne 302) {
+            WriteLog "Failed to retrieve ADK download URL. Unexpected status code: $($FWLinkRequest.StatusCode)"
+            return
+        }
+
+        # Get the ADK link redirected to by the FWlink
+        $ADKUrl = $FWLinkRequest.Headers.Location
+        return $ADKUrl
+    }
+    catch {
+        WriteLog $_
+        Write-Host "Error occurred while retrieving ADK download URL"
+        throw $_
+    }
+}
+function Install-ADK {
+    param (
+        [ValidateSet("Windows ADK", "WinPE Add-on")]
+        [string]$ADKOption
+    )
+
+    try {
+        $ADKUrl = Get-ADKURL -ADKOption $ADKOption
+        if ($null -eq $ADKUrl) {
+            return
+        }
+
+        $installer = @{
+            "Windows ADK" = "adksetup.exe"
+            "WinPE Add-on" = "adkwinpesetup.exe"
+        }[$ADKOption]
+
+        $feature = @{
+            "Windows ADK" = "OptionId.DeploymentTools"
+            "WinPE Add-on" = "OptionId.WindowsPreinstallationEnvironment"
+        }[$ADKOption]
+
+        $ADKInstallFile = Join-Path $env:TEMP $installer
+
+        WriteLog "Downloading $ADKOption from $ADKUrl to $ADKInstallFile"
+        Start-BitsTransfer -Source $ADKUrl -Destination $ADKInstallFile -ErrorAction Stop
+        WriteLog "$ADKOption downloaded to $ADKInstallFile"
+        
+        WriteLog "Installing $ADKOption with the $feature enabled"
+        Invoke-Process $ADKInstallFile "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature"
+        
+        WriteLog "$ADKOption installation completed."
+        # Clean up downloaded installation file
+        Remove-Item -Path $ADKInstallFile -Force -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-Error "Error occurred while installing $ADKOption : $_"
+    }
+    finally {
+        Get-ADK
+    }
+}
 Function Get-ADK {
     Writelog 'Get ADK Path'
     # Define the registry key and value name to query
