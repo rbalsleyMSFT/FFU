@@ -442,15 +442,20 @@ function Get-ADKURL {
         [string]$ADKOption
     )
 
+    # Define base pattern for URL scraping
     $basePattern = '<li><a href="(https://[^"]+)" data-linktype="external">Download the '
 
+    # Define specific URL patterns based on ADK options
     $ADKUrlPattern = @{
         "Windows ADK" = $basePattern + "Windows ADK"
         "WinPE Add-on" = $basePattern + "Windows PE add-on for the Windows ADK"
     }[$ADKOption]
 
     try {
+        # Retrieve content of Microsoft documentation page
         $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        
+        # Extract download URL based on specified pattern
         $ADKMatch = [regex]::Match($ADKWebPage, $ADKUrlPattern)
 
         if (-not $ADKMatch.Success) {
@@ -458,7 +463,15 @@ function Get-ADKURL {
             return
         }
 
+        # Extract FWlink from the matched pattern
         $ADKFWLink = $ADKMatch.Groups[1].Value
+
+        if ($null -eq $ADKFWLink) {
+            WriteLog "FWLink for $ADKOption not found."
+            return
+        }
+
+        # Retrieve headers of the FWlink URL
         $FWLinkRequest = Invoke-WebRequest -Uri $ADKFWLink -Method Head -MaximumRedirection 0 -ErrorAction SilentlyContinue
 
         if ($FWLinkRequest.StatusCode -ne 302) {
