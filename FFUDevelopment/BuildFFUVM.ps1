@@ -541,9 +541,8 @@ Function Get-ADK {
     # Check if the registry key exists
     if (Test-Path $adkRegKey) {
         # Get the registry value for the Windows ADK installation path
-        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
-
-        if ($adkPath) {
+        if ($null -ne (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)) {
+            $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
             WriteLog "ADK located at $adkPath"
             return $adkPath
         }
