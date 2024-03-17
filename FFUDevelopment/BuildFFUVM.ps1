@@ -538,14 +538,12 @@ Function Get-ADK {
     $adkRegKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
     $adkRegValueName = "KitsRoot10"
 
-    # Check if the registry key exists
-    if (Test-Path $adkRegKey) {
+    # Check if the registry value exists
+    if ($null -ne (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)) {
         # Get the registry value for the Windows ADK installation path
-        if ($null -ne (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)) {
-            $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
-            WriteLog "ADK located at $adkPath"
-            return $adkPath
-        }
+        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
+        WriteLog "ADK located at $adkPath"
+        return $adkPath
     }
     else {
         WriteLog "ADK is not installed. Installing ADK now..."
