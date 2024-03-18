@@ -502,11 +502,13 @@ function Install-ADK {
             throw "Failed to retrieve URL for $ADKOption. Please manually install it."
         }
 
+        # Select the installer based on the ADK option specified
         $installer = @{
             "Windows ADK" = "adksetup.exe"
             "WinPE add-on" = "adkwinpesetup.exe"
         }[$ADKOption]
 
+        # Select the feature based on the ADK option specified
         $feature = @{
             "Windows ADK" = "OptionId.DeploymentTools"
             "WinPE add-on" = "OptionId.WindowsPreinstallationEnvironment"
