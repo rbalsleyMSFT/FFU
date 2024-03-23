@@ -8,6 +8,11 @@ While we use this in Education at Microsoft, other industries can use it as well
 
 # Updates
 
+**2403.1**
+Fixed an issue with the SecurityHealthSetup.exe file giving an error when building the VM if -UpdateLatestDefender was set to $true. A new update for this came out on 3/21 which included a x64 and ARM64 binary. This file doesn't have an architecture designation to it, so it's impossible to know which file is for which architecture. Investigating to see if we can fix this in the Microsoft Update catalog. There is a web site to pull this from, but the support article is out of date.
+
+Included ADK functions from Zehadi Alam Introduce Automated ADK Retrieval and Installation Functions #14 to automate the installation of the ADK if it's not present.
+
 **2402.1**
 
 **New functionality**
