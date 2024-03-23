@@ -155,9 +155,6 @@ Command line for those who just want a FFU with Apps and drivers, no Office and 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
-Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
 Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
 
@@ -286,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2402.1'
+$version = '2403.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -436,24 +433,126 @@ function Invoke-Process {
     }
 	
 }
+function Get-ADKURL {
+    param (
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption
+    )
+
+    # Define base pattern for URL scraping
+    $basePattern = '<li><a href="(https://[^"]+)" data-linktype="external">Download the '
+
+    # Define specific URL patterns based on ADK options
+    $ADKUrlPattern = @{
+        "Windows ADK" = $basePattern + "Windows ADK"
+        "WinPE add-on" = $basePattern + "Windows PE add-on for the Windows ADK"
+    }[$ADKOption]
+
+    try {
+        # Retrieve content of Microsoft documentation page
+        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        
+        # Extract download URL based on specified pattern
+        $ADKMatch = [regex]::Match($ADKWebPage, $ADKUrlPattern)
+
+        if (-not $ADKMatch.Success) {
+            WriteLog "Failed to retrieve ADK download URL. Pattern match failed."
+            return
+        }
+
+        # Extract FWlink from the matched pattern
+        $ADKFWLink = $ADKMatch.Groups[1].Value
+
+        if ($null -eq $ADKFWLink) {
+            WriteLog "FWLink for $ADKOption not found."
+            return
+        }
+
+        # Retrieve headers of the FWlink URL
+        $FWLinkRequest = Invoke-WebRequest -Uri $ADKFWLink -Method Head -MaximumRedirection 0 -ErrorAction SilentlyContinue
+
+        if ($FWLinkRequest.StatusCode -ne 302) {
+            WriteLog "Failed to retrieve ADK download URL. Unexpected status code: $($FWLinkRequest.StatusCode)"
+            return
+        }
+
+        # Get the ADK link redirected to by the FWlink
+        $ADKUrl = $FWLinkRequest.Headers.Location
+        return $ADKUrl
+    }
+    catch {
+        WriteLog $_
+        Write-Error "Error occurred while retrieving ADK download URL"
+        throw $_
+    }
+}
+function Install-ADK {
+    param (
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption
+    )
+
+    try {
+        $ADKUrl = Get-ADKURL -ADKOption $ADKOption
+        
+        if ($null -eq $ADKUrl) {
+            throw "Failed to retrieve URL for $ADKOption. Please manually install it."
+        }
+
+        # Select the installer based on the ADK option specified
+        $installer = @{
+            "Windows ADK" = "adksetup.exe"
+            "WinPE add-on" = "adkwinpesetup.exe"
+        }[$ADKOption]
+
+        # Select the feature based on the ADK option specified
+        $feature = @{
+            "Windows ADK" = "OptionId.DeploymentTools"
+            "WinPE add-on" = "OptionId.WindowsPreinstallationEnvironment"
+        }[$ADKOption]
+
+        $installerLocation = Join-Path $env:TEMP $installer
+
+        WriteLog "Downloading $ADKOption from $ADKUrl to $installerLocation"
+        Start-BitsTransfer -Source $ADKUrl -Destination $installerLocation -ErrorAction Stop
+        WriteLog "$ADKOption downloaded to $installerLocation"
+        
+        WriteLog "Installing $ADKOption with $feature enabled"
+        Invoke-Process $installerLocation "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature"
+        
+        WriteLog "$ADKOption installation completed."
+        WriteLog "Removing $installer from $installerLocation"
+        # Clean up downloaded installation file
+        Remove-Item -Path $installerLocation -Force -ErrorAction SilentlyContinue
+    }
+    catch {
+        WriteLog $_
+        Write-Error "Error occurred while installing $ADKOption. Please manually install it."
+        throw $_
+    }
+}
 Function Get-ADK {
     Writelog 'Get ADK Path'
     # Define the registry key and value name to query
     $adkRegKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
     $adkRegValueName = "KitsRoot10"
 
-    # Check if the registry key exists
-    if (Test-Path $adkRegKey) {
+    # Check if the registry value exists
+    if ($null -ne (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)) {
         # Get the registry value for the Windows ADK installation path
         $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
-
-        if ($adkPath) {
-            WriteLog "ADK located at $adkPath"
-            return $adkPath
-        }
+        WriteLog "ADK located at $adkPath"
+        return $adkPath
     }
     else {
-        throw "Windows ADK is not installed or the installation path could not be found."
+        WriteLog "ADK is not installed. Installing ADK now..."
+        Install-ADK -ADKOption "Windows ADK"
+        WriteLog "Installing WinPE add-on for Windows ADK..."
+        Install-ADK -ADKOption "WinPE add-on"
+        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
+        WriteLog "ADK located at $adkPath"
+        return $adkPath
+        # throw "Windows ADK is not installed or the installation path could not be found."
     }
 }
 function Get-WindowsESD {
@@ -670,11 +769,40 @@ function Save-KB {
                     $fileName = ($link -split '/')[-1]
                     break
                 }
+                # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+                #     Write-Host "No architecture found in $link, assume it's for all architectures"
+                #     Start-BitsTransfer -Source $link -Destination $Path
+                #     $fileName = ($link -split '/')[-1]
+                #     break
+                # }
                 elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                    Write-Host "No architecture found in $link, assume it's for all architectures"
+                    WriteLog "No architecture found in $link, assume this is for all architectures"
+                    #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
+                    #Unfortunately there is no easy way to determine the architecture from the file name
+                    #There is a support doc that include links to download, but it's out of date (n-1)
+                    #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+                    #These files don't change that often, so will check the link above to see when it updates and may use that
+                    #For now this is hard-coded for these specific file names
+                    if ($link -match 'security'){
+                        #Make sure we're getting the correct architecture for the Security Health Setup update
+                        if ($WindowsArch -eq 'x64'){
+                            if ($link -match 'securityhealthsetup_e1'){
+                                Start-BitsTransfer -Source $link -Destination $Path
+                                $fileName = ($link -split '/')[-1]
+                                break
+                            }
+                        }
+                        elseif ($WindowsArch -eq 'arm64'){
+                            if ($link -match 'securityhealthsetup_25'){
+                                Start-BitsTransfer -Source $link -Destination $Path
+                                $fileName = ($link -split '/')[-1]
+                                break
+                            }
+                        }
+                        continue
+                    }
                     Start-BitsTransfer -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
-                    break
                 }
             }
             else {
@@ -1716,6 +1844,10 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
 }
 if ($BuildUSBDrive -eq $true) {
     $USBDrives, $USBDrivesCount = Get-USBDrive
+}
+if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true))) {
+    WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
 }
 
 #Get script variable values
