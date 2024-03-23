@@ -155,9 +155,6 @@ Command line for those who just want a FFU with Apps and drivers, no Office and 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
-Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
 Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
 
@@ -286,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2402.1'
+$version = '2403.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -670,11 +667,40 @@ function Save-KB {
                     $fileName = ($link -split '/')[-1]
                     break
                 }
+                # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+                #     Write-Host "No architecture found in $link, assume it's for all architectures"
+                #     Start-BitsTransfer -Source $link -Destination $Path
+                #     $fileName = ($link -split '/')[-1]
+                #     break
+                # }
                 elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                    Write-Host "No architecture found in $link, assume it's for all architectures"
+                    WriteLog "No architecture found in $link, assume this is for all architectures"
+                    #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
+                    #Unfortunately there is no easy way to determine the architecture from the file name
+                    #There is a support doc that include links to download, but it's out of date (n-1)
+                    #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+                    #These files don't change that often, so will check the link above to see when it updates and may use that
+                    #For now this is hard-coded for these specific file names
+                    if ($link -match 'security'){
+                        #Make sure we're getting the correct architecture for the Security Health Setup update
+                        if ($WindowsArch -eq 'x64'){
+                            if ($link -match 'securityhealthsetup_e1'){
+                                Start-BitsTransfer -Source $link -Destination $Path
+                                $fileName = ($link -split '/')[-1]
+                                break
+                            }
+                        }
+                        elseif ($WindowsArch -eq 'arm64'){
+                            if ($link -match 'securityhealthsetup_25'){
+                                Start-BitsTransfer -Source $link -Destination $Path
+                                $fileName = ($link -split '/')[-1]
+                                break
+                            }
+                        }
+                        continue
+                    }
                     Start-BitsTransfer -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
-                    break
                 }
             }
             else {
@@ -1716,6 +1742,10 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
 }
 if ($BuildUSBDrive -eq $true) {
     $USBDrives, $USBDrivesCount = Get-USBDrive
+}
+if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true))) {
+    WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
 }
 
 #Get script variable values
