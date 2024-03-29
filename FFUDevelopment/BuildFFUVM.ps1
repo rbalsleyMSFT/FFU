@@ -531,17 +531,55 @@ function Install-ADK {
         throw $_
     }
 }
-function Confirm-ADKVersionIsLatest {
+function Find-InstalledProgramInfo {
     param (
-        [string]$KeyPath
+        [string]$RegValueNameFilter,
+        [string]$RegValueDataFilter,
+        [string]$RegValueDataRetrieve
     )
+
+    $installedProgramInfo = Get-ChildItem -Path "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" -Recurse |
+        # Filter subkeys based on the display name corresponding to the ADK option
+        Where-Object { $_.GetValue($RegValueNameFilter) -eq $RegValueDataFilter} |
+        # Extract the quiet uninstall string from the filtered subkeys
+        ForEach-Object { $_.GetValue($RegValueDataRetrieve) }
     
-    # Retrieve all subkeys under the specified registry path recursively
-    $installedADKVersion = Get-ChildItem -Path $KeyPath -Recurse |
-        # Filter subkeys based on the display name containing "Windows Assessment and Deployment Kit"
-        Where-Object { $_.GetValue("DisplayName") -eq "Windows Assessment and Deployment Kit" } |
-        # Extract the display version from the filtered subkeys
-        ForEach-Object { $_.GetValue("DisplayVersion") }
+    return $installedProgramInfo
+}
+function Uninstall-ADK {
+    param (
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption
+    )
+
+    $displayName = @{
+        "Windows ADK" = "Windows Assessment and Deployment Kit"
+        "WinPE add-on" = "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons"
+    }[$ADKOption]
+
+    try {
+        $ADKQuietUninstallString = Find-InstalledProgramInfo `
+            -RegValueNameFilter "DisplayName" `
+            -RegValueDataFilter $displayName `
+            -RegValueDataRetrieve "QuietUninstallString"
+    
+        if ($null -eq $ADKQuietUninstallString) {
+            throw "Failed to retrieve quiet uninstall string for $ADKOption. Please manually uninstall it."
+        }
+        
+        Invoke-Process $ADKQuietUninstallString
+    }
+    catch {
+        WriteLog $_
+        Write-Error "Error occurred while uninstalling $ADKOption. Please manually uninstall it."
+        throw $_
+    }
+}
+function Confirm-ADKVersionIsLatest {    
+    $installedADKVersion = Find-InstalledProgramInfo `
+        -RegValueNameFilter "DisplayName" `
+        -RegValueDataFilter "Windows Assessment and Deployment Kit" `
+        -RegValueDataRetrieve "DisplayVersion"
 
     if ($null -eq $installedADKVersion) {
         WriteLog "Failed to get ADK version"
@@ -553,7 +591,7 @@ function Confirm-ADKVersionIsLatest {
     $ADKVersionMatch = [regex]::Match($ADKWebPage, $ADKVersionPattern)
 
     if (-not $ADKVersionMatch.Success) {
-        Write-Host "Failed to retrieve latest ADK version from web page."
+        WriteLog "Failed to retrieve latest ADK version from web page."
         return $false
     }
 
@@ -562,13 +600,16 @@ function Confirm-ADKVersionIsLatest {
     if ($installedADKVersion -eq $latestADKVersion) {
         WriteLog "Installed ADK version $installedADKVersion is the latest."
         return $true
-    } else {
+    } 
+    else {
         WriteLog "Installed ADK version $installedADKVersion is not the latest ($latestADKVersion)"
         return $false
     }
 }
 
 function Get-ADK {
+    $windowsDeploymentTools = $true
+
     Writelog 'Get ADK Path'
     # Define the registry key and value name to query
     $adkRegKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
