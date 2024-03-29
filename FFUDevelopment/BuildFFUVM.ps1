@@ -531,7 +531,44 @@ function Install-ADK {
         throw $_
     }
 }
-Function Get-ADK {
+function Confirm-ADKVersionIsLatest {
+    param (
+        [string]$KeyPath
+    )
+    
+    # Retrieve all subkeys under the specified registry path recursively
+    $installedADKVersion = Get-ChildItem -Path $KeyPath -Recurse |
+        # Filter subkeys based on the display name containing "Windows Assessment and Deployment Kit"
+        Where-Object { $_.GetValue("DisplayName") -eq "Windows Assessment and Deployment Kit" } |
+        # Extract the display version from the filtered subkeys
+        ForEach-Object { $_.GetValue("DisplayVersion") }
+
+    if ($null -eq $installedADKVersion) {
+        WriteLog "Failed to get ADK version"
+        return $false
+    }
+    
+    $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+    $ADKVersionPattern = 'ADK\s+(\d+(\.\d+)+)'
+    $ADKVersionMatch = [regex]::Match($ADKWebPage, $ADKVersionPattern)
+
+    if (-not $ADKVersionMatch.Success) {
+        Write-Host "Failed to retrieve latest ADK version from web page."
+        return $false
+    }
+
+    $latestADKVersion = $ADKVersionMatch.Groups[1].Value
+
+    if ($installedADKVersion -eq $latestADKVersion) {
+        WriteLog "Installed ADK version $installedADKVersion is the latest."
+        return $true
+    } else {
+        WriteLog "Installed ADK version $installedADKVersion is not the latest ($latestADKVersion)"
+        return $false
+    }
+}
+
+function Get-ADK {
     Writelog 'Get ADK Path'
     # Define the registry key and value name to query
     $adkRegKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
