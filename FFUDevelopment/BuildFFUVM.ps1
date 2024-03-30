@@ -533,41 +533,55 @@ function Install-ADK {
 }
 function Find-InstalledProgramInfo {
     param (
+        [array]$UninstallRegKeys,
         [string]$RegValueNameFilter,
         [string]$RegValueDataFilter,
         [string]$RegValueDataRetrieve
     )
 
-    $installedProgramInfo = Get-ChildItem -Path "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" -Recurse |
-        # Filter subkeys based on the display name corresponding to the ADK option
-        Where-Object { $_.GetValue($RegValueNameFilter) -eq $RegValueDataFilter} |
-        # Extract the quiet uninstall string from the filtered subkeys
-        ForEach-Object { $_.GetValue($RegValueDataRetrieve) }
-    
-    return $installedProgramInfo
+    foreach ($key in $UninstallRegKeys) {
+        try {
+            $value = $key.GetValue($RegValueNameFilter)
+            # Check if the value matches the provided filter
+            if ($value -eq $RegValueDataFilter) {
+                $installedProgramInfo = $key.GetValue($RegValueDataRetrieve)
+                return $installedProgramInfo
+            }
+        } 
+        catch {
+            WriteLog $_
+            throw "Error occurred while retrieving info for $RegValueDataFilter."
+        }
+    }
 }
 function Uninstall-ADK {
     param (
         [ValidateSet("Windows ADK", "WinPE add-on")]
-        [string]$ADKOption
+        [string]$ADKOption,
+        [array]$UninstallRegKeys
     )
 
+    # Match name as it appears in the registry
     $displayName = @{
         "Windows ADK" = "Windows Assessment and Deployment Kit"
         "WinPE add-on" = "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons"
     }[$ADKOption]
 
     try {
-        $ADKQuietUninstallString = Find-InstalledProgramInfo `
+        $adkBundleCachePath = Find-InstalledProgramInfo `
+            -UninstallRegKeys $UninstallRegKeys `
             -RegValueNameFilter "DisplayName" `
-            -RegValueDataFilter $displayName `
-            -RegValueDataRetrieve "QuietUninstallString"
+            -RegValueDataFilter "$displayName" `
+            -RegValueDataRetrieve "BundleCachePath"
     
-        if ($null -eq $ADKQuietUninstallString) {
-            throw "Failed to retrieve quiet uninstall string for $ADKOption. Please manually uninstall it."
+        if (-not $adkBundleCachePath) {
+            WriteLog "$ADKOption is not installed."
+            return
         }
-        
-        Invoke-Process $ADKQuietUninstallString
+
+        WriteLog "Uninstalling $ADKOption..."
+        Invoke-Process $adkBundleCachePath "/uninstall /quiet"
+        WriteLog "$ADKOption uninstalled successfully."
     }
     catch {
         WriteLog $_
@@ -575,63 +589,133 @@ function Uninstall-ADK {
         throw $_
     }
 }
-function Confirm-ADKVersionIsLatest {    
-    $installedADKVersion = Find-InstalledProgramInfo `
-        -RegValueNameFilter "DisplayName" `
-        -RegValueDataFilter "Windows Assessment and Deployment Kit" `
-        -RegValueDataRetrieve "DisplayVersion"
+function Confirm-ADKVersionIsLatest {
+    param (
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption,
+        [array]$UninstallRegKeys
+    )
 
-    if ($null -eq $installedADKVersion) {
-        WriteLog "Failed to get ADK version"
-        return $false
+    # Match name as it appears in the registry
+    $displayName = @{
+        "Windows ADK" = "Windows Assessment and Deployment Kit"
+        "WinPE add-on" = "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons"
+    }[$ADKOption]
+
+    try {
+        # Get installed ADK version
+        $installedADKVersion = Find-InstalledProgramInfo `
+            -UninstallRegKeys $UninstallRegKeys `
+            -RegValueNameFilter "DisplayName" `
+            -RegValueDataFilter "$displayName" `
+            -RegValueDataRetrieve "DisplayVersion"
+
+        if (-not $installedADKVersion) {
+            WriteLog "Failed to get $ADKOption version. It may not be installed."
+            return $false
+        }
+        
+        # Retrieve content of Microsoft documentation page
+        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        # Specify regex pattern for ADK version
+        $ADKVersionPattern = 'ADK\s+(\d+(\.\d+)+)'
+        # Check for regex pattern match
+        $ADKVersionMatch = [regex]::Match($ADKWebPage, $ADKVersionPattern)
+
+        if (-not $ADKVersionMatch.Success) {
+            WriteLog "Failed to retrieve latest ADK version from web page."
+            return $false
+        }
+
+        # Extract ADK version from the matched pattern
+        $latestADKVersion = $ADKVersionMatch.Groups[1].Value
+
+        if ($installedADKVersion -eq $latestADKVersion) {
+            WriteLog "Installed $ADKOption version $installedADKVersion is the latest."
+            return $true
+        } 
+        else {
+            WriteLog "Installed $ADKOption version $installedADKVersion is not the latest ($latestADKVersion)"
+            return $false
+        }
     }
-    
-    $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
-    $ADKVersionPattern = 'ADK\s+(\d+(\.\d+)+)'
-    $ADKVersionMatch = [regex]::Match($ADKWebPage, $ADKVersionPattern)
-
-    if (-not $ADKVersionMatch.Success) {
-        WriteLog "Failed to retrieve latest ADK version from web page."
-        return $false
-    }
-
-    $latestADKVersion = $ADKVersionMatch.Groups[1].Value
-
-    if ($installedADKVersion -eq $latestADKVersion) {
-        WriteLog "Installed ADK version $installedADKVersion is the latest."
-        return $true
-    } 
-    else {
-        WriteLog "Installed ADK version $installedADKVersion is not the latest ($latestADKVersion)"
+    catch {
+        WriteLog "An error occurred while confirming the ADK version: $_"
         return $false
     }
 }
 
 function Get-ADK {
-    $windowsDeploymentTools = $true
-
-    Writelog 'Get ADK Path'
-    # Define the registry key and value name to query
+    # Define registry paths
+    $uninstallRegPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
     $adkRegKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
     $adkRegValueName = "KitsRoot10"
 
-    # Check if the registry value exists
-    if ($null -ne (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)) {
-        # Get the registry value for the Windows ADK installation path
+    # Get all uninstall registry keys
+    $uninstallRegKeys = Get-ChildItem -Path $uninstallRegPath -Recurse
+    $uninstallKeysUpdated = $false
+
+    # Check if latest ADK and WinPE add-on are installed
+    $latestADKInstalled = Confirm-ADKVersionIsLatest -ADKOption "Windows ADK" -UninstallRegKeys $uninstallRegKeys
+    $latestWinPEInstalled = Confirm-ADKVersionIsLatest -ADKOption "WinPE add-on" -UninstallRegKeys $uninstallRegKeys
+
+    # Uninstall older versions and install latest versions if necessary
+    if (-not $latestADKInstalled) {
+        Uninstall-ADK -ADKOption "Windows ADK" -UninstallRegKeys $uninstallRegKeys
+        Install-ADK -ADKOption "Windows ADK"
+        $uninstallKeysUpdated = $true
+    }
+
+    if (-not $latestWinPEInstalled) {
+        Uninstall-ADK -ADKOption "WinPE add-on" -UninstallRegKeys $uninstallRegKeys
+        Install-ADK -ADKOption "WinPE add-on"
+        $uninstallKeysUpdated = $true
+    }
+
+    if ($uninstallKeysUpdated) {
+        # Get updated uninstall registry keys
+        $uninstallRegKeys = Get-ChildItem -Path $uninstallRegPath -Recurse
+    }
+
+    # Check if ADK installation path exists in registry
+    $adkRegValueExists = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)
+
+    if ($adkRegValueExists) {
+        # Get the ADK installation path
+        WriteLog 'Get ADK Path'
         $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
         WriteLog "ADK located at $adkPath"
-        return $adkPath
     }
     else {
-        WriteLog "ADK is not installed. Installing ADK now..."
-        Install-ADK -ADKOption "Windows ADK"
-        WriteLog "Installing WinPE add-on for Windows ADK..."
-        Install-ADK -ADKOption "WinPE add-on"
-        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
-        WriteLog "ADK located at $adkPath"
-        return $adkPath
-        # throw "Windows ADK is not installed or the installation path could not be found."
+        throw "Windows ADK installation path could not be found."
     }
+
+    # If ADK was already installed, then check if the Windows Deployment Tools feature is also installed
+    $deploymentToolsInstalled = Find-InstalledProgramInfo `
+        -UninstallRegKeys $uninstallRegKeys `
+        -RegValueNameFilter "DisplayName" `
+        -RegValueDataFilter "Windows Deployment Tools" `
+        -RegValueDataRetrieve "DisplayVersion"
+
+    if (-not $deploymentToolsInstalled) {
+        WriteLog "ADK is installed, but the Windows Deployment Tools feature is not installed."
+        $adkBundleCachePath = Find-InstalledProgramInfo `
+            -UninstallRegKeys $uninstallRegKeys `
+            -RegValueNameFilter "DisplayName" `
+            -RegValueDataFilter "Windows Assessment and Deployment Kit" `
+            -RegValueDataRetrieve "BundleCachePath"
+        if ($adkBundleCachePath) {
+            WriteLog "Installing Windows Deployment Tools..."
+            $installPath = $adkPath.TrimEnd('\')
+            Invoke-Process $adkBundleCachePath "/quiet /installpath ""$installPath"" /features OptionId.DeploymentTools"
+            WriteLog "Windows Deployment Tools installed successfully."
+        }
+        else {
+            throw "Failed to retrieve path to adksetup.exe to install the Windows Deployment Tools. Please manually install it."
+        }
+    }
+
+    return $adkPath
 }
 function Get-WindowsESD {
     param(
