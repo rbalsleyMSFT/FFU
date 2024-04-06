@@ -265,7 +265,8 @@ if ($Unattend -and $UnattendPrefix){
     #Get serial number to append. This can make names longer than 15 characters. Trim any leading or trailing whitespace
     $serial = (Get-CimInstance -ClassName win32_bios).SerialNumber.Trim()
     #Combine prefix with serial
-    $computername = $PrefixToUse + $serial
+    $computername = ($PrefixToUse + $serial) -replace "\s","" # Remove spaces because windows does not support spaces in the computer names
+    
     #If computername is longer than 15 characters, reduce to 15. Sysprep/unattend doesn't like ComputerName being longer than 15 characters even though Windows accepts it
     If ($computername.Length -gt 15){
        $computername = $computername.substring(0,15)
