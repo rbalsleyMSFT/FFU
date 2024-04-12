@@ -2052,25 +2052,26 @@ try {
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
 
     #Update latest Cumulative Update
-    If ($UpdateLatestCU) {
-        WriteLog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $LatestKB = Get-LatestWindowsKB -WindowsRelease $WindowsRelease
-        WriteLog "Latest KB for Windows $WindowsRelease found: $LatestKB"
-        $Name = $LatestKB + " " + $WindowsVersion
+    #Changed to use MU Catalog instead of using Get-LatestWindowsKB
+    #The Windows release info page is updated later than the MU Catalog
+    if ($UpdateLatestCU) {
+        Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
+        $Name = "Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
-        WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "$LatestKB saved to $KBPath\$KBFilePath"  
+        WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
+
 
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $Architecture"
+        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
