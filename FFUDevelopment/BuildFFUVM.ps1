@@ -892,9 +892,15 @@ function Get-Index {
     # Get the available indexes using Get-WindowsImage
     $imageIndexes = Get-WindowsImage -ImagePath $WindowsImagePath
     
-    # Get the ImageName of ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
-    $imageIndex4 = $imageIndexes | Where-Object ImageIndex -eq 4
-    $WindowsImage = $imageIndex4.ImageName.Substring(0, 10)
+    # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
+    if($ISOPath){
+        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+    }
+    else{
+        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
+        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+    }
     
     # Concatenate $WindowsImage and $WindowsSKU (E.g. Windows 11 Pro)
     $ImageNameToFind = "$WindowsImage $WindowsSKU"
