@@ -14,7 +14,7 @@ This script creates a Windows 10/11 FFU and USB drive to help quickly get a Wind
 Path to the Windows 10/11 ISO file.
 
 .PARAMETER WindowsSKU
-Edition of Windows 10/11 to be installed, e.g., 'Home', 'Home_N', 'Home_SL', 'EDU', 'EDU_N', 'Pro', 'Pro_N', 'Pro_EDU', 'Pro_Edu_N', 'Pro_WKS', 'Pro_WKS_N'
+Edition of Windows 10/11 to be installed, e.g., accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'
 
 .PARAMETER FFUDevelopmentPath
 Path to the FFU development folder (default is C:\FFUDevelopment).
@@ -283,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2403.1'
+$version = '2404.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -531,29 +531,161 @@ function Install-ADK {
         throw $_
     }
 }
-Function Get-ADK {
-    Writelog 'Get ADK Path'
-    # Define the registry key and value name to query
-    $adkRegKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
-    $adkRegValueName = "KitsRoot10"
+function Get-InstalledProgramRegKey {
+    param (
+        [string]$DisplayName
+    )
 
-    # Check if the registry value exists
-    if ($null -ne (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName -ErrorAction SilentlyContinue)) {
-        # Get the registry value for the Windows ADK installation path
-        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
+    $uninstallRegPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    $uninstallRegKeys = Get-ChildItem -Path $uninstallRegPath -Recurse
+    
+    foreach ($regKey in $uninstallRegKeys) {
+        try {
+            $regValue = $regKey.GetValue("DisplayName")
+            if ($regValue -eq $DisplayName) {
+                return $regKey
+            }
+        }
+        catch {
+            WriteLog $_
+            throw "Error retrieving installed program info for $DisplayName : $_"
+        }
+    }
+}
+
+function Uninstall-ADK {
+    param (
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption
+    )
+
+    # Match name as it appears in the registry
+    $displayName = switch ($ADKOption) {
+        "Windows ADK" { "Windows Assessment and Deployment Kit" }
+        "WinPE add-on" { "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons" }
+    }
+
+    try {
+        $adkRegKey = Get-InstalledProgramRegKey -DisplayName $displayName
+
+        if (-not $adkRegKey) {
+            WriteLog "$ADKOption is not installed."
+            return
+        }
+
+        $adkBundleCachePath = $adkRegKey.GetValue("BundleCachePath")
+        WriteLog "Uninstalling $ADKOption..."
+        Invoke-Process $adkBundleCachePath "/uninstall /quiet"
+        WriteLog "$ADKOption uninstalled successfully."
+    }
+    catch {
+        WriteLog $_
+        Write-Error "Error occurred while uninstalling $ADKOption. Please manually uninstall it."
+        throw $_
+    }
+}
+
+function Confirm-ADKVersionIsLatest {
+    param (
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption
+    )
+
+    $displayName = switch ($ADKOption) {
+        "Windows ADK" { "Windows Assessment and Deployment Kit" }
+        "WinPE add-on" { "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons" }
+    }
+
+    try {
+        $adkRegKey = Get-InstalledProgramRegKey -DisplayName $displayName
+
+        if (-not $adkRegKey) {
+            return $false
+        }
+
+        $installedADKVersion = $adkRegKey.GetValue("DisplayVersion")
+
+        # Retrieve content of Microsoft documentation page
+        $adkWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        # Specify regex pattern for ADK version
+        $adkVersionPattern = 'ADK\s+(\d+(\.\d+)+)'
+        # Check for regex pattern match
+        $adkVersionMatch = [regex]::Match($adkWebPage, $adkVersionPattern)
+
+        if (-not $adkVersionMatch.Success) {
+            WriteLog "Failed to retrieve latest ADK version from web page."
+            return $false
+        }
+
+        # Extract ADK version from the matched pattern
+        $latestADKVersion = $adkVersionMatch.Groups[1].Value
+
+        if ($installedADKVersion -eq $latestADKVersion) {
+            WriteLog "Installed $ADKOption version $installedADKVersion is the latest."
+            return $true
+        }
+        else {
+            WriteLog "Installed $ADKOption version $installedADKVersion is not the latest ($latestADKVersion)"
+            return $false
+        }
+    }
+    catch {
+        WriteLog "An error occurred while confirming the ADK version: $_"
+        return $false
+    }
+}
+
+function Get-ADK {
+    # Check if latest ADK and WinPE add-on are installed
+    $latestADKInstalled = Confirm-ADKVersionIsLatest -ADKOption "Windows ADK"
+    $latestWinPEInstalled = Confirm-ADKVersionIsLatest -ADKOption "WinPE add-on"
+
+    # Uninstall older versions and install latest versions if necessary
+    if (-not $latestADKInstalled) {
+        Uninstall-ADK -ADKOption "Windows ADK"
+        Install-ADK -ADKOption "Windows ADK"
+    }
+
+    if (-not $latestWinPEInstalled) {
+        Uninstall-ADK -ADKOption "WinPE add-on"
+        Install-ADK -ADKOption "WinPE add-on"
+    }
+
+    # Define registry path
+    $adkPathKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
+    $adkPathName = "KitsRoot10"
+
+    # Check if ADK installation path exists in registry
+    $adkPathNameExists = (Get-ItemProperty -Path $adkPathKey -Name $adkPathName -ErrorAction SilentlyContinue)
+
+    if ($adkPathNameExists) {
+        # Get the ADK installation path
+        WriteLog 'Get ADK Path'
+        $adkPath = (Get-ItemProperty -Path $adkPathKey -Name $adkPathName).$adkPathName
         WriteLog "ADK located at $adkPath"
-        return $adkPath
     }
     else {
-        WriteLog "ADK is not installed. Installing ADK now..."
-        Install-ADK -ADKOption "Windows ADK"
-        WriteLog "Installing WinPE add-on for Windows ADK..."
-        Install-ADK -ADKOption "WinPE add-on"
-        $adkPath = (Get-ItemProperty -Path $adkRegKey -Name $adkRegValueName).$adkRegValueName
-        WriteLog "ADK located at $adkPath"
-        return $adkPath
-        # throw "Windows ADK is not installed or the installation path could not be found."
+        throw "Windows ADK installation path could not be found."
     }
+
+    # If ADK was already installed, then check if the Windows Deployment Tools feature is also installed
+    $deploymentToolsRegKey = Get-InstalledProgramRegKey -DisplayName "Windows Deployment Tools"
+
+    if (-not $deploymentToolsRegKey) {
+        WriteLog "ADK is installed, but the Windows Deployment Tools feature is not installed."
+        $adkRegKey = Get-InstalledProgramRegKey -DisplayName "Windows Assessment and Deployment Kit"
+        $adkBundleCachePath = $adkRegKey.GetValue("BundleCachePath")
+        if ($adkBundleCachePath) {
+            WriteLog "Installing Windows Deployment Tools..."
+            $adkInstallPath = $adkPath.TrimEnd('\')
+            Invoke-Process $adkBundleCachePath "/quiet /installpath ""$adkInstallPath"" /features OptionId.DeploymentTools"
+            WriteLog "Windows Deployment Tools installed successfully."
+        }
+        else {
+            throw "Failed to retrieve path to adksetup.exe to install the Windows Deployment Tools. Please manually install it."
+        }
+    }
+    return $adkPath
 }
 function Get-WindowsESD {
     param(
@@ -892,9 +1024,15 @@ function Get-Index {
     # Get the available indexes using Get-WindowsImage
     $imageIndexes = Get-WindowsImage -ImagePath $WindowsImagePath
     
-    # Get the ImageName of ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
-    $imageIndex4 = $imageIndexes | Where-Object ImageIndex -eq 4
-    $WindowsImage = $imageIndex4.ImageName.Substring(0, 10)
+    # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
+    if($ISOPath){
+        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+    }
+    else{
+        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
+        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+    }
     
     # Concatenate $WindowsImage and $WindowsSKU (E.g. Windows 11 Pro)
     $ImageNameToFind = "$WindowsImage $WindowsSKU"
@@ -950,7 +1088,6 @@ function New-ScratchVhdx {
     WriteLog "Creating new Scratch VHDX..."
 
     $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
-    # $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Fixed
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
@@ -1055,10 +1192,12 @@ function New-RecoveryPartition {
         $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim"
 
         if (($null -ne $winReWim) -and ($winReWim.Count -eq 1)) {
-            # Wim size + 52MB is minimum WinRE partition size.
+            # Wim size + 100MB is minimum WinRE partition size.
             # NTFS and other partitioning size differences account for about 17MB of space that's unavailable.
-            # Adding 32MB as a buffer to ensure there's enough space.
-            $calculatedRecoverySize = $winReWim.Length + 52MB + 32MB
+            # Adding 32MB as a buffer to ensure there's enough space to account for NTFS file system overhead.
+            # Adding 250MB as per recommendations from 
+            # https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions?view=windows-11#recovery-tools-partition
+            $calculatedRecoverySize = $winReWim.Length + 250MB + 32MB
 
             WriteLog "Calculated space needed for recovery in bytes: $calculatedRecoverySize"
 
@@ -1348,10 +1487,9 @@ function New-FFU {
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
-        Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
         WriteLog 'FFU Capture complete'
-        #WriteLog 'Sleeping 60 seconds before dismount of VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
@@ -1386,8 +1524,9 @@ function New-FFU {
     #Optimize FFU
     if ($Optimize -eq $true) {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
-        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
-        Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
+        #Need to use ADK version of DISM to address bug in DISM - perhaps Windows 11 24H2 will fix this
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
+        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
         WriteLog 'Optimizing FFU complete'
     }
     
@@ -1856,7 +1995,7 @@ LogVariableValues
 #Get Windows ADK
 try {
     $adkPath = Get-ADK
-    #Need to use the Deployment and Imaging tools environment to use dism from the Insider ADK to optimize the FFU. This is only needed until Windows 23H2
+    #Need to use the Deployment and Imaging tools environment to use dism from the Sept 2023 ADK to optimize FFU 
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
 }
 catch {
@@ -2034,7 +2173,6 @@ try {
         $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
     }
 
-    # $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic:$false -LogicalSectorSizeBytes $LogicalSectorSizeBytes
     $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
     $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
@@ -2046,31 +2184,33 @@ try {
     $WindowsPartition = $osPartitionDriveLetter + ":\"
 
     #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+    $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
 
     WriteLog "All necessary partitions created."
 
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
 
     #Update latest Cumulative Update
-    If ($UpdateLatestCU) {
-        WriteLog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $LatestKB = Get-LatestWindowsKB -WindowsRelease $WindowsRelease
-        WriteLog "Latest KB for Windows $WindowsRelease found: $LatestKB"
-        $Name = $LatestKB + " " + $WindowsVersion
+    #Changed to use MU Catalog instead of using Get-LatestWindowsKB
+    #The Windows release info page is updated later than the MU Catalog
+    if ($UpdateLatestCU) {
+        Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
+        $Name = "Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
-        WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "$LatestKB saved to $KBPath\$KBFilePath"  
+        WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
+
 
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $Architecture"
+        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
