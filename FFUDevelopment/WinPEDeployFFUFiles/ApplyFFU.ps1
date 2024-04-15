@@ -117,7 +117,7 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2403.1'
+$version = '2404.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
@@ -130,26 +130,26 @@ $DiskID = $PhysicalDeviceID.substring($PhysicalDeviceID.length - 1,1)
 WriteLog "DiskID is $DiskID"
 
 #COMMENT THIS WHOLE BLOCK OUT ONCE FFUPROVIDER FIX IS IN
-#Modify diskpart answer files if DiskID not 0
-# $UEFIFFUPartitions = 'x:\CreateUEFI-FFU-Partitions.txt'
-$ExtendPartition = 'x:\ExtendPartition-UEFI.txt'
+# #Modify diskpart answer files if DiskID not 0
+# # $UEFIFFUPartitions = 'x:\CreateUEFI-FFU-Partitions.txt'
+# $ExtendPartition = 'x:\ExtendPartition-UEFI.txt'
 
-If ($DiskID -ne '0'){
-    WriteLog 'DiskID is not 0. Need to modify diskpart answer files'
-    # try {
-    #     Set-DiskpartAnswerFiles $UEFIFFUPartitions $DiskID
-    # }
-    # catch {
-    #     WriteLog "Modifying $UEFIFFUPartitions failed with error: $_"
-    # }
+# If ($DiskID -ne '0'){
+#     WriteLog 'DiskID is not 0. Need to modify diskpart answer files'
+#     # try {
+#     #     Set-DiskpartAnswerFiles $UEFIFFUPartitions $DiskID
+#     # }
+#     # catch {
+#     #     WriteLog "Modifying $UEFIFFUPartitions failed with error: $_"
+#     # }
     
-    try {
-        Set-DiskpartAnswerFiles $ExtendPartition $DiskID
-    }
-    catch {
-        WriteLog "Modifying $ExtendPartition failed with error: $_"
-    }
-}
+#     try {
+#         Set-DiskpartAnswerFiles $ExtendPartition $DiskID
+#     }
+#     catch {
+#         WriteLog "Modifying $ExtendPartition failed with error: $_"
+#     }
+# }
 
 #Find FFU Files
 [array]$FFUFiles = @(Get-ChildItem -Path $USBDrive*.ffu)
@@ -476,19 +476,19 @@ else{
 # }
 
 #COMMENT THIS WHOLE BLOCK OUT AFTER FFUPROVIDER FIX IS IN
-# Extend Windows partition and create recovery partition
-Writelog 'Extending Windows partition'
-Invoke-Process diskpart.exe "/S $ExtendPartition"
-if($LASTEXITCODE -eq 0){
-    WriteLog 'Successfully extended Windows partition and created recovery partition'
-}
-else{
-    Writelog "Failed to extend Windows partition and/or create recovery partition - LastExitCode = $LASTEXITCODE"
-}
+# # Extend Windows partition and create recovery partition
+# Writelog 'Extending Windows partition'
+# Invoke-Process diskpart.exe "/S $ExtendPartition"
+# if($LASTEXITCODE -eq 0){
+#     WriteLog 'Successfully extended Windows partition and created recovery partition'
+# }
+# else{
+#     Writelog "Failed to extend Windows partition and/or create recovery partition - LastExitCode = $LASTEXITCODE"
+# }
 
 #UNCOMMENT THIS AFTER FFUPROVIDER FIX IS IN
-#Set W: drive letter to Windows partition
-#Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
+# Set W: drive letter to Windows partition
+Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
 
 #Copy modified WinRE if folder exists, else copy inbox WinRE
 $WinRE = $USBDrive + "WinRE\winre.wim"

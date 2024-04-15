@@ -14,7 +14,7 @@ This script creates a Windows 10/11 FFU and USB drive to help quickly get a Wind
 Path to the Windows 10/11 ISO file.
 
 .PARAMETER WindowsSKU
-Edition of Windows 10/11 to be installed, e.g., 'Home', 'Home_N', 'Home_SL', 'EDU', 'EDU_N', 'Pro', 'Pro_N', 'Pro_EDU', 'Pro_Edu_N', 'Pro_WKS', 'Pro_WKS_N'
+Edition of Windows 10/11 to be installed, e.g., accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'
 
 .PARAMETER FFUDevelopmentPath
 Path to the FFU development folder (default is C:\FFUDevelopment).
@@ -283,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2403.1'
+$version = '2404.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1088,7 +1088,6 @@ function New-ScratchVhdx {
     WriteLog "Creating new Scratch VHDX..."
 
     $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
-    # $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Fixed
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
@@ -1193,10 +1192,12 @@ function New-RecoveryPartition {
         $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim"
 
         if (($null -ne $winReWim) -and ($winReWim.Count -eq 1)) {
-            # Wim size + 52MB is minimum WinRE partition size.
+            # Wim size + 100MB is minimum WinRE partition size.
             # NTFS and other partitioning size differences account for about 17MB of space that's unavailable.
-            # Adding 32MB as a buffer to ensure there's enough space.
-            $calculatedRecoverySize = $winReWim.Length + 52MB + 32MB
+            # Adding 32MB as a buffer to ensure there's enough space to account for NTFS file system overhead.
+            # Adding 250MB as per recommendations from 
+            # https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions?view=windows-11#recovery-tools-partition
+            $calculatedRecoverySize = $winReWim.Length + 250MB + 32MB
 
             WriteLog "Calculated space needed for recovery in bytes: $calculatedRecoverySize"
 
@@ -1486,10 +1487,9 @@ function New-FFU {
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
-        Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
         WriteLog 'FFU Capture complete'
-        #WriteLog 'Sleeping 60 seconds before dismount of VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
@@ -1524,8 +1524,9 @@ function New-FFU {
     #Optimize FFU
     if ($Optimize -eq $true) {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
-        #Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
-        Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
+        #Need to use ADK version of DISM to address bug in DISM - perhaps Windows 11 24H2 will fix this
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
+        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
         WriteLog 'Optimizing FFU complete'
     }
     
@@ -1994,7 +1995,7 @@ LogVariableValues
 #Get Windows ADK
 try {
     $adkPath = Get-ADK
-    #Need to use the Deployment and Imaging tools environment to use dism from the Insider ADK to optimize the FFU. This is only needed until Windows 23H2
+    #Need to use the Deployment and Imaging tools environment to use dism from the Sept 2023 ADK to optimize FFU 
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
 }
 catch {
@@ -2172,7 +2173,6 @@ try {
         $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
     }
 
-    # $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -Dynamic:$false -LogicalSectorSizeBytes $LogicalSectorSizeBytes
     $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
     $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
@@ -2184,6 +2184,7 @@ try {
     $WindowsPartition = $osPartitionDriveLetter + ":\"
 
     #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+    $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
 
     WriteLog "All necessary partitions created."
 
