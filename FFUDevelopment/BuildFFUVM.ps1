@@ -283,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2403.1'
+$version = '2404.2'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1838,8 +1838,9 @@ if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
 }
 if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
     $installdrivers = $false
+    $CopyDrivers = $true
     WriteLog 'LogicalSectorSizeBytes is set to 4096, which is not supported for driver injection. Setting $installdrivers to $false'
-    WriteLog 'As a workaround, set -copydrivers $true to copy drivers to the deploy partition drivers folder'
+    WriteLog 'As a workaround, setting -copydrivers $true to copy drivers to the deploy partition drivers folder'
     WriteLog 'We are investigating this issue and will update the script if/when we have a fix'
 }
 if ($BuildUSBDrive -eq $true) {
