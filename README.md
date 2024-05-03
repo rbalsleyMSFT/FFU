@@ -41,6 +41,7 @@ While we use this in Education at Microsoft, other industries can use it as well
 
   *From this Github Repo:*
   https://github.com/rbalsleyMSFT/FFU
+  
 **2404.2**
 
 - If setting -installdrivers to $true and -logicalsectorsizebytes to 4096, the script will now set $copyDrivers to $true. This will create a drivers folder on the deploy partition of the USB drive with the drivers that were supposed to be added to the FFU. There's currently a bug with servicing FFUs with 4096 logical sector byte sizes. Prior to this fix, the script would tell the user to manually set -copydrivers to $true as workaround. This fix just does the workaround automatically. 
