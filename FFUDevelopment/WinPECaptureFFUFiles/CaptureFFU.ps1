@@ -1,5 +1,17 @@
-#Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user ddb1f077-3eed-433c-b4d9-7b8cd54ce727
-net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user ddb1f077-3eed-433c-b4d9-7b8cd54ce727
+$Host.UI.RawUI.WindowTitle = 'Full Flash Update Image Capture Tool | May 2024'
+function Initialize-WinPE {
+   param (
+       [string]$FilePath = "X:\Windows\System32\wpeinit.exe"
+ )
+    Start-Process -FilePath $FilePath
+    Write-host "Initializing..." -ForegroundColor Cyan
+    Start-Sleep -Seconds 2
+    Start-Service wlansvc -ErrorAction SilentlyContinue 
+    Start-Sleep -Seconds 2
+}
+Initialize-WinPE
+#Modify the net use W: \\192.168.86.47\FFUCaptureShare /user:ffu_user a0e9e2eb-aa56-45ab-b966-e3c8e7260a05
+net use W: \\192.168.86.47\FFUCaptureShare /user:ffu_user a0e9e2eb-aa56-45ab-b966-e3c8e7260a05
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
