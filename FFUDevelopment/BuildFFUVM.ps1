@@ -2039,7 +2039,7 @@ if ($InstallApps) {
         #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
         if ($UpdateLatestDefender) {
             WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Definitions"
-            $Name = 'Update for Microsoft Defender Antivirus antimalware platform'
+            $Name = "Update for Microsoft Defender Antivirus antimalware platform"
             #Check if $DefenderPath exists, if not, create it
             If (-not (Test-Path -Path $DefenderPath)) {
                 WriteLog "Creating $DefenderPath"
@@ -2104,7 +2104,7 @@ if ($InstallApps) {
             $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
             try {
                 Start-BitsTransfer -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
-                WriteLog "Defender Definitions downloaded to $OneDrivePath\OneDriveSetup.exe"
+                WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
             }
             catch {
                 Write-Host "Downloading OneDrive client Failed"
@@ -2196,7 +2196,7 @@ try {
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = "Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"
+        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -2211,7 +2211,7 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch"
+        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
