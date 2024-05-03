@@ -161,6 +161,9 @@ Command line for those who want to download the latest Windows 11 Pro x64 media 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
+Command line for those who just want a FFU With windows defender updated, no Office and have downloaded their own ISO. This is the one of the quicker options. This also leaves the deployment .iso for later use.
+.\BuildFFUVM.ps1 -ISOPath 'C:\FFUDevelopment\Win11_22H2_English_x64v2.iso' -WindowsSKU 'Education' -Installapps $True -InstallOffice $false -InstallDrivers $False -VMSwitchName 'Virtual Switch' -VMHostIPAddress '192.168.86.47' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $False -CleanupCaptureISO $false -CleanupDeployISO $false -compactos $false -UpdateLatestDefender $true -verbose
+
 .NOTES
     Additional notes about your script.
 
@@ -321,6 +324,7 @@ if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
+if (-not $Date) {$Date = get-date -UFormat %Y-%m }
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -813,7 +817,7 @@ function Get-KBLink {
         [Parameter(Mandatory)]
         [string]$Name
     )
-    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name"
+    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=`"$Name`""
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
@@ -1359,21 +1363,42 @@ function New-PEMedia {
     #Need to use the Demployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
-
+     $WinPEFFUMedia = "$WinPEFFUPath\Media"
     If (Test-path -Path "$WinPEFFUPath") {
         WriteLog "Removing old WinPE path at $WinPEFFUPath"
         Remove-Item -Path "$WinPEFFUPath" -Recurse -Force | out-null
     }
 
-    WriteLog "Copying WinPE files to $WinPEFFUPath"
+    WriteLog "Copying WinPE files to $WinPEFFUPath" 
     & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
     #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
+    #$WindowsLang = "fr-ca"
     WriteLog 'Files copied successfully'
-
-    WriteLog 'Mounting WinPE media to add WinPE optional components'
+    if($WindowsLang -eq 'en-us'){
+        WriteLog "if default (En-US) Clean up unused language folders from WinPE media folder"
+        $UnusedFolder = Get-ChildItem -Path "$WinPEFFUMedia" -Directory | Where-Object {$_.Name -like "*-*"}
+        #$count = 0
+        foreach($folder in $UnusedFolder){
+        #$folder.name
+        remove-item -Path $folder.fullname -Force -Confirm: $false -Recurse
+        }
+    }else{
+        WriteLog "Cleanup all language folders except $WindowsLang"
+        $UnusedFolder = Get-ChildItem -Path "$WinPEFFUMedia" -Directory | Where-Object {$_.Name -like "*-*" -and $_.Name -notmatch $WindowsLang}
+        #$count = 0
+        foreach($folder in $UnusedFolder){
+        #$folder.name
+        remove-item -Path $folder.fullname -Force -Confirm: $false -Recurse
+        }
+    }
+    #WriteLog "Create images directory"
+    #New-Item -Path $WinPEFFUMedia -Name Images -ItemType Directory -Force -Confirm: $false
+    #WriteLog "Make drivers directory"
+    #New-Item -Path $WinPEFFUMedia -Name Drivers -ItemType Directory -Force -Confirm: $false
+    #WriteLog 'Mounting WinPE media to add WinPE optional components'
     Mount-WindowsImage -ImagePath "$WinPEFFUPath\media\sources\boot.wim" -Index 1 -Path "$WinPEFFUPath\mount" | Out-Null
     WriteLog 'Mounting complete'
-
+    
     $Packages = @(
         "WinPE-WMI.cab",
         "en-us\WinPE-WMI_en-us.cab",
@@ -1728,24 +1753,30 @@ Function New-DeploymentUSB {
         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
         WriteLog 'Done'
 
+        $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
         Dismount-DiskImage -ImagePath $DeployISO | Out-Null
+        
+        WriteLog "Create images directory"
+        New-Item -Path $DeployPartitionDriveLetter -Name Images -ItemType Directory -Force -Confirm: $false
+        WriteLog "Make drivers directory"
+        New-Item -Path $DeployPartitionDriveLetter -Name Drivers -ItemType Directory -Force -Confirm: $false
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
-                $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+               # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
                 if ($SelectedFFUFile -is [array]) {
                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
                     foreach ($FFUFile in $SelectedFFUFile) {
-                        robocopy $(Split-Path $FFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFile -Leaf) /COPYALL /R:5 /W:5 /J
+                        robocopy $(Split-Path $FFUFile -Parent) "$DeployPartitionDriveLetter\Images" $(Split-Path $FFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                     }
                 }
                 else {
                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
-                    robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
+                    robocopy $(Split-Path $SelectedFFUFile -Parent) "$DeployPartitionDriveLetter\Images" $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                 }
                 #Copy drivers using robocopy due to potential size
                 if ($CopyDrivers) {
@@ -2211,7 +2242,7 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch"
+        $Name = "Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows $WindowsRelease, version $WindowsVersion for $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
