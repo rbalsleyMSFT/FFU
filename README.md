@@ -33,6 +33,11 @@ While we use this in Education at Microsoft, other industries can use it as well
   - Manufacturer
   - OS Drive Model
   - Battery Charge Level
+ 
+ **BuildUSBDrives.ps1**
+ - Added open file dialog for selecting deployment .iso files
+ - Added warning that all currently connected USB flash drives will be erased
+ - Build flash drives from deployment .iso files created by BuildFFUVM.ps1
 
 **Everything below was developed by Microsoft:**
 - https://github.com/zehadialam
