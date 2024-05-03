@@ -39,6 +39,9 @@ While we use this in Education at Microsoft, other industries can use it as well
  - Added warning that all currently connected USB flash drives will be erased
  - Build flash drives from deployment .iso files created by BuildFFUVM.ps1
 
+  ![image](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/138a83f1-ff51-49d3-b68e-6df0f49dca40)
+
+
 **Everything below was developed by Microsoft:**
 - https://github.com/zehadialam
 - https://github.com/JoeMama54
