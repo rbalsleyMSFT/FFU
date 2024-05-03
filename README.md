@@ -10,7 +10,7 @@ While we use this in Education at Microsoft, other industries can use it as well
 ### **2024.5**
  
 **BuildFFUVM.ps1**
-- Resolved an issue with -UpdateLatestCU where it was not locating the latest monthly cumulative update for windows
+- Resolved an issue with -UpdateLatestCU and UpdateLatestNet where it was not locating the latest monthly Update
 - Added code to clean up the deployment flash drive .iso when other languages aren't being used.
   - A large number of unused language folders are created by default. This clears them out when a language isn't specified
 - Added code to preserve the specified language folder when other languages are being utilized.
