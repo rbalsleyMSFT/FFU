@@ -236,7 +236,7 @@ If ($FFUFiles) {
     Write-Host "Drive Detected: " -NoNewline -ForegroundColor Cyan
     Write-Host  $DrivePresent
     if($BatteryLevel){
-    Write-Host "Current Charge level: " -NoNewline -ForegroundColor Cyan
+    Write-Host "Battery Charge level: " -NoNewline -ForegroundColor Cyan
     Write-Host  $BatteryLevel}
     WriteLog "Device information Shown"
     $array = @()
