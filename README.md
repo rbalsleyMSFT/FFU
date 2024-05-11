@@ -2,15 +2,51 @@
 
 This repo contains the full FFU process that we use in US Education at Microsoft to help customers with large deployments of Windows as they prepare for the new school year. This process isn't limited to only large deployments at the start of the year, but is the most common.
 
-This process will copy Windows in about 2-3 minutes to the target device, optionally copy drivers, provisioning packages, Autopilot, etc. School technicians have even given the USB sticks to teachers and teachers calling them their "Magic USB sticks" to quickly get student devices reimaged in the event of an issue with their Windows PC.
+This process will copy Windows in about 2-3 minutes to the target device, optionally Install drivers, provisioning packages, Autopilot, etc. School technicians have even given the USB sticks to teachers and teachers calling them their "Magic USB sticks" to quickly get student devices reimaged in the event of an issue with their Windows PC.
 
 While we use this in Education at Microsoft, other industries can use it as well. We esepcially see a need for something like this with partners who do re-imaging on behalf of customers. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
 # Updates
+### **2024.5**
+ 
+**BuildFFUVM.ps1**
+- Resolved an issue with -UpdateLatestCU where it was not locating the latest monthly cumulative update for windows
+- Added code to clean up the deployment flash drive .iso when other languages aren't being used.
+  - A large number of unused language folders are created by default. This clears them out when a language isn't specified
+- Added code to preserve the specified language folder when other languages are being utilized.
+  - When a language other than en-us is specified; all other unused folders including en-us are cleared out and the specified language folder is preserved.
+- Added code that creates an Images and Drivers folder on the root of the .iso.
+- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
+  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
 
-**2404.3**
-- Fixed an issue where the latest Windows CU wasn't downloading properly [Commit](https://github.com/rbalsleyMSFT/FFU/commit/ae59183a199f39b310c79b31c9b4980fafdeb79b)
+**ApplyFFU.ps1**
+- Removed driver selection menu in place of auto installing drivers based off of the model number. (Lenovo model types are truncated down to the first 4 charactars)
+  - This change allows a large number of driver folders so you can use one flash drive for all of your device models. As long as the model matches the driver folder name.
+- Added code for detecting wether a main drive is available to apply the OS to. If the drive isn't detected the console will show red (shown below)
+- Added code that looks to \Images for device images.
+- Added code that looks to \Drivers for device drivers
+- Added code to display device information:
+  - System Time
+  - Serial Number
+  - Model
+  - System Family
+  - Manufacturer
+  - OS Drive Model
+  - Battery Charge Level
+ 
+ **BuildUSBDrives.ps1**
+ - Added open file dialog for selecting deployment .iso files
+ - Added warning that all currently connected USB flash drives will be erased
+ - Build flash drives from deployment .iso files created by BuildFFUVM.ps1
 
+**Everything below was developed by Microsoft:**
+- https://github.com/zehadialam
+- https://github.com/JoeMama54
+- https://github.com/rbalsleyMSFT
+
+  *From this Github Repo:*
+  https://github.com/rbalsleyMSFT/FFU
+  
 **2404.2**
 
 - If setting -installdrivers to $true and -logicalsectorsizebytes to 4096, the script will now set $copyDrivers to $true. This will create a drivers folder on the deploy partition of the USB drive with the drivers that were supposed to be added to the FFU. There's currently a bug with servicing FFUs with 4096 logical sector byte sizes. Prior to this fix, the script would tell the user to manually set -copydrivers to $true as workaround. This fix just does the workaround automatically. 
