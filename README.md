@@ -6,6 +6,8 @@ This process will copy Windows in about 2-3 minutes to the target device, option
 
 While we use this in Education at Microsoft, other industries can use it as well. We esepcially see a need for something like this with partners who do re-imaging on behalf of customers. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
+  ![Screenshot 2024-04-30 162520](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/f9d5cde8-6380-4e25-9a12-bb4703601067)
+
 # Updates
 ### **2024.5**
  
@@ -39,6 +41,7 @@ While we use this in Education at Microsoft, other industries can use it as well
  - Added warning that all currently connected USB flash drives will be erased
  - Build flash drives from deployment .iso files created by BuildFFUVM.ps1
 
+  
 **Everything below was developed by Microsoft:**
 - https://github.com/zehadialam
 - https://github.com/JoeMama54
