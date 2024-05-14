@@ -1,12 +1,57 @@
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
-This repo contains the full FFU process that we use in US Education at Microsoft to help customers with large deployments of Windows as they prepare for the new school year. This process isn't limited to only large deployments at the start of the year, but is the most common.
+This repo contains the full FFU process that we use at Central Bucks School District to assist us in maintaining over 19k windows devices. This process isn't limited to only large deployments; we use it daily to support our fleet.
 
 This process will copy Windows in about 2-3 minutes to the target device, optionally Install drivers, provisioning packages, Autopilot, etc. School technicians have even given the USB sticks to teachers and teachers calling them their "Magic USB sticks" to quickly get student devices reimaged in the event of an issue with their Windows PC.
 
-While we use this in Education at Microsoft, other industries can use it as well. We esepcially see a need for something like this with partners who do re-imaging on behalf of customers. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
+While this is used for Education at Microsoft, other industries can use it as well. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
   ![Screenshot 2024-04-30 162520](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/f9d5cde8-6380-4e25-9a12-bb4703601067)
+# Instructions
+### Edit the config.ini file to adjust what features your full flash update image will have.
+  1 = $True | 0 = $False
+  
+  **Config.ini**
+- ISOPath:Win11_22H2_English_x64.iso
+- WindowsSKU:Education
+- Installapps:1
+- InstallOffice:1
+- InstallDrivers:0
+- Memory:12GB
+- Disksize:30GB
+- Processors:4
+- VMSwitchName:Virtual Switch
+- VMHostIPAddress:10.104.12.114
+- CreateCaptureMedia:1
+- CreateDeploymentMedia:0
+- OptionalFeatures:NetFx3
+- ProductKey:
+- BuildUSBDrive:0
+- WindowsRelease:11
+- WindowsVersion:23H2
+- WindowsArch:x64
+- WindowsLang:en-us
+- MediaType:Consumer
+- LogicalSectorSizeBytes:512
+- Optimize:1
+- CopyDrivers:0
+- CopyPEDrivers:0
+- RemoveFFU:0
+- UpdateLatestCU:1
+- UpdateLatestNet:1
+- UpdateEdge:1
+- UpdateLatestDefender:1
+- UpdateOneDrive:1
+- CopyPPKG:0
+- CopyUnattend:0
+- CopyAutopilot:0
+- CompactOS:1
+- CleanupCaptureISO:0
+- CleanupDeployISO:0
+- CleanupAppsISO:1
+- UpdateWinGet:1
+- InstallRedistributables:1
+
 
 # Updates
 ### **2024.5**
