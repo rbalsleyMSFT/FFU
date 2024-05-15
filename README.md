@@ -51,9 +51,34 @@ While this is used for Education at Microsoft, other industries can use it as we
 - CleanupAppsISO:1
 - UpdateWinGet:1
 - InstallRedistributables:1
+- InstallTeams:1
 
-
+## Then run the command
+    .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini"
 # Updates
+### **2024.6**
+
+**BuildFFUVM.ps1**
+
+- Rebuilt how the scripts many switches (40) are utilized with a config.ini file. 1 is True, 0 is False. All file names assume the files will be located in the folder the script is being executed from.
+- Added Clear-InstallAppsandSysprep function to Get-FFUEnvironment function.
+- Added code to download the latest Winget package manager.
+- Added code to install the latest Winget package manager to the InstallAppsandSysprep.cmd.
+- Added code to download the latest Visual C++ Redistributables.
+- Added code to install the latest latest Visual C++ Redistributables to the InstallAppsandSysprep.cmd
+- Added code to download and install the latest version of Teams.
+- Added code to install the latest version of Teams to the InstallAppsandSysprep.cmd
+- Added code to auto generate InstallAppsandSysprep.cmd if it is not present.
+- Moved the dism clean up of the WinSxS folder to the scratch vhdx. This makes the final FFU file smaller (reduced ~650MB).
+
+**BuildUSBDrives.ps1**
+- Added code to build a diskpart.txt script for formating volumes and use it to build usb drives.
+- Added code to close all file explorer windows related to this tool when building usb drives is completed.
+  
+**CaptureFFU.ps1**
+- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
+  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
+
 ### **2024.5**
  
 **BuildFFUVM.ps1**
@@ -63,8 +88,8 @@ While this is used for Education at Microsoft, other industries can use it as we
 - Added code to preserve the specified language folder when other languages are being utilized.
   - When a language other than en-us is specified; all other unused folders including en-us are cleared out and the specified language folder is preserved.
 - Added code that creates an Images and Drivers folder on the root of the .iso.
-- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
-  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
+- 
+  
 
 **ApplyFFU.ps1**
 - Removed driver selection menu in place of auto installing drivers based off of the model number. (Lenovo model types are truncated down to the first 4 charactars)
@@ -72,6 +97,8 @@ While this is used for Education at Microsoft, other industries can use it as we
 - Added code for detecting wether a main drive is available to apply the OS to. If the drive isn't detected the console will show red (shown below)
 - Added code that looks to \Images for device images.
 - Added code that looks to \Drivers for device drivers
+- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
+  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
 - Added code to display device information:
   - System Time
   - Serial Number
