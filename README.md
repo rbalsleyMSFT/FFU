@@ -54,7 +54,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 - InstallTeams:1
 
 ## Then run the command
-    .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini"
+    .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
 # Updates
 ### **2024.6**
 
