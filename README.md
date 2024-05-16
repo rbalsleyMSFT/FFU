@@ -21,7 +21,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 - Disksize:30GB
 - Processors:4
 - VMSwitchName:Virtual Switch
-- VMHostIPAddress:10.104.12.114
+- VMHostIPAddress:192.168.1.84
 - CreateCaptureMedia:1
 - CreateDeploymentMedia:0
 - OptionalFeatures:NetFx3
@@ -52,6 +52,8 @@ While this is used for Education at Microsoft, other industries can use it as we
 - UpdateWinGet:1
 - InstallRedistributables:1
 - InstallTeams:1
+- ImageAgeLimit:30
+- ClearImagesOlderThan:90
 
 ## Then run the command
     .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
@@ -60,7 +62,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 
 **BuildFFUVM.ps1**
 
-- Rebuilt how the scripts many switches (40) are utilized with a config.ini file. 1 is True, 0 is False. All file names assume the files will be located in the folder the script is being executed from.
+- Rebuilt how the scripts many switches (42) are utilized with a config.ini file. 1 is True, 0 is False. All file names assume the files will be located in the folder the script is being executed from.
 - Added Clear-InstallAppsandSysprep function to Get-FFUEnvironment function.
 - Added code to download the latest Winget package manager.
 - Added code to install the latest Winget package manager to the InstallAppsandSysprep.cmd.
