@@ -6,7 +6,8 @@ This process will copy Windows in about 2-3 minutes to the target device, option
 
 While this is used for Education at Microsoft, other industries can use it as well. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
-  ![Screenshot 2024-04-30 162520](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/f9d5cde8-6380-4e25-9a12-bb4703601067)
+![image](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/0475889a-6a1e-4ac1-9026-7fdddb52e2c2)
+
 # Instructions
 ### Edit the config.ini file to adjust what features your full flash update image will have.
   1 = $True | 0 = $False
