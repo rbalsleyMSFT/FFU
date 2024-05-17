@@ -1,7 +1,7 @@
-
 #Requires -Modules Hyper-V, Storage
 #Requires -PSEdition Desktop
 #Requires -RunAsAdministrator
+
 
 <#
 .SYNOPSIS
@@ -139,30 +139,31 @@ When set to $true, will remove the WinPE deployment ISO after the FFU has been c
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
+.PARAMETER UpdateWinGet
+When set to $true, will update WinGet to the latest version available. Default is $False
+
+.PARAMETER InstallRedistributables
+When set to $true, will install visual C++ reditributables for x86 and x64. Default is $False
+
+.PARAMETER InstallTeams
+When set to $true, will install Teams x64. Default is $False
+Edit the Config.ini in the root of the development folder to customize your FFU. 1 = $True amd 0 = $False
+
+.PARAMETER ImageAgeLimit
+Image age limit is the time you want FFU images to be valid for. Any image older than this in days will not show as available on the apply image tool
+
+.PARAMETER ImageAgeLimit
+Image age limit is the time you want FFU images to be valid for. Any image older than this in days will not show as available on the apply image tool
+
+ImageAgeLimit:47
+
+ISOPath:Win11_22H2_English_x64v2.iso
+WindowsSKU:Education
+Installapps:1
+
 .EXAMPLE
-Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
 
-Command line for most people who want to create an FFU with Office and drivers and have downloaded their own ISO. This assumes you have copied this script and associated files to the C:\FFUDevelopment folder. If you need to use another drive or folder, change the -FFUDevelopment parameter (e.g. -FFUDevelopment 'D:\FFUDevelopment')
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
-Command line for those who just want a FFU with no drivers, apps, or Office and have downloaded their own ISO.
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateCaptureMedia $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
-Command line for those who just want a FFU with Apps and drivers, no Office and have downloaded their own ISO.
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
-Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
-Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
-
-Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
-
-Command line for those who just want a FFU With windows defender updated, no Office and have downloaded their own ISO. This is the one of the quicker options. This also leaves the deployment .iso for later use.
-.\BuildFFUVM.ps1 -ISOPath 'C:\FFUDevelopment\Win11_22H2_English_x64v2.iso' -WindowsSKU 'Education' -Installapps $True -InstallOffice $false -InstallDrivers $False -VMSwitchName 'Virtual Switch' -VMHostIPAddress '192.168.86.47' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $False -CleanupCaptureISO $false -CleanupDeployISO $false -compactos $false -UpdateLatestDefender $true -verbose
+.\BuildFFUVM-ScheduledTask.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini"
 
 .NOTES
     Additional notes about your script.
@@ -171,22 +172,41 @@ Command line for those who just want a FFU With windows defender updated, no Off
     https://github.com/rbalsleyMSFT/FFU
 #>
 
-
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false, Position = 0)]
+    [Parameter(Mandatory = $False, Position = 0)]
+    $ConfigPath = "C:\FFUDevelopment\Config.ini"
+)
+
+function Get-Config ($Path){
+    $Config= @{}
+    $ConfigContent = Get-Content $ConfigPath
+
+    # Parse the content
+    $config = [ordered]@{}
+    foreach ($line in $configContent) {
+        if ($line -match "(.*):(.*)") {
+            $config[$matches[1]] = $matches[2]
+        }
+    } 
+    return $Config
+}
+
+Function Build-FFU {
+[CmdletBinding()]
+    param(
     [ValidateScript({ Test-Path $_ })]
-    [string]$ISOPath,
+    [string]$ISOPath = "$PSScriptRoot\"+$Config['ISOPath'],
     [ValidateScript({
             $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')
             if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
             return $true
         })]
-    [string]$WindowsSKU = 'Pro',
+    [string]$WindowsSKU = $Config['WindowsSKU'],
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
-    [bool]$InstallApps,
-    [bool]$InstallOffice,
+    [bool]$InstallApps = [int]$Config['Installapps'],
+    [bool]$InstallOffice = [int]$Config['InstallOffice'],
     [Parameter(Mandatory = $false)]
     [ValidateScript({
             if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
@@ -194,20 +214,20 @@ param(
             }
             return $true
         })]
-    [bool]$InstallDrivers,
-    [uint64]$Memory = 4GB,
-    [uint64]$Disksize = 30GB,
-    [int]$Processors = 4,
-    [string]$VMSwitchName,
+    [bool]$InstallDrivers = [int]$Config['InstallDrivers'],
+    [uint64]$Memory = ($Config['Memory']/1),
+    [uint64]$Disksize = ($Config['Disksize']/1),
+    [int]$Processors = $Config['Processors'],
+    [string]$VMSwitchName = $Config['VMSwitchName'],
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
     [string]$FFUCaptureLocation,
     [String]$ShareName = "FFUCaptureShare",
     [string]$Username = "ffu_user",
     [Parameter(Mandatory = $false)]
-    [string]$VMHostIPAddress,
-    [bool]$CreateCaptureMedia = $true,
-    [bool]$CreateDeploymentMedia,
+    [string]$VMHostIPAddress = $Config['VMHostIPAddress'],
+    [bool]$CreateCaptureMedia = [int]$Config['CreateCaptureMedia'],
+    [bool]$CreateDeploymentMedia = [int]$Config['CreateDeploymentMedia'],
     [ValidateScript({
             $allowedFeatures = @("Windows-Defender-Default-Definitions", "Printing-PrintToPDFServices-Features", "Printing-XPSServices-Features", "TelnetClient", "TFTP",
                 "TIFFIFilter", "LegacyComponents", "DirectPlay", "MSRDC-Infrastructure", "Windows-Identity-Foundation", "MicrosoftWindowsPowerShellV2Root", "MicrosoftWindowsPowerShellV2",
@@ -237,17 +257,17 @@ param(
             }
             return $true
         })]
-    [string]$OptionalFeatures,
+    [string]$OptionalFeatures = $Config['OptionalFeatures'],
     [string]$ProductKey,
-    [bool]$BuildUSBDrive,
+    [bool]$BuildUSBDrive = [int]$Config['BuildUSBDrive'],
     [Parameter(Mandatory = $false)]
     [ValidateSet(10, 11)]
-    [int]$WindowsRelease = 11,
+    [int]$WindowsRelease = $Config['WindowsRelease'],
     [Parameter(Mandatory = $false)]
-    [string]$WindowsVersion = '23h2',
+    [string]$WindowsVersion = $Config['WindowsVersion'],
     [Parameter(Mandatory = $false)]
     [ValidateSet('x86', 'x64', 'arm64')]
-    [string]$WindowsArch = 'x64',
+    [string]$WindowsArch = $Config['WindowsArch'],
     [ValidateScript({
             $allowedLang = @('ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee', 'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu',
                 'it-it', 'ja-jp', 'ko-kr', 'lt-lt', 'lv-lv', 'nb-no', 'nl-nl', 'pl-pl', 'pt-br', 'pt-pt', 'ro-ro', 'ru-ru', 'sk-sk', 'sl-si', 'sr-latn-rs', 'sv-se', 'th-th', 'tr-tr', 'uk-ua',
@@ -256,13 +276,13 @@ param(
             return $true
         })]
     [Parameter(Mandatory = $false)]
-    [string]$WindowsLang = 'en-us',
+    [string]$WindowsLang = $Config['WindowsLang'],
     [Parameter(Mandatory = $false)]
     [ValidateSet('consumer', 'business')]
-    [string]$MediaType = 'consumer',
+    [string]$MediaType = $Config['MediaType'],
     [ValidateSet(512, 4096)]
-    [uint32]$LogicalSectorSizeBytes = 512,
-    [bool]$Optimize = $true,
+    [uint32]$LogicalSectorSizeBytes = $Config['LogicalSectorSizeBytes'],
+    [bool]$Optimize = [int]$Config['Optimize'],
     [Parameter(Mandatory = $false)]
     [ValidateScript({
             if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
@@ -270,23 +290,29 @@ param(
             }
             return $true
         })]
-    [bool]$CopyDrivers,
-    [bool]$CopyPEDrivers,
-    [bool]$RemoveFFU,
-    [bool]$UpdateLatestCU,
-    [bool]$UpdateLatestNet,
-    [bool]$UpdateLatestDefender,
-    [bool]$UpdateEdge,
-    [bool]$UpdateOneDrive,
-    [bool]$CopyPPKG,
-    [bool]$CopyUnattend,
-    [bool]$CopyAutopilot,
-    [bool]$CompactOS = $true,
-    [bool]$CleanupCaptureISO = $true,
-    [bool]$CleanupDeployISO = $true,
-    [bool]$CleanupAppsISO = $true
+    [bool]$CopyDrivers = [int]$Config['CopyDrivers'],
+    [bool]$CopyPEDrivers = [int]$Config['CopyPEDrivers'],
+    [bool]$RemoveFFU = [int]$Config['RemoveFFU'],
+    [bool]$UpdateLatestCU = [int]$Config['UpdateLatestCU'],
+    [bool]$UpdateLatestNet = [int]$Config['UpdateLatestNet'],
+    [bool]$UpdateLatestDefender = [int]$Config['UpdateLatestDefender'],
+    [bool]$UpdateEdge = [int]$Config['UpdateEdge'],
+    [bool]$UpdateOneDrive = [int]$Config['UpdateOneDrive'],
+    [bool]$UpdateWinget = [int]$Config['UpdateWinGet'],
+    [bool]$InstallRedistributables = [int]$Config['InstallRedistributables'],
+    [bool]$CopyPPKG = [int]$Config['CopyPPKG'],
+    [bool]$CopyUnattend = [int]$Config['CopyUnattend'],
+    [bool]$CopyAutopilot = [int]$Config['CopyAutopilot'],
+    [bool]$CompactOS = [int]$Config['CompactOS'],
+    [bool]$CleanupCaptureISO = [int]$Config['CleanupCaptureISO'],
+    [bool]$CleanupDeployISO = [int]$Config['CleanupDeployISO'],
+    [bool]$CleanupAppsISO = [int]$Config['CleanupAppsISO'],
+    [bool]$InstallTeams = [int]$Config['InstallTeams'],
+    [int]$ImageAgeLimit = $Config['ImageAgeLimit'],
+    [int]$ClearImagesOlderThan = $Config['ClearImagesOlderThan']
+    
 )
-$version = '2404.2'
+$version = '2404.6'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -324,6 +350,9 @@ if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
+if (-not $WinGetPath) { $WinGetPath = "$AppsPath\WinGet" }
+if (-not $RedistributablesPath) { $RedistributablesPath = "$AppsPath\Redistributables"}
+if (-not $TeamsPath ) { $TeamsPath = "$AppsPath\Teams"}
 if (-not $Date) {$Date = get-date -UFormat %Y-%m }
 
 #FUNCTIONS
@@ -375,6 +404,55 @@ function LogVariableValues {
         }
     }
     WriteLog 'End logging variables'
+}
+
+function Set-InstallAppsandSysprep {
+    if(!(Test-Path $AppsPath\InstallAppsandSysprep.cmd)){
+    New-Item -Path $AppsPath -Name InstallAppsandSysprep.cmd -ItemType File
+    
+    $Content = Get-Content -Path $AppsPath\InstallAppsandSysprep.cmd
+
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Put each app install on a separate line"
+    if($InstallOffice){
+    
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM M365 Apps/Office ProPlus"
+    }
+    if($UpdateLatestDefender){
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install Defender Platform Update"
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install Defender Definitions"
+    }
+    if($UpdateEdge){
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install Edge Stable"  
+    }
+    if($UpdateOneDrive){
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install OneDrive Per Machine"
+    }
+    if($UpdateWinget){
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install Xaml"
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install VCLibsDesktop"
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install DesktopAppInstaller"
+    }
+    if($InstallRedistributables){
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install VCx86"
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install VCx64"
+    }
+    if($InstallTeams){
+    Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Install Teams"
+    }
+Add-Content -Path $AppsPath\InstallAppsandSysprep.cmd -Value "REM Add additional apps below here
+REM Contoso App (Example)
+REM msiexec /i d:\Contoso\setup.msi /qn /norestart
+REM The below lines will remove the unattend.xml that gets the machine into audit mode. If not removed, the OS will get stuck booting to audit mode each time.
+REM Also kills the sysprep process in order to automate sysprep generalize
+del c:\windows\panther\unattend\unattend.xml /F /Q
+del c:\windows\panther\unattend.xml /F /Q
+taskkill /IM sysprep.exe
+timeout /t 10
+REM Sysprep/Generalize
+c:\windows\system32\sysprep\sysprep.exe /quiet /generalize /oobe"
+
+}
+
 }
 
 function Invoke-Process {
@@ -437,6 +515,7 @@ function Invoke-Process {
     }
 	
 }
+
 function Get-ADKURL {
     param (
         [ValidateSet("Windows ADK", "WinPE add-on")]
@@ -490,6 +569,7 @@ function Get-ADKURL {
         throw $_
     }
 }
+
 function Install-ADK {
     param (
         [ValidateSet("Windows ADK", "WinPE add-on")]
@@ -535,6 +615,7 @@ function Install-ADK {
         throw $_
     }
 }
+
 function Get-InstalledProgramRegKey {
     param (
         [string]$DisplayName
@@ -691,6 +772,7 @@ function Get-ADK {
     }
     return $adkPath
 }
+
 function Get-WindowsESD {
     param(
         [Parameter(Mandatory = $false)]
@@ -778,8 +860,8 @@ function Get-Office {
     $ODTUrl = Get-ODTURL
     $ODTInstallFile = "$env:TEMP\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
-    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile
-
+    #Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile
+    Start-BitsTransfer -Source $ODTUrl -Description $ODTInstallFile
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
     # Start-Process -FilePath $ODTInstallFile -ArgumentList "/extract:$OfficePath /quiet" -Wait
@@ -812,12 +894,13 @@ function Get-Office {
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
     }
 }
+
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
         [string]$Name
     )
-    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=`"$Name`""
+    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -UseBasicParsing
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
@@ -844,21 +927,18 @@ function Get-KBLink {
         Write-Verbose -Message "Downloading information for $guid"
         $post = @{ size = 0; updateID = $guid; uidInfo = $guid } | ConvertTo-Json -Compress
         $body = @{ updateIDs = "[$post]" }
-        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body |
+        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body -UseBasicParsing |
         Select-Object -ExpandProperty Content |
         Select-String -AllMatches -Pattern "http[s]?://[^']*\.microsoft\.com/[^']*|http[s]?://[^']*\.windowsupdate\.com/[^']*" |
         Select-Object -Unique
 
         foreach ($link in $links) {
             $link.matches.value
-            #Filter out cab files
-            # #if ($link -notmatch '\.cab') {
-            #     $link.matches.value
-            # }
-                    
+                  
         }
     }  
 }
+
 function Get-LatestWindowsKB {
     param (
         [ValidateSet(10, 11)]
@@ -968,6 +1048,7 @@ function New-AppsISO {
         Remove-Item -Path "$ODTPath\setup.exe"
     }    
 }
+
 function Get-WimFromISO {
     #Mount ISO, get Wim file
     $mountResult = Mount-DiskImage -ImagePath $isoPath -PassThru
@@ -985,7 +1066,6 @@ function Get-WimFromISO {
 
     return $wimPath
 }
-
 
 function Get-WimIndex {
     param (
@@ -1353,6 +1433,26 @@ Function Set-CaptureFFU {
     }
 }
 
+Function Set-ImageAgeLimit {
+
+ param (
+        [Parameter()]
+        [String]$ApplyFFUScriptPath = "$FFUDevelopmentPath\WinPEDeployFFUFiles\ApplyFFU.ps1"
+    )
+   
+    # Update ApplyFFU.ps1 script
+    if (Test-Path -Path $ApplyFFUScriptPath) {
+        $ScriptContent = Get-Content -Path $ApplyFFUScriptPath
+        $UpdatedContent = $ScriptContent -replace '\(-\d+\)', "(-$ImageAgeLimit)"
+        WriteLog "Updating the image age limit to $ImageAgeLimit days in ApplyFFU.ps1 script"
+        Set-Content -Path $ApplyFFUScriptPath -Value $UpdatedContent
+        WriteLog 'Update complete'
+    }
+    else {
+        throw "ApplyFFU.ps1 script not found at $ApplyFFUScriptPath"
+    }
+}
+
 function New-PEMedia {
     param (
         [Parameter()]
@@ -1432,6 +1532,9 @@ function New-PEMedia {
         $Capture = $false
     }
     If ($Deploy) {
+        if($ImageAgeLimit){
+        Set-ImageAgeLimit
+        }
         WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
         Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
         WriteLog 'Copy complete'
@@ -1463,6 +1566,7 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
 }
+
 function New-FFU {
     param (
         [Parameter(Mandatory = $false)]
@@ -1557,6 +1661,7 @@ function New-FFU {
     
 
 }
+
 function Remove-FFUVM {
     param (
         [Parameter(Mandatory = $false)]
@@ -1615,6 +1720,7 @@ function Remove-FFUVM {
     Invoke-Process cmd "/c mountvol /r"
     WriteLog 'Removal complete'
 }
+
 Function Remove-FFUUserShare {
     WriteLog "Removing $ShareName"
     Remove-SmbShare -Name $ShareName -Force | Out-null
@@ -1674,6 +1780,7 @@ Function Get-WindowsVersionInfo {
         SKU            = $SKU
     }
 }
+
 Function Get-USBDrive {
     $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
     If ($USBDrives -and ($null -eq $USBDrives.count)) {
@@ -1691,6 +1798,7 @@ Function Get-USBDrive {
     }
     return $USBDrives, $USBDrivesCount
 }
+
 Function New-DeploymentUSB {
     param(
         [switch]$CopyFFU
@@ -1818,7 +1926,6 @@ Function New-DeploymentUSB {
     WriteLog "USB Drives completed"
 }
 
-
 function Get-FFUEnvironment {
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
     # Check for running VMs that start with '_FFU-' and are in the 'Off' state
@@ -1930,18 +2037,49 @@ function Get-FFUEnvironment {
         WriteLog "Removing $EdgePath"
         Remove-Item -Path $EdgePath -Recurse -Force
         WriteLog 'Removal complete'
+    }
+      #Clean up $WinGetPath
+    If (Test-Path -Path $WinGetPath) {
+        WriteLog "Removing $WinGetPath"
+        Remove-Item -Path $WinGetPath -Recurse -Force
+        WriteLog 'Removal complete'
     }    
-
+    #Clean up $RedistributablesPath
+    If (Test-Path -Path $RedistributablesPath) {
+        WriteLog "Removing $RedistributablesPath"
+        Remove-Item -Path $RedistributablesPath -Recurse -Force
+        WriteLog 'Removal complete'
+    }
+     #Clean up $TeamsPath
+    If (Test-Path -Path $TeamsPath) {
+        WriteLog "Removing $TeamsPath"
+        Remove-Item -Path $TeamsPath -Recurse -Force
+        WriteLog 'Removal complete'
+    }
+    #Clean up InstallAppsandSysprep.cmd
+    try {
+    WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
+    Clear-InstallAppsandSysprep
+    }
+    catch {
+    Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
+    Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
+    throw $_
+    }
+   
+    #cleanup
     Writelog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
 }
+
 function Remove-FFU {
     #Remove all FFU files in the FFUCaptureLocation
     WriteLog "Removing all FFU files in $FFUCaptureLocation"
     Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
     WriteLog "Removal complete"
 }
+
 function Clear-InstallAppsandSysprep {
     if ($UpdateLatestDefender) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
@@ -1949,7 +2087,7 @@ function Clear-InstallAppsandSysprep {
         $CmdContent -notmatch 'd:\\Defender*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         #Remove $DefenderPath
         WriteLog "Removing $DefenderPath"
-        Remove-Item -Path $DefenderPath -Recurse -Force
+        Remove-Item -Path $DefenderPath -Recurse -Force 2> $null
         WriteLog "Removal complete"
 
     }
@@ -1959,7 +2097,7 @@ function Clear-InstallAppsandSysprep {
         $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         #Remove $OneDrivePath
         WriteLog "Removing $OneDrivePath"
-        Remove-Item -Path $OneDrivePath -Recurse -Force
+        Remove-Item -Path $OneDrivePath -Recurse -Force 2> $null
         WriteLog "Removal complete"  
     }
     if ($UpdateEdge) {
@@ -1968,7 +2106,34 @@ function Clear-InstallAppsandSysprep {
         $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         #Remove $EdgePath
         WriteLog "Removing $EdgePath"
-        Remove-Item -Path $EdgePath -Recurse -Force
+        Remove-Item -Path $EdgePath -Recurse -Force 2> $null
+        WriteLog "Removal complete"
+    }
+    if ($UpdateWinget) {
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove WinGet install"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\Winget*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Remove $WingetPath
+        WriteLog "Removing $WinGetPath"
+        Remove-Item -Path $WinGetPath -Recurse -Force 2> $null
+        WriteLog "Removal complete"
+    }
+     if ($InstallRedistributables) {
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove C++ redistributable installs"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\Redistributables*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Remove $RedistributablesPath
+        WriteLog "Removing $RedistributablesPath"
+        Remove-Item -Path $RedistributablesPath -Recurse -Force 2> $null
+        WriteLog "Removal complete"
+    }
+    if ($InstallTeams) {
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Teams installs"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\Teams*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Remove TeamsPath
+        WriteLog "Removing $TeamsPath"
+        Remove-Item -Path $TeamsPath -Recurse -Force 2> $null
         WriteLog "Removal complete"
     }
 }
@@ -1981,9 +2146,8 @@ if (Test-Path -Path $Logfile) {
 }
 Write-Host "FFU build process has begun. This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
 Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
-
 WriteLog 'Begin Logging'
-
+#Tellmewhereyouare -Speak "Starting Script"
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
 #from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
 #This behavior doesn't happen with WIM files.
@@ -2070,7 +2234,7 @@ if ($InstallApps) {
         #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
         if ($UpdateLatestDefender) {
             WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Definitions"
-            $Name = 'Update for Microsoft Defender Antivirus antimalware platform'
+            $Name = "Update for Microsoft Defender Antivirus antimalware platform"
             #Check if $DefenderPath exists, if not, create it
             If (-not (Test-Path -Path $DefenderPath)) {
                 WriteLog "Creating $DefenderPath"
@@ -2135,7 +2299,7 @@ if ($InstallApps) {
             $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
             try {
                 Start-BitsTransfer -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
-                WriteLog "Defender Definitions downloaded to $OneDrivePath\OneDriveSetup.exe"
+                WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
             }
             catch {
                 Write-Host "Downloading OneDrive client Failed"
@@ -2150,7 +2314,6 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
-
         #Download and Install Edge Stable
         if ($UpdateEdge) {
             WriteLog "`$UpdateEdge is set to true, checking for latest Edge Stable $WindowsArch release"
@@ -2179,12 +2342,64 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
+        #Update Winget Package Manager
+        if($UpdateWinget){
+         #Check if $WinGetPath exists, if not, create it
+            If (-not (Test-Path -Path $WinGetPath)) {
+                WriteLog "Creating $WinGetPath"
+                New-Item -Path $WinGetPath -ItemType Directory -Force | Out-Null
+         }
+        $progressPreference = 'silentlyContinue'
+        WriteLog "Downloading latest WinGet package manager..."
+        Start-BitsTransfer -Source https://aka.ms/getwinget -Destination "$WinGetPath\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        Start-BitsTransfer -Source https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -Destination "$WinGetPath\Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        Start-BitsTransfer -Source https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx -Destination "$WinGetPath\Microsoft.UI.Xaml.2.8.x64.appx"
+        $CmdContentDesktopAppInstaller = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $UpdatedcmdContentDesktopAppInstaller = $CmdContentDesktopAppInstaller -replace '^(REM Install DesktopAppInstaller)', ("REM Install DesktopAppInstaller`r`nPowershell.exe Add-AppxPackage `"d:\WinGet\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle`"")
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentDesktopAppInstaller
+        $CmdContentVCLibsDesktop = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $UpdatedcmdContentVCLibsDesktop = $CmdContentVCLibsDesktop -replace '^(REM Install VCLibsDesktop)', ("REM Install VCLibsDesktop`r`nPowershell.exe Add-AppxPackage `"d:\WinGet\Microsoft.VCLibs.x64.14.00.Desktop.appx`"")
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentVCLibsDesktop
+        $CmdContentXaml = get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $UpdatedcmdContentXaml =  $CmdContentXaml -replace '^(REM Install Xaml)', ("REM Install Xaml`r`nPowershell.exe Add-AppxPackage `"d:\WinGet\Microsoft.UI.Xaml.2.8.x64.appx`"")
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentXaml
+    
+        }
+        if($InstallRedistributables){
+         #Check if $RedistributablesPath exists, if not, create it
+            If (-not (Test-Path -Path $RedistributablesPath)) {
+                WriteLog "Creating $RedistributablesPath"
+                New-Item -Path $RedistributablesPath -ItemType Directory -Force | Out-Null
+            }
+        WriteLog "Downloading Visual C++ Redistributables..."
+        Start-BitsTransfer -Source https://aka.ms/vs/17/release/vc_redist.x86.exe -Destination "$RedistributablesPath\vc_redist.x86.exe"
+        Start-BitsTransfer -Source https://aka.ms/vs/17/release/vc_redist.x64.exe -Destination "$RedistributablesPath\vc_redist.x64.exe"
+        $CmdContentVCx86 = get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $UpdatedcmdContentVCx86 = $CmdContentVCx86 -replace '^(REM Install VCx86)', ("REM Install VCx86`r`n`"d:\Redistributables\VC_redist.x86.exe`" /install /quiet /norestart")
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentVCx86 
+        $CmdContentVCx64 = get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $UpdatedcmdContentVCx64 =  $CmdContentVCx64 -replace '^(REM Install VCx64)', ("REM Install VCx64`r`n`"d:\Redistributables\VC_redist.x64.exe`" /install /quiet /norestart")
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentVCx64 
+        }
+        if($InstallTeams){
+         #Check if $TeamsPath exists, if not, create it
+            If (-not (Test-Path -Path $TeamsPath)) {
+                WriteLog "Creating $TeamsPath"
+                New-Item -Path $TeamsPath -ItemType Directory -Force | Out-Null
+            }
+        WriteLog "Downloading new Teams..."
+        Start-BitsTransfer -Source "https://go.microsoft.com/fwlink/?linkid=2243204&clcid=0x409" -Destination "$TeamsPath\teamsbootstrapper.exe"
+        Start-BitsTransfer -Source "https://go.microsoft.com/fwlink/?linkid=2196106" -Destination "$TeamsPath\MSTeams-x64.msix"
+        $CmdContentTeams = get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $UpdatedcmdContentTeams = $CmdContentTeams -replace '^(REM Install Teams)', ("REM Install Teams`r`n`d:\Teams\teamsbootstrapper.exe -p -o `"d:\Teams\MSTeams-x64.msix`"")
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentTeams
+        }
         #Create Apps ISO
         WriteLog "Creating $AppsISO file"
         New-AppsISO
         WriteLog "$AppsISO created successfully"
-    }
-    catch {
+        }
+        catch {
         Write-Host "Creating Apps ISO Failed"
         WriteLog "Creating Apps ISO Failed with error $_"
         throw $_
@@ -2215,7 +2430,6 @@ try {
     $osPartitionDriveLetter = $osPartition[1].DriveLetter
     $WindowsPartition = $osPartitionDriveLetter + ":\"
 
-    #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
     $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
 
     WriteLog "All necessary partitions created."
@@ -2225,9 +2439,9 @@ try {
     #Update latest Cumulative Update
     #Changed to use MU Catalog instead of using Get-LatestWindowsKB
     #The Windows release info page is updated later than the MU Catalog
-    if ($UpdateLatestCU) {
+ if ($UpdateLatestCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = "Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"
+        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -2237,12 +2451,10 @@ try {
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
         WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
-
-
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows $WindowsRelease, version $WindowsVersion for $WindowsArch"
+        $Name = "Cumulative update Preview for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -2265,16 +2477,18 @@ try {
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
         WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
     }
-    
-    
     #Add Windows packages
     if ($UpdateLatestCU -or $UpdateLatestNet) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+            WriteLog "Clean Up the WinSxS Folder"
+            Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+            WriteLog "Clean Up the WinSxS Folder completed"
+
         }
         catch {
             Write-Host "Adding KB to VHDX failed with error $_"
@@ -2304,7 +2518,6 @@ try {
         #Remove ESD file
         Remove-Item -Path $wimPath -Force
     }
-    
 
     If ($InstallApps) {
         #Copy Unattend file so VM Boots into Audit Mode
@@ -2393,6 +2606,7 @@ try {
             $FFUVM = Get-VM -Name $FFUVM.Name
             Start-Sleep -Seconds 10
             WriteLog 'Waiting for VM to shutdown'
+            #Tellmewhereyouare -Speak "Waiting for VM to shutdown"
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
         #Capture FFU file
@@ -2526,7 +2740,28 @@ If ($CleanupAppsISO) {
         throw $_
     }
 }
+if($ClearImagesOlderThan){
+
+Clear-OldImages -DaysOld $ClearImagesOlderThan
+
+}
+
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
 Write-Host "Script complete"
 WriteLog "Script complete"
+
+}
+
+
+
+# Check if the config file exists
+if (Test-Path -Path $ConfigPath) {
+    # Load the content of the config.ini file
+  $Config = Get-Config -Path $ConfigPath
+  Build-FFU
+}else{
+Write-Host "Config file not found. executing Build-FFU with switches"
+Pause
+Build-FFU -ISOPath 'C:\FFUDevelopment\Win11_22H2_English_x64.iso' -WindowsSKU 'Education' -Installapps $True -InstallOffice $true -InstallDrivers $False -VMSwitchName 'Virtual Switch' -VMHostIPAddress '192.168.86.45' -CreateCaptureMedia $true -CreateDeploymentMedia $true -OptionalFeatures NetFx3 -BuildUSBDrive $False -CleanupCaptureISO $false -CleanupDeployISO $false -UpdateLatestCU $true -UpdateLatestNet $true -UpdateEdge $true -UpdateLatestDefender $true -UpdateOneDrive $true -UpdateWinGet $True -InstallRedistributables $true -Verbose
+}
