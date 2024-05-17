@@ -804,7 +804,8 @@ function Get-WindowsESD {
     # Download cab file
     WriteLog "Downloading Cab file"
     $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
-    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath
+    #Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath
+    Start-BitsTransfer -Source $cabFileUrl -Destination $cabFilePath
     WriteLog "Download succeeded"
 
     # Extract XML from cab file
@@ -828,7 +829,8 @@ function Get-WindowsESD {
                 #Required to fix slow downloads
                 $ProgressPreference = 'SilentlyContinue'
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
-                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath
+                #Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath
+                Start-BitsTransfer -Source $file.FilePath -Destination $esdFilePath
                 WriteLog "Download succeeded"
                 #Set back to show progress
                 $ProgressPreference = 'Continue'
