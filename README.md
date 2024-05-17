@@ -73,6 +73,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 - Added code to auto generate InstallAppsandSysprep.cmd if it is not present.
 - Moved the dism clean up of the WinSxS folder to the scratch vhdx. This makes the final FFU file smaller (reduced ~650MB).
 - Added code to reference the images age limit set in the config.ini file
+- Replaced Invoke-WebRequest with Start-BitsTrasfer for all large file downloads.
 
 **BuildUSBDrives.ps1**
 - Added code to build a diskpart.txt script for formating volumes and use it to build usb drives.
