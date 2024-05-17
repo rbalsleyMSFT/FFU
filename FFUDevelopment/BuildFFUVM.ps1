@@ -308,9 +308,7 @@ Function Build-FFU {
     [bool]$CleanupDeployISO = [int]$Config['CleanupDeployISO'],
     [bool]$CleanupAppsISO = [int]$Config['CleanupAppsISO'],
     [bool]$InstallTeams = [int]$Config['InstallTeams'],
-    [int]$ImageAgeLimit = $Config['ImageAgeLimit'],
-    [int]$ClearImagesOlderThan = $Config['ClearImagesOlderThan']
-    
+    [int]$ImageAgeLimit = $Config['ImageAgeLimit']   
 )
 $version = '2404.6'
 
