@@ -180,7 +180,7 @@ param(
 
 function Get-Config ($Path){
     $Config= @{}
-    $ConfigContent = Get-Content $ConfigPath
+    $ConfigContent = Get-Content $Path
 
     # Parse the content
     $config = [ordered]@{}
