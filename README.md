@@ -17,7 +17,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 - Installapps:1
 - InstallOffice:1
 - InstallDrivers:0
-- Memory:12GB
+- Memory:6GB
 - Disksize:30GB
 - Processors:4
 - VMSwitchName:Virtual Switch
