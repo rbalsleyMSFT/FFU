@@ -2763,5 +2763,5 @@ if (Test-Path -Path $ConfigPath) {
 }else{
 Write-Host "Config file not found. executing Build-FFU with switches"
 Pause
-Build-FFU -ISOPath 'C:\FFUDevelopment\Win11_22H2_English_x64.iso' -WindowsSKU 'Education' -Installapps $True -InstallOffice $true -InstallDrivers $False -VMSwitchName 'Virtual Switch' -VMHostIPAddress '192.168.86.45' -CreateCaptureMedia $true -CreateDeploymentMedia $true -OptionalFeatures NetFx3 -BuildUSBDrive $False -CleanupCaptureISO $false -CleanupDeployISO $false -UpdateLatestCU $true -UpdateLatestNet $true -UpdateEdge $true -UpdateLatestDefender $true -UpdateOneDrive $true -UpdateWinGet $True -InstallRedistributables $true -Verbose
+Build-FFU -ISOPath 'C:\FFUDevelopment\Win11_22H2_English_x64.iso' -WindowsSKU 'Education' -Installapps $True -InstallOffice $true -InstallDrivers $False -VMSwitchName 'Virtual Switch' -VMHostIPAddress '192.168.1.84' -CreateCaptureMedia $true -CreateDeploymentMedia $true -OptionalFeatures NetFx3 -BuildUSBDrive $False -CleanupCaptureISO $false -CleanupDeployISO $false -UpdateLatestCU $true -UpdateLatestNet $true -UpdateEdge $true -UpdateLatestDefender $true -UpdateOneDrive $true -UpdateWinGet $True -InstallRedistributables $true -Verbose
 }
