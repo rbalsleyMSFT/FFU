@@ -185,7 +185,7 @@ function Get-Config ($Path){
     # Parse the content
     $config = [ordered]@{}
     foreach ($line in $configContent) {
-        if ($line -match "(.*):(.*)") {
+        if ($line -match "^(.*?):(.*)$") {
             $config[$matches[1]] = $matches[2]
         }
     } 
