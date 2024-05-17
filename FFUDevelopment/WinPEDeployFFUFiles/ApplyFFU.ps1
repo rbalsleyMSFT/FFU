@@ -1,7 +1,8 @@
-$Host.UI.RawUI.WindowTitle = 'Full Flash Update Imaging Tool | May 2024'
-#InitializeWinPE
+$Host.UI.RawUI.WindowTitle = 'Full Flash Update Imaging Tool | 2024.6'
+
 #FUNCTIONS
-function Initialize-WinPE {
+#InitializeWinPE
+function Start-Wpeinit {
     param (
         [string]$FilePath = "X:\Windows\System32\wpeinit.exe"
     )
@@ -143,22 +144,9 @@ function Color ($bc,$fc) {
 $Console = (Get-Host).UI.RawUI
 $Console.BackgroundColor = $bc
 $Console.ForegroundColor = $fc ; cls}
-# This function can be used in instances where battery level might matter (e.g. installing firmware for Surface). The problem is that WinPE doesn't have
-# a driver for the battery installed, so you'll need to inject drivers, which can be tricky because just injecting the battery driver might not be enough,
-# you might also need other drivers that the battery driver is dependent on. 
-# function Get-Battery(){
-#     while (($BattLev = (Get-CimInstance win32_battery).EstimatedChargeRemaining) -lt "35")
-#     {
-#         WriteLog "Battery is currently at $BattLev`%. Waiting for 35`% to proceed..."
-#         Write-Host "Battery is currently at $BattLev`%. Waiting for 35`% to proceed..."
-#         Start-Sleep 60
-#     }
 
-#     WriteLog "Battery level is $BattLev `%, which is greater than 35'% applying FFU"
-#     Write-Host "Battery level is $BattLev `%, which is greater than 35'% applying FFU"
-# }
 #Start Wpeinit to detect hardware
-Initialize-WinPE
+Start-Wpeinit
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
@@ -187,37 +175,14 @@ $DiskID = $PhysicalDeviceID.substring($PhysicalDeviceID.length - 1,1)
 WriteLog "DiskID is $DiskID"
 #retrieve device info
 $model, $SystemFamily , $Manufacturer , $SerialNumber , $time , $BatteryLevel = Get-DeviceInfo
-#COMMENT THIS WHOLE BLOCK OUT ONCE FFUPROVIDER FIX IS IN
-#Modify diskpart answer files if DiskID not 0
-# $UEFIFFUPartitions = 'x:\CreateUEFI-FFU-Partitions.txt'
-#$ExtendPartition = 'x:\ExtendPartition-UEFI.txt'
-
-#If ($DiskID -ne '0'){
- #   WriteLog 'DiskID is not 0. Need to modify diskpart answer files'
-    # try {
-    #     Set-DiskpartAnswerFiles $UEFIFFUPartitions $DiskID
-    # }
-    # catch {
-    #     WriteLog "Modifying $UEFIFFUPartitions failed with error: $_"
-    # }
-    
-   # try {
-  #      Set-DiskpartAnswerFiles $ExtendPartition $DiskID
-  #  }
- #   catch {
-  #      WriteLog "Modifying $ExtendPartition failed with error: $_"
-  #  }
-#}
 
 #Find FFU Files
 $CurrentDate = Get-date
-$ImageLastUpdatedMax = 90
+$imageValidday = $CurrentDate.AddDays(-30)
+$imageagelimit = ($CurrentDate - $imageValidday).Days
 $ImagesFolder = $USBDrive + "Images\"
-[array]$FFUFiles = @(Get-ChildItem -Path $ImagesFolder*.ffu) # | Where-object {$_.LastWriteTime -le $ImageLastUpdatedMax}
-#[array]$ExpiredFFUFiles = @(Get-ChildItem -Path $ImagesFolder*.ffu) | Where-object {$_.LastWriteTime -gt $ImageLastUpdatedMax}
-
+[array]$FFUFiles = @(Get-ChildItem -Path $ImagesFolder*.ffu)  | Where-object {$_.LastWriteTime -gt $imageValidday}
 $FFUCount = $FFUFiles.Count
-#$ExpiredFFUCount = $ExpiredFFUFiles.count
 #If multiple FFUs found, ask which to install
 If ($FFUFiles) {
 #If ($FFUCount -gt 1) {
@@ -237,34 +202,24 @@ If ($FFUFiles) {
     Write-Host  $DrivePresent
     if($BatteryLevel){
     Write-Host "Current Charge level: " -NoNewline -ForegroundColor Cyan
-    Write-Host  $BatteryLevel}
+    Write-Host  $BatteryLevel`n}
+    Write-Host "FFU images last updated more than $imageagelimit days ago will not be shown in the list below"
+   
     WriteLog "Device information Shown"
-    $array = @()
+    $imagelist = @()
     #Show list of valid Images
     for($i=0;$i -le $FFUCount -1;$i++){
         $lastWriteTime = $FFUFiles[$i].LastWriteTime
         $LastUpdatedDays = ($CurrentDate - $lastWriteTime).Days
         $UpdatedDaysAgo = "$LastUpdatedDays" + " days ago"
-	$Properties = [ordered]@{Number = $i + 1  ; FFUFile = $FFUFiles[$i].FullName ; LastUpdated = $UpdatedDaysAgo } 
+	    $Properties = [ordered]@{Number = $i + 1  ; FFUFile = $FFUFiles[$i].FullName ; LastUpdated = $UpdatedDaysAgo } 
 
         #$Properties.Clear()
-        $array += New-Object PSObject -Property $Properties
+        $imagelist += New-Object PSObject -Property $Properties
 
     }
-    $array | Format-Table -AutoSize -Property Number, FFUFile, LastUpdated
-    #$array = ""
-    #SHow list of Expired FFU Images
-       for($i=0;$i -le $ExpiredFFUCount -1;$i++){
-        $lastWriteTime = $ExpiredFFUFiles[$i].LastWriteTime
-        $LastUpdatedDays = ($CurrentDate - $lastWriteTime).Days
-        $UpdatedDaysAgo = "$LastUpdatedDays" + " days ago"
-	$ExpiredProperties = [ordered]@{Number = $i + 1  ; FFUFile = $ExpiredFFUFiles[$i].FullName ; LastUpdated = $UpdatedDaysAgo } 
+    $imagelist | Format-Table -AutoSize -Property Number, FFUFile, LastUpdated
 
-        #$Properties.Clear()
-        $Expiredarray += New-Object PSObject -Property $Properties
-
-    }
-    $Expiredarray | Format-Table -AutoSize -Property Number, FFUFile, LastUpdated
     do {
         try {
             $var = $true
@@ -278,19 +233,10 @@ If ($FFUFiles) {
         }
     } until (($FFUSelected -le $FFUCount -1) -and $var) 
 
-    $FFUFileToInstall = $array[$FFUSelected].FFUFile
+    $FFUFileToInstall = $imagelist[$FFUSelected].FFUFile
     
     WriteLog "$FFUFileToInstall was selected"
 }
-#elseif (!$FFUFiles -and $ExpiredFFUFiles) {
- #   WriteLog "Found $FFUCount FFU File"
-  #  $FFUFileToInstall = $FFUFiles[0].FullName
- #   WriteLog "$FFUFileToInstall will be installed"
- #   Writelog 'Expired FFU files found'
-#    Write-Host 'Expired FFU files found. FFU files need to be updated less than $ImageLastUpdatedMax days ago. Please load updated FFU files'
-#    Pause
-#    Exit
-#} 
 else {
     Writelog 'No FFU files found'
     Write-Host 'No FFU files found.'
@@ -484,53 +430,6 @@ else {
     Writelog 'No PPKG files found or PPKG not selected.'
 }
 
-#Find Drivers
-#If (Test-Path -Path $Drivers){}
-#$Drivers = $USBDrive + "Drivers"
-#If (Test-Path -Path $Drivers)
-#{
-    #Check if multiple driver folders found, if so, just select one folder to save time/space
-#    $DriverFolders = Get-ChildItem -Path $Drivers
-#    $DriverFoldersCount = $DriverFolders.count
-#    If ($DriverFoldersCount -gt 1)
-#    {
- #       WriteLog "Found $DriverFoldersCount driver folders"
- #       $array = @()
-
-  #      for($i=0; $i -le $DriverFoldersCount -1; $i++){
-  #      $Properties = [ordered]@{Number = $i + 1; Drivers = $DriverFolders[$i].FullName}
-    #    $array += New-Object PSObject -Property $Properties
-    #    }
-   # $array | Format-Table -AutoSize -Property Number, Drivers
-   # do {
-  #      try {
-  #          $var = $true
-    ##        [int]$DriversSelected = Read-Host 'Enter the set of drivers to install'
-    #        $DriversSelected = $DriversSelected - 1
-   #     }
-   #
-     #   catch {
-     #       Write-Host 'Input was not in correct format. Please enter a valid driver folder number'
-      #      $var = $false
-      #  }
-   # } until (($DriversSelected -le $DriverFoldersCount -1) -and $var) 
-
-  #  $Drivers = $array[$DriversSelected].Drivers
-  #  WriteLog "$Drivers was selected"
-   # }
-   # elseif ($DriverFoldersCount -eq 1) {
-   #     WriteLog "Found $DriverFoldersCount driver folder"
-    #    $Drivers = $DriverFolders.FullName
-    #    WriteLog "$Drivers will be installed"
-    #} 
-  #  else {
-  #      Writelog 'No driver folders found'
-   # }
-#}
-
-#If you want to enable battery level checking, uncomment the line below as well as the Get-Battery function near the top of the script
-#Get-Battery
-
 #Partition drive
 Writelog 'Clean Disk'
 #Start-Process -FilePath diskpart.exe -ArgumentList "/S $UEFIFFUPartitions" -Wait -ErrorAction Stop | Out-File $Logfile -Append
@@ -566,63 +465,6 @@ else{
     invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
     exit
 }
-
-#Remove recovery partition - this is needed in order to extend the Windows partition so it uses the full disk size. If dism /optimize-ffu worked, this wouldn't be needed
-# $disk = get-disk -Number $DiskID
-# $RecoveryPartition = $disk | get-partition | Where-Object {$_.type -eq 'Recovery'}
-# if ($RecoveryPartition){
-#     $RecoveryPartitionNumber = $RecoveryPartition.PartitionNumber
-#     if ($RecoveryPartitionNumber -eq 4){
-#         try {
-#             WriteLog 'Removing recovery partition'
-#             Remove-partition -DiskNumber $DiskID -PartitionNumber $RecoveryPartitionNumber -Confirm:$false
-#         }
-#         catch {
-#             WriteLog 'Error removing recovery partition, exiting'
-#             throw $_
-#         }
-#     }
-#     else{
-#         WriteLog 'Recovery partition not partition 4. Script will exit. Please create the FFU with the recovery partition as the last partition. This is the default and recommended way.'
-#         exit
-#     }
-# }
-
-#COMMENT THIS WHOLE BLOCK OUT AFTER FFUPROVIDER FIX IS IN
-# Extend Windows partition and create recovery partition
-#Writelog 'Extending Windows partition'
-#Invoke-Process diskpart.exe "/S $ExtendPartition"
-#if($LASTEXITCODE -eq 0){
-#    WriteLog 'Successfully extended Windows partition and created recovery partition'
-#}
-#else{
-#    Writelog "Failed to extend Windows partition and/or create recovery partition - LastExitCode = $LASTEXITCODE"
-#}
-
-#UNCOMMENT THIS AFTER FFUPROVIDER FIX IS IN
-#Set W: drive letter to Windows partition
-#Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
-
-#Copy modified WinRE if folder exists, else copy inbox WinRE
-#$WinRE = $USBDrive + "WinRE\winre.wim"
-#If (Test-Path -Path $WinRE)
-#{
- #   WriteLog 'Copying modified WinRE to Recovery directory'
- #   Invoke-Process xcopy.exe "/h $WinRE R:\Recovery\WindowsRE\ /Y"
- #   WriteLog 'Copying WinRE to Recovery directory succeeded'
- #   WriteLog 'Registering location of recovery tools'
- #   Invoke-Process W:\Windows\System32\Reagentc.exe "/Setreimage /Path R:\Recovery\WindowsRE /Target W:\Windows"
- #   WriteLog 'Registering location of recovery tools succeeded'
-#}
-# else
-# {
-#     WriteLog 'Copying default WinRE to Recovery directory'
-#     Invoke-Process xcopy.exe "/h W:\Windows\System32\Recovery\Winre.wim R:\Recovery\WindowsRE\ /Y"
-#     WriteLog 'Copying WinRE to Recovery directory succeeded'
-#     WriteLog 'Registering location of recovery tools'
-#     Invoke-process W:\Windows\System32\Reagentc.exe "/Setreimage /Path R:\Recovery\WindowsRE /Target W:\Windows"
-#     WriteLog 'Registering location of recovery tools succeeded'
-# }
 
 #Autopilot JSON
 If ($APFileToInstall){
@@ -679,16 +521,6 @@ If ($PrefixToUse){
         throw $_
     }   
 }
-
-#Add Drivers
-#Some drivers can sometimes fail to copy and dism ends up with a non-zero error code. Invoke-process will throw and terminate in these instances. 
-#If (Test-Path -Path $Drivers)
-#{
-#    WriteLog 'Copying drivers'
- #   Write-Warning 'Copying Drivers - dism will pop a window with no progress. This can take a few minutes to complete. This is done so drivers are logged to the scriptlog.txt file. Please be patient.'
-#    Invoke-process dism.exe "/image:W:\ /Add-Driver /Driver:""$Drivers"" /Recurse"
-#    WriteLog 'Copying drivers succeeded'
-#}
 $DriversPath = $USBDrive + "Drivers\" + $Model
 $DriversAvailable = test-path -Path $DriversPath -ErrorAction SilentlyContinue
 
@@ -708,7 +540,3 @@ If ($DriversAvailable){
 WriteLog "Copying dism log to $USBDrive"
 invoke-process xcopy "X:\Windows\logs\dism\dism.log $USBDrive /Y" 
 WriteLog "Copying dism log to $USBDrive succeeded"
-
-
-
-
