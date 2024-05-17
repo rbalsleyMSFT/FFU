@@ -1,4 +1,4 @@
-$Host.UI.RawUI.WindowTitle = 'Full Flash Update Image Capture Tool | May 2024'
+$Host.UI.RawUI.WindowTitle = 'Full Flash Update Image Capture Tool | 2024.6'
 function Initialize-WinPE {
    param (
        [string]$FilePath = "X:\Windows\System32\wpeinit.exe"
@@ -10,8 +10,8 @@ function Initialize-WinPE {
     Start-Sleep -Seconds 2
 }
 Initialize-WinPE
-#Modify the net use W: \\192.168.86.47\FFUCaptureShare /user:ffu_user a0e9e2eb-aa56-45ab-b966-e3c8e7260a05
-net use W: \\192.168.86.47\FFUCaptureShare /user:ffu_user a0e9e2eb-aa56-45ab-b966-e3c8e7260a05
+#Modify the net use W: \\192.168.86.45\FFUCaptureShare /user:ffu_user 6d9142b1-8535-4d3e-a895-33ec494b2bfa
+net use W: \\192.168.86.45\FFUCaptureShare /user:ffu_user 6d9142b1-8535-4d3e-a895-33ec494b2bfa
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
@@ -50,7 +50,6 @@ else{
 }
 
 #If Office is installed, modify the file name of the FFU
-#$Office = Get-childitem -Path 'M:\Program Files\Microsoft Office' -ErrorAction SilentlyContinue | Out-Null
 $Office = Get-childitem -Path 'M:\Program Files\Microsoft Office' -ErrorAction SilentlyContinue
 if($Office){
     $ffuFilePath = "W:\$Name`_$DisplayVersion`_$SKU`_Office`_$BuildDate.ffu"
@@ -61,7 +60,6 @@ if($Office){
 else{
     $ffuFilePath = "W:\$Name`_$DisplayVersion`_$SKU`_Apps`_$BuildDate.ffu"
     $dismArgs = "/capture-ffu /imagefile=$ffuFilePath /capturedrive=\\.\PhysicalDrive0 /name:$Name$DisplayVersion$SKU /Compress:Default"
-    
 }
 
 #Unload Registry
