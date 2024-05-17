@@ -84,6 +84,9 @@ While this is used for Education at Microsoft, other industries can use it as we
 **ApplyFFU.ps1**
 - Added code to only show images updated within the number of days set for ImageAgeLimit in the config.ini file.
 
+**Known Issues**
+- Still working on getting the download latest windows esd feature to work with a config.ini file.
+
 ### **2024.5**
  
 **BuildFFUVM.ps1**
