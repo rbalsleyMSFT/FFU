@@ -9,6 +9,8 @@ Title = 'Select an ISO file'
 $null = $FileBrowser.ShowDialog()
 
 $DeployISOPath = $FileBrowser.FileName
+$DevelopmentPath = $DeployISOPath | Split-Path
+$DiskPartScriptPath = "$DevelopmentPath\DiskPart.txt"
 function WriteLog($LogText) { 
 $LogFileName = '\ScriptLog.txt'
 $LogFile = $PSScriptRoot + $LogFilename
@@ -33,6 +35,7 @@ Function Get-USBDrive {
     }
     return $USBDrives, $USBDrivesCount
 }
+
 Function New-DeploymentUSB {
     param(
         [switch]$CopyFFU,
@@ -76,30 +79,37 @@ Function New-DeploymentUSB {
     $counter = 0
 
     foreach ($USBDrive in $USBDrives) {
+        #New-Item -Path $DiskPartScriptPath -ItemType File
         $Counter++
         WriteLog "Formatting USB drive $Counter out of $USBDrivesCount"
         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
         WriteLog "Physical Disk number is $DiskNumber for USB drive $Counter out of $USBDrivesCount"
-
-        $ScriptBlock = {
-            param($DiskNumber)
-            Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
-            Get-Disk $DiskNumber | Get-Partition | Remove-Partition
-            $Disk = Get-Disk -Number $DiskNumber
-            $Disk | Set-Disk -PartitionStyle MBR
-            $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter 
-            $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
-            Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "Boot" -Confirm:$false
-            Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "Deploy" -Confirm:$false
-        }
-
-        WriteLog 'Partitioning USB Drive'
-        Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
+        WriteLog "Clearing disk"
+        Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+        WriteLog "Building Diskpart.txt file"
+        WriteLog "Select Disk $DiskNumber"
+        Add-Content -Path $DiskPartScriptPath -Value "Select Disk $DiskNumber"
+        Add-Content -Path $DiskPartScriptPath -Value "Convert MBR"
+        Add-Content -Path $DiskPartScriptPath -Value "create partition primary size=2048"
+        Add-Content -Path $DiskPartScriptPath -Value "format quick fs=fat32 label=Boot"
+        Add-Content -Path $DiskPartScriptPath -Value "assign"
+        Add-Content -Path $DiskPartScriptPath -Value "active"
+        Add-Content -Path $DiskPartScriptPath -Value "create partition primary"
+        Add-Content -Path $DiskPartScriptPath -Value "format quick fs=ntfs label=Deploy"
+        Add-Content -Path $DiskPartScriptPath -Value "assign"
+        Add-Content -Path $DiskPartScriptPath -Value "active"
+        Add-Content -Path $DiskPartScriptPath -Value "active"
+        WriteLog 'Partitioning USB Drives'
+        Diskpart /s $DiskPartScriptPath      
         WriteLog 'Done'
-
+        WriteLog "Removing Diskpart.txt from $DiskPartScriptPath"
+        Remove-Item -Path $DiskPartScriptPath -Force -Confirm:$false
 
         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='Boot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
+        WriteLog "Closing explorer windows that automaticlly opened due to autoplay"
+        $FileExplorer= (New-Object -ComObject Shell.Application).Windows() | Where-Object { ($_.LocationName -like "*Boot*") -or ($_.LocationName -like "*Deploy*") -or ($_.LocationName -like "*DVD*") }
+        $FileExplorer | ForEach-Object { $_.Quit() }
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
         Dismount-DiskImage -ImagePath $DeployISO | Out-Null
@@ -111,7 +121,7 @@ Function New-DeploymentUSB {
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
-               # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+               # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='Deploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
                 if ($SelectedFFUFile -is [array]) {
                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
                     foreach ($FFUFile in $SelectedFFUFile) {
@@ -147,26 +157,19 @@ Function New-DeploymentUSB {
                 WriteLog "No FFU file selected. Skipping copy."
             }
         }
-
-       # Set-Volume -FileSystemLabel "TempBoot" -NewFileSystemLabel "Boot"
-     #   Set-Volume -FileSystemLabel "TempDeploy" -NewFileSystemLabel "Deploy"
-
-        if ($USBDrivesCount -gt 1) {
-            & mountvol $BootPartitionDriveLetter /D
-            & mountvol $DeployPartitionDriveLetter /D 
-        }
-
         WriteLog "Drive $counter completed"
     }
 
     WriteLog "USB Drives completed"
 }
 #Get USB Drive and create log file
-$USBDrive = Get-USBDrive
+if(Test-Path "$PSScriptRoot\ScriptLog.txt"){
+Remove-Item -Path "$PSScriptRoot\ScriptLog.txt" -Force -Confirm:$false
 New-item -Path $PSScriptRoot -Name 'ScriptLog.txt' -ItemType "file" -Force | Out-Null
+}
 WriteLog 'Begin Logging'
 Write-Host "WILL ERASE ALL CURRENTLY CONNECTED USB DRIVES" -ForegroundColor Red
 Pause
 $USBDrives, $USBDrivesCount = Get-USBDrive
 
-New-DeploymentUSB -CopyFFU -DeployISO $DeployISOPath -USBDrives $USBDrives
+New-DeploymentUSB -DeployISO $DeployISOPath -USBDrives $USBDrives
