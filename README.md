@@ -10,7 +10,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 
 # Instructions
 ### Edit the config.ini file to adjust what features your full flash update image will have.
-### Any field left blank in the config.ini file will run with default settings.
+### Any bool field left blank in the config.ini file will be considered false.
   1 = $True | 0 = $False
   
   **Config.ini**
