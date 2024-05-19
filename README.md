@@ -6,6 +6,8 @@ This process will copy Windows in about 2-3 minutes to the target device, option
 
 While this is used for Education at Microsoft, other industries can use it as well. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
+My goal in adding all of this functionality was to make it easier to asjust what the script does and put it in a scheduled task that runs onces a month. So we also have an updated image that just needs to be tested on some devices.
+
 ![image](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/0475889a-6a1e-4ac1-9026-7fdddb52e2c2)
 
 # Instructions
@@ -71,7 +73,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 
 **BuildFFUVM.ps1**
 
-- Rebuilt how the scripts many switches (41) are utilized with a config.ini file. 1 is True, 0 is False. All file names assume the files will be located in the folder the script is being executed from.
+- Rebuilt how the scripts many switches (48) are utilized with a config.ini file. 1 is True, 0 is False. All file paths must be **without** starting and ending quotes.
 - Added Clear-InstallAppsandSysprep function to Get-FFUEnvironment function.
 - Added code to download the latest Winget package manager.
 - Added code to install the latest Winget package manager to the InstallAppsandSysprep.cmd.
@@ -83,7 +85,9 @@ While this is used for Education at Microsoft, other industries can use it as we
 - Moved the dism clean up of the WinSxS folder to the scratch vhdx. This makes the final FFU file smaller (reduced ~650MB).
 - Added code to reference the images age limit set in the config.ini file
 - Replaced Invoke-WebRequest with Start-BitsTrasfer for all large file downloads.
-
+- Added code to disable autoplay in the windows registry while the script runs. this is to prevent "Location not available" errors when creating new partitions for the scartch vhdx 
+- Added code so FFUCaptureLocation can be specified in config.ini file.
+  
 **BuildUSBDrives.ps1**
 - Added code to build a diskpart.txt script for formating volumes and use it to build usb drives.
 - Added code to close all file explorer windows related to this tool when building usb drives is completed.
