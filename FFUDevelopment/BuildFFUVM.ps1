@@ -77,7 +77,7 @@ When set to $true, will partition and format a USB drive and copy the captured F
 Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
 
 .PARAMETER WindowsVersion
-String value of the Windows version to download. This is used to identify which version of Windows to download. Default is 23h2.
+String value of the Windows version to download. This is used to identify which version of Windows to download. Default is 23H2.
 
 .PARAMETER WindowsArch
 String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.
@@ -89,7 +89,7 @@ String value in language-region format (e.g. en-us). This is used to identify wh
 String value of either business or consumer. This is used to identify which media type to download. Default is consumer.
 
 .PARAMETER LogicalSectorBytes
-unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512.
+Unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512.
 
 .PARAMETER Optimize
 When set to $true, will optimize the FFU file. Default is $true.
@@ -146,16 +146,16 @@ When set to $true, will update WinGet to the latest version available. Default i
 When set to $true, will install visual C++ reditributables for x86 and x64. Default is $False
 
 .PARAMETER InstallTeams
-When set to $true, will install Teams x64. Default is $False
+When set to $true, will install New Teams x64. Default is $False
 Edit the Config.ini in the root of the development folder to customize your FFU. 1 = $True amd 0 = $False
 
 .PARAMETER ImageAgeLimit
 Image age limit is the time you want FFU images to be valid for. Any image older than this in days will not show as available on the apply image tool
-
-.PARAMETER ImageAgeLimit
-Image age limit is the time you want FFU images to be valid for. Any image older than this in days will not show as available on the apply image tool
-
 ImageAgeLimit:47
+
+.PARAMETER FFUCaptureLocation
+Location where captured ffu images will be saved to.
+
 
 ISOPath:Win11_22H2_English_x64v2.iso
 WindowsSKU:Education
@@ -196,7 +196,7 @@ Function Build-FFU {
 [CmdletBinding()]
     param(
     [ValidateScript({ Test-Path $_ })]
-    [string]$ISOPath = "$PSScriptRoot\"+$Config['ISOPath'],
+    [string]$ISOPath = $Config['ISOPath'],
     [ValidateScript({
             $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')
             if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
@@ -219,11 +219,11 @@ Function Build-FFU {
     [uint64]$Disksize = ($Config['Disksize']/1),
     [int]$Processors = $Config['Processors'],
     [string]$VMSwitchName = $Config['VMSwitchName'],
-    [string]$VMLocation,
-    [string]$FFUPrefix = '_FFU',
-    [string]$FFUCaptureLocation,
-    [String]$ShareName = "FFUCaptureShare",
-    [string]$Username = "ffu_user",
+    [string]$VMLocation = $Config['VMLocation'],
+    [string]$FFUPrefix = $Config['FFUPrefix'],
+    [string]$FFUCaptureLocation = $Config['FFUCaptureLocation'],
+    [String]$ShareName = $Config['ShareName'],
+    [string]$Username = $Config['Username'],
     [Parameter(Mandatory = $false)]
     [string]$VMHostIPAddress = $Config['VMHostIPAddress'],
     [bool]$CreateCaptureMedia = [int]$Config['CreateCaptureMedia'],
@@ -308,9 +308,14 @@ Function Build-FFU {
     [bool]$CleanupDeployISO = [int]$Config['CleanupDeployISO'],
     [bool]$CleanupAppsISO = [int]$Config['CleanupAppsISO'],
     [bool]$InstallTeams = [int]$Config['InstallTeams'],
-    [int]$ImageAgeLimit = $Config['ImageAgeLimit']   
+    [int]$ImageAgeLimit = $Config['ImageAgeLimit'],  
+    [bool]$DisableAutoPlay = [int]$Config['DisableAutoPlay'],
+    [string]$ESDPath =  $Config['ESDPath'],
+    [bool]$CleanupCaptureShare = [int]$Config['CleanupCaptureShare'],
+    [bool]$RemoveVM = [int]$Config['RemoveVM']
+   
 )
-$version = '2404.6'
+$version = '2024.6'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -339,6 +344,9 @@ if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture.iso
 if (-not $OfficePath) { $OfficePath = "$AppsPath\Office" }
 if (-not $rand) { $rand = Get-Random }
 if (-not $VMLocation) { $VMLocation = "$FFUDevelopmentPath\VM" }
+if (-not $Username) { $Username = "ffu_user" }
+if (-not $FFUPrefix) { $FFUPrefix = '_FFU' }
+if (-not $ShareName) { $ShareName = "FFUCaptureShare" }
 if (-not $VMName) { $VMName = "$FFUPrefix-$rand" }
 if (-not $VMPath) { $VMPath = "$VMLocation\$VMName" }
 if (-not $VHDXPath) { $VHDXPath = "$VMPath\$VMName.vhdx" }
@@ -792,7 +800,7 @@ function Get-WindowsESD {
     WriteLog "Windows Architecture: $WindowsArch"
     WriteLog "Windows Language: $WindowsLang"
     WriteLog "Windows Media Type: $MediaType"
-
+    if(!($ESDPath)){
     # Select cab file URL based on Windows Release
     $cabFileUrl = if ($WindowsRelease -eq 10) {
         'https://go.microsoft.com/fwlink/?LinkId=841361'
@@ -804,8 +812,7 @@ function Get-WindowsESD {
     # Download cab file
     WriteLog "Downloading Cab file"
     $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
-    #Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath
-    Start-BitsTransfer -Source $cabFileUrl -Destination $cabFilePath
+    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath
     WriteLog "Download succeeded"
 
     # Extract XML from cab file
@@ -829,8 +836,8 @@ function Get-WindowsESD {
                 #Required to fix slow downloads
                 $ProgressPreference = 'SilentlyContinue'
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
-                #Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath
                 Start-BitsTransfer -Source $file.FilePath -Destination $esdFilePath
+                #Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath
                 WriteLog "Download succeeded"
                 #Set back to show progress
                 $ProgressPreference = 'Continue'
@@ -841,6 +848,12 @@ function Get-WindowsESD {
             }
             return $esdFilePath
         }
+    }
+    }
+    if($ESDPath){
+    
+    return $ESDPath
+    
     }
 }
 
@@ -1073,7 +1086,6 @@ function Get-WimIndex {
         [string]$WindowsSKU
     )
     WriteLog "Getting WIM Index for Windows SKU: $WindowsSKU"
-
     If ($ISOPath) {
         $wimindex = switch ($WindowsSKU) {
             'Home' { 1 }
@@ -2410,6 +2422,7 @@ if ($InstallApps) {
 try {
 
     if ($ISOPath) {
+
         $wimPath = Get-WimFromISO
     }
     else {
@@ -2418,6 +2431,13 @@ try {
     #If index not specified by user, try and find based on WindowsSKU
     if (-not($index) -and ($WindowsSKU)) {
         $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+    }
+    if($DisableAutoPlay){
+    # autoplay setting
+    WriteLog "Disabling autoplay for all drives"
+    # Set the registry key to disable autoplay for all drives
+    Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 1 -Type DWORD
+    #Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name "NoDriveTypeAutoRun" -Value 255 -Type DWORD
     }
 
     $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
@@ -2436,6 +2456,7 @@ try {
 
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
 
+    #Pause
     #Update latest Cumulative Update
     #Changed to use MU Catalog instead of using Get-LatestWindowsKB
     #The Windows release info page is updated later than the MU Catalog
@@ -2630,7 +2651,7 @@ Catch {
     
 }
 #Clean up ffu_user and Share
-If ($InstallApps) {
+If ($InstallApps -and $CleanupCaptureShare -and $CleanupCaptureISO) {
     try {
         Remove-FFUUserShare
     }
@@ -2641,7 +2662,9 @@ If ($InstallApps) {
         throw $_
     }
 }
+
 #Clean up VM or VHDX
+if($RemoveVM){
 try {
     Remove-FFUVM
     WriteLog 'FFU build complete!'
@@ -2651,7 +2674,7 @@ catch {
     Writelog "VM or vhdx cleanup failed with error $_"
     throw $_
 }
-
+}
 #Clean up InstallAppsandSysprep.cmd
 try {
     WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
@@ -2745,7 +2768,13 @@ if($ClearImagesOlderThan){
 Clear-OldImages -DaysOld $ClearImagesOlderThan
 
 }
-
+if($DisableAutoPlay){
+    #autoplay setting
+    WriteLog "Setting autoplay settings back to defaults"
+    # Set autoplay registry keys back to defaults
+    Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 0 -Type DWORD
+    #Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name "NoDriveTypeAutoRun" -Value 145 -Type DWORD
+    }
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
 Write-Host "Script complete"
