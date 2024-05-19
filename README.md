@@ -61,10 +61,12 @@ My goal in adding all of this functionality was to make it easier to adjust what
 | CopyPPKG    | Bool | When set to 1, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is 0.                                                                 |
 | CopyUnattend     | Bool | When set to 1, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is 0.                                                              |
 | CopyAutopilot       | Bool | When set to 1, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is 0.
-| CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.                                                                 |
-| CleanupDeployISO     | Bool | When set to 1, will remove the WinPE deployment ISO after the FFU has been captured. Default is 0.                                                              |
+| CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.  |
+| CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.  |
+| CleanupCaptureShare     | Bool | When set to 1, will remove FFU capture share used to capture images to a local drive. Default is 1.            |
 | CleanupAppsISO       | Bool | When set to 1, will remove the Apps ISO after the FFU has been captured. Default is 1.
 | Optimize     | Bool | When set to 1, will optimize the FFU file. Default is 1. |
+| RemoveVM     | Bool | When set to 1, will remove the VM created from this script. Default is 1. |
 | RemoveFFU       | Bool | When set to 1, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is 0.
 ## Then run the script
     .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
