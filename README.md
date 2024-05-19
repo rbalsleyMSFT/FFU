@@ -10,51 +10,60 @@ While this is used for Education at Microsoft, other industries can use it as we
 
 # Instructions
 ### Edit the config.ini file to adjust what features your full flash update image will have.
+### Any field left blank in the config.ini file will run with default settings.
   1 = $True | 0 = $False
   
   **Config.ini**
-- ISOPath:Win11_22H2_English_x64.iso
-- WindowsSKU:Education
-- Installapps:1
-- InstallOffice:1
-- InstallDrivers:0
-- Memory:6GB
-- Disksize:30GB
-- Processors:4
-- VMSwitchName:Virtual Switch
-- VMHostIPAddress:192.168.1.84
-- CreateCaptureMedia:1
-- CreateDeploymentMedia:0
-- OptionalFeatures:NetFx3
-- ProductKey:
-- BuildUSBDrive:0
-- WindowsRelease:11
-- WindowsVersion:23H2
-- WindowsArch:x64
-- WindowsLang:en-us
-- MediaType:Consumer
-- LogicalSectorSizeBytes:512
-- Optimize:1
-- CopyDrivers:0
-- CopyPEDrivers:0
-- RemoveFFU:0
-- UpdateLatestCU:1
-- UpdateLatestNet:1
-- UpdateEdge:1
-- UpdateLatestDefender:1
-- UpdateOneDrive:1
-- CopyPPKG:0
-- CopyUnattend:0
-- CopyAutopilot:0
-- CompactOS:1
-- CleanupCaptureISO:0
-- CleanupDeployISO:0
-- CleanupAppsISO:1
-- UpdateWinGet:1
-- InstallRedistributables:1
-- InstallTeams:1
-- ImageAgeLimit:30
-
+| Parameter            | Type | Description                                                                                                                                                              |
+| -------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ISOPath        | String | When left blank downloads latest ESD from Microsoft or Install ESD provided at ESDPath. do not use quotes: **C:\FFUDevelopment\Win11_22H2_English_x64.iso**                             |
+| ESDPath            | String | When left blsnk downloads latest ESD from Microsoft. if path to ESD is provided offline ESD will be used do not use quotes: **C:\FFUDevelopment\22631.2861.231204-0538.23H2_NI_RELEASE_SVC_REFRESH_CLIENTCONSUMER_RET_x64FRE_en-us.esd**                  |
+| WindowsSKU       | String | Edition of Windows 10/11 to be installed, e.g., accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'. Do not use Single quotes.  
+| WindowsRelease       | Integer | Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.  |
+| WindowsVersion      | String | String value of the Windows version to download. This is used to identify which version of Windows to download. Default is 23H2.    |
+| WindowsArch | String | String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.    |
+| WindowsLang           | String | String value in language-region format (e.g. en-us). This is used to identify which language of media to download. Default is en-us.       |
+| MediaType       | String | String value of either business or consumer. This is used to identify which media type to download. Default is consumer. |
+| DisableAutoPlay             | Bool | When set to 1, Will disable autoplay in the windows registry and re-enable after script is complete. This prevent file explorer from opening with **Location not available** errors        |
+| CompactOS         | Bool | When set to 1, will compact the OS when building the FFU. Default is 1.                                 |
+| UpdateLatestCU        | Bool | When set to 1, will download and install the latest cumulative update for Windows 10/11. Default is 0.                                 |
+| UpdateLatestNet            | Bool | When set to 1, will download and install the latest .NET Framework for Windows 10/11. Default is 0.     |
+| OptionalFeatures    | String | Provide a semi-colon separated list of Windows optional features you want to include in the FFU (e.g. netfx3;TFTP). NOTE: **Cannot enable netfx3 when ESD is used**  |
+| ProductKey     | String | Product key for the Windows 10/11 edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here.                         |
+| VMLocation       | String | Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.                    |
+| FFUPrefix   | String | Prefix for the generated FFU file. Default is _FFU.                               |
+| ShareName            | String | Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.                       |
+| Username       | String | Username for accessing the shared folder. The default is ffu_user. The script will auto create the account and password. When finished, it will remove the account.                     |
+| Memory       | Integer | Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Use 4GB if necesary.                     |
+| Disksize        | Integer | Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk.                               |
+| Processors            | Integer | Number of virtual processors for the virtual machine. Recommended to use at least 4.                       |
+| VMSwitchName       | String | Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is *external*, but you will likely need to change this.   |
+| VMHostIPAddress      | String | IP address of the Hyper-V host for FFU capture. **If $InstallApps is set to 1, this parameter must be configured**. You must manually configure this. The script will not auto detect your IP (depending on your network adapters, it may not find the correct IP). |
+| LogicalSectorSizeBytes | Integer | Unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512. 
+| Installapps | Bool |When set to 1, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.ISO, install the Apps, sysprep, and capture the VM. When set to 0, the FFU is created from a VHDX file. No VM is created. |
+| InstallOffice           | Bool | Install Microsoft Office if set to $1. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM.       |
+| InstallDrivers       | Bool | Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to 1. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU. |
+| UpdateEdge             | Bool | When set to 1, will download and install the latest Microsoft Edge for Windows 10/11. Default is 0.        |
+| UpdateLatestDefender         | Bool | When set to 1, will download and install the latest Windows Defender definitions and Defender platform update. Default is 0.                                  |
+| UpdateOneDrive        | Bool | When set to 1, will download and install the latest OneDrive for Windows 10/11 and install it as a per machine installation instead of per user. Default is 0.                                 |
+| UpdateWinGet            | Bool | When set to 1, will update WinGet to the latest version available. Default is 0.                                                                                         |
+| InstallRedistributables    | Bool | When set to 1, download and install latest version of visual C++ reditributables for x86 and x64. Default is 0.                                                                 |
+| InstallTeams     | Bool | When set to 1, will download and install latest version of New Teams x64. Default is 0.                                                              |
+| CopyDrivers       | Bool | When set to 1, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is 0. 
+| CopyPEDrivers           | Bool | When set to 1, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is 0.  |
+| CreateCaptureMedia       | Bool | When set to 1, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM and the boot order will be changed to automate the capture of the FFU. Default is 1 |
+| FFUCaptureLocation             | String | Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU if not path is specified |
+| CreateDeploymentMedia         | Bool | When set to $true, this will create WinPE deployment media for use when deploying to a physical device.                                  |
+| ImageAgeLimit        | Integer | Image age limit is the time days you want FFU images to be valid for. Any image older than what is set here will not show as available on the apply image tool.                                 |
+| BuildUSBDrive            | Bool | When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward. |
+| CopyPPKG    | Bool | When set to 1, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is 0.                                                                 |
+| CopyUnattend     | Bool | When set to 1, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is 0.                                                              |
+| CopyAutopilot       | Bool | When set to 1, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is 0.
+| CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.                                                                 |
+| CleanupDeployISO     | Bool | When set to 1, will remove the WinPE deployment ISO after the FFU has been captured. Default is 1.                                                              |
+| CleanupAppsISO       | Bool | When set to 1, will remove the Apps ISO after the FFU has been captured. Default is 1.
+| Optimize     | Bool | When set to 1, will optimize the FFU file. Default is 1. |
+| RemoveFFU       | Bool | When set to 1, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is 0.
 ## Then run the script
     .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
 # Updates
