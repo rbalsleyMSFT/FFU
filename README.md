@@ -62,8 +62,8 @@ My goal in adding all of this functionality was to make it easier to adjust what
 | CopyUnattend     | Bool | When set to 1, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is 0.                                                              |
 | CopyAutopilot       | Bool | When set to 1, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is 0.
 | CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.  |
-| CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.  |
 | CleanupCaptureShare     | Bool | When set to 1, will remove FFU capture share used to capture images to a local drive. Default is 1.            |
+| CleanupDeployISO    | Bool | When set to 1, will remove the WinPE deployment ISO after the FFU has been captured. Default is 0.  |
 | CleanupAppsISO       | Bool | When set to 1, will remove the Apps ISO after the FFU has been captured. Default is 1.
 | Optimize     | Bool | When set to 1, will optimize the FFU file. Default is 1. |
 | RemoveVM     | Bool | When set to 1, will remove the VM created from this script. Default is 1. |
