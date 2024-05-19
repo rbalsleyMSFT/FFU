@@ -6,7 +6,7 @@ This process will copy Windows in about 2-3 minutes to the target device, option
 
 While this is used for Education at Microsoft, other industries can use it as well. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
-My goal in adding all of this functionality was to make it easier to adjust what the script does and put it in a scheduled task that runs onces a month. So we also have an updated image that just needs to be tested on some devices.
+My goal in adding all of this functionality was to make it easier to adjust what the script does and put it in a scheduled task that runs once a month. So we also have an updated image that just needs to be tested on some devices.
 
 ![image](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/0475889a-6a1e-4ac1-9026-7fdddb52e2c2)
 
