@@ -75,7 +75,7 @@ My goal in adding all of this functionality was to make it easier to adjust what
 
 **BuildFFUVM.ps1**
 
-- Rebuilt how the scripts many switches (48) are utilized with a config.ini file. 1 is True, 0 is False. All file paths must be **without** starting and ending quotes.
+- Rebuilt how the scripts many switches (50) are utilized with a config.ini file. 1 is True, 0 is False. All file paths must be **without** starting and ending quotes.
 - Added Clear-InstallAppsandSysprep function to Get-FFUEnvironment function.
 - Added code to download the latest Winget package manager.
 - Added code to install the latest Winget package manager to the InstallAppsandSysprep.cmd.
