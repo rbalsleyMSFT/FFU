@@ -26,7 +26,7 @@ My goal in adding all of this functionality was to make it easier to adjust what
 | WindowsArch | String | String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.    |
 | WindowsLang           | String | String value in language-region format (e.g. en-us). This is used to identify which language of media to download. Default is en-us.       |
 | MediaType       | String | String value of either business or consumer. This is used to identify which media type to download. Default is consumer. |
-| DisableAutoPlay             | Bool | When set to 1, Will disable autoplay in the windows registry and re-enable after script is complete. This prevent file explorer from opening with **Location not available** errors        |
+| DisableAutoPlay             | Bool | When set to 1, Will disable autoplay in the windows registry and re-enable after script is complete. This prevents file explorer from opening multiple windows with **Location not available** errors when create new partitions. Default is 0       |
 | CompactOS         | Bool | When set to 1, will compact the OS when building the FFU. Default is 1.                                 |
 | UpdateLatestCU        | Bool | When set to 1, will download and install the latest cumulative update for Windows 10/11. Default is 0.                                 |
 | UpdateLatestNet            | Bool | When set to 1, will download and install the latest .NET Framework for Windows 10/11. Default is 0.     |
