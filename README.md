@@ -85,7 +85,7 @@ My goal in adding all of this functionality was to make it easier to asjust what
 - Moved the dism clean up of the WinSxS folder to the scratch vhdx. This makes the final FFU file smaller (reduced ~650MB).
 - Added code to reference the images age limit set in the config.ini file
 - Replaced Invoke-WebRequest with Start-BitsTrasfer for all large file downloads.
-- Added code to disable autoplay in the windows registry while the script runs. this is to prevent "Location not available" errors when creating new partitions for the scartch vhdx 
+- Added code to disable autoplay in the windows registry while the script runs. this is to prevent "Location not available" errors when creating new partitions for the scratch vhdx 
 - Added code so FFUCaptureLocation can be specified in config.ini file.
   
 **BuildUSBDrives.ps1**
