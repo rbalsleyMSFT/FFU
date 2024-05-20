@@ -20,8 +20,5 @@ del c:\windows\panther\unattend\unattend.xml /F /Q
 del c:\windows\panther\unattend.xml /F /Q
 taskkill /IM sysprep.exe
 timeout /t 10
-REM Run Component Cleanup since dism /online /cleanup-image /analyzecomponentcleanup recommends it
-REM If adding latest CU, definitely need to do this to keep FFU size smaller
-dism /online /cleanup-image /startcomponentcleanup /resetbase
 REM Sysprep/Generalize
 c:\windows\system32\sysprep\sysprep.exe /quiet /generalize /oobe
