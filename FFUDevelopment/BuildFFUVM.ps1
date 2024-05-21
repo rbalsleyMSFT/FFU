@@ -1438,6 +1438,31 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
 }
+
+function Optimize-FFUCaptureDrive {
+    param (
+        [string]$VhdxPath
+    )
+    try {
+        WriteLog 'Mounting VHDX for volume optimization'
+        Mount-VHD -Path $VhdxPath
+        WriteLog 'Defragmenting Windows partition...'
+        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose
+        WriteLog 'Performing slab consolidation on Windows partition...'
+        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
+        WriteLog 'Dismounting VHDX'
+        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        WriteLog 'Mounting VHDX as read-only for optimization'
+        Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly
+        WriteLog 'Optimizing VHDX in full mode...'
+        Optimize-VHD -Path $VhdxPath -Mode Full
+        WriteLog 'Dismounting VHDX'
+        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+    } catch {
+        throw $_
+    }
+}
+
 function New-FFU {
     param (
         [Parameter(Mandatory = $false)]
@@ -2364,6 +2389,7 @@ try {
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
+        Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
         New-FFU $FFUVM.Name
     }

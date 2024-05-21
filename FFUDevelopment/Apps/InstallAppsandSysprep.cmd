@@ -18,5 +18,22 @@ timeout /t 10
 REM Run Component Cleanup since dism /online /cleanup-image /analyzecomponentcleanup recommends it
 REM If adding latest CU, definitely need to do this to keep FFU size smaller
 dism /online /cleanup-image /startcomponentcleanup /resetbase
+REM Run disk cleanup (cleanmgr.exe) with all options enabled: https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/automating-disk-cleanup-tool
+set rootkey=HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches
+REM Per above doc, the Offline Pages Files subkey does not have stateflags value
+for /f "tokens=*" %%K in ('reg query "%rootkey%"') do (
+    echo %%K | findstr /i /c:"Offline Pages Files"
+    if errorlevel 1 (
+        reg add "%%K" /v StateFlags0000 /t REG_DWORD /d 2 /f
+    )
+)
+cleanmgr.exe /sagerun:0
+REM Remove the StateFlags0000 registry value
+for /f "tokens=*" %%K in ('reg query "%rootkey%"') do (
+    echo %%K | findstr /i /c:"Offline Pages Files"
+    if errorlevel 1 (
+        reg delete "%%K" /v StateFlags0000 /f
+    )
+)
 REM Sysprep/Generalize
 c:\windows\system32\sysprep\sysprep.exe /quiet /generalize /oobe
