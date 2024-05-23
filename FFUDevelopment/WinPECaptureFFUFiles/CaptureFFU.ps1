@@ -11,7 +11,7 @@ function Initialize-WinPE {
 }
 Initialize-WinPE
 #Modify the net use W: \\192.168.86.45\FFUCaptureShare /user:ffu_user 6d9142b1-8535-4d3e-a895-33ec494b2bfa
-net use W: \\192.168.86.45\FFUCaptureShare /user:ffu_user 6d9142b1-8535-4d3e-a895-33ec494b2bfa
+net use W: \\192.168.1.1\FFUCaptureShare /user:ffu_user 6d9142b1-8535-4d3e-a895-33ec494b2bfa
 
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
