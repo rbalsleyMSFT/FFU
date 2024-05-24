@@ -283,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2404.2'
+$version = '2405.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
