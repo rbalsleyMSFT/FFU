@@ -2265,10 +2265,13 @@ try {
     if ($UpdateLatestCU -or $UpdateLatestNet) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+	    WriteLog "Clean Up the WinSxS Folder"
+            Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+            WriteLog "Clean Up the WinSxS Folder completed"
         }
         catch {
             Write-Host "Adding KB to VHDX failed with error $_"
