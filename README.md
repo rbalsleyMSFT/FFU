@@ -8,8 +8,8 @@ While we use this in Education at Microsoft, other industries can use it as well
 
 # Updates
 **2405.1**
-- Moved the resetbase command from within the VM to after servicing the VHDX. This will make it so the FFU size is smaller after the latest CU or .NET framework are installed. Thanks to Mike Kelly for the PR [Commit](https://github.com/rbalsleyMSFT/FFU/pull/24)
-- Some additional FFU size reduction enhancements (Thanks Zehadi Alam [Commit](https://github.com/rbalsleyMSFT/FFU/pull/25):
+- Moved the resetbase command from within the VM to after servicing the VHDX. This will make it so the FFU size is smaller after the latest CU or .NET framework are installed. (Thanks to Mike Kelly for the PR [Commit](https://github.com/rbalsleyMSFT/FFU/pull/24))
+- Some additional FFU size reduction enhancements (Thanks Zehadi Alam [Commit](https://github.com/rbalsleyMSFT/FFU/pull/25)):
   - Disk cleanup is now run before sysprep to help reduce FFU file size
   - Before FFU capture, Optimize-FFU is run to defrag and slabconsolidate the VHDX
 
