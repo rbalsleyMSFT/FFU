@@ -283,7 +283,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2404.2'
+$version = '2405.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1438,6 +1438,31 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
 }
+
+function Optimize-FFUCaptureDrive {
+    param (
+        [string]$VhdxPath
+    )
+    try {
+        WriteLog 'Mounting VHDX for volume optimization'
+        Mount-VHD -Path $VhdxPath
+        WriteLog 'Defragmenting Windows partition...'
+        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose
+        WriteLog 'Performing slab consolidation on Windows partition...'
+        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
+        WriteLog 'Dismounting VHDX'
+        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        WriteLog 'Mounting VHDX as read-only for optimization'
+        Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly
+        WriteLog 'Optimizing VHDX in full mode...'
+        Optimize-VHD -Path $VhdxPath -Mode Full
+        WriteLog 'Dismounting VHDX'
+        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+    } catch {
+        throw $_
+    }
+}
+
 function New-FFU {
     param (
         [Parameter(Mandatory = $false)]
@@ -2240,10 +2265,13 @@ try {
     if ($UpdateLatestCU -or $UpdateLatestNet) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+	        WriteLog "Clean Up the WinSxS Folder"
+            Invoke-Process cmd "/c ""$DandIEnv"" && Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase" | Out-Null
+            WriteLog "Clean Up the WinSxS Folder completed"
         }
         catch {
             Write-Host "Adding KB to VHDX failed with error $_"
@@ -2364,6 +2392,7 @@ try {
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
+        Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
         New-FFU $FFUVM.Name
     }
