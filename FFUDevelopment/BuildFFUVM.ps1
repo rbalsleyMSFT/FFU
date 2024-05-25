@@ -2269,7 +2269,7 @@ try {
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
-	    WriteLog "Clean Up the WinSxS Folder"
+	        WriteLog "Clean Up the WinSxS Folder"
             Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
             WriteLog "Clean Up the WinSxS Folder completed"
         }
