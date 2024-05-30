@@ -162,7 +162,6 @@ Get-Job | Wait-Job
 Dismount-DiskImage -ImagePath $DeployISOPath | Out-Null
 Write-ProgressLog "Create Imaging Tool" "Drive creation jobs completed..."
 }
-
 Function New-DeploymentUSB {
     param(
         [String]$FFUDevelopmentPath = $DevelopmentPath ,
@@ -172,8 +171,7 @@ Function New-DeploymentUSB {
         [String]$FFUPath = "$FFUDevelopmentPath\Images",
         [String]$DriversPath = "$FFUDevelopmentPath\Drivers"
         
-    )
-  
+    ) 
     $Drivelist = @()
     writelog "Creating a USB drive selection list"
     for($i=0;$i -le $Count -1;$i++){
