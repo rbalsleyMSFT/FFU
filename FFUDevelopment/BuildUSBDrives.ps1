@@ -144,7 +144,7 @@ $Destination = $Drive+":\Drivers"
         Robocopy $SFolder $DFolder /E /COPYALL /R:5 /W:5 /J
     }
     WriteLog 'Start copy job to copy all drivers to each drive'
-    Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $DriversPath, $Destination #| Out-Null
+    Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $DriversPath, $Destination | Out-Null
 }
 }
 if(!($Drivers)){
@@ -167,8 +167,8 @@ Function New-DeploymentUSB {
     param(
         [String]$FFUDevelopmentPath = $DevelopmentPath ,
         [String]$DeployISO =$DeployISOPath,
-        [Array]$Drives = $usbDrives,
-        [int]$Count = $USBDrivesCount,
+        [Array]$Drives,
+        [int]$Count,
         [String]$FFUPath = "$FFUDevelopmentPath\Images",
         [String]$DriversPath = "$FFUDevelopmentPath\Drivers"
         
