@@ -53,7 +53,7 @@ Function Build-DeploymentUSB{
       param(
             [Array]$Drives       
             )
-              writelog "Creating list of FFU image files"
+            writelog "Creating list of FFU image files"
             $Images = Get-ChildItem -Path $FFUPath -Filter "*.ffu" -File -Recurse
             writelog "Creating list of driver files"
             $Drivers = Get-ChildItem -Path $DriversPath -Recurse
@@ -66,7 +66,7 @@ Function Build-DeploymentUSB{
             $ScriptBlock = {
             param($DriveNumber)
             Clear-Disk -Number $DriveNumber -RemoveData -RemoveOEM -Confirm:$false
-            $Disk = Get-Disk -Number $DiskNumber
+            $Disk = Get-Disk -Number $DriveNumber
             $PartitionStyle = $Disk.PartitionStyle
             if($PartitionStyle -ne 'MBR'){
             $Disk | Set-Disk -PartitionStyle MBR
@@ -144,7 +144,7 @@ $Destination = $Drive+":\Drivers"
         Robocopy $SFolder $DFolder /E /COPYALL /R:5 /W:5 /J
     }
     WriteLog 'Start copy job to copy all drivers to each drive'
-    Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $DriversPath, $Destination | Out-Null
+    Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $DriversPath, $Destination #| Out-Null
 }
 }
 if(!($Drivers)){
@@ -162,16 +162,18 @@ Get-Job | Wait-Job
 Dismount-DiskImage -ImagePath $DeployISOPath | Out-Null
 Write-ProgressLog "Create Imaging Tool" "Drive creation jobs completed..."
 }
+
 Function New-DeploymentUSB {
     param(
         [String]$FFUDevelopmentPath = $DevelopmentPath ,
         [String]$DeployISO =$DeployISOPath,
-        [Array]$Drives,
+        [Array]$Drives = $usbDrives,
         [int]$Count = $USBDrivesCount,
         [String]$FFUPath = "$FFUDevelopmentPath\Images",
         [String]$DriversPath = "$FFUDevelopmentPath\Drivers"
         
-    ) 
+    )
+  
     $Drivelist = @()
     writelog "Creating a USB drive selection list"
     for($i=0;$i -le $Count -1;$i++){
