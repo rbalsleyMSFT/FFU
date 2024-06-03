@@ -2,7 +2,6 @@
 #Requires -PSEdition Desktop
 #Requires -RunAsAdministrator
 
-
 <#
 .SYNOPSIS
 A PowerShell script to create a Windows 10/11 FFU file. 
@@ -2192,11 +2191,27 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
 if ($BuildUSBDrive -eq $true) {
     $USBDrives, $USBDrivesCount = Get-USBDrive
 }
-if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true))) {
-    WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
-    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
-}
 
+if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true)-or ($UpdateWinGet -eq $true)-or ($InstallRedistributables -eq $true)-or ($InstallTeams -eq $true))) {
+    WriteLog 'You have selected to update Defender, OneDrive, Edge, Winget, Teams , or install Visual C++ Resitributables, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, Edge, Winget, Teams , or install Visual C++ Resitributables"
+}
+if (($InstallApps -eq $false) -and (($CleanupCaptureShare -eq $False) -or ($CleanupCaptureISO -eq $false))) {
+    WriteLog 'You have selected to not cleanup the FFU capture share and the FFU capture media, however you are setting InstallApps to false. These settings require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+    throw "InstallApps variable must be set to `$true if you want the Capture iso and capture share to remain"
+}
+if ((($CleanupCaptureShare -eq $True) -and ($CleanupCaptureISO -eq $false)) -or (($CleanupCaptureShare -eq $False) -and ($CleanupCaptureISO -eq $True))) {
+    WriteLog 'CleanupCaptureISO and CleanupCaptureShare are misconfigured in the config.ini file, Both Settings have to be set to the same bool value. The process to create the capture iso creates the Capture share. So they are tied together.'
+    throw "CleanupCaptureISO and CleanupCaptureShare are misconfigured, Both Settings have to be set to the same bool value"
+}
+if (($ESDPath -eq $True) -and ($ISOPath -eq $true)) {
+    WriteLog 'ESDPath and ISOPath are misconfigured in the config.ini file, Both Settings cannot be set to true. If both are blank or false; an ESD will be downloaded from Microsoft.'
+    throw "ESDPath and ISOPath are misconfigured in the config.ini file, Both Settings cannot be set to true"
+}
+if (($VMHostIPAddress -eq 192.168.1.1) -and ($InstallApps -eq $True)) {
+    WriteLog 'VMHostIPAddress is still set to the default setting in the config.ini file, This setting has to be set to the ip address of your Hyper-V Virtual switch. if this is not set correctly the FFU will fail to be captured.'
+    throw "VMHostIPAddress is still set to the default setting in the config.ini file. If this is not set correctly the FFU will fail to be captured"
+}
 #Get script variable values
 LogVariableValues    
 
