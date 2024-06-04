@@ -93,6 +93,10 @@ My goal in adding all of this functionality was to make it easier to adjust what
 **BuildUSBDrives.ps1**
 - Added code to build a diskpart.txt script for formating volumes and use it to build usb drives.
 - Added code to close all file explorer windows related to this tool when building usb drives is completed.
+- An option has been added to choose either one or all USB drives that are currently inserted.
+- Simultaneous creation of multiple drives is supported, which significantly reduces the time required. For instance, the time required to create three 128GB drives is reduced from 21 minutes to approximately 8-9 minutes, depending on the USB specification, USB controller, and USB drive write speed.
+- A progress bar has been added. It advances in segments, so it may appear to be frozen at times, but it is functioning correctly. Please be patient while it progresses.
+- During the creation of the USB drives, image and driver files are automatically copied to the drives. If the Images and Drivers folders exist in the same folder as the CBSD IT-Base-June2024.iso file and contain files, those folders will also be copied to the USB drives.
   
 **CaptureFFU.ps1**
 - Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
@@ -102,7 +106,7 @@ My goal in adding all of this functionality was to make it easier to adjust what
 - Added code to only show images updated within the number of days set for ImageAgeLimit in the config.ini file.
 
 **Known Issues**
-- No issues currently known. still needs more validation that all of the config file switches work properly though.
+- No issues currently known. still needs more validation that all of the config file switches work properly with the config.ini file.
 
 ### **2024.5**
  
