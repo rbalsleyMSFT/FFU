@@ -2889,7 +2889,7 @@ WriteLog 'Creating dirty.txt file'
 New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
 #Get drivers first since user could be prompted for additional info
-if (($make) -and ($model)){
+if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
     try {
         if ($Make -eq 'HP'){
             WriteLog 'Getting HP drivers'
