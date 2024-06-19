@@ -184,6 +184,7 @@ param(
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
     [bool]$InstallOffice,
+    [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
     [string]$Model,
     [Parameter(Mandatory = $false)]
@@ -292,7 +293,22 @@ param(
     [bool]$CleanupAppsISO = $true,
     [string]$DriversFolder,
     [bool]$CleanupDrivers = $true,
-    [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0'
+    [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+    #Microsoft sites will intermittently fail on downloads. These headers are to help with that.
+    $Headers = @{
+        "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+        "Accept-Encoding" = "gzip, deflate, br, zstd"
+        "Accept-Language" = "en-US,en;q=0.9"
+        "Priority" = "u=0, i"
+        "Sec-Ch-Ua" = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
+        "Sec-Ch-Ua-Mobile" = "?0"
+        "Sec-Ch-Ua-Platform" = "`"Windows`""
+        "Sec-Fetch-Dest" = "document"
+        "Sec-Fetch-Mode" = "navigate"
+        "Sec-Fetch-Site" = "none"
+        "Sec-Fetch-User" = "?1"
+        "Upgrade-Insecure-Requests" = "1"
+    }
 )
 $version = '2406.1'
 
@@ -507,7 +523,7 @@ function Get-MicrosoftDrivers {
     WriteLog "Getting Surface driver information from $url"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers (Get-Headers) -UserAgent $UserAgent
+    $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
 
@@ -573,7 +589,7 @@ function Get-MicrosoftDrivers {
     WriteLog "Getting download page content"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers (Get-Headers) -UserAgent $UserAgent
+    $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
     WriteLog "Parsing download page for file"
@@ -1269,7 +1285,7 @@ function Get-ADKURL {
         # Retrieve content of Microsoft documentation page
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
-        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -Headers (Get-Headers) -UserAgent $UserAgent
+        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -Headers $Headers -UserAgent $UserAgent
         $VerbosePreference = $OriginalVerbosePreference
         
         # Extract download URL based on specified pattern
@@ -1429,7 +1445,7 @@ function Confirm-ADKVersionIsLatest {
         $installedADKVersion = $adkRegKey.GetValue("DisplayVersion")
 
         # Retrieve content of Microsoft documentation page
-        $adkWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -Headers (Get-Headers) -UserAgent $UserAgent
+        $adkWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -Headers $Headers -UserAgent $UserAgent
         # Specify regex pattern for ADK version
         $adkVersionPattern = 'ADK\s+(\d+(\.\d+)+)'
         # Check for regex pattern match
@@ -1545,7 +1561,7 @@ function Get-WindowsESD {
     $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath -Headers (Get-Headers) -UserAgent $UserAgent
+    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Download succeeded"
 
@@ -1572,7 +1588,7 @@ function Get-WindowsESD {
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
-                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath -Headers (Get-Headers) -UserAgent $UserAgent
+                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath -Headers $Headers -UserAgent $UserAgent
                 $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Download succeeded"
                 #Set back to show progress
@@ -1587,28 +1603,12 @@ function Get-WindowsESD {
     }
 }
 
-#Microsoft webpages are intermittently returning 404 errors when downloading ODT and Surface Drivers.
-function Get-Headers{
-    $headers = @{
-        "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
-        "Accept-Encoding" = "gzip, deflate, br, zstd"
-        "Accept-Language" = "en-US,en;q=0.9"
-        "Priority" = "u=0, i"
-        "Sec-Ch-Ua" = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
-        "Sec-Ch-Ua-Mobile" = "?0"
-        "Sec-Ch-Ua-Platform" = "`"Windows`""
-        "Sec-Fetch-Dest" = "document"
-        "Sec-Fetch-Mode" = "navigate"
-        "Sec-Fetch-Site" = "none"
-        "Sec-Fetch-User" = "?1"
-        "Upgrade-Insecure-Requests" = "1"
-    }
-}
+
 
 function Get-ODTURL {
 
     # [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117'
-    [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117' -Headers (Get-Headers) -UserAgent $UserAgent
+    [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent
   
     $MSWebPage | ForEach-Object {
         if ($_ -match 'url=(https://.*officedeploymenttool.*\.exe)') {
@@ -1624,7 +1624,7 @@ function Get-Office {
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers (Get-Headers) -UserAgent $UserAgent
+    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
 
     # Extract ODT
@@ -1664,7 +1664,7 @@ function Get-KBLink {
     )
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers (Get-Headers) -UserAgent $UserAgent
+    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
@@ -1694,7 +1694,7 @@ function Get-KBLink {
         $body = @{ updateIDs = "[$post]" }
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
-        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body -Headers (Get-Headers) -UserAgent $UserAgent |
+        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body -Headers $Headers -UserAgent $UserAgent |
         Select-Object -ExpandProperty Content |
         Select-String -AllMatches -Pattern "http[s]?://[^']*\.microsoft\.com/[^']*|http[s]?://[^']*\.windowsupdate\.com/[^']*" |
         Select-Object -Unique
@@ -1727,7 +1727,7 @@ function Get-LatestWindowsKB {
     # Use Invoke-WebRequest to fetch the content of the page
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $response = Invoke-WebRequest -Uri $updateHistoryUrl -Headers (Get-Headers) -UserAgent $UserAgent
+    $response = Invoke-WebRequest -Uri $updateHistoryUrl -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
         
     # Use a regular expression to find the KB article number

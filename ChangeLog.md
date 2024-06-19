@@ -1,39 +1,45 @@
 # Change Log
 
 **2406.1**
-This is a major release that includes the ability to download drivers from the 4 major OEMs (Microsoft, Dell, HP, Lenovo) by simply passing the -Make and -Model parameters to the command line. 
+This is a major release that includes the ability to download drivers from the 4 major OEMs (Microsoft, Dell, HP, Lenovo) by simply passing the -Make and -Model parameters to the command line.
 
-For Dell, HP, and Lenovo, the script leverages a similar process to their corresponding tools that automate driver downloads (Dell SupportAssist, HP Image Assistant, Lenovo System Update/Update Retriever). For Microsoft Surface, it scrapes the Surface Downloads page for the appropriate MSI file to download. Using this method, the drives that are downloaded will be the latest provided by the OEM, unlike other tools that download out of date enteprise CAB files that are made for ConfigMgr. 
+For Dell, HP, and Lenovo, the script leverages a similar process to their corresponding tools that automate driver downloads (Dell SupportAssist, HP Image Assistant, Lenovo System Update/Update Retriever). For Microsoft Surface, it scrapes the Surface Downloads page for the appropriate MSI file to download. Using this method, the drivers that are downloaded will be the latest provided by the OEM, unlike other tools that download out of date enteprise CAB files that are made for ConfigMgr.
 
-The script supports lookups using the -model parameter. For example, if you want to download the drivers for a Surface Laptop Go 3, but don't know the exact model name, you could set -Make 'Microsoft' -Model 'Laptop Go' and it'll give you a list of Surface devices to pick from. If you know the exact name, it'll use that. 
+The script supports lookups using the -model parameter. For example, if you want to download the drivers for a Surface Laptop Go 3, but don't know the exact model name, you could set -Make 'Microsoft' -Model 'Laptop Go' and it'll give you a list of Surface devices to pick from. If you know the exact name, it'll use that and not prompt.
 
-![FFU build command line with -Make 'Microsoft' -Model 'Laptop Go'](image-1.png)
+![FFU Build Command Line that includes -make 'Microsoft' and -model 'Laptop Go' demonstrating how to use the new parameters to download drivers](image-1.png)
 
 ![List of Surface models](image.png)
 
-The goal here is to make it easy to discover the drivers you want to download without having to know the exact model names. 
+The goal here is to make it easy to discover the drivers you want to download without having to know the exact model names.
 
-There are likely going to be bugs with this, but in my testing things seem to work well for the makes and models that I've tried. If you notice something, please fill out an issue in the repro and I'll take a look. If you want to fix whatever issue you're running into, submit a pull request. 
+There are likely going to be bugs with this, but in my testing things seem to work well for the makes and models that I've tried. If you notice something, please fill out an issue in the repro and I'll take a look. If you want to fix whatever issue you're running into, submit a pull request.
 
-
+- Created new parameters
+  - Make
+  - Model
+  - UserAgent
+  - DriversFolder
+  - Headers
 
 **2405.1**
+
 - Moved the resetbase command from within the VM to after servicing the VHDX. This will make it so the FFU size is smaller after the latest CU or .NET framework are installed. (Thanks to Mike Kelly for the PR [Commit](https://github.com/rbalsleyMSFT/FFU/pull/24))
 - Some additional FFU size reduction enhancements (Thanks Zehadi Alam [Commit](https://github.com/rbalsleyMSFT/FFU/pull/25)):
   - Disk cleanup is now run before sysprep to help reduce FFU file size
   - Before FFU capture, Optimize-FFU is run to defrag and slabconsolidate the VHDX
 
-
 **2404.3**
+
 - Fixed an issue where the latest Windows CU wasn't downloading properly [Commit](https://github.com/rbalsleyMSFT/FFU/commit/ae59183a199f39b310c79b31c9b4980fafdeb79b)
 
 **2404.2**
 
-- If setting -installdrivers to $true and -logicalsectorsizebytes to 4096, the script will now set $copyDrivers to $true. This will create a drivers folder on the deploy partition of the USB drive with the drivers that were supposed to be added to the FFU. There's currently a bug with servicing FFUs with 4096 logical sector byte sizes. Prior to this fix, the script would tell the user to manually set -copydrivers to $true as workaround. This fix just does the workaround automatically. 
+- If setting -installdrivers to $true and -logicalsectorsizebytes to 4096, the script will now set $copyDrivers to $true. This will create a drivers folder on the deploy partition of the USB drive with the drivers that were supposed to be added to the FFU. There's currently a bug with servicing FFUs with 4096 logical sector byte sizes. Prior to this fix, the script would tell the user to manually set -copydrivers to $true as workaround. This fix just does the workaround automatically.
 
 **2404.1**
 
-There's a big change with this release related to the ADK. The ADK will now be automatically updated to the latest ADK release. This is required in order to fix an issue with optimized FFUs not applying due to an issue with DISM/FFUProvider.dll. The FFUProvider.dll fix was added to the Sept 2023 ADK. Since we now have the ability to auto upgrade the ADK, I'm more confident in having the BuildFFUVM script creating a complete FFU now (prior it was only creating 3 partitions instead of 4 with the recovery partition - at deployment time, the ApplyFFU.ps1 script would create an empty recovery partition and Windows would populate it on first boot). Please open an issue if this creates a problem for you. I do realize that any new ADK release can have it's own challenges and issues and I do suspect we'll see a new ADK released later this year. 
+There's a big change with this release related to the ADK. The ADK will now be automatically updated to the latest ADK release. This is required in order to fix an issue with optimized FFUs not applying due to an issue with DISM/FFUProvider.dll. The FFUProvider.dll fix was added to the Sept 2023 ADK. Since we now have the ability to auto upgrade the ADK, I'm more confident in having the BuildFFUVM script creating a complete FFU now (prior it was only creating 3 partitions instead of 4 with the recovery partition - at deployment time, the ApplyFFU.ps1 script would create an empty recovery partition and Windows would populate it on first boot). Please open an issue if this creates a problem for you. I do realize that any new ADK release can have it's own challenges and issues and I do suspect we'll see a new ADK released later this year.
 
 - Allow for ISOs with single index WIMs to work [Issue 10](https://github.com/rbalsleyMSFT/FFU/issues/10) - [Commit](https://github.com/rbalsleyMSFT/FFU/commit/9e2da741d53652e6e600ca19cfd38f507bd01fde)
 - Added more robust ADK handling. Will now check for the latest ADK and download it if not installed. Thanks to [Zehadi Alam](https://github.com/zehadialam) [PR 18](https://github.com/rbalsleyMSFT/FFU/pull/18)
