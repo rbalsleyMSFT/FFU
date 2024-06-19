@@ -8,7 +8,7 @@ While we use this in Education at Microsoft, other industries can use it as well
 
 # Updates
 
-2406.1 has been released! Check out the changes at the new [Change Log](ChangeLog.md)
+2406.1 has been released! Check out the changes in the new [Change Log](ChangeLog.md)
 
 # Getting Started
 
