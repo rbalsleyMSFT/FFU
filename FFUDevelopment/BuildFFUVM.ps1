@@ -184,13 +184,19 @@ param(
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
     [bool]$InstallOffice,
+    [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
+    [string]$Make,
+    [string]$Model,
     [Parameter(Mandatory = $false)]
     [ValidateScript({
-            if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
-                throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
-            }
+        if ($Make) {
             return $true
-        })]
+        }
+        if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
+            throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
+        }
+        return $true
+    })]
     [bool]$InstallDrivers,
     [uint64]$Memory = 4GB,
     [uint64]$Disksize = 30GB,
@@ -262,6 +268,9 @@ param(
     [bool]$Optimize = $true,
     [Parameter(Mandatory = $false)]
     [ValidateScript({
+            if ($Make) {
+                return $true
+            }
             if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
                 throw 'CopyDrivers is set to $true, but either the Drivers folder is missing or empty'
             }
@@ -281,9 +290,27 @@ param(
     [bool]$CompactOS = $true,
     [bool]$CleanupCaptureISO = $true,
     [bool]$CleanupDeployISO = $true,
-    [bool]$CleanupAppsISO = $true
+    [bool]$CleanupAppsISO = $true,
+    [string]$DriversFolder,
+    [bool]$CleanupDrivers = $true,
+    [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+    #Microsoft sites will intermittently fail on downloads. These headers are to help with that.
+    $Headers = @{
+        "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+        "Accept-Encoding" = "gzip, deflate, br, zstd"
+        "Accept-Language" = "en-US,en;q=0.9"
+        "Priority" = "u=0, i"
+        "Sec-Ch-Ua" = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
+        "Sec-Ch-Ua-Mobile" = "?0"
+        "Sec-Ch-Ua-Platform" = "`"Windows`""
+        "Sec-Fetch-Dest" = "document"
+        "Sec-Fetch-Mode" = "navigate"
+        "Sec-Fetch-Site" = "none"
+        "Sec-Fetch-User" = "?1"
+        "Upgrade-Insecure-Requests" = "1"
+    }
 )
-$version = '2405.1'
+$version = '2406.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -321,6 +348,7 @@ if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
+if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -433,6 +461,811 @@ function Invoke-Process {
     }
 	
 }
+
+function Test-Url {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Url
+    )
+    try {
+        # Create a web request and check the response
+        $request = [System.Net.WebRequest]::Create($Url)
+        $request.Method = 'HEAD'
+        $response = $request.GetResponse()
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+# Function to download a file using BITS with retry and error handling
+function Start-BitsTransferWithRetry {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Source,
+        [Parameter(Mandatory = $true)]
+        [string]$Destination,
+        [int]$Retries = 3
+    )
+
+    $attempt = 0
+    while ($attempt -lt $Retries) {
+        try {
+            $OriginalVerbosePreference = $VerbosePreference
+            $VerbosePreference = 'SilentlyContinue'
+            $ProgressPreference = 'SilentlyContinue'
+            Start-BitsTransfer -Source $Source -Destination $Destination -ErrorAction Stop
+            $ProgressPreference = 'Continue'
+            $VerbosePreference = $OriginalVerbosePreference
+            return
+        }
+        catch {
+            $attempt++
+            WriteLog "Attempt $attempt of $Retries failed to download $Source. Retrying..."
+            Start-Sleep -Seconds 5
+        }
+    }
+    WriteLog "Failed to download $Source after $Retries attempts."
+    return $false
+}
+
+function Get-MicrosoftDrivers {
+    param (
+        [string]$Make,
+        [string]$Model,
+        [int]$WindowsRelease
+    )
+
+    $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
+    
+    # Download the webpage content
+    WriteLog "Getting Surface driver information from $url"
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
+    WriteLog "Complete"
+
+    # Parse the content of the relevant nested divs
+    WriteLog "Parsing web content for models and download links"
+    $html = $webContent.Content
+    $nestedDivPattern = '<div id="ID0EBHFBH[1-8]" class="ocContentControlledByDropdown.*?">(.*?)</div>'
+    $nestedDivMatches = [regex]::Matches($html, $nestedDivPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+    $models = @()
+    $modelPattern = '<p>(.*?)</p>\s*</td>\s*<td>\s*<p>\s*<a href="(.*?)"'
+
+    foreach ($nestedDiv in $nestedDivMatches) {
+        $nestedDivContent = $nestedDiv.Groups[1].Value
+        $modelMatches = [regex]::Matches($nestedDivContent, $modelPattern)
+
+        foreach ($match in $modelMatches) {
+            $modelName = $match.Groups[1].Value
+            $modelLink = $match.Groups[2].Value
+            $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+        }
+    }
+    WriteLog "Parsing complete"
+
+    # Validate the model
+    $selectedModel = $models | Where-Object { $_.Model -eq $Model }
+
+    if ($null -eq $selectedModel) {
+        if ($VerbosePreference -ne 'Continue') {
+            Write-Host "The model '$Model' was not found in the list of available models."
+            Write-Host "Please run the script with the -Verbose switch to see the list of available models."
+        }
+        WriteLog "The model '$Model' was not found in the list of available models."
+        WriteLog "Please select a model from the list below by number:"
+        
+        for ($i = 1; $i -lt $models.Count; $i++) {
+            if ($VerbosePreference -ne 'Continue') {
+                Write-Host "$i. $($models[$i].Model)"
+            }
+            WriteLog "$i. $($models[$i].Model)"
+        }
+
+        do {
+            $selection = Read-Host "Enter the number of the model you want to select"
+            WriteLog "User selected model number: $selection"
+            
+            if ($selection -match '^\d+$' -and [int]$selection -ge 0 -and [int]$selection -lt $models.Count) {
+                $selectedModel = $models[$selection]
+            } else {
+                if ($VerbosePreference -ne 'Continue') {
+                    Write-Host "Invalid selection. Please try again."
+                }
+                WriteLog "Invalid selection. Please try again."
+            }
+        } while ($null -eq $selectedModel)
+    }
+
+    $Model = $selectedModel.Model
+    WriteLog "Model: $Model"
+    WriteLog "Download Page: $($selectedModel.Link)"
+
+    # Follow the link to the download page and parse the script tag
+    WriteLog "Getting download page content"
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
+    WriteLog "Complete"
+    WriteLog "Parsing download page for file"
+    $scriptPattern = '<script>window.__DLCDetails__={(.*?)}</script>'
+    $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
+
+    if ($scriptMatch.Success) {
+        $scriptContent = $scriptMatch.Groups[1].Value
+
+        # Extract the download file information from the script tag
+        $downloadFilePattern = '"name":"(.*?)",.*?"url":"(.*?)"'
+        $downloadFileMatches = [regex]::Matches($scriptContent, $downloadFilePattern)
+
+        $downloadLink = $null
+        foreach ($downloadFile in $downloadFileMatches) {
+            $fileName = $downloadFile.Groups[1].Value
+            $fileUrl = $downloadFile.Groups[2].Value
+
+            if ($fileName -match "Win$WindowsRelease") {
+                $downloadLink = $fileUrl
+                break
+            }
+        }
+
+        if ($downloadLink) {
+            WriteLog "Download Link for Windows ${WindowsRelease}: $downloadLink"
+        
+            # Create directory structure
+            if (-not (Test-Path -Path $DriversFolder)) {
+                WriteLog "Creating Drivers folder: $DriversFolder"
+                New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+                WriteLog "Drivers folder created"
+            }
+            $surfaceDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
+            $modelPath = Join-Path -Path $surfaceDriversPath -ChildPath $Model
+            if (-Not (Test-Path -Path $modelPath)) {
+                WriteLog "Creating model folder: $modelPath"
+                New-Item -Path $modelPath -ItemType Directory | Out-Null
+                WriteLog "Complete"
+            }
+        
+            # Download the file
+            $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
+            WriteLog "Downloading $Model driver file to $filePath"
+            Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
+            WriteLog "Download complete"
+        
+            # Determine file extension
+            $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
+        
+            if ($fileExtension -eq ".msi") {
+                # Extract the MSI file using an administrative install
+                WriteLog "Extracting MSI file to $modelPath"
+                $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
+                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments
+                WriteLog "Extraction complete"
+            } elseif ($fileExtension -eq ".zip") {
+                # Extract the ZIP file
+                WriteLog "Extracting ZIP file to $modelPath"
+                $ProgressPreference = 'SilentlyContinue'
+                Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
+                $ProgressPreference = 'Continue'
+                WriteLog "Extraction complete"
+            } else {
+                WriteLog "Unsupported file type: $fileExtension"
+            }
+            # Remove the downloaded file
+            WriteLog "Removing $filePath"
+            Remove-Item -Path $filePath -Force
+            WriteLog "Complete"
+        } else {
+            WriteLog "No download link found for Windows $WindowsRelease."
+        }
+    } else {
+        WriteLog "Failed to parse the download page for the MSI file."
+    }
+}
+function Get-HPDrivers {
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        [string]$Make,
+        [Parameter()]
+        [string]$Model,
+        [Parameter()]
+        [ValidateSet("x64", "x86", "ARM64")]
+        [string]$WindowsArch,
+        [Parameter()]
+        [ValidateSet(10, 11)]
+        [int]$WindowsRelease,
+        [Parameter()]
+        [string]$WindowsVersion
+    )
+
+    # Download and extract the PlatformList.cab
+    $PlatformListUrl = 'https://hpia.hpcloud.hp.com/ref/platformList.cab'
+    $DriversFolder = "$DriversFolder\$Make"
+    $PlatformListCab = "$DriversFolder\platformList.cab"
+    $PlatformListXml = "$DriversFolder\PlatformList.xml"
+
+    if (-not (Test-Path -Path $DriversFolder)) {
+        WriteLog "Creating Drivers folder: $DriversFolder"
+        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+        WriteLog "Drivers folder created"
+    }
+    WriteLog "Downloading $PlatformListUrl to $PlatformListCab"
+    Start-BitsTransferWithRetry -Source $PlatformListUrl -Destination $PlatformListCab
+    WriteLog "Download complete"
+    WriteLog "Expanding $PlatformListCab to $PlatformListXml"
+    Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml"
+    WriteLog "Expansion complete"
+
+    # Parse the PlatformList.xml to find the SystemID based on the ProductName
+    [xml]$PlatformListContent = Get-Content -Path $PlatformListXml
+    $ProductNodes = $PlatformListContent.ImagePal.Platform | Where-Object { $_.ProductName.'#text' -match $Model }
+
+    # Create a list of unique ProductName entries
+    $ProductNames = @()
+    foreach ($node in $ProductNodes) {
+        foreach ($productName in $node.ProductName) {
+            if ($productName.'#text' -match $Model) {
+                $ProductNames += [PSCustomObject]@{
+                    ProductName = $productName.'#text'
+                    SystemID    = $node.SystemID
+                    OSReleaseID = $node.OS.OSReleaseIdFileName -replace 'H', 'h'
+                    IsWindows11 = $node.OS.IsWindows11 -contains 'true'
+                }
+            }
+        }
+    }
+
+    if ($ProductNames.Count -gt 1) {
+        Write-Output "More than one model found matching '$Model':"
+        WriteLog "More than one model found matching '$Model':"
+        $ProductNames | ForEach-Object -Begin { $i = 1 } -Process {
+            if ($VerbosePreference -ne 'Continue') {
+                Write-Output "$i. $($_.ProductName)"
+            }
+            WriteLog "$i. $($_.ProductName)"
+            $i++
+        }
+        $selection = Read-Host "Please select the number corresponding to the correct model"
+        WriteLog "User selected model number: $selection"
+        if ($selection -match '^\d+$' -and [int]$selection -le $ProductNames.Count) {
+            $SelectedProduct = $ProductNames[[int]$selection - 1]
+            $ProductName = $SelectedProduct.ProductName
+            WriteLog "Selected model: $ProductName"
+            $SystemID = $SelectedProduct.SystemID
+            WriteLog "SystemID: $SystemID"
+            $ValidOSReleaseIDs = $SelectedProduct.OSReleaseID
+            WriteLog "Valid OSReleaseIDs: $ValidOSReleaseIDs"
+            $IsWindows11 = $SelectedProduct.IsWindows11
+            WriteLog "IsWindows11 supported: $IsWindows11"
+        }
+        else {
+            WriteLog "Invalid selection. Exiting."
+            if ($VerbosePreference -ne 'Continue') {
+                Write-Host "Invalid selection. Exiting."
+            }
+            exit
+        }
+    }
+    elseif ($ProductNames.Count -eq 1) {
+        $SelectedProduct = $ProductNames[0]
+        $ProductName = $SelectedProduct.ProductName
+        WriteLog "Selected model: $ProductName"
+        $SystemID = $SelectedProduct.SystemID
+        WriteLog "SystemID: $SystemID"
+        $ValidOSReleaseIDs = $SelectedProduct.OSReleaseID
+        WriteLog "OSReleaseID: $ValidOSReleaseIDs"
+        $IsWindows11 = $SelectedProduct.IsWindows11
+        WriteLog "IsWindows11: $IsWindows11"
+    }
+    else {
+        WriteLog "No models found matching '$Model'. Exiting."
+        if ($VerbosePreference -ne 'Continue') {
+            Write-Host "No models found matching '$Model'. Exiting."
+        }
+        exit
+    }
+
+    if (-not $SystemID) {
+        WriteLog "SystemID not found for model: $Model Exiting."
+        if ($VerbosePreference -ne 'Continue') {
+            Write-Host "SystemID not found for model: $Model Exiting."
+        }
+        exit
+    }
+
+    # Validate if WindowsRelease is 11 and there is no IsWindows11 element set to true
+    if ($WindowsRelease -eq 11 -and -not $IsWindows11) {
+        WriteLog "WindowsRelease is set to 11, but no drivers are available for this Windows release. Please set the -WindowsRelease parameter to 10, or provide your own drivers to the FFUDevelopment\Drivers folder."
+        Write-Output "WindowsRelease is set to 11, but no drivers are available for this Windows release. Please set the -WindowsRelease parameter to 10, or provide your own drivers to the FFUDevelopment\Drivers folder."
+        exit
+    }
+
+    # Validate WindowsVersion against OSReleaseID
+    $OSReleaseIDs = $ValidOSReleaseIDs -split ' '
+    $MatchingReleaseID = $OSReleaseIDs | Where-Object { $_ -eq "$WindowsVersion" }
+
+    if (-not $MatchingReleaseID) {
+        Write-Output "The specified WindowsVersion value '$WindowsVersion' is not valid for the selected model. Please select a valid OSReleaseID:"
+        $OSReleaseIDs | ForEach-Object -Begin { $i = 1 } -Process {
+            Write-Output "$i. $_"
+            $i++
+        }
+        $selection = Read-Host "Please select the number corresponding to the correct OSReleaseID"
+        WriteLog "User selected OSReleaseID number: $selection"
+        if ($selection -match '^\d+$' -and [int]$selection -le $OSReleaseIDs.Count) {
+            $WindowsVersion = $OSReleaseIDs[[int]$selection - 1]
+            WriteLog "Selected OSReleaseID: $WindowsVersion"
+        }
+        else {
+            WriteLog "Invalid selection. Exiting."
+            exit
+        }
+    }
+
+    # Modify WindowsArch for URL
+    $Arch = $WindowsArch -replace "^x", ""
+
+    # Construct the URL to download the driver XML cab for the model
+    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersion"
+    $DriverCabUrl = "https://hpia.hpcloud.hp.com/ref/$SystemID/$ModelRelease.cab"
+    $DriverCabFile = "$DriversFolder\$ModelRelease.cab"
+    $DriverXmlFile = "$DriversFolder\$ModelRelease.xml"
+
+    if (-not (Test-Url -Url $DriverCabUrl)) {
+        WriteLog "HP Driver cab URL is not accessible: $DriverCabUrl Exiting"
+        if ($VerbosePreference -ne 'Continue') {
+            Write-Host "HP Driver cab URL is not accessible: $DriverCabUrl Exiting"
+        }
+        exit
+    }
+
+    # Download and extract the driver XML cab
+    Writelog "Downloading HP Driver cab from $DriverCabUrl to $DriverCabFile"
+    Start-BitsTransferWithRetry -Source $DriverCabUrl -Destination $DriverCabFile
+    WriteLog "Expanding HP Driver cab to $DriverXmlFile"
+    Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile"
+
+    # Parse the extracted XML file to download individual drivers
+    [xml]$DriverXmlContent = Get-Content -Path $DriverXmlFile
+    $baseUrl = "https://ftp.hp.com/pub/softpaq/sp"
+
+    WriteLog "Downloading drivers for $ProductName"
+    foreach ($update in $DriverXmlContent.ImagePal.Solutions.UpdateInfo) {
+        if ($update.Category -notmatch '^Driver') {
+            continue
+        }
+    
+        $Name = $update.Name
+        # Fix the name for drivers that contain illegal characters for folder name purposes
+        $Name = $Name -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+        WriteLog "Downloading driver: $Name"
+        $Category = $update.Category
+        $Category = $Category -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+        $Version = $update.Version
+        $Version = $Version -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+        $DriverUrl = "https://$($update.URL)"
+        WriteLog "Driver URL: $DriverUrl"
+        $DriverFileName = [System.IO.Path]::GetFileName($DriverUrl)
+        $downloadFolder = "$DriversFolder\$ProductName\$Category"
+        $DriverFilePath = Join-Path -Path $downloadFolder -ChildPath $DriverFileName
+
+        if (Test-Path -Path $DriverFilePath) {
+            WriteLog "Driver already downloaded: $DriverFilePath, skipping"
+            continue
+        }
+
+        if (-not (Test-Path -Path $downloadFolder)) {
+            WriteLog "Creating download folder: $downloadFolder"
+            New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
+            WriteLog "Download folder created"
+        }
+
+        # Download the driver with retry
+        WriteLog "Downloading driver to: $DriverFilePath"
+        Start-BitsTransferWithRetry -Source $DriverUrl -Destination $DriverFilePath
+        WriteLog 'Driver downloaded'
+
+        # Make folder for extraction
+        $extractFolder = "$downloadFolder\$Name\$Version\" + $DriverFileName.TrimEnd('.exe')
+        Writelog "Creating extraction folder: $extractFolder"
+        New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
+        WriteLog 'Extraction folder created'
+    
+        # Extract the driver
+        $arguments = "/s /e /f `"$extractFolder`""
+        WriteLog "Extracting driver"
+        Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments
+        WriteLog "Driver extracted to: $extractFolder"
+
+        # Delete the .exe driver file after extraction
+        Remove-Item -Path $DriverFilePath -Force
+        WriteLog "Driver installation file deleted: $DriverFilePath"
+    }
+    # Clean up the downloaded cab and xml files
+    Remove-Item -Path $DriverCabFile, $DriverXmlFile, $PlatformListCab, $PlatformListXml -Force
+    WriteLog "Driver cab and xml files deleted"
+}
+function Get-LenovoDrivers {
+    param (
+        [Parameter()]
+        [string]$Model,
+        [Parameter()]
+        [ValidateSet("x64", "x86", "ARM64")]
+        [string]$WindowsArch,
+        [Parameter()]
+        [ValidateSet(10, 11)]
+        [int]$WindowsRelease
+    )
+
+    # Parse the Lenovo PSREF search page for machine types
+    function Get-LenovoPSREF {
+        param (
+            [string]$ModelName
+        )
+
+        $url = "https://psref.lenovo.com/search"
+        WriteLog "Getting Lenovo PSREF page for model: $ModelName"
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        $webContent = Invoke-WebRequest -Uri $url
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "Complete"
+
+        # Access the parsed HTML
+        WriteLog "Parsing content"
+        $parsedHtml = $webContent.ParsedHtml
+    
+        # Select the nodes you are interested in
+        $productNameNodes = $parsedHtml.getElementsByTagName("li") | Where-Object { $_.className -contains "productname_li" }
+        $products = @()
+        # Iterate through the nodes
+        foreach ($product in $productNameNodes) {
+            $productA = $product.getElementsByTagName("a") | Where-Object { $_.tagName -eq "a" }
+            $innertext = @($productA.innertext) # Ensure innertext is treated as an array
+            $productName = $innertext[0]
+            
+            #if $productname contains 'Chromebook', skip the product
+            if ($productName -like '*Chromebook*') {
+                continue
+            }
+            $machineTypes = $innertext[1..($innertext.Count - 1)]
+    
+            if ($innertext -match $ModelName) {
+                foreach ($machineType in $machineTypes) {
+                    If ($machineType -eq $modelName) {
+                        WriteLog "Model name entered is a matching machine type"
+                        $products = @()
+                        $products += [pscustomobject]@{
+                            ProductName = $productName
+                            MachineType = $machineType
+                        }
+                        WriteLog "Product Name: $productName Machine Type: $machineType"
+                        continue
+                    }
+                    $products += [pscustomobject]@{
+                        ProductName = $productName
+                        MachineType = $machineType
+                    }
+                }
+            }
+        }
+    
+        return ,$products
+    }
+    
+    # Parse the Lenovo PSREF page for the model
+    $machineTypes = Get-LenovoPSREF -ModelName $Model
+    if ($machineTypes.Count -eq 0) {
+        WriteLog "No machine types found for model: $Model"
+        WriteLog "Enter a valid model or machine type in the -model parameter"
+        exit
+    } elseif ($machineTypes.Count -eq 1) {
+        $machineType = $machineTypes[0].MachineType
+        $model = $machineTypes[0].ProductName
+    } else {
+        if ($VerbosePreference -ne 'Continue'){
+            Write-Output "Multiple machine types found for model: $Model"
+        }
+        WriteLog "Multiple machine types found for model: $Model"
+        for ($i = 0; $i -lt $machineTypes.Count; $i++) {
+            if ($VerbosePreference -ne 'Continue'){
+                Write-Output "$($i + 1). $($machineTypes[$i].ProductName) ($($machineTypes[$i].MachineType))"
+            }
+            WriteLog "$($i + 1). $($machineTypes[$i].ProductName) ($($machineTypes[$i].MachineType))"
+        }
+        $selection = Read-Host "Enter the number of the model you want to select"
+        $machineType = $machineTypes[$selection - 1].MachineType
+        WriteLog "Selected machine type: $machineType"
+        $model = $machineTypes[$selection - 1].ProductName
+        WriteLog "Selected model: $model"
+    }
+    
+
+    # Construct the catalog URL based on Windows release and machine type
+    $ModelRelease = $machineType + "_Win" + $WindowsRelease
+    $CatalogUrl = "https://download.lenovo.com/catalog/$ModelRelease.xml"
+    WriteLog "Lenovo Driver catalog URL: $CatalogUrl"
+
+    if (-not (Test-Url -Url $catalogUrl)) {
+        Write-Error "Lenovo Driver catalog URL is not accessible: $catalogUrl"
+        WriteLog "Lenovo Driver catalog URL is not accessible: $catalogUrl"
+        exit
+    }
+
+    # Create the folder structure for the Lenovo drivers
+    $driversFolder = "$DriversFolder\$Make"
+    if (-not (Test-Path -Path $DriversFolder)) {
+        WriteLog "Creating Drivers folder: $DriversFolder"
+        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+        WriteLog "Drivers folder created"
+    }
+
+    # Download and parse the Lenovo catalog XML
+    $LenovoCatalogXML = "$DriversFolder\$ModelRelease.xml"
+    WriteLog "Downloading $catalogUrl to $LenovoCatalogXML"
+    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $LenovoCatalogXML
+    WriteLog "Download Complete"
+    $xmlContent = [xml](Get-Content -Path $LenovoCatalogXML)
+
+    WriteLog "Parsing Lenovo catalog XML"
+    # Process each package in the catalog
+    foreach ($package in $xmlContent.packages.package) {
+        $packageUrl = $package.location
+        $category = $package.category
+
+        #If category starts with BIOS, skip the package
+        if ($category -like 'BIOS*') {
+            continue
+        }
+
+        #If category name is 'Motherboard Devices Backplanes core chipset onboard video PCIe switches', truncate to 'Motherboard Devices' to shorten path
+        if ($category -eq 'Motherboard Devices Backplanes core chipset onboard video PCIe switches') {
+            $category = 'Motherboard Devices'
+        }
+
+        $packageName = [System.IO.Path]::GetFileName($packageUrl)
+        #Remove the filename from the $packageURL
+        $baseURL = $packageUrl -replace $packageName, "" 
+
+        # Download the package XML
+        $packageXMLPath = "$DriversFolder\$packageName"
+        WriteLog "Downloading $category package XML $packageUrl to $packageXMLPath"
+        If ((Start-BitsTransferWithRetry -Source $packageUrl -Destination $packageXMLPath) -eq $false) {
+            Write-Output "Failed to download $category package XML: $packageXMLPath"
+            WriteLog "Failed to download $category package XML: $packageXMLPath"
+            continue
+        }
+
+        # Load the package XML content
+        $packageXmlContent = [xml](Get-Content -Path $packageXMLPath)
+        $packageType = $packageXmlContent.Package.PackageType.type
+        $packageTitle = $packageXmlContent.Package.title.InnerText
+
+        # Fix the name for drivers that contain illegal characters for folder name purposes
+        $packageTitle = $packageTitle -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+
+        # If ' - ' is in the package title, truncate the title to the first part of the string.
+        $packageTitle = $packageTitle -replace ' - .*', ''
+
+        #Check if packagetype = 2. If packagetype is not 2, skip the package. $packageType is a System.Xml.XmlElement.
+        #This filters out Firmware, BIOS, and other non-INF drivers
+        if ($packageType -ne 2) {
+            Remove-Item -Path $packageXMLPath -Force
+            continue
+        }
+
+        # Extract the driver file name and the extract command
+        $driverFileName = $packageXmlContent.Package.Files.Installer.File.Name
+        $extractCommand = $packageXmlContent.Package.ExtractCommand
+
+        #if extract command is empty/missing, skip the package
+        if (!($extractCommand)) {
+            Remove-Item -Path $packageXMLPath -Force
+            continue
+        }
+
+        # Create the download URL and folder structure
+        $driverUrl = $baseUrl + $driverFileName
+        $downloadFolder = "$DriversFolder\$Model\$Category\$packageTitle"
+        $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driverFileName
+
+        # Check if file has already been downloaded
+        if (Test-Path -Path $driverFilePath) {
+            Write-Output "Driver already downloaded: $driverFilePath skipping"
+            WriteLog "Driver already downloaded: $driverFilePath skipping"
+            continue
+        }
+
+        if (-not (Test-Path -Path $downloadFolder)) {
+            WriteLog "Creating download folder: $downloadFolder"
+            New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
+            WriteLog "Download folder created"
+        }
+
+        # Download the driver with retry
+        WriteLog "Downloading driver: $driverUrl to $driverFilePath"
+        Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath
+        WriteLog "Driver downloaded"
+
+        # Make folder for extraction
+        $extractFolder = $downloadFolder + "\" + $driverFileName.TrimEnd($driverFileName[-4..-1])
+        WriteLog "Creating extract folder: $extractFolder"
+        New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
+        WriteLog "Extract folder created"
+
+        # Modify the extract command
+        $modifiedExtractCommand = $extractCommand -replace '%PACKAGEPATH%', "`"$extractFolder`""
+
+        # Extract the driver
+        # Start-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait -NoNewWindow
+        WriteLog "Extracting driver: $driverFilePath to $extractFolder"
+        Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand
+        WriteLog "Driver extracted"
+
+        # Delete the .exe driver file after extraction
+        WriteLog "Deleting driver installation file: $driverFilePath"
+        Remove-Item -Path $driverFilePath -Force
+        WriteLog "Driver installation file deleted: $driverFilePath"
+
+        # Delete the package XML file after extraction
+        WriteLog "Deleting package XML file: $packageXMLPath"
+        Remove-Item -Path $packageXMLPath -Force
+        WriteLog "Package XML file deleted"
+    }
+
+    #Delete the catalog XML file after processing
+    WriteLog "Deleting catalog XML file: $LenovoCatalogXML"
+    Remove-Item -Path $LenovoCatalogXML -Force
+    WriteLog "Catalog XML file deleted"
+}
+
+function Get-DellDrivers {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Model,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("x64", "x86", "ARM64")]
+        [string]$WindowsArch
+    )
+
+    $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
+    if (-not (Test-Url -Url $catalogUrl)) {
+        WriteLog "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
+        if ($VerbosePreference -ne 'Continue') {
+            Write-Host "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
+        }
+        exit
+    }
+
+    if (-not (Test-Path -Path $DriversFolder)) {
+        WriteLog "Creating Drivers folder: $DriversFolder"
+        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+        WriteLog "Drivers folder created"
+    }
+
+    $DriversFolder = "$DriversFolder\$Make"
+    WriteLog "Creating Dell Drivers folder: $DriversFolder"
+    New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+    WriteLog "Dell Drivers folder created"
+
+    $DellCabFile = "$DriversFolder\CatalogPC.cab"
+    WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
+    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
+    WriteLog "Dell Catalog cab file downloaded"
+
+    $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
+    WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
+    Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML"
+    WriteLog "Dell Catalog cab file extracted"
+
+    $xmlContent = [xml](Get-Content -Path $DellCatalogXML)
+    $baseLocation = "https://" + $xmlContent.manifest.baseLocation + "/"
+    $latestDrivers = @{}
+
+    $softwareComponents = $xmlContent.Manifest.SoftwareComponent | Where-Object { $_.ComponentType.value -eq "DRVR" }
+    foreach ($component in $softwareComponents) {
+        $models = $component.SupportedSystems.Brand.Model
+        foreach ($item in $models) {
+            if ($item.Display.'#cdata-section' -match $Model) {
+                $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+                if ($validOS) {
+                    $driverPath = $component.path
+                    $downloadUrl = $baseLocation + $driverPath
+                    $driverFileName = [System.IO.Path]::GetFileName($driverPath)
+                    $name = $component.Name.Display.'#cdata-section'
+                    $name = $name -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+                    $name = $name -replace '[\,]', '-'
+                    $category = $component.Category.Display.'#cdata-section'
+                    $version = [version]$component.vendorVersion
+                    $namePrefix = ($name -split '-')[0]
+
+                    # Use hash table to store the latest driver for each category to prevent downloading older driver versions
+                    if ($latestDrivers[$category]) {
+                        if ($latestDrivers[$category][$namePrefix]) {
+                            if ($latestDrivers[$category][$namePrefix].Version -lt $version) {
+                                $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
+                                    Name = $name; 
+                                    DownloadUrl = $downloadUrl; 
+                                    DriverFileName = $driverFileName; 
+                                    Version = $version; 
+                                    Category = $category 
+                                }
+                            }
+                        }
+                        else {
+                            $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
+                                Name = $name; 
+                                DownloadUrl = $downloadUrl; 
+                                DriverFileName = $driverFileName; 
+                                Version = $version; 
+                                Category = $category 
+                            }
+                        }
+                    }
+                    else {
+                        $latestDrivers[$category] = @{}
+                        $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
+                            Name = $name; 
+                            DownloadUrl = $downloadUrl; 
+                            DriverFileName = $driverFileName; 
+                            Version = $version; 
+                            Category = $category 
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    foreach ($category in $latestDrivers.Keys) {
+        foreach ($driver in $latestDrivers[$category].Values) {
+            $downloadFolder = "$DriversFolder\$Model\$($driver.Category)"
+            $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driver.DriverFileName
+            
+            if (Test-Path -Path $driverFilePath) {
+                Write-Output "Driver already downloaded: $driverFilePath skipping"
+                continue
+            }
+
+            WriteLog "Downloading driver: $($driver.Name)"
+            if (-not (Test-Path -Path $downloadFolder)) {
+                WriteLog "Creating download folder: $downloadFolder"
+                New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
+                WriteLog "Download folder created"
+            }
+
+            WriteLog "Downloading driver: $($driver.DownloadUrl) to $driverFilePath"
+            try{
+                Start-BitsTransferWithRetry -Source $driver.DownloadUrl -Destination $driverFilePath
+                WriteLog "Driver downloaded"
+            }catch{
+                WriteLog "Failed to download driver: $($driver.DownloadUrl) to $driverFilePath"
+                continue
+            }
+            
+
+            $extractFolder = $downloadFolder + "\" + $driver.DriverFileName.TrimEnd($driver.DriverFileName[-4..-1])
+            WriteLog "Creating extraction folder: $extractFolder"
+            New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
+            WriteLog "Extraction folder created"
+
+            $arguments = "/s /e=`"$extractFolder`""
+            WriteLog "Extracting driver: $driverFilePath to $extractFolder"
+            Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments
+            WriteLog "Driver extracted"
+
+            WriteLog "Deleting driver file: $driverFilePath"
+            Remove-Item -Path $driverFilePath -Force
+            WriteLog "Driver file deleted"
+        }
+    }
+}
 function Get-ADKURL {
     param (
         [ValidateSet("Windows ADK", "WinPE add-on")]
@@ -450,7 +1283,10 @@ function Get-ADKURL {
 
     try {
         # Retrieve content of Microsoft documentation page
-        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        $ADKWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -Headers $Headers -UserAgent $UserAgent
+        $VerbosePreference = $OriginalVerbosePreference
         
         # Extract download URL based on specified pattern
         $ADKMatch = [regex]::Match($ADKWebPage, $ADKUrlPattern)
@@ -469,7 +1305,10 @@ function Get-ADKURL {
         }
 
         # Retrieve headers of the FWlink URL
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
         $FWLinkRequest = Invoke-WebRequest -Uri $ADKFWLink -Method Head -MaximumRedirection 0 -ErrorAction SilentlyContinue
+        $VerbosePreference = $OriginalVerbosePreference
 
         if ($FWLinkRequest.StatusCode -ne 302) {
             WriteLog "Failed to retrieve ADK download URL. Unexpected status code: $($FWLinkRequest.StatusCode)"
@@ -514,7 +1353,7 @@ function Install-ADK {
         $installerLocation = Join-Path $env:TEMP $installer
 
         WriteLog "Downloading $ADKOption from $ADKUrl to $installerLocation"
-        Start-BitsTransfer -Source $ADKUrl -Destination $installerLocation -ErrorAction Stop
+        Start-BitsTransferWithRetry -Source $ADKUrl -Destination $installerLocation -ErrorAction Stop
         WriteLog "$ADKOption downloaded to $installerLocation"
         
         WriteLog "Installing $ADKOption with $feature enabled"
@@ -606,7 +1445,7 @@ function Confirm-ADKVersionIsLatest {
         $installedADKVersion = $adkRegKey.GetValue("DisplayVersion")
 
         # Retrieve content of Microsoft documentation page
-        $adkWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+        $adkWebPage = Invoke-RestMethod "https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -Headers $Headers -UserAgent $UserAgent
         # Specify regex pattern for ADK version
         $adkVersionPattern = 'ADK\s+(\d+(\.\d+)+)'
         # Check for regex pattern match
@@ -720,7 +1559,10 @@ function Get-WindowsESD {
     # Download cab file
     WriteLog "Downloading Cab file"
     $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
-    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Download succeeded"
 
     # Extract XML from cab file
@@ -744,7 +1586,10 @@ function Get-WindowsESD {
                 #Required to fix slow downloads
                 $ProgressPreference = 'SilentlyContinue'
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
-                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath
+                $OriginalVerbosePreference = $VerbosePreference
+                $VerbosePreference = 'SilentlyContinue'
+                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath -Headers $Headers -UserAgent $UserAgent
+                $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Download succeeded"
                 #Set back to show progress
                 $ProgressPreference = 'Continue'
@@ -758,9 +1603,12 @@ function Get-WindowsESD {
     }
 }
 
+
+
 function Get-ODTURL {
 
-    [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117'
+    # [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117'
+    [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent
   
     $MSWebPage | ForEach-Object {
         if ($_ -match 'url=(https://.*officedeploymenttool.*\.exe)') {
@@ -774,11 +1622,13 @@ function Get-Office {
     $ODTUrl = Get-ODTURL
     $ODTInstallFile = "$env:TEMP\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
-    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
 
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
-    # Start-Process -FilePath $ODTInstallFile -ArgumentList "/extract:$OfficePath /quiet" -Wait
     Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet"
 
     # Run setup.exe with config.xml and modify xml file to download to $OfficePath
@@ -787,7 +1637,6 @@ function Get-Office {
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
     $xmlContent.Save($ConfigXml)
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
-    # Start-Process -FilePath "$OfficePath\setup.exe" -ArgumentList "/download $ConfigXml" -Wait
     Invoke-Process $OfficePath\setup.exe "/download $ConfigXml"
 
     WriteLog "Cleaning up ODT default config files and checking InstallAppsandSysprep.cmd file for proper command line"
@@ -813,7 +1662,10 @@ function Get-KBLink {
         [Parameter(Mandatory)]
         [string]$Name
     )
-    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name"
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
@@ -840,10 +1692,13 @@ function Get-KBLink {
         Write-Verbose -Message "Downloading information for $guid"
         $post = @{ size = 0; updateID = $guid; uidInfo = $guid } | ConvertTo-Json -Compress
         $body = @{ updateIDs = "[$post]" }
-        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body |
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body -Headers $Headers -UserAgent $UserAgent |
         Select-Object -ExpandProperty Content |
         Select-String -AllMatches -Pattern "http[s]?://[^']*\.microsoft\.com/[^']*|http[s]?://[^']*\.windowsupdate\.com/[^']*" |
         Select-Object -Unique
+        $VerbosePreference = $OriginalVerbosePreference
 
         foreach ($link in $links) {
             $link.matches.value
@@ -870,7 +1725,10 @@ function Get-LatestWindowsKB {
     }
         
     # Use Invoke-WebRequest to fetch the content of the page
-    $response = Invoke-WebRequest -Uri $updateHistoryUrl
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    $response = Invoke-WebRequest -Uri $updateHistoryUrl -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
         
     # Use a regular expression to find the KB article number
     $kbArticleRegex = 'KB\d+'
@@ -897,7 +1755,7 @@ function Save-KB {
             if ($WindowsArch -is [array]) { 
                 #Some file names include either x64 or amd64
                 if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
-                    Start-BitsTransfer -Source $link -Destination $Path
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
                     break
                 }
@@ -919,27 +1777,27 @@ function Save-KB {
                         #Make sure we're getting the correct architecture for the Security Health Setup update
                         if ($WindowsArch -eq 'x64'){
                             if ($link -match 'securityhealthsetup_e1'){
-                                Start-BitsTransfer -Source $link -Destination $Path
+                                Start-BitsTransferWithRetry -Source $link -Destination $Path
                                 $fileName = ($link -split '/')[-1]
                                 break
                             }
                         }
                         elseif ($WindowsArch -eq 'arm64'){
                             if ($link -match 'securityhealthsetup_25'){
-                                Start-BitsTransfer -Source $link -Destination $Path
+                                Start-BitsTransferWithRetry -Source $link -Destination $Path
                                 $fileName = ($link -split '/')[-1]
                                 break
                             }
                         }
                         continue
                     }
-                    Start-BitsTransfer -Source $link -Destination $Path
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
                 }
             }
             else {
                 if ($link -match $WindowsArch) {
-                    Start-BitsTransfer -Source $link -Destination $Path
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
                     break
                 }
@@ -1447,7 +2305,7 @@ function Optimize-FFUCaptureDrive {
         WriteLog 'Mounting VHDX for volume optimization'
         Mount-VHD -Path $VhdxPath
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose
+        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose 
         WriteLog 'Performing slab consolidation on Windows partition...'
         Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
         WriteLog 'Dismounting VHDX'
@@ -1533,7 +2391,7 @@ function New-FFU {
         WriteLog 'Mounting complete'
         WriteLog 'Adding drivers - This will take a few minutes, please be patient'
         try {
-            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$FFUDevelopmentPath\Drivers" -Recurse -ErrorAction SilentlyContinue | Out-null
+            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$DriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
         }
         catch {
             WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -1775,7 +2633,12 @@ Function New-DeploymentUSB {
                 #Copy drivers using robocopy due to potential size
                 if ($CopyDrivers) {
                     WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
-                    robocopy "$FFUDevelopmentPath\Drivers" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+                    if ($Make){
+                        robocopy "$DriversFolder\$Make" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+                    }else{
+                        robocopy "$DriversFolder" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+                    }
+                    
                 }
                 #Copy Unattend folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
                 if ($CopyUnattend) {
@@ -2016,7 +2879,46 @@ if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($Upda
 }
 
 #Get script variable values
-LogVariableValues    
+LogVariableValues
+
+#Check if environment is dirty
+If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
+    Get-FFUEnvironment
+}
+WriteLog 'Creating dirty.txt file'
+New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
+
+#Get drivers first since user could be prompted for additional info
+if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
+    try {
+        if ($Make -eq 'HP'){
+            WriteLog 'Getting HP drivers'
+            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion
+            WriteLog 'Getting HP drivers completed successfully'
+        }
+        if ($make -eq 'Microsoft'){
+            WriteLog 'Getting Microsoft drivers'
+            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            WriteLog 'Getting Microsoft drivers completed successfully'
+        }
+        if ($make -eq 'Lenovo'){
+            WriteLog 'Getting Lenovo drivers'
+            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            WriteLog 'Getting Lenovo drivers completed successfully'
+        }
+        if ($make -eq 'Dell'){
+            WriteLog 'Getting Dell drivers'
+            #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
+            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch
+            WriteLog 'Getting Dell drivers completed successfully'
+        }
+    }
+    catch {
+        Writelog "Getting drivers failed with error $_"
+        throw $_
+    }
+    
+}
 
 #Get Windows ADK
 try {
@@ -2028,13 +2930,6 @@ catch {
     WriteLog 'ADK not found'
     throw $_
 }
-
-#Check if environment is dirty
-If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
-    Get-FFUEnvironment
-}
-WriteLog 'Creating dirty.txt file'
-New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
 #Create apps ISO for Office and/or 3rd party apps
 if ($InstallApps) {
@@ -2073,6 +2968,7 @@ if ($InstallApps) {
             WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
             $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
             WriteLog "Latest Defender Platform and Definitions saved to $DefenderPath\$KBFilePath"
+            
             #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Defender Update Platform
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Platform Update"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -2102,7 +2998,7 @@ if ($InstallApps) {
                 $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm'
             }
             try {
-                Start-BitsTransfer -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
+                Start-BitsTransferWithRetry -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
                 WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
             }
             catch {
@@ -2120,6 +3016,7 @@ if ($InstallApps) {
         }
         #Download and Install OneDrive Per Machine
         if ($UpdateOneDrive) {
+            WriteLog "`$UpdateOneDrive is set to true, checking for latest OneDrive client"
             #Check if $OneDrivePath exists, if not, create it
             If (-not (Test-Path -Path $OneDrivePath)) {
                 WriteLog "Creating $OneDrivePath"
@@ -2128,7 +3025,7 @@ if ($InstallApps) {
             WriteLog "Downloading latest OneDrive client"
             $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
             try {
-                Start-BitsTransfer -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
+                Start-BitsTransferWithRetry -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
                 WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
             }
             catch {
@@ -2162,9 +3059,9 @@ if ($InstallApps) {
             #Extract Edge cab file to same folder as $EdgeFilePath
             $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
             $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
-            WriteLog "Extracting $EdgeCABFilePath"
+            WriteLog "Expanding $EdgeCABFilePath"
             Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath"
-            WriteLog "Extraction complete"
+            WriteLog "Expansion complete"
 
             #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Edge Stable
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Edge Stable $WindowsArch release"
@@ -2265,12 +3162,13 @@ try {
     if ($UpdateLatestCU -or $UpdateLatestNet) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
+            WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
             Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
 	        WriteLog "Clean Up the WinSxS Folder"
-            Invoke-Process cmd "/c ""$DandIEnv"" && Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase" | Out-Null
+            Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
             WriteLog "Clean Up the WinSxS Folder completed"
         }
         catch {
@@ -2523,8 +3421,24 @@ If ($CleanupAppsISO) {
         Writelog "Removing $AppsISO failed with error $_"
         throw $_
     }
+If ($CleanupDrivers){
+    try {
+        If (Test-Path -Path $Driversfolder\$Make) {
+            WriteLog "Removing $Driversfolder\$Make"
+            Remove-Item -Path $Driversfolder\$Make -Force -Recurse
+            WriteLog "Removal complete"
+        }     
+    }
+    catch {
+        Writelog "Removing $Driversfolder\$Make failed with error $_"
+        throw $_
+    }
+
+}
 }
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
-Write-Host "Script complete"
-WriteLog "Script complete"
+if ($VerbosePreference -ne 'Continue'){
+    Write-Host 'Script complete'
+}
+WriteLog 'Script complete'
