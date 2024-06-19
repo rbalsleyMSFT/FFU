@@ -1,6 +1,7 @@
 # Change Log
 
-**2406.1**
+## **2406.1**
+
 This is a major release that includes the ability to download drivers from the 4 major OEMs (Microsoft, Dell, HP, Lenovo) by simply passing the -Make and -Model parameters to the command line.
 
 For Dell, HP, and Lenovo, the script leverages a similar process to their corresponding tools that automate driver downloads (Dell SupportAssist, HP Image Assistant, Lenovo System Update/Update Retriever). For Microsoft Surface, it scrapes the Surface Downloads page for the appropriate MSI file to download. Using this method, the drivers that are downloaded will be the latest provided by the OEM, unlike other tools that download out of date enteprise CAB files that are made for ConfigMgr.
@@ -9,35 +10,121 @@ The script supports lookups using the -model parameter. For example, if you want
 
 ![FFU Build Command Line that includes -make 'Microsoft' and -model 'Laptop Go' demonstrating how to use the new parameters to download drivers](image-1.png)
 
-![List of Surface models](image.png)
-
 The goal here is to make it easy to discover the drivers you want to download without having to know the exact model names.
 
 There are likely going to be bugs with this, but in my testing things seem to work well for the makes and models that I've tried. If you notice something, please fill out an issue in the repro and I'll take a look. If you want to fix whatever issue you're running into, submit a pull request.
 
-- Created new parameters
-  - Make
-  - Model
-  - UserAgent
-  - DriversFolder
-  - Headers
+### New parameters
 
-**2405.1**
+| Parameter      | Type      | Description                                                                                                                                                                                                                                                                                                                               |
+| -------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Make           | String    | Used for automatically downloading drivers. Valid values are 'Microsoft', 'Dell', 'HP', 'Lenovo'. The script will throw an error if any other string value is used.                                                                                                                                                                       |
+| Model          | String    | Used for automatically downloading drivers with the Make parameter.                                                                                                                                                                                                                                                                       |
+| DriversFolder  | String    | Location where Drivers will either be downloaded, and/or the location of the drivers you wish to be added to the FFU, or copied to the deploy partition of the USB drive. The default location is $FFUDevelopmentPath\Drivers (e.g. C:\FFUDevelopmentPath\Drivers                                                                         |
+| CleanupDrivers | Bool      | Used to delete the drivers folders underneath the `$DriversFolder` path (e.g. C:\FFUDevelopmentPath\Drivers\HP) after the FFU has been built. Default is `$true`true                                                                                                                                                                  |
+| UserAgent      | String    | The useragent string is used when invoking Invoke-Webrequest or Invoke-RestMethod. This has been helpful when interacting with the Microsoft Download Center and preventing intermittent errors. Default is Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0 |
+| Headers        | Hashtable | This hash table is used in conjunction with the Useragent when invoking Invoke-Webrequest or Invoke-RestMethod. This has been helpful when interacting with the Microsoft Download Center and preventing intermittent errors. If interested in the default value, reference the script itself.                                            |
+
+### New Functions
+
+`Test-URL`
+
+Simple function that accepts \$URL parameter to test if a URL is accessible.
+
+`Start-BitsTransferWithRetry`
+
+This is simply Start-BITSTransfer with some retry logic and setting `$VerbosePreference` and `$ProgressPreference` to SilentlyContinue. The retry logic was needed due to certain driver files randomly failing to download. The function is hardcoded to retry 3 times before failing and will wait 5 seconds between each retry attempt.
+
+`Get-MicrosoftDrivers`
+
+For Microsoft Surface, the driver files are hosted on the Microsoft download center. The script will scrape and parse the [Download Surface Drivers and Firmware](https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120) page to get the latest list of Surface devices.
+
+This function accepts -Make, -Model, and -WindowsRelease parameters. Make and Model are both string parameters and WindowsRelease is an integer parameter. If the model parameter doesn't contain an exact match of a known Surface model, it'll give you a list of Surface models to pick from.
+
+The following command line says that we want to download the drivers for a Microsoft Laptop Go for Windows 10.
+
+`.\BuildFFUVM.ps1 -make 'Microsoft' -model 'Laptop Go' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'external' -VMHostIPAddress '192.168.1.158' -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose -RemoveFFU $true -WindowsRelease 10`
+
+![List of Surface models](https://file+.vscode-resource.vscode-cdn.net/c%3A/Users/admin/Documents/GitHub/FFU/image.png)
+
+If you want to build an FFU for Surface Laptop Go 3, enter 18 and it'll download the MSI and extract the drivers to the .\FFUDevelopment\Drivers\Microsoft\Surface Laptop Go 3 folder.
+
+If you would have provided the exact model string instead of just Laptop Go (e.g. -Model 'Surface Laptop Go 3'), the script wouldn't prompt you to enter a valid model.
+
+`Get-HPDrivers`
+
+For HP, the script uses the same process as the HP Image Assistant tool to automate the downloading of drivers. This function accepts the -Make, -Model, -WindowsArch, -WindowsRelease, and -WindowsVersion parameters. HP is the only vendor that uses -WindowsVersion (e.g. 23h2) for its drivers. This is because their XML files contain the -WindowsVersion value in the file name. By default, the script uses 23h2 for the -WindowsVersion parameter. You can override that for whatever -WindowsVersion you wish to use.
+
+The following command line says that we want to download HP x360 drivers for Windows 10 version 22h2.
+
+`.\BuildFFUVM.ps1 -make 'HP' -model 'x360' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'external' -VMHostIPAddress '192.168.1.158' -CreateDeploymentMedia $true -CreateCaptureMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -RemoveFFU $true -WindowsRelease 10 -WindowsVersion '22h2' -Verbose`
+
+![Screenshot of the output of running the above command to download HP x360 drivers](image/ChangeLog/1718824392698.png)
+
+HP has 40 models that contain the string x360 in the model name. I want to select the HP ProBook x360 11 G7 Education Edition Notebook PC which is number 25. The below screenshot shows the output of selecting the HP ProBook x360 11 G7 Education Edition Notebook PC
+
+![Screenshot of the script downloading drivers for an HP ProBook x360 11 G7 Education Edition Notebook PC](image/ChangeLog/1718824500798.png)
+
+If you were to enter the exact model name (e.g. -model 'HP ProBook x360 11 G7 Education Edition Notebook PC'), the script wouldn't prompt you to select from a list of models.
+
+### `Get-LenovoDrivers`
+
+For Lenovo, the script uses the same process Lenovo System Update/Update Retriever use. It uses the Get-LenovoDrivers function which accepts -Model, -WindowsArch, -WindowsRelease parameters.
+
+Lenovo as a company doesn't use model like other companies do. Lenovo prefers to use a Machine Type value instead of Model number. The Machine Type value can be found on the bottom of your device as the first four characters of the MTM: value. Since most people don't know what the machine type value is, when passing the -model parameter, you can pass either the machine type or the "friendly" model number.
+
+The following command line says that we want to download Lenovo 500w drivers for Windows 10.
+
+`.\BuildFFUVM.ps1 -make 'Lenovo' -model '500w' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'external' -VMHostIPAddress '192.168.1.158' -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -RemoveFFU $true -WindowsRelease 10 -Verbose`
+
+The script will go out to the [Lenovo PSREF](https://psref.lenovo.com/search) page to figure out the Machine Type value and if multiple Machine Types are found (there are usually multiples found for different configuration types).
+
+![A screenshot of the different models and their machine types found from the Lenovo PSREF page and a selection prompt for the end user to pick which machine type they wish to use](image/ChangeLog/1718824806444.png)
+
+The Machine Type is the value in parenthesis. On the bottom of my device, the MTM value is MTM:**82VR**ZAKXXX. I would want to pick number 4 from the list since it includes (82VR). The below screenshot shows the script downloading the appropriate drivers for a Lenovo 500w.
+
+![The output of the script downloading Lenovo drivers](image/ChangeLog/1718824932640.png)
+
+If you use the Machine Type value for the -Model parameter (e.g. -model '82VR') the script will automatically download the drivers without prompting you to select the model.
+
+`Get-DellDrivers`
+
+For Dell, the script uses the [Dell CatalogPC Cab file](http://downloads.dell.com/catalog/CatalogPC.cab) which is used in Dell Support Assist and possibly other Dell tools to download drivers. The cab consists of an XML file that the script parses to search for drivers applicable for the model you wish to create a FFU for.
+
+The script calls the Get-DellDrivers function which accepts the -Model and -WindowsArch parameters.
+
+Unlike Microsoft Surface drivers, Dell doesn't give a list to pick from when the -model parameter isn't an exact match. This is due to how the CatalogPC XML file lists drivers. It treats the driver as the primary element and lists what models that driver can be installed on.
+
+The following command line says that we want to download Dell 3190 drivers for Windows 10.
+
+`.\BuildFFUVM.ps1 -make 'Dell' -model '3190' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'external' -VMHostIPAddress '192.168.1.158' -CreateDeploymentMedia $true -CreateCaptureMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -RemoveFFU $true -WindowsRelease 10 -Verbose`
+
+The script will find every driver that is tagged with 3190 and download the latest available version. It strips out any firmware or other non-driver file types. You may notice that it will download multiple video or audio drivers. This is due to each model having variants with different video cards or other hardware. This would make the FFU a bit larger, but not excessively so.
+
+Below is a screenshot of what the verbose output of the script looks like when downloading the drivers for a Dell 3190.
+
+![a screenshot of what the verbose output of the script looks like when downloading the drivers for a Dell 3190](image/ChangeLog/1718825319847.png)
+
+* Added -Headers \$Headers -UserAgent \$UserAgent to most Invoke-Webrequest or Invoke-RestMethod commands to solve for intermittent download failures when downloading drivers or Office
+* Fixed some minor logging issues
+* Updated the BuildDeployFFU.docx with new driver information and cleaned up some sections that were out of date.
+
+## **2405.1**
 
 - Moved the resetbase command from within the VM to after servicing the VHDX. This will make it so the FFU size is smaller after the latest CU or .NET framework are installed. (Thanks to Mike Kelly for the PR [Commit](https://github.com/rbalsleyMSFT/FFU/pull/24))
 - Some additional FFU size reduction enhancements (Thanks Zehadi Alam [Commit](https://github.com/rbalsleyMSFT/FFU/pull/25)):
   - Disk cleanup is now run before sysprep to help reduce FFU file size
   - Before FFU capture, Optimize-FFU is run to defrag and slabconsolidate the VHDX
 
-**2404.3**
+## **2404.3**
 
 - Fixed an issue where the latest Windows CU wasn't downloading properly [Commit](https://github.com/rbalsleyMSFT/FFU/commit/ae59183a199f39b310c79b31c9b4980fafdeb79b)
 
-**2404.2**
+## **2404.2**
 
-- If setting -installdrivers to $true and -logicalsectorsizebytes to 4096, the script will now set $copyDrivers to $true. This will create a drivers folder on the deploy partition of the USB drive with the drivers that were supposed to be added to the FFU. There's currently a bug with servicing FFUs with 4096 logical sector byte sizes. Prior to this fix, the script would tell the user to manually set -copydrivers to $true as workaround. This fix just does the workaround automatically.
+- If setting `-installdrivers to $true` and `-logicalsectorsizebytes to 4096`, the script will now set `$copyDrivers to $true`. This will create a drivers folder on the deploy partition of the USB drive with the drivers that were supposed to be added to the FFU. There's currently a bug with servicing FFUs with 4096 logical sector byte sizes. Prior to this fix, the script would tell the user to manually set `-copydrivers to $true` as workaround. This fix just does the workaround automatically.
 
-**2404.1**
+## **2404.1**
 
 There's a big change with this release related to the ADK. The ADK will now be automatically updated to the latest ADK release. This is required in order to fix an issue with optimized FFUs not applying due to an issue with DISM/FFUProvider.dll. The FFUProvider.dll fix was added to the Sept 2023 ADK. Since we now have the ability to auto upgrade the ADK, I'm more confident in having the BuildFFUVM script creating a complete FFU now (prior it was only creating 3 partitions instead of 4 with the recovery partition - at deployment time, the ApplyFFU.ps1 script would create an empty recovery partition and Windows would populate it on first boot). Please open an issue if this creates a problem for you. I do realize that any new ADK release can have it's own challenges and issues and I do suspect we'll see a new ADK released later this year.
 
@@ -47,13 +134,13 @@ There's a big change with this release related to the ADK. The ADK will now be a
 - Changed how the script searches for the latest CU. Instead of relying on the Windows release info page to grab the KB number, will just use the MU Catalog, the same as what we do for the .NET Framework. Windows release info page is updated manually and is unknown as to when it will be updated. [Commit](https://github.com/rbalsleyMSFT/FFU/commit/6fd5a4a41fd9ce2f842f43dc3a69bda264c29fa6)
 - Added fix to not allow computer names with spaces. Thanks to [JoeMama54 (Rob)](https://github.com/JoeMama54) [PR 20](https://github.com/rbalsleyMSFT/FFU/pull/20)
 
-**2403.1**
+## **2403.1**
 
 Fixed an issue with the SecurityHealthSetup.exe file giving an error when building the VM if -UpdateLatestDefender was set to $true. A new update for this came out on 3/21 which included a x64 and ARM64 binary. This file doesn't have an architecture designation to it, so it's impossible to know which file is for which architecture. Investigating to see if we can fix this in the Microsoft Update catalog. There is a web site to pull this from, but the support article is out of date.
 
 Included ADK functions from Zehadi Alam [Introduce Automated ADK Retrieval and Installation Functions #14](https://github.com/rbalsleyMSFT/FFU/pull/14) to automate the installation of the ADK if it's not present. Thanks, Zehadi!
 
-**2402.1**
+## **2402.1**
 
 **New functionality**
 
@@ -80,7 +167,7 @@ Included ADK functions from Zehadi Alam [Introduce Automated ADK Retrieval and I
 * Updated the docs with the new variables and made some minor modifications.
 * Changed version variable to 2402.1
 
-**2401.1**
+## **2401.1**
 
 - Added -CopyDrivers boolean parameter to control the ability to copy drivers to the USB drive in the deploy partition drivers folder.
 - Changed version varaible to 2401.1
@@ -93,7 +180,7 @@ Included ADK functions from Zehadi Alam [Introduce Automated ADK Retrieval and I
 - Fixed an issue where VHDX only captures (i.e. where -installapps $false) would not install Windows updates.
 - Changed Office deployment to use Current channel instead of Monthly enterprise. If you want to change to Monthly Enterprise channel, it's recommended to leverage Intune.
 
-**2309.2**
+## **2309.2**
 
 New Features
 
@@ -114,19 +201,19 @@ Bug Fixes
 - In 2309.1, added a 15 second sleep to allow for the registry to unload to fix a Critical Process Died error on deployment. In this build, increased that to 60 seconds.
 - Fixed an issue where the script was incorrectly detecting the USB drive boot and deploy drive letters which caused issues when attempting to copy the WinPE files to the boot partition.
 
-**2309.1**
+## **2309.1**
 
 - Fixed an issue with a Critical Process Died BSOD that would happen when using -installapps $false. More detailed information in the [commit](https://github.com/rbalsleyMSFT/FFU/pull/2/commits/34efbda7ec56dc7cb43ac42b058725d56c8b8899)
 
-**2306.1.2**
+## **2306.1.2**
 
 - Fixed an issue where manually entering a name wouldn't name the computer as expected
 
-**2306.1.1**
+## **2306.1.1**
 
 - Included some better error handling if defining optionalfeatures that require source folders (netfx3). ESD files don't have source folders like ISO media, which means installing .net 3.5 as an optional feature would fail. Also cleaned up some formatting.
 
-**2306.1**
+## **2306.1**
 
 - Added support to automatically download the latest Windows 10 or 11 media via the media creation tool (thanks to [Michael](https://oofhours.com/2022/09/14/want-your-own-windows-11-21h2-arm64-isos/) for the idea). This also allows for different architecture, language, and media type support. If you omit the -ISOPath, the script will download the Windows 11 x64 English (US) consumer media.
 
