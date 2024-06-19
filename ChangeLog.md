@@ -8,7 +8,7 @@ For Dell, HP, and Lenovo, the script leverages a similar process to their corres
 
 The script supports lookups using the -model parameter. For example, if you want to download the drivers for a Surface Laptop Go 3, but don't know the exact model name, you could set -Make 'Microsoft' -Model 'Laptop Go' and it'll give you a list of Surface devices to pick from. If you know the exact name, it'll use that and not prompt.
 
-![FFU Build Command Line that includes -make 'Microsoft' and -model 'Laptop Go' demonstrating how to use the new parameters to download drivers](image-1.png)
+![FFU Build Command Line that includes -make 'Microsoft' and -model 'Laptop Go' demonstrating how to use the new parameters to download drivers](image/ChangeLog/image-1.pngimage-1.png)
 
 The goal here is to make it easy to discover the drivers you want to download without having to know the exact model names.
 
