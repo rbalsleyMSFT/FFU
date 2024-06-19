@@ -8,7 +8,7 @@ While we use this in Education at Microsoft, other industries can use it as well
 
 # Updates
 
-Updates have moved to the new [ChangeLog](.\ChangeLog.md)
+Updates have moved to the new [ChangeLog](\ChangeLog.md)
 
 # Getting Started
 
