@@ -107,7 +107,8 @@ Below is a screenshot of what the verbose output of the script looks like when d
 
 * Added -Headers \$Headers -UserAgent \$UserAgent to most Invoke-Webrequest or Invoke-RestMethod commands to solve for intermittent download failures when downloading drivers or Office
 * Fixed some minor logging issues
-* Updated the BuildDeployFFU.docx with new driver information and cleaned up some sections that were out of date.
+* Updated the BuildDeployFFU.docx with new driver information and cleaned up some sections that were out of date
+* Added Changelog.md to keep track of changes and not clutter up the readme.md
 
 ## **2405.1**
 
