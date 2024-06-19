@@ -27,7 +27,7 @@ There are likely going to be bugs with this, but in my testing things seem to wo
 
 ### New Functions
 
-`Test-URL`
+### `Test-URL`
 
 Simple function that accepts \$URL parameter to test if a URL is accessible.
 
@@ -35,7 +35,7 @@ Simple function that accepts \$URL parameter to test if a URL is accessible.
 
 This is simply Start-BITSTransfer with some retry logic and setting `$VerbosePreference` and `$ProgressPreference` to SilentlyContinue. The retry logic was needed due to certain driver files randomly failing to download. The function is hardcoded to retry 3 times before failing and will wait 5 seconds between each retry attempt.
 
-`Get-MicrosoftDrivers`
+### `Get-MicrosoftDrivers`
 
 For Microsoft Surface, the driver files are hosted on the Microsoft download center. The script will scrape and parse the [Download Surface Drivers and Firmware](https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120) page to get the latest list of Surface devices.
 
@@ -45,13 +45,13 @@ The following command line says that we want to download the drivers for a Micro
 
 `.\BuildFFUVM.ps1 -make 'Microsoft' -model 'Laptop Go' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'external' -VMHostIPAddress '192.168.1.158' -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose -RemoveFFU $true -WindowsRelease 10`
 
-![List of Surface models](https://file+.vscode-resource.vscode-cdn.net/c%3A/Users/admin/Documents/GitHub/FFU/image.png)
+![Screenshot of the FFU script displaying a list of Surface models to download drivers for](image/ChangeLog/1718826099739.png)
 
 If you want to build an FFU for Surface Laptop Go 3, enter 18 and it'll download the MSI and extract the drivers to the .\FFUDevelopment\Drivers\Microsoft\Surface Laptop Go 3 folder.
 
 If you would have provided the exact model string instead of just Laptop Go (e.g. -Model 'Surface Laptop Go 3'), the script wouldn't prompt you to enter a valid model.
 
-`Get-HPDrivers`
+### `Get-HPDrivers`
 
 For HP, the script uses the same process as the HP Image Assistant tool to automate the downloading of drivers. This function accepts the -Make, -Model, -WindowsArch, -WindowsRelease, and -WindowsVersion parameters. HP is the only vendor that uses -WindowsVersion (e.g. 23h2) for its drivers. This is because their XML files contain the -WindowsVersion value in the file name. By default, the script uses 23h2 for the -WindowsVersion parameter. You can override that for whatever -WindowsVersion you wish to use.
 
@@ -87,7 +87,7 @@ The Machine Type is the value in parenthesis. On the bottom of my device, the MT
 
 If you use the Machine Type value for the -Model parameter (e.g. -model '82VR') the script will automatically download the drivers without prompting you to select the model.
 
-`Get-DellDrivers`
+### `Get-DellDrivers`
 
 For Dell, the script uses the [Dell CatalogPC Cab file](http://downloads.dell.com/catalog/CatalogPC.cab) which is used in Dell Support Assist and possibly other Dell tools to download drivers. The cab consists of an XML file that the script parses to search for drivers applicable for the model you wish to create a FFU for.
 
