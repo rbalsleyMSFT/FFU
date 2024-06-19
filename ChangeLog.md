@@ -31,7 +31,7 @@ There are likely going to be bugs with this, but in my testing things seem to wo
 
 Simple function that accepts \$URL parameter to test if a URL is accessible.
 
-`Start-BitsTransferWithRetry`
+### `Start-BitsTransferWithRetry`
 
 This is simply Start-BITSTransfer with some retry logic and setting `$VerbosePreference` and `$ProgressPreference` to SilentlyContinue. The retry logic was needed due to certain driver files randomly failing to download. The function is hardcoded to retry 3 times before failing and will wait 5 seconds between each retry attempt.
 
