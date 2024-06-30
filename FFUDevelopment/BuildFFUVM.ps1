@@ -1657,6 +1657,43 @@ function Get-Office {
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
     }
 }
+
+function Install-WinGet {
+    param (
+        [bool]$InstallWithDependencies
+    )
+    $wingetPreviewLink = "https://aka.ms/getwingetpreview"
+    $wingetPackageDestination = "$env:TEMP\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+    if ($InstallWithDependencies) {
+        $dependencies = @(
+            @{
+                Source = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
+                Destination = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
+            },
+            @{
+                Source = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
+                Destination = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
+            }
+        )
+        Start-BitsTransferWithRetry -Source $wingetPreviewLink -Destination $wingetPackageDestination
+        foreach ($dependency in $dependencies) {
+            Start-BitsTransferWithRetry -Source $dependency.Source -Destination $dependency.Destination
+            Add-AppxPackage -Path $dependency.Destination
+            Remove-Item -Path $dependency.Destination -Force -ErrorAction SilentlyContinue
+        }
+        Add-AppxPackage -Path $wingetPackageDestination
+        Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
+    } 
+    else {
+        # If WinGet was already installed, then installing the dependencies can cause an error if the system has a newer version of the dependencies than the ones downloaded.
+        WriteLog "Downloading WinGet..."
+        Start-BitsTransferWithRetry -Source $wingetPreviewLink -Destination $wingetPackageDestination
+        WriteLog "Installing WinGet..."
+        Add-AppxPackage -Path $wingetPackageDestination
+        WriteLog "Removing WinGet installer..."
+        Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
+    }
+}
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
