@@ -1533,7 +1533,7 @@ function Get-WindowsESD {
         [int]$WindowsRelease,
 
         [Parameter(Mandatory = $false)]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'ARM64')]
         [string]$WindowsArch,
 
         [Parameter(Mandatory = $false)]
@@ -2224,7 +2224,12 @@ function New-PEMedia {
     }
 
     WriteLog "Copying WinPE files to $WinPEFFUPath"
-    & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
+    if($WindowsArch -eq 'x64') {
+        & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
+    }
+    elseif($WindowsArch -eq 'arm64') {
+        & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
+    }
     #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
     WriteLog 'Files copied successfully'
 
@@ -2247,7 +2252,13 @@ function New-PEMedia {
         "en-us\WinPE-DismCmdlets_en-us.cab"
     )
 
-    $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\"
+    if($WindowsArch -eq 'x64'){
+        $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\"
+    }
+    elseif($WindowsArch -eq 'arm64'){
+        $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\arm64\WinPE_OCs\"
+    }
+    
 
     foreach ($Package in $Packages) {
         $PackagePath = Join-Path $PackagePathBase $Package
@@ -2260,7 +2271,7 @@ function New-PEMedia {
         Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
         WriteLog "Copy complete"
         #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
-        Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
+        #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
         $WinPEISOName = 'WinPE_FFU_Capture.iso'
         $Capture = $false
     }
@@ -2286,11 +2297,23 @@ function New-PEMedia {
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
     WriteLog 'Dismount complete'
     #Make ISO
-    $OSCDIMGPath = "$adkPath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg"
+    if ($WindowsArch -eq 'x64') {
+        $OSCDIMGPath = "$adkPath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg"
+    }
+    elseif ($WindowsArch -eq 'arm64') {
+        $OSCDIMGPath = "$adkPath`Assessment and Deployment Kit\Deployment Tools\arm64\Oscdimg"
+    }
     $OSCDIMG = "$OSCDIMGPath\oscdimg.exe"
     WriteLog "Creating WinPE ISO at $FFUDevelopmentPath\$WinPEISOName"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
-    Invoke-Process $OSCDIMG "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$FFUDevelopmentPath\$WinPEISOName`""
+    if($WindowsArch -eq 'x64'){
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$FFUDevelopmentPath\$WinPEISOName`""
+    
+    }
+    elseif($WindowsArch -eq 'arm64'){
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$FFUDevelopmentPath\$WinPEISOName`""
+    }
+    Invoke-Process $OSCDIMG $OSCDIMGArgs
     WriteLog "ISO created successfully"
     WriteLog "Cleaning up $WinPEFFUPath"
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
@@ -2998,6 +3021,7 @@ if ($InstallApps) {
                 $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm'
             }
             try {
+                WriteLog "Defender definitions URL is $DefenderDefURL"
                 Start-BitsTransferWithRetry -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
                 WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
             }
@@ -3023,7 +3047,14 @@ if ($InstallApps) {
                 New-Item -Path $OneDrivePath -ItemType Directory -Force | Out-Null
             }
             WriteLog "Downloading latest OneDrive client"
-            $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
+            if($WindowsArch -eq 'x64')
+            {
+                $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
+            }
+            elseif($WindowsArch -eq 'ARM64')
+            {
+                $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=2271260'
+            }
             try {
                 Start-BitsTransferWithRetry -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
                 WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
@@ -3205,7 +3236,12 @@ try {
         #Copy Unattend file so VM Boots into Audit Mode
         WriteLog 'Copying unattend file to boot to audit mode'
         New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory | Out-Null
-        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+        if($WindowsArch -eq 'x64'){
+            Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+        }
+        else {
+            Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+        }
         WriteLog 'Copy completed'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
