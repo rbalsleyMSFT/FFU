@@ -3050,6 +3050,12 @@ function Remove-FFU {
     WriteLog "Removal complete"
 }
 function Clear-InstallAppsandSysprep {
+    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove win32 app install commands"
+    $cmdContent -notmatch "D:\\win32*" | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    WriteLog "Setting MSStore installation condition to false"
+    $cmdContent -replace 'set "INSTALL_STOREAPPS=true"', 'set "INSTALL_STOREAPPS=false"' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
     if ($UpdateLatestDefender) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
