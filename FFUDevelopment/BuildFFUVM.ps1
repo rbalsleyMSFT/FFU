@@ -1734,6 +1734,51 @@ function New-WinGetSettings {
     }
 }
 
+function Get-Win32App {
+    param (
+        [string]$Win32App,
+        [int]$LineNumber
+    )
+    $wingetSearchResult = & winget.exe search --name "$Win32App" --exact --accept-source-agreements --source winget
+    if ($wingetSearchResult -contains "No package found matching input criteria.") {
+        WriteLog "$Win32App not found in WinGet repository. Skipping download."
+        return
+    }
+    $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $Win32App
+    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+    $appFolder = Split-Path -Path $appFolderPath -Leaf
+    WriteLog "Downloading $Win32App..."
+    $wingetDownloadResult = & winget.exe download --name "$Win32App" --exact --download-directory "$appFolderPath" --scope machine --source winget | Out-String
+    if ($wingetDownloadResult -notmatch "Installer downloaded") {
+        WriteLog "$Win32App did not successfully download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    WriteLog "$Win32App has completed downloading."
+    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include *.exe, *.msi -File
+    $installer = Split-Path -Path $installerPath -Leaf
+    $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include *.yaml -File
+    $yamlContent = Get-Content -Path $yamlFile -Raw
+    $silentInstallSwitch = [regex]::Match($yamlContent, 'Silent:\s*(.+)').Groups[1].Value
+    if (-not $silentInstallSwitch) {
+        WriteLog "Silent install switch for $Win32App could not be found. Skipping the inclusion of $Win32App."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    $installerFileExtension = [System.IO.Path]::GetExtension($installer)
+    if ($installerFileExtension -eq ".exe") {
+        $silentInstallCommand = "`"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
+    } 
+    elseif ($installerFileExtension -eq ".msi") {
+        $silentInstallCommand = "msiexec /i `"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
+    }
+    $cmdFile = "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent = Get-Content -Path $cmdFile
+    $cmdContent = $cmdContent[0..($lineNumber - 2)] + $silentInstallCommand.Trim() + $cmdContent[($lineNumber - 1)..($cmdContent.Length - 1)]
+    WriteLog "Writing silent install command for $Win32App to InstallAppsandSysprep.cmd at line number $LineNumber"
+    Set-Content -Path $cmdFile -Value $cmdContent
+}
+
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
