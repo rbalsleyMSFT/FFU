@@ -1779,6 +1779,64 @@ function Get-Win32App {
     Set-Content -Path $cmdFile -Value $cmdContent
 }
 
+function Get-StoreApp {
+    param (
+        [string]$StoreApp
+    )
+    $wingetSearchResult = & winget.exe search --name --exact "$StoreApp" --accept-source-agreements --source msstore
+    if ($wingetSearchResult -contains "No package found matching input criteria.") {
+        WriteLog "$StoreApp not found in WinGet repository. Skipping download."
+        return
+    }
+    $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreApp
+    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+    # Invoke-Process is not used here because it terminates the script if the exit code of the process is not zero.
+    # WinGet's download command will return a non-zero exit code when downloading store apps, as attempting to download the license file always appears to cause an error.
+    WriteLog "Downloading $StoreApp and dependencies..."
+    $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore | Out-String
+    # Many store apps can be found by winget search, but the download of the apps are unsupported.
+    if ($wingetDownloadResult -match "No applicable Microsoft Store package download information found.") {
+        WriteLog "No applicable Microsoft Store package download information found for $StoreApp. Skipping download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    if ($cmdContent -match 'set "INSTALL_STOREAPPS=false"') {
+        WriteLog "Setting INSTALL_STOREAPPS flag to true in InstallAppsandSysprep.cmd file."
+        $updatedcmdContent = $cmdContent -replace 'set "INSTALL_STOREAPPS=false"', 'set "INSTALL_STOREAPPS=true"'
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $updatedcmdContent
+    }
+    WriteLog "$StoreApp has completed downloading. Identifying the latest version of $StoreApp."
+    $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*" -File
+    # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
+    $latestPackage = ""
+    $latestDate = [datetime]::MinValue
+    foreach ($package in $packages) {
+        $signature = Get-AuthenticodeSignature -FilePath $package.FullName
+        if ($signature.Status -eq 'Valid') {
+            $signatureDate = $signature.SignerCertificate.NotBefore
+            if ($signatureDate -gt $latestDate) {
+                $latestPackage = $package.FullName
+                $latestDate = $signatureDate
+            }
+        }
+    }
+    # Removing all packages that are not the latest version
+    WriteLog "Latest version of $StoreApp has been identified as $latestPackage. Removing old versions of $StoreApp that may have downloaded."
+    foreach ($package in $packages) {
+        if ($package.FullName -ne $latestPackage) {
+            try {
+                WriteLog "Removing $($package.FullName)"
+                Remove-Item -Path $package.FullName -Force
+            }
+            catch {
+                WriteLog "Failed to delete: $($package.FullName) - $_"
+                throw $_
+            }
+        }
+    }
+}
+
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
