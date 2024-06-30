@@ -1837,6 +1837,76 @@ function Get-StoreApp {
     }
 }
 
+function Get-Apps {
+    param (
+        [string]$AppsList
+    )
+    $apps = Get-Content -Path $AppsList
+    if (-not $apps) {
+        WriteLog "No apps were specified in AppsList.txt file."
+        return
+    }
+    $win32Apps = @()
+    $storeApps = @()
+    $apps | ForEach-Object {
+        if ($_ -like 'win32:*') {
+            $win32Apps += $_.Substring(6)
+        } 
+        elseif ($_ -like 'store:*') {
+            $storeApps += $_.Substring(6)
+        }
+    }
+    $wingetInstalled = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
+    if (-not $wingetInstalled) {
+        WriteLog "WinGet is not installed. Downloading preview version of WinGet and its dependencies..."
+        Install-WinGet -InstallWithDependencies $true
+    }
+    $wingetOnPath = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $wingetOnPath) {
+        WriteLog "WinGet is not on the path. Downloading preview version of WinGet without dependencies..."
+        Install-WinGet -InstallWithDependencies $false
+    }
+    $wingetVersion = & winget.exe --version
+    # Preview release is needed to enable storeDownload experimental feature
+    if (-not ($wingetVersion -like "*preview*")) {
+        WriteLog "The preview version of WinGet is not installed. Downloading preview version of WinGet without dependencies..."
+        Install-WinGet -InstallWithDependencies $false
+    }
+    $lineNumber = 13
+    $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
+    $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
+    if ($win32Apps) {
+        if (-not (Test-Path -Path $win32Folder -PathType Container)) {
+            New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
+        }
+        foreach ($win32App in $win32Apps) {
+            try {
+                Get-Win32App -Win32App $win32App -LineNumber $lineNumber
+                $lineNumber++
+            }
+            catch {
+                WriteLog "Error occurred while processing $win32App : $_"
+                throw $_
+            }
+        }
+    }
+    if ($storeApps) {
+        New-WinGetSettings
+        if (-not (Test-Path -Path $storeAppsFolder -PathType Container)) {
+            New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
+        }
+        foreach ($storeApp in $storeApps) {
+            try {
+                Get-StoreApp -StoreApp $storeApp
+            }
+            catch {
+                WriteLog "Error occurred while processing $storeApp : $_"
+                throw $_
+            }
+        }
+    }
+}
+
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
