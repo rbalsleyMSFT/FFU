@@ -1694,6 +1694,46 @@ function Install-WinGet {
         Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
     }
 }
+
+function New-WinGetSettings {
+    $wingetSettingsFile = "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\settings.json"
+    $wingetSettings = @(
+        '{'
+        '    "$schema": "https://aka.ms/winget-settings.schema.json",'
+        '    '
+        '    // For documentation on these settings, see: https://aka.ms/winget-settings'
+        '    "experimentalFeatures": {'
+        '        "storeDownload": true'
+        '    },'
+        '    "logging": {'
+        '        "level": "verbose"'
+        '    }'
+        '}'
+    )
+    $wingetSettingsContent = $wingetSettings -join "`n"
+    if (Test-Path -Path $wingetSettingsFile -PathType Leaf) {
+        $jsonContent = Get-Content -Path $wingetSettingsFile -Raw
+        # Check if storeDownload feature is already enabled
+        if ($jsonContent -notmatch '"storeDownload"\s*:\s*true') {
+            # Back up existing settings.json file
+            $backupWingetSettingsFile = $wingetSettingsFile + ".bak"
+            if (-not (Test-Path -Path $backupWingetSettingsFile -PathType Leaf)) {
+                WriteLog "Backing up existing WinGet settings.json file to $backupWingetSettingsFile"
+                Copy-Item -Path $wingetSettingsFile -Destination $backupWingetSettingsFile -Force | Out-Null
+            }
+            WriteLog "Creating WinGet settings.json file to allow the storeDownload feature. Writing file to $wingetSettingsFile"
+            $wingetSettingsContent | Out-File -FilePath $wingetSettingsFile -Encoding utf8 -Force
+        }
+        else {
+            WriteLog "WinGet's settings.json file is already configured to enable the storeDownload feature."
+        }
+    } 
+    else {
+        WriteLog "Creating WinGet settings.json file to allow the storeDownload feature. Writing file to $wingetSettingsFile"
+        $wingetSettingsContent | Out-File -FilePath $wingetSettingsFile -Encoding utf8 -Force
+    }
+}
+
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
