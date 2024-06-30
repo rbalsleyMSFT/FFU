@@ -3037,8 +3037,16 @@ function Get-FFUEnvironment {
         WriteLog "Removing $EdgePath"
         Remove-Item -Path $EdgePath -Recurse -Force
         WriteLog 'Removal complete'
-    }    
-
+    }
+    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+        WriteLog "Cleaning up Win32 folder"
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    }
+    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+        WriteLog "Cleaning up MSStore folder"
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+    }   
+    Clear-InstallAppsandSysprep
     Writelog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
@@ -3598,6 +3606,20 @@ try {
 catch {
     Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
     Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
+    throw $_
+}
+try {
+    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+        WriteLog "Cleaning up Win32 folder"
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    }
+    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+        WriteLog "Cleaning up MSStore folder"
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+    }
+}
+catch {
+    WriteLog "$_"
     throw $_
 }
 #Create Deployment Media
