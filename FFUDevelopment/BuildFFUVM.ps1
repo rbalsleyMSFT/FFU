@@ -310,7 +310,7 @@ param(
         "Upgrade-Insecure-Requests" = "1"
     }
 )
-$version = '2406.1'
+$version = '2407.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1748,57 +1748,120 @@ function Save-KB {
         [array]$WindowsArch = @("x64", "amd64")
     }
         
+    # foreach ($kb in $name) {
+    #     $links = Get-KBLink -Name $kb
+    #     foreach ($link in $links) {
+    #         #Check if $WindowsArch is an array
+    #         if ($WindowsArch -is [array]) { 
+    #             #Some file names include either x64 or amd64
+    #             if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
+    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                 $fileName = ($link -split '/')[-1]
+    #                 break
+    #             }
+    #             # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+    #             #     Write-Host "No architecture found in $link, assume it's for all architectures"
+    #             #     Start-BitsTransfer -Source $link -Destination $Path
+    #             #     $fileName = ($link -split '/')[-1]
+    #             #     break
+    #             # }
+    #             elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+    #                 WriteLog "No architecture found in $link, assume this is for all architectures"
+    #                 #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
+    #                 #Unfortunately there is no easy way to determine the architecture from the file name
+    #                 #There is a support doc that include links to download, but it's out of date (n-1)
+    #                 #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+    #                 #These files don't change that often, so will check the link above to see when it updates and may use that
+    #                 #For now this is hard-coded for these specific file names
+    #                 if ($link -match 'security'){
+    #                     #Make sure we're getting the correct architecture for the Security Health Setup update
+    #                     WriteLog "Link: $link matches security"
+    #                     if ($WindowsArch -eq 'x64'){
+    #                         if ($link -match 'securityhealthsetup_e1'){
+    #                             Writelog "Downloading $Link for $WindowsArch to $Path"
+    #                             Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                             $fileName = ($link -split '/')[-1]
+    #                             Writelog "Returning $fileName"
+    #                             break
+    #                         }
+    #                     }
+    #                     elseif ($WindowsArch -eq 'arm64'){
+    #                         if ($link -match 'securityhealthsetup_25'){
+    #                             Writelog "Downloading $Link for $WindowsArch to $Path"
+    #                             Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                             $fileName = ($link -split '/')[-1]
+    #                             Writelog "Returning $fileName"
+    #                             break
+    #                         }
+    #                     }
+    #                     continue
+    #                 }
+    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                 $fileName = ($link -split '/')[-1]
+    #             }
+    #         }
+    #         else {
+    #             if ($link -match $WindowsArch) {
+    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                 $fileName = ($link -split '/')[-1]
+    #                 break
+    #             }
+    #         }                
+    #     }
+    # }
     foreach ($kb in $name) {
         $links = Get-KBLink -Name $kb
         foreach ($link in $links) {
-            #Check if $WindowsArch is an array
-            if ($WindowsArch -is [array]) { 
-                #Some file names include either x64 or amd64
-                if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
-                    $fileName = ($link -split '/')[-1]
-                    break
-                }
-                # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                #     Write-Host "No architecture found in $link, assume it's for all architectures"
-                #     Start-BitsTransfer -Source $link -Destination $Path
-                #     $fileName = ($link -split '/')[-1]
-                #     break
-                # }
-                elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                    WriteLog "No architecture found in $link, assume this is for all architectures"
-                    #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
-                    #Unfortunately there is no easy way to determine the architecture from the file name
-                    #There is a support doc that include links to download, but it's out of date (n-1)
-                    #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-                    #These files don't change that often, so will check the link above to see when it updates and may use that
-                    #For now this is hard-coded for these specific file names
-                    if ($link -match 'security'){
-                        #Make sure we're getting the correct architecture for the Security Health Setup update
-                        if ($WindowsArch -eq 'x64'){
-                            if ($link -match 'securityhealthsetup_e1'){
-                                Start-BitsTransferWithRetry -Source $link -Destination $Path
-                                $fileName = ($link -split '/')[-1]
-                                break
-                            }
+            if (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+                WriteLog "No architecture found in $link, assume this is for all architectures"
+                #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
+                #Unfortunately there is no easy way to determine the architecture from the file name
+                #There is a support doc that include links to download, but it's out of date (n-1)
+                #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+                #These files don't change that often, so will check the link above to see when it updates and may use that
+                #For now this is hard-coded for these specific file names
+                if ($link -match 'security') {
+                    #Make sure we're getting the correct architecture for the Security Health Setup update
+                    WriteLog "Link: $link matches security"
+                    if ($WindowsArch -eq 'x64') {
+                        if ($link -match 'securityhealthsetup_e1') {
+                            Writelog "Downloading $Link for $WindowsArch to $Path"
+                            Start-BitsTransferWithRetry -Source $link -Destination $Path
+                            $fileName = ($link -split '/')[-1]
+                            Writelog "Returning $fileName"
+                            break
                         }
-                        elseif ($WindowsArch -eq 'arm64'){
-                            if ($link -match 'securityhealthsetup_25'){
-                                Start-BitsTransferWithRetry -Source $link -Destination $Path
-                                $fileName = ($link -split '/')[-1]
-                                break
-                            }
-                        }
-                        continue
                     }
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
-                    $fileName = ($link -split '/')[-1]
+                    if ($WindowsArch -eq 'arm64') {
+                        if ($link -match 'securityhealthsetup_25') {
+                            Writelog "Downloading $Link for $WindowsArch to $Path"
+                            Start-BitsTransferWithRetry -Source $link -Destination $Path
+                            $fileName = ($link -split '/')[-1]
+                            Writelog "Returning $fileName"
+                            break
+                        }
+                    }
                 }
             }
-            else {
-                if ($link -match $WindowsArch) {
+
+            if ($link -match 'x64' -or $link -match 'amd64') {
+                if($WindowsArch -is [array]) {
+                    if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
+                        Writelog "Downloading $Link for $WindowsArch to $Path"
+                        Start-BitsTransferWithRetry -Source $link -Destination $Path
+                        $fileName = ($link -split '/')[-1]
+                        Writelog "Returning $fileName"
+                        break
+                    }
+                }
+                
+            }
+            if ($link -match 'arm64') {
+                if ($WindowsArch -eq 'arm64') {
+                    Writelog "Downloading $Link for $WindowsArch to $Path"
                     Start-BitsTransferWithRetry -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
+                    Writelog "Returning $fileName"
                     break
                 }
             }                
@@ -2900,6 +2963,19 @@ if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($Upda
     WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
     throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
 }
+if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
+    $InstallOffice = $false
+    WriteLog 'M365 Apps/Office currently fails to install on ARM64 VMs without an internet connection. Setting InstallOffice to false'
+}
+
+if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
+    $UpdateOneDrive = $false
+    WriteLog 'OneDrive currently fails to install on ARM64 VMs (even with the OneDrive ARM setup files). Setting UpdateOneDrive to false'
+}
+# if(($WindowsArch -eq 'ARM64') -and ($UpdateLatestDefender -eq $true)){
+#     $UpdateLatestDefender = $false
+#     WriteLog 'Defender ARM and x64 updates currently fail to install on ARM64 VMs. Setting UpdateLatestDefender to false'
+# }
 
 #Get script variable values
 LogVariableValues
@@ -3093,6 +3169,11 @@ if ($InstallApps) {
             WriteLog "Expanding $EdgeCABFilePath"
             Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath"
             WriteLog "Expansion complete"
+
+            #Remove Edge CAB file
+            WriteLog "Removing $EdgeCABFilePath"
+            Remove-Item -Path $EdgeCABFilePath -Force
+            WriteLog "Removal complete"
 
             #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Edge Stable
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Edge Stable $WindowsArch release"
