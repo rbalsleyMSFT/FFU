@@ -1998,7 +1998,7 @@ function Save-KB {
     if ($WindowsArch -eq 'x64') {
         [array]$WindowsArch = @("x64", "amd64")
     }
-        
+    #Keep for now, will remove in future 
     # foreach ($kb in $name) {
     #     $links = Get-KBLink -Name $kb
     #     foreach ($link in $links) {
