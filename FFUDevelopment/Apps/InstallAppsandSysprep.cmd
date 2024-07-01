@@ -1,3 +1,4 @@
+setlocal enabledelayedexpansion
 REM Put each app install on a separate line
 REM M365 Apps/Office ProPlus
 REM d:\Office\setup.exe /configure d:\office\DeployFFU.xml
@@ -9,6 +10,35 @@ REM Install Edge Stable
 REM Add additional apps below here
 REM Contoso App (Example)
 REM msiexec /i d:\Contoso\setup.msi /qn /norestart
+set "INSTALL_STOREAPPS=false"
+if /i "%INSTALL_STOREAPPS%"=="false" (
+    echo Skipping MS Store installation due to INSTALL_STOREAPPS flag.
+    goto :remaining
+)
+set "basepath=D:\MSStore"
+for /d %%D in ("%basepath%\*") do (
+    set "appfolder=%%D"
+    set "mainpackage="
+    set "dependenciesfolder=!appfolder!\Dependencies"
+    for %%F in ("!appfolder!\*") do (
+        if not "%%~dpF"=="!dependenciesfolder!\" (
+            set "mainpackage=%%F"
+        )
+    )
+    if defined mainpackage (
+        if exist "!dependenciesfolder!" (
+            set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
+            for %%G in ("!dependenciesfolder!\*") do (
+                set "dism_command=!dism_command! /DependencyPackagePath:"%%G""
+            )
+            set "dism_command=!dism_command! /SkipLicense /Region:All"
+            echo !dism_command!
+            !dism_command!
+        )
+    )
+)
+:remaining
+endlocal
 REM The below lines will remove the unattend.xml that gets the machine into audit mode. If not removed, the OS will get stuck booting to audit mode each time.
 REM Also kills the sysprep process in order to automate sysprep generalize
 del c:\windows\panther\unattend\unattend.xml /F /Q

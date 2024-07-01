@@ -1,0 +1,2 @@
+win32:7-Zip
+store:Company Portal
