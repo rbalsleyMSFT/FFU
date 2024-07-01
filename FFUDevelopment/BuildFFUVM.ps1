@@ -3206,7 +3206,7 @@ if ($InstallApps) {
             exit
         }
         WriteLog "$AppsPath\InstallAppsandSysprep.cmd found"
-        
+        Get-Apps -AppsList "$AppsPath\AppsList.txt"
         if (-not $InstallOffice) {
             #Modify InstallAppsandSysprep.cmd to REM out the office install command
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
