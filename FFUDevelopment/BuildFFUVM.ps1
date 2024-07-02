@@ -1795,7 +1795,7 @@ function Get-StoreApp {
     WriteLog "Downloading $StoreApp and dependencies..."
     WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
     $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
-    # For some apps, specifiying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
+    # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
     if ($wingetDownloadResult -match "No applicable installer found") {
         $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
     }
