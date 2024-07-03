@@ -1734,34 +1734,20 @@ function New-WinGetSettings {
     }
 }
 
-function Get-Win32App {
+function Add-Win32SilentInstallCommand {
     param (
-        [string]$Win32App,
-        [int]$LineNumber
+        [string]$AppFolder,
+        [string]$AppFolderPath
     )
-    $wingetSearchResult = & winget.exe search --name "$Win32App" --exact --accept-source-agreements --source winget
-    if ($wingetSearchResult -contains "No package found matching input criteria.") {
-        WriteLog "$Win32App not found in WinGet repository. Skipping download."
-        return
-    }
-    $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $Win32App
-    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-    $appFolder = Split-Path -Path $appFolderPath -Leaf
-    WriteLog "Downloading $Win32App..."
-    $wingetDownloadResult = & winget.exe download --name "$Win32App" --exact --download-directory "$appFolderPath" --scope machine --source winget --architecture "$WindowsArch" | Out-String
-    if ($wingetDownloadResult -notmatch "Installer downloaded") {
-        WriteLog "$Win32App did not successfully download."
-        Remove-Item -Path $appFolderPath -Recurse -Force
-        return
-    }
-    WriteLog "$Win32App has completed downloading."
-    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include *.exe, *.msi -File
+    $appName = $AppFolder
+    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include *.exe, *.msi -File -ErrorAction Stop
     $installer = Split-Path -Path $installerPath -Leaf
-    $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include *.yaml -File
+    $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include *.yaml -File -ErrorAction Stop
     $yamlContent = Get-Content -Path $yamlFile -Raw
     $silentInstallSwitch = [regex]::Match($yamlContent, 'Silent:\s*(.+)').Groups[1].Value
+    $silentInstallSwitch = $silentInstallSwitch.Replace("'", "").Trim()
     if (-not $silentInstallSwitch) {
-        WriteLog "Silent install switch for $Win32App could not be found. Skipping the inclusion of $Win32App."
+        WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
         Remove-Item -Path $appFolderPath -Recurse -Force
         return
     }
@@ -1775,8 +1761,35 @@ function Get-Win32App {
     $cmdFile = "$AppsPath\InstallAppsandSysprep.cmd"
     $cmdContent = Get-Content -Path $cmdFile
     $cmdContent = $cmdContent[0..($lineNumber - 2)] + $silentInstallCommand.Trim() + $cmdContent[($lineNumber - 1)..($cmdContent.Length - 1)]
-    WriteLog "Writing silent install command for $Win32App to InstallAppsandSysprep.cmd at line number $LineNumber"
-    Set-Content -Path $cmdFile -Value $cmdContent
+    WriteLog "Writing silent install command for $appName to InstallAppsandSysprep.cmd at line number $LineNumber"
+    Set-Content -Path $cmdFile -Value $cmdContent 
+}
+
+function Get-WinGetApp {
+    param (
+        [string]$WinGetApp,
+        [int]$LineNumber
+    )
+    $wingetSearchResult = & winget.exe search --name "$WinGetApp" --exact --accept-source-agreements --source winget
+    if ($wingetSearchResult -contains "No package found matching input criteria.") {
+        WriteLog "$WinGetApp not found in WinGet repository. Skipping download."
+        return
+    }
+    $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetApp
+    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+    $appFolder = Split-Path -Path $appFolderPath -Leaf
+    WriteLog "Downloading $WinGetApp..."
+    $wingetDownloadResult = & winget.exe download --name "$WinGetApp" --exact --download-directory "$appFolderPath" --scope machine --source winget --architecture "$WindowsArch" | Out-String
+    if ($wingetDownloadResult -match "No applicable installer found") {
+        $wingetDownloadResult = & winget.exe download --name "$WinGetApp" --exact --download-directory "$appFolderPath" --scope machine --source winget | Out-String
+    }
+    if ($wingetDownloadResult -notmatch "Installer downloaded") {
+        WriteLog "$WinGetApp did not successfully download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    WriteLog "$WinGetApp has completed downloading."
+    Add-Win32SilentInstallCommand -AppFolder $appFolder -AppFolderPath $appFolderPath
 }
 
 function Get-StoreApp {
@@ -1786,6 +1799,24 @@ function Get-StoreApp {
     $wingetSearchResult = & winget.exe search --name --exact "$StoreApp" --accept-source-agreements --source msstore
     if ($wingetSearchResult -contains "No package found matching input criteria.") {
         WriteLog "$StoreApp not found in WinGet repository. Skipping download."
+        return
+    }
+    # Skip the header lines and get the line with the app information
+    $appResult = $wingetSearchResult | Select-Object -Skip 2 | Select-Object -First 1
+    # Split the line by whitespace and get the second-to-last item (the Id)
+    $appID = ($appResult -split '\s+')[-2]
+    # Checking app ID to determine if store app is a win32 app
+    if ($appID.StartsWith("XP")) {
+        WriteLog "$StoreApp is a win32 app. Adding to $AppsPath\win32 folder"
+        $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreApp
+        New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+        $appFolder = Split-Path -Path $appFolderPath -Leaf
+        WriteLog "Downloading $StoreApp..."
+        $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
+        if ($wingetDownloadResult -match "No applicable installer found") {
+            $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
+        }
+        Add-Win32SilentInstallCommand -AppFolder $appFolder -AppFolderPath $appFolderPath
         return
     }
     $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreApp
@@ -1812,7 +1843,7 @@ function Get-StoreApp {
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $updatedcmdContent
     }
     WriteLog "$StoreApp has completed downloading. Identifying the latest version of $StoreApp."
-    $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File
+    $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
     # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
     $latestPackage = ""
     $latestDate = [datetime]::MinValue
@@ -1851,17 +1882,17 @@ function Get-Apps {
         WriteLog "No apps were specified in AppsList.txt file."
         return
     }
-    $win32Apps = @()
+    $wingetApps = @()
     $storeApps = @()
     $apps | ForEach-Object {
-        if ($_ -like 'win32:*') {
-            $win32Apps += $_.Substring(6)
+        if ($_ -like 'winget:*') {
+            $wingetApps += $_.Substring(7).Trim()
         } 
         elseif ($_ -like 'store:*') {
-            $storeApps += $_.Substring(6)
+            $storeApps += $_.Substring(6).Trim()
         }
     }
-    $wingetInstalled = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
+    $wingetInstalled = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue
     if (-not $wingetInstalled) {
         WriteLog "WinGet is not installed. Downloading preview version of WinGet and its dependencies..."
         Install-WinGet -InstallWithDependencies $true
@@ -1880,17 +1911,17 @@ function Get-Apps {
     $lineNumber = 13
     $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
     $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
-    if ($win32Apps) {
+    if ($wingetApps) {
         if (-not (Test-Path -Path $win32Folder -PathType Container)) {
             New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
         }
-        foreach ($win32App in $win32Apps) {
+        foreach ($wingetApp in $wingetApps) {
             try {
-                Get-Win32App -Win32App $win32App -LineNumber $lineNumber
+                Get-WinGetApp -WinGetApp $wingetApp -LineNumber $lineNumber
                 $lineNumber++
             }
             catch {
-                WriteLog "Error occurred while processing $win32App : $_"
+                WriteLog "Error occurred while processing $wingetApp : $_"
                 throw $_
             }
         }

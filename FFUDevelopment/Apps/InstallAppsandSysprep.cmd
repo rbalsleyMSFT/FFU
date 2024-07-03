@@ -22,8 +22,15 @@ for /d %%D in ("%basepath%\*") do (
     set "dependenciesfolder=!appfolder!\Dependencies"
     for %%F in ("!appfolder!\*") do (
         if not "%%~dpF"=="!dependenciesfolder!\" (
-            set "mainpackage=%%F"
+            if /i not "%%~xF"==".xml" (
+                if /i not "%%~xF"==".yaml" (
+                    set "mainpackage=%%F"
+                )
+            ) 
         )
+    )
+    for %%F in ("!appfolder!\*.xml") do (
+        set "licensefile=%%F"
     )
     if defined mainpackage (
         if exist "!dependenciesfolder!" (
@@ -31,7 +38,12 @@ for /d %%D in ("%basepath%\*") do (
             for %%G in ("!dependenciesfolder!\*") do (
                 set "dism_command=!dism_command! /DependencyPackagePath:"%%G""
             )
-            set "dism_command=!dism_command! /SkipLicense /Region:All"
+            if defined licensefile (
+                set "dism_command=!dism_command! /LicensePath:"!licensefile!""
+            ) else (
+                set "dism_command=!dism_command! /SkipLicense"
+            )
+            set "dism_command=!dism_command! /Region:All"
             echo !dism_command!
             !dism_command!
         )
