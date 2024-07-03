@@ -1806,15 +1806,25 @@ function Get-StoreApp {
     # Split the line by whitespace and get the second-to-last item (the Id)
     $appID = ($appResult -split '\s+')[-2]
     # Checking app ID to determine if store app is a win32 app
+    WriteLog "Checking if $StoreApp is a win32 app..."
     if ($appID.StartsWith("XP")) {
         WriteLog "$StoreApp is a win32 app. Adding to $AppsPath\win32 folder"
         $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreApp
         New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
         $appFolder = Split-Path -Path $appFolderPath -Leaf
-        WriteLog "Downloading $StoreApp..."
+        WriteLog "Downloading $StoreApp for $WindowsArch architecture..."
         $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
         if ($wingetDownloadResult -match "No applicable installer found") {
+            WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
             $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
+            if ($wingetDownloadResult -match $StoreApp){
+                WriteLog "Downloaded $StoreApp without specifying architecture."
+            }
+            else {
+                WriteLog "No installer found for $StoreApp. Skipping download."
+                Remove-Item -Path $appFolderPath -Recurse -Force
+                return
+            }
         }
         Add-Win32SilentInstallCommand -AppFolder $appFolder -AppFolderPath $appFolderPath
         return
@@ -1828,7 +1838,29 @@ function Get-StoreApp {
     $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
     # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
     if ($wingetDownloadResult -match "No applicable installer found") {
+        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
         $wingetDownloadResult = & winget.exe download --name --exact "$StoreApp" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
+        if ($wingetDownloadResult -match $StoreApp){
+            WriteLog "Downloaded $StoreApp without specifying architecture."
+            # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
+            if ($WindowsArch -eq 'ARM64') {
+                WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
+                $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
+                if ($dependencies) {
+                    foreach ($dependency in $dependencies) {
+                        if ($dependency.Name -notmatch 'ARM64') {
+                            WriteLog "Removing dependency file $($dependency.FullName)"
+                            Remove-Item -Path $dependency.FullName -Recurse -Force
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            WriteLog "No installer found for $StoreApp. Skipping download."
+            Remove-Item -Path $appFolderPath -Recurse -Force
+            return
+        }
     }
     # Many store apps can be found by winget search, but the download of the apps are unsupported.
     if ($wingetDownloadResult -match "No applicable Microsoft Store package download information found.") {
@@ -3012,10 +3044,20 @@ Function New-DeploymentUSB {
                     }
                     
                 }
-                #Copy Unattend folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+                #Copy Unattend file to the USB drive. 
                 if ($CopyUnattend) {
-                    WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
-                    Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
+                    # WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
+                    # Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
+                    $DeployUnattendPath = "$DeployPartitionDriveLetter\unattend"
+                    WriteLog "Copying unattend file to $DeployUnattendPath"
+                    New-Item -Path $DeployUnattendPath -ItemType Directory | Out-Null
+                    if ($WindowsArch -eq 'x64') {
+                        Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_x64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                    }
+                    else {
+                        Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_arm64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                    }
+                    WriteLog 'Copy completed'
                 }  
                 #Copy PPKG folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
                 if ($CopyPPKG) {
