@@ -33,20 +33,20 @@ for /d %%D in ("%basepath%\*") do (
         set "licensefile=%%F"
     )
     if defined mainpackage (
+        set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
         if exist "!dependenciesfolder!" (
-            set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
             for %%G in ("!dependenciesfolder!\*") do (
                 set "dism_command=!dism_command! /DependencyPackagePath:"%%G""
             )
-            if defined licensefile (
-                set "dism_command=!dism_command! /LicensePath:"!licensefile!""
-            ) else (
-                set "dism_command=!dism_command! /SkipLicense"
-            )
-            set "dism_command=!dism_command! /Region:All"
-            echo !dism_command!
-            !dism_command!
         )
+        if defined licensefile (
+            set "dism_command=!dism_command! /LicensePath:"!licensefile!""
+        ) else (
+            set "dism_command=!dism_command! /SkipLicense"
+        )
+        set "dism_command=!dism_command! /Region:All"
+        echo !dism_command!
+        !dism_command!
     )
 )
 :remaining
