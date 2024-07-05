@@ -1738,7 +1738,7 @@ function Add-Win32SilentInstallCommand {
     param (
         [string]$AppFolder,
         [string]$AppFolderPath,
-        [string]$LineNumber
+        [int]$LineNumber
     )
     $appName = $AppFolder
     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction Stop
@@ -1821,7 +1821,8 @@ function Get-WinGetApp {
 function Get-StoreApp {
     param (
         [string]$StoreAppName,
-        [string]$StoreAppId
+        [string]$StoreAppId,
+        [int]$LineNumber
     )
     $wingetSearchResult = & winget.exe search "$StoreAppId" --accept-source-agreements --source msstore
     if ($wingetSearchResult -contains "No package found matching input criteria.") {
@@ -1853,21 +1854,33 @@ function Get-StoreApp {
                 return
             }
         }
-        Add-Win32SilentInstallCommand -AppFolder $appFolder -AppFolderPath $appFolderPath
-        return
+        Add-Win32SilentInstallCommand -AppFolder $appFolder -AppFolderPath $appFolderPath -LineNumber $LineNumber
+        # Since a Win32 app was received, returning false to increment line number for silent install command
+        return $false
     }
     $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
     # Invoke-Process is not used here because it terminates the script if the exit code of the process is not zero.
     # WinGet's download command will return a non-zero exit code when downloading store apps, as attempting to download the license file always appears to cause an error.
-    WriteLog "Downloading $StoreAppName and dependencies..."
+    WriteLog "Attempting to download $StoreAppName and dependencies..."
     WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
     $wingetDownloadResult = & winget.exe download "$StoreAppId" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
+    if ($wingetDownloadResult -match "The request is not supported") {
+        WriteLog "The download request is not supported for $StoreAppName. Skipping download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    # Many store apps can be found by winget search, but the download of the apps are unsupported.
+    if ($wingetDownloadResult -match "No applicable Microsoft Store package download information found.") {
+        WriteLog "No applicable Microsoft Store package download information found for $StoreAppName. Skipping download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
     # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
     if ($wingetDownloadResult -match "No applicable installer found") {
         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
         $wingetDownloadResult = & winget.exe download "$StoreAppId" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
-        if ($wingetDownloadResult -match $StoreAppName){
+        if ($wingetDownloadResult -match "Installer downloaded") {
             WriteLog "Downloaded $StoreAppName without specifying architecture."
             # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
             if ($WindowsArch -eq 'ARM64') {
@@ -1884,16 +1897,10 @@ function Get-StoreApp {
             }
         }
         else {
-            WriteLog "No installer found for $StoreAppName. Skipping download."
+            WriteLog "No installer found for $StoreAppName from the msstore source. Skipping download."
             Remove-Item -Path $appFolderPath -Recurse -Force
             return
         }
-    }
-    # Many store apps can be found by winget search, but the download of the apps are unsupported.
-    if ($wingetDownloadResult -match "No applicable Microsoft Store package download information found.") {
-        WriteLog "No applicable Microsoft Store package download information found for $StoreAppName. Skipping download."
-        Remove-Item -Path $appFolderPath -Recurse -Force
-        return
     }
     $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
     if ($cmdContent -match 'set "INSTALL_STOREAPPS=false"') {
@@ -1994,7 +2001,10 @@ function Get-Apps {
         }
         foreach ($storeApp in $storeApps) {
             try {
-                Get-StoreApp -StoreAppName $storeApps.Name -StoreAppId $storeApps.Id
+                $result = Get-StoreApp -StoreAppName $storeApp.Name -StoreAppId $storeApp.Id -LineNumber $lineNumber
+                if ($result -eq $false) {
+                    $lineNumber++
+                }
             }
             catch {
                 WriteLog "Error occurred while processing $storeApp : $_"
