@@ -4,7 +4,7 @@ param(
     $DeployISOPath,
     [Switch]$DisableAutoPlay
 )
-$Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator'
+$Host.UI.RawUI.WindowTitle = 'USB Imaging Tool Creator'
 
 if($DeployISOPath){
 $DevelopmentPath = $DeployISOPath | Split-Path
