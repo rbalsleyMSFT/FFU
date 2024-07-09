@@ -495,10 +495,12 @@ $WinRE = $USBDrive + "WinRE\winre.wim"
 If (Test-Path -Path $WinRE)
 {
     WriteLog 'Copying modified WinRE to Recovery directory'
+    Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object Type -eq Recovery | Set-Partition -NewDriveLetter R
     Invoke-Process xcopy.exe "/h $WinRE R:\Recovery\WindowsRE\ /Y"
     WriteLog 'Copying WinRE to Recovery directory succeeded'
     WriteLog 'Registering location of recovery tools'
     Invoke-Process W:\Windows\System32\Reagentc.exe "/Setreimage /Path R:\Recovery\WindowsRE /Target W:\Windows"
+    Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object Type -eq Recovery | Remove-PartitionAccessPath -AccessPath R:
     WriteLog 'Registering location of recovery tools succeeded'
 }
 # else
