@@ -177,7 +177,10 @@ Function New-DeploymentUSB {
             $var = $false
         }
     } until (($DriveSelected -le $Count -1 -or $last) -and $var)
-    if($DisableAutoPlay){ 
+
+    $DisableAutoPlayCurrentSetting = (Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name DisableAutoplay).DisableAutoplay
+    if($DisableAutoPlay -and $DisableAutoPlayCurrentSetting -ne 1){
+    writelog "Disable autoPlay current setting is $DisableAutoPlayCurrentSetting"
     WriteLog "Setting the registry key to disable autoplay for all drives"
     Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 1 -Type DWORD
     }
@@ -196,8 +199,8 @@ Function New-DeploymentUSB {
     }
     WriteLog "Setting the registry key to re-enable autoplay for all drives"
     if($DisableAutoPlay){
-    Writelog "Enabling Autoplay"
-    Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 0 -Type DWORD
+    Writelog "Setting disable autoplay setting back to $DisableAutoPlayCurrentSetting"
+    Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value $DisableAutoPlayCurrentSetting -Type DWORD
     }
     Writelog "Completed!"
 }    
