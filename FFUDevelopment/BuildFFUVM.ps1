@@ -1850,67 +1850,61 @@ function Get-StoreApp {
     $appID = ($appResult -split '\s+')[-2]
     # Checking app ID to determine if store app is a win32 app
     WriteLog "Checking if $StoreAppName is a win32 app..."
-    if ($appID.StartsWith("XP")) {
+    $appIsWin32 = $appID.StartsWith("XP")
+    if ($appIsWin32) {
         WriteLog "$StoreAppName is a win32 app. Adding to $AppsPath\win32 folder"
         $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreAppName
-        New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-        WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
-        $wingetDownloadResult = & winget.exe download "$StoreAppId" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
-        if ($wingetDownloadResult -match "No applicable installer found") {
-            WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-            $wingetDownloadResult = & winget.exe download "$StoreAppId" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
-            if ($wingetDownloadResult -match "Installer downloaded"){
-                WriteLog "Downloaded $StoreAppName without specifying architecture."
-            }
-            else {
-                WriteLog "No installer found for $StoreAppName. Skipping download."
-                Remove-Item -Path $appFolderPath -Recurse -Force
-                return
-            }
+    }
+    else {
+        $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
+    }
+    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+    WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
+    $downloadParams = @(
+        "download", "$StoreAppId",
+        "--download-directory", "$appFolderPath",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+        "--source", "msstore",
+        "--scope", "machine",
+        "--architecture", "$WindowsArch"
+    )
+    WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
+    WriteLog "Attempting to download $StoreAppName and dependencies for $WindowsArch architecture..."
+    $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+    # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
+    if ($wingetDownloadResult -match "No applicable installer found") {
+        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
+        $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
+        $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+        if ($wingetDownloadResult -match "Microsoft Store package download completed") {
+            WriteLog "Downloaded $StoreAppName without specifying architecture."
         }
+    }
+    if ($wingetDownloadResult -notmatch "Installer downloaded|Microsoft Store package download completed") {
+        WriteLog "Download not supported for $StoreAppName. Skipping download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    if ($appIsWin32) {
         Add-Win32SilentInstallCommand -AppFolder $StoreAppName -AppFolderPath $appFolderPath -LineNumber $LineNumber
         # Since a Win32 app was received, returning false to increment line number for silent install command
         return $false
     }
-    $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
-    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-    # Invoke-Process is not used here because it terminates the script if the exit code of the process is not zero.
-    # WinGet's download command will return a non-zero exit code when downloading store apps, as attempting to download the license file always appears to cause an error.
-    WriteLog "Attempting to download $StoreAppName and dependencies..."
-    WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
-    $wingetDownloadResult = & winget.exe download "$StoreAppId" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --architecture "$WindowsArch" --scope machine | Out-String
-    # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
-    if ($wingetDownloadResult -match "No applicable installer found") {
-        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-        $wingetDownloadResult = & winget.exe download "$StoreAppId" --download-directory "$appFolderPath" --accept-package-agreements --accept-source-agreements --source msstore --scope machine | Out-String
-        if ($wingetDownloadResult -match "Microsoft Store package download completed") {
-            WriteLog "Downloaded $StoreAppName without specifying architecture."
-            # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
-            if ($WindowsArch -eq 'ARM64') {
-                WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
-                $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
-                if ($dependencies) {
-                    foreach ($dependency in $dependencies) {
-                        if ($dependency.Name -notmatch 'ARM64') {
-                            WriteLog "Removing dependency file $($dependency.FullName)"
-                            Remove-Item -Path $dependency.FullName -Recurse -Force
-                        }
-                    }
+    Set-InstallStoreAppsFlag
+    # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
+    if ($WindowsArch -eq 'ARM64') {
+        WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
+        $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
+        if ($dependencies) {
+            foreach ($dependency in $dependencies) {
+                if ($dependency.Name -notmatch 'ARM64') {
+                    WriteLog "Removing dependency file $($dependency.FullName)"
+                    Remove-Item -Path $dependency.FullName -Recurse -Force
                 }
             }
         }
-        else {
-            WriteLog "No installer found for $StoreAppName from the msstore source. Skipping download."
-            Remove-Item -Path $appFolderPath -Recurse -Force
-            return
-        }
     }
-    elseif ($wingetDownloadResult -notmatch "Microsoft Store package download completed") {
-        WriteLog "Download not supported for $StoreAppName. Skipping download."
-        Remove-Item -Path $appFolderPath -Recurse -Force
-        return    
-    }
-    Set-InstallStoreAppsFlag
     WriteLog "$StoreAppName has completed downloading. Identifying the latest version of $StoreAppName."
     $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
     # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
