@@ -1659,55 +1659,48 @@ function Get-Office {
 }
 
 function Install-WinGet {
-    param (
-        [bool]$InstallWithDependencies
-    )
     $wingetPreviewLink = "https://aka.ms/getwingetpreview"
     $wingetPackageDestination = "$env:TEMP\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-    if ($InstallWithDependencies) {
-        $dependencies = @(
-            @{
-                Source = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
-                Destination = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
-            },
-            @{
-                Source = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
-                Destination = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
-            }
-        )
-        Start-BitsTransferWithRetry -Source $wingetPreviewLink -Destination $wingetPackageDestination
-        foreach ($dependency in $dependencies) {
-            Start-BitsTransferWithRetry -Source $dependency.Source -Destination $dependency.Destination
-            Add-AppxPackage -Path $dependency.Destination
-            Remove-Item -Path $dependency.Destination -Force -ErrorAction SilentlyContinue
+    $dependencies = @(
+        @{
+            Source = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
+            Destination = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        },
+        @{
+            Source = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
+            Destination = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
         }
-        Add-AppxPackage -Path $wingetPackageDestination
-        Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
-    } 
-    else {
-        # If WinGet was already installed, then installing the dependencies can cause an error if the system has a newer version of the dependencies than the ones downloaded.
-        WriteLog "Downloading WinGet..."
-        Start-BitsTransferWithRetry -Source $wingetPreviewLink -Destination $wingetPackageDestination
-        WriteLog "Installing WinGet..."
-        Add-AppxPackage -Path $wingetPackageDestination
-        WriteLog "Removing WinGet installer..."
-        Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
+    )
+    foreach ($dependency in $dependencies) {
+        $dependencyName = [System.IO.Path]::GetFileName($dependency.Source)
+        WriteLog "Downloading $dependencyName..."
+        Start-BitsTransferWithRetry -Source $dependency.Source -Destination $dependency.Destination
+        WriteLog "Installing $dependencyName..."
+        Add-AppxPackage -Path $dependency.Destination -ErrorAction SilentlyContinue
+        WriteLog "Removing $dependencyName..."
+        Remove-Item -Path $dependency.Destination -Force -ErrorAction SilentlyContinue
     }
+    WriteLog "Downloading WinGet..."
+    Start-BitsTransferWithRetry -Source $wingetPreviewLink -Destination $wingetPackageDestination
+    WriteLog "Installing WinGet..."
+    Add-AppxPackage -Path $wingetPackageDestination -ErrorAction SilentlyContinue
+    WriteLog "Removing WinGet installer..."
+    Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
 }
 
 function Confirm-WinGetInstallation {
     $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
     if (-not (Test-Path $wingetPath)) {
-        WriteLog "WinGet is not installed. Downloading preview version of WinGet and its dependencies..."
-        Install-WinGet -InstallWithDependencies $true
+        WriteLog "WinGet is not installed. Downloading preview version of WinGet..."
+        Install-WinGet
     } 
     elseif (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        WriteLog "WinGet is not on the path. Downloading preview version of WinGet without dependencies..."
-        Install-WinGet -InstallWithDependencies $false
+        WriteLog "WinGet is not on the path. Downloading preview version of WinGet..."
+        Install-WinGet
     } 
     elseif (-not ((& winget.exe --version) -like "*preview*")) {
-        WriteLog "The preview version of WinGet is not installed. Downloading preview version of WinGet without dependencies..."
-        Install-WinGet -InstallWithDependencies $false
+        WriteLog "The preview version of WinGet is not installed. Downloading preview version of WinGet..."
+        Install-WinGet
     }
 }
 
@@ -1730,24 +1723,21 @@ function New-WinGetSettings {
     if (Test-Path -Path $wingetSettingsFile -PathType Leaf) {
         $jsonContent = Get-Content -Path $wingetSettingsFile -Raw
         # Check if storeDownload feature is already enabled
-        if ($jsonContent -notmatch '"storeDownload"\s*:\s*true') {
-            # Back up existing settings.json file
-            $backupWingetSettingsFile = $wingetSettingsFile + ".bak"
-            if (-not (Test-Path -Path $backupWingetSettingsFile -PathType Leaf)) {
-                WriteLog "Backing up existing WinGet settings.json file to $backupWingetSettingsFile"
-                Copy-Item -Path $wingetSettingsFile -Destination $backupWingetSettingsFile -Force | Out-Null
-            }
-            WriteLog "Creating WinGet settings.json file to allow the storeDownload feature. Writing file to $wingetSettingsFile"
-            $wingetSettingsContent | Out-File -FilePath $wingetSettingsFile -Encoding utf8 -Force
-        }
-        else {
+        WriteLog "Checking if storeDownload feature is enabled in WinGet configuration."
+        if ($jsonContent -match '"storeDownload"\s*:\s*true') {
             WriteLog "WinGet's settings.json file is already configured to enable the storeDownload feature."
+            return
+        }
+        # Back up existing settings.json file
+        WriteLog "The storeDownload feature is not enabled in WinGet configuration."
+        $backupWingetSettingsFile = $wingetSettingsFile + ".bak"
+        if (-not (Test-Path -Path $backupWingetSettingsFile -PathType Leaf)) {
+            WriteLog "Backing up existing WinGet settings.json file to $backupWingetSettingsFile"
+            Copy-Item -Path $wingetSettingsFile -Destination $backupWingetSettingsFile -Force | Out-Null
         }
     } 
-    else {
-        WriteLog "Creating WinGet settings.json file to allow the storeDownload feature. Writing file to $wingetSettingsFile"
-        $wingetSettingsContent | Out-File -FilePath $wingetSettingsFile -Encoding utf8 -Force
-    }
+    WriteLog "Creating WinGet settings.json file to allow the storeDownload feature. Writing file to $wingetSettingsFile"
+    $wingetSettingsContent | Out-File -FilePath $wingetSettingsFile -Encoding utf8 -Force
 }
 
 function Add-Win32SilentInstallCommand {
@@ -1812,10 +1802,19 @@ function Get-WinGetApp {
     WriteLog "Downloading $WinGetAppName..."
     $wingetDownloadResult = & winget.exe download --id "$WinGetAppId" --exact --download-directory "$appFolderPath" --scope machine --source winget --architecture "$WindowsArch" | Out-String
     if ($wingetDownloadResult -match "No applicable installer found") {
+        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
         $wingetDownloadResult = & winget.exe download --id "$WinGetAppId" --exact --download-directory "$appFolderPath" --scope machine --source winget | Out-String
+        if ($wingetDownloadResult -match "Installer downloaded") {
+            WriteLog "Downloaded $WinGetAppName without specifying architecture."
+        }
+        else {
+            WriteLog "No installer found for $WinGetAppName. Skipping download."
+            Remove-Item -Path $appFolderPath -Recurse -Force
+            return $false
+        }
     }
     if ($wingetDownloadResult -notmatch "Installer downloaded") {
-        WriteLog "$WinGetAppName did not successfully download."
+        WriteLog "No installer found for $WinGetAppName. Skipping download."
         Remove-Item -Path $appFolderPath -Recurse -Force
         return $false
     }
