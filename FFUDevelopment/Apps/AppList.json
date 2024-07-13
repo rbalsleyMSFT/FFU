@@ -9,6 +9,11 @@
             "name": "Company Portal",
             "id": "9WZDNCRFJ3PZ",
             "source": "msstore"
+        },
+        {
+            "name": "Microsoft Teams",
+            "id": "Microsoft.Teams",
+            "source": "winget"
         }
     ]
 }

@@ -1811,18 +1811,14 @@ function Get-StoreApp {
         WriteLog "$StoreAppName not found in WinGet repository. Skipping download."
         return
     }
-    # Skip the header lines and get the line with the app information
-    $appResult = $wingetSearchResult | Select-Object -Skip 2 | Select-Object -First 1
-    # Split the line by whitespace and get the second-to-last item (the Id)
-    $appID = ($appResult -split '\s+')[-2]
-    # Checking app ID to determine if store app is a win32 app
     WriteLog "Checking if $StoreAppName is a win32 app..."
-    $appIsWin32 = $appID.StartsWith("XP")
+    $appIsWin32 = $StoreAppId.StartsWith("XP")
     if ($appIsWin32) {
         WriteLog "$StoreAppName is a win32 app. Adding to $AppsPath\win32 folder"
         $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreAppName
     }
     else {
+        WriteLog "$StoreAppName is not a win32 app."
         $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
     }
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
