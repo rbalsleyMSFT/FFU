@@ -1,0 +1,19 @@
+{
+    "apps": [
+        {
+            "name": "7-Zip",
+            "id": "7zip.7zip",
+            "source": "winget"
+        },
+        {
+            "name": "Company Portal",
+            "id": "9WZDNCRFJ3PZ",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Teams",
+            "id": "Microsoft.Teams",
+            "source": "winget"
+        }
+    ]
+}
