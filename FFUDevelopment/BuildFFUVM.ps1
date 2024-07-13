@@ -1890,9 +1890,9 @@ function Get-StoreApp {
 
 function Get-Apps {
     param (
-        [string]$AppsList
+        [string]$AppList
     )
-    $apps = Get-Content -Path $AppsList -Raw | ConvertFrom-Json
+    $apps = Get-Content -Path $AppList -Raw | ConvertFrom-Json
     if (-not $apps) {
         WriteLog "No apps were specified in AppList.json file."
         return
@@ -3349,7 +3349,7 @@ if ($InstallApps) {
             exit
         }
         WriteLog "$AppsPath\InstallAppsandSysprep.cmd found"
-        Get-Apps -AppsList "$AppsPath\AppList.json"
+        Get-Apps -AppList "$AppsPath\AppList.json"
         if (-not $InstallOffice) {
             #Modify InstallAppsandSysprep.cmd to REM out the office install command
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
