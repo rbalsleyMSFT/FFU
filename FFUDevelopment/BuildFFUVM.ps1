@@ -1659,48 +1659,44 @@ function Get-Office {
 }
 
 function Install-WinGet {
-    $wingetPreviewLink = "https://aka.ms/getwingetpreview"
-    $wingetPackageDestination = "$env:TEMP\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-    $dependencies = @(
-        @{
-            Source = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
-            Destination = "$env:TEMP\Microsoft.VCLibs.x64.14.00.Desktop.appx"
-        },
-        @{
-            Source = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
-            Destination = "$env:TEMP\Microsoft.UI.Xaml.2.8.x64.appx"
-        }
+    param (
+        [string]$Architecture
     )
-    foreach ($dependency in $dependencies) {
-        $dependencyName = [System.IO.Path]::GetFileName($dependency.Source)
-        WriteLog "Downloading $dependencyName..."
-        Start-BitsTransferWithRetry -Source $dependency.Source -Destination $dependency.Destination
-        WriteLog "Installing $dependencyName..."
-        Add-AppxPackage -Path $dependency.Destination -ErrorAction SilentlyContinue
-        WriteLog "Removing $dependencyName..."
-        Remove-Item -Path $dependency.Destination -Force -ErrorAction SilentlyContinue
+    $packages = @(
+        @{Name = "VCLibs"; Url = "https://aka.ms/Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"; File = "Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"},
+        @{Name = "UIXaml"; Url = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.$Architecture.appx"; File = "Microsoft.UI.Xaml.2.8.$Architecture.appx"},
+        @{Name = "WinGet"; Url = "https://aka.ms/getwinget"; File = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"}
+    )
+    foreach ($package in $packages) {
+        $destination = Join-Path -Path $env:TEMP -ChildPath $package.File
+        WriteLog "Downloading $($package.Name) from $($package.Url) to $destination"
+        Start-BitsTransferWithRetry -Source $package.Url -Destination $destination
+        WriteLog "Installing $($package.Name)..."
+        Add-AppxPackage -Path $destination -ErrorAction SilentlyContinue
+        WriteLog "Removing $($package.Name)..."
+        Remove-Item -Path $destination -Force -ErrorAction SilentlyContinue
     }
-    WriteLog "Downloading WinGet..."
-    Start-BitsTransferWithRetry -Source $wingetPreviewLink -Destination $wingetPackageDestination
-    WriteLog "Installing WinGet..."
-    Add-AppxPackage -Path $wingetPackageDestination -ErrorAction SilentlyContinue
-    WriteLog "Removing WinGet installer..."
-    Remove-Item -Path $wingetPackageDestination -Force -ErrorAction SilentlyContinue
+    WriteLog "WinGet installation complete."
 }
 
 function Confirm-WinGetInstallation {
     $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
-    if (-not (Test-Path $wingetPath)) {
-        WriteLog "WinGet is not installed. Downloading preview version of WinGet..."
-        Install-WinGet
+    $minVersion = [version]"1.8.1911"
+    if (-not (Test-Path -Path $wingetPath -PathType Leaf)) {
+        WriteLog "WinGet is not installed. Downloading WinGet..."
+        Install-WinGet -Architecture $WindowsArch
+        return
     } 
-    elseif (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        WriteLog "WinGet is not on the path. Downloading preview version of WinGet..."
-        Install-WinGet
-    } 
-    elseif (-not ((& winget.exe --version) -like "*preview*")) {
-        WriteLog "The preview version of WinGet is not installed. Downloading preview version of WinGet..."
-        Install-WinGet
+    if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
+        WriteLog "WinGet is not on the path. Downloading WinGet..."
+        Install-WinGet -Architecture $WindowsArch
+        return
+    }
+    $wingetVersion = & winget.exe --version
+    if ($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion) {
+        WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
+        Install-WinGet -Architecture $WindowsArch
+        return
     }
 }
 
@@ -1800,17 +1796,24 @@ function Get-WinGetApp {
     $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
     WriteLog "Downloading $WinGetAppName..."
-    $wingetDownloadResult = & winget.exe download --id "$WinGetAppId" --exact --download-directory "$appFolderPath" --scope machine --source winget --architecture "$WindowsArch" | Out-String
+    $downloadParams = @(
+        "download", 
+        "--id", "$WinGetAppId",
+        "--exact",
+        "--download-directory", "$appFolderPath",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+        "--source", "winget",
+        "--scope", "machine",
+        "--architecture", "$WindowsArch"
+    )
+    $wingetDownloadResult = & winget.exe @downloadParams | Out-String
     if ($wingetDownloadResult -match "No applicable installer found") {
         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-        $wingetDownloadResult = & winget.exe download --id "$WinGetAppId" --exact --download-directory "$appFolderPath" --scope machine --source winget | Out-String
+        $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
+        $wingetDownloadResult = & winget.exe @downloadParams | Out-String
         if ($wingetDownloadResult -match "Installer downloaded") {
             WriteLog "Downloaded $WinGetAppName without specifying architecture."
-        }
-        else {
-            WriteLog "No installer found for $WinGetAppName. Skipping download."
-            Remove-Item -Path $appFolderPath -Recurse -Force
-            return $false
         }
     }
     if ($wingetDownloadResult -notmatch "Installer downloaded") {
