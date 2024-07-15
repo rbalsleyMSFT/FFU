@@ -33,24 +33,29 @@ for /d %%D in ("%basepath%\*") do (
         set "licensefile=%%F"
     )
     if defined mainpackage (
+        set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
         if exist "!dependenciesfolder!" (
-            set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
             for %%G in ("!dependenciesfolder!\*") do (
                 set "dism_command=!dism_command! /DependencyPackagePath:"%%G""
             )
-            if defined licensefile (
-                set "dism_command=!dism_command! /LicensePath:"!licensefile!""
-            ) else (
-                set "dism_command=!dism_command! /SkipLicense"
-            )
-            set "dism_command=!dism_command! /Region:All"
-            echo !dism_command!
-            !dism_command!
         )
+        if defined licensefile (
+            set "dism_command=!dism_command! /LicensePath:"!licensefile!""
+        ) else (
+            set "dism_command=!dism_command! /SkipLicense"
+        )
+        set "dism_command=!dism_command! /Region:All"
+        echo !dism_command!
+        !dism_command!
     )
 )
 :remaining
 endlocal
+for /r "D:\" %%G in (.) do (
+    if exist "%%G\Notepad++" (
+        powershell -Command "Remove-AppxPackage -Package NotepadPlusPlus_1.0.0.0_neutral__7njy0v32s6xk6"
+    )
+)
 REM The below lines will remove the unattend.xml that gets the machine into audit mode. If not removed, the OS will get stuck booting to audit mode each time.
 REM Also kills the sysprep process in order to automate sysprep generalize
 del c:\windows\panther\unattend\unattend.xml /F /Q
