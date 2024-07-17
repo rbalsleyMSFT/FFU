@@ -430,7 +430,9 @@ Writelog 'Clean Disk'
 #Invoke-Process diskpart.exe "/S $UEFIFFUPartitions"
 try {
     $Disk = Get-Disk -Number $DiskID
-    $Disk | clear-disk -RemoveData -RemoveOEM -Confirm:$false
+    if ($Disk.PartitionStyle -ne "RAW") {
+        $Disk | clear-disk -RemoveData -RemoveOEM -Confirm:$false
+    }
 }
 catch {
     WriteLog 'Cleaning disk failed. Exiting'
@@ -444,6 +446,16 @@ WriteLog "Applying FFU to $PhysicalDeviceID"
 WriteLog "Running command dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID"
 #In order for Applying Image progress bar to show up, need to call dism directly. Might be a better way to handle, but must have progress bar show up on screen.
 dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID
+$recoveryPartition = Get-Partition -Disk $Disk | Where-Object PartitionNumber -eq 4
+if ($recoveryPartition) {
+    $diskpartScript = @(
+        "SELECT DISK $($Disk.Number)", 
+        "SELECT PARTITION $($recoveryPartition.PartitionNumber)", 
+        "GPT ATTRIBUTES=0x8000000000000001", 
+        "EXIT"
+    )
+    $diskpartScript | diskpart.exe
+}
 if($LASTEXITCODE -eq 0){
     WriteLog 'Successfully applied FFU'
 }
