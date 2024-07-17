@@ -430,7 +430,9 @@ Writelog 'Clean Disk'
 #Invoke-Process diskpart.exe "/S $UEFIFFUPartitions"
 try {
     $Disk = Get-Disk -Number $DiskID
-    $Disk | clear-disk -RemoveData -RemoveOEM -Confirm:$false
+    if ($Disk.PartitionStyle -ne "RAW") {
+        $Disk | clear-disk -RemoveData -RemoveOEM -Confirm:$false
+    }
 }
 catch {
     WriteLog 'Cleaning disk failed. Exiting'
