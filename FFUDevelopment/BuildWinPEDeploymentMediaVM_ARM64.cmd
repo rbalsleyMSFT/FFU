@@ -17,5 +17,5 @@ xcopy "C:\FFUDevelopment\WinPEDeployFFUFilesVM" c:\FFUDevelopment\WinPE\mount /Y
 REM If you need to add drivers, remove the REM from the below line and change the /Driver:Path to a folder of drivers
 REM dism /image:C:\FFUDevelopment\WinPE\mount /Add-Driver /Driver:<Path to Drivers folder e.g c:\drivers> /Recurse
 Dism /Unmount-Image /MountDir:c:\FFUDevelopment\WinPE\mount /Commit
-MakeWinPEMedia /ISO /F c:\FFUDevelopment\WinPE "c:\FFUDevelopment\WinPE_FFU_Deploy_VM_ARM64.iso"
+MakeWinPEMedia /ISO /F c:\FFUDevelopment\WinPE "c:\FFUDevelopment\WinPE_FFU_Deploy_VM_arm64.iso"
 rd c:\FFUDevelopment\WinPE /S /Q
