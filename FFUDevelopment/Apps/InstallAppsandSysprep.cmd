@@ -7,6 +7,7 @@ REM Install Defender Definitions
 REM Install Windows Security Platform Update
 REM Install OneDrive Per Machine
 REM Install Edge Stable
+REM Winget Win32 Apps
 REM Add additional apps below here
 REM Contoso App (Example)
 REM msiexec /i d:\Contoso\setup.msi /qn /norestart
