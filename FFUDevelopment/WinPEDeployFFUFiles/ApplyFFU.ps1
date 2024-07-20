@@ -14,9 +14,39 @@ function Get-USBDrive(){
     return $USBDriveLetter
 }
 
+# function Get-HardDrive(){
+#     $DeviceID = (Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk'}).DeviceID
+#     return $DeviceID
+# }
 function Get-HardDrive(){
-    $DeviceID = (Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk'}).DeviceID
-    return $DeviceID
+    $SystemInfo = Get-WmiObject -Class 'Win32_ComputerSystem'
+    $Manufacturer = $SystemInfo.Manufacturer
+    $Model = $SystemInfo.Model
+    WriteLog "Device Manufacturer: $Manufacturer"
+    WriteLog "Device Model: $Model"
+    WriteLog 'Getting Hard Drive info'
+    if ($Manufacturer -eq 'Microsoft Corporation' -and $Model -eq 'Virtual Machine'){
+        WriteLog 'Running in a Hyper-V VM. Getting virtual disk on Index 0 and SCSILogicalUnit 0'
+        $DiskDrive = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' `
+        -and $_.Model -eq 'Microsoft Virtual Disk' `
+        -and $_.Index -eq 0 `
+        -and $_.SCSILogicalUnit -eq 0
+        }
+    }
+    else{
+        WriteLog 'Not running in a VM. Getting physical disk drive'
+        $DiskDrive = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk'}
+    }
+    $DeviceID = $DiskDrive.DeviceID
+    $BytesPerSector = $Diskdrive.BytesPerSector
+
+    # Create a custom object to return both values
+    $result = New-Object PSObject -Property @{
+        DeviceID = $DeviceID
+        BytesPerSector = $BytesPerSector
+    }
+
+    return $result
 }
 
 function WriteLog($LogText){ 
@@ -122,34 +152,16 @@ WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
 #Find PhysicalDrive
-$PhysicalDeviceID = Get-HardDrive
+# $PhysicalDeviceID = Get-HardDrive
+$hardDrive = Get-HardDrive
+$PhysicalDeviceID = $hardDrive.DeviceID
+$BytesPerSector = $hardDrive.BytesPerSector
+WriteLog "Physical BytesPerSector is $BytesPerSector"
 WriteLog "Physical DeviceID is $PhysicalDeviceID"
 
 #Parse DiskID Number
 $DiskID = $PhysicalDeviceID.substring($PhysicalDeviceID.length - 1,1)
 WriteLog "DiskID is $DiskID"
-
-#COMMENT THIS WHOLE BLOCK OUT ONCE FFUPROVIDER FIX IS IN
-# #Modify diskpart answer files if DiskID not 0
-# # $UEFIFFUPartitions = 'x:\CreateUEFI-FFU-Partitions.txt'
-# $ExtendPartition = 'x:\ExtendPartition-UEFI.txt'
-
-# If ($DiskID -ne '0'){
-#     WriteLog 'DiskID is not 0. Need to modify diskpart answer files'
-#     # try {
-#     #     Set-DiskpartAnswerFiles $UEFIFFUPartitions $DiskID
-#     # }
-#     # catch {
-#     #     WriteLog "Modifying $UEFIFFUPartitions failed with error: $_"
-#     # }
-    
-#     try {
-#         Set-DiskpartAnswerFiles $ExtendPartition $DiskID
-#     }
-#     catch {
-#         WriteLog "Modifying $ExtendPartition failed with error: $_"
-#     }
-# }
 
 #Find FFU Files
 [array]$FFUFiles = @(Get-ChildItem -Path $USBDrive*.ffu)
@@ -426,8 +438,6 @@ If (Test-Path -Path $Drivers)
 
 #Partition drive
 Writelog 'Clean Disk'
-#Start-Process -FilePath diskpart.exe -ArgumentList "/S $UEFIFFUPartitions" -Wait -ErrorAction Stop | Out-File $Logfile -Append
-#Invoke-Process diskpart.exe "/S $UEFIFFUPartitions"
 try {
     $Disk = Get-Disk -Number $DiskID
     if ($Disk.PartitionStyle -ne "RAW") {
@@ -448,16 +458,32 @@ WriteLog "Running command dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDri
 dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID
 $recoveryPartition = Get-Partition -Disk $Disk | Where-Object PartitionNumber -eq 4
 if ($recoveryPartition) {
+    WriteLog 'Setting recovery partition attributes'
     $diskpartScript = @(
         "SELECT DISK $($Disk.Number)", 
         "SELECT PARTITION $($recoveryPartition.PartitionNumber)", 
         "GPT ATTRIBUTES=0x8000000000000001", 
         "EXIT"
     )
-    $diskpartScript | diskpart.exe
+    $diskpartScript | diskpart.exe | Out-Null
+    WriteLog 'Setting recovery partition attributes complete'
 }
 if($LASTEXITCODE -eq 0){
     WriteLog 'Successfully applied FFU'
+}
+elseif($LASTEXITCODE -eq 1393){
+    WriteLog "Failed to apply FFU - LastExitCode = $LastExitCode"
+    WriteLog "This is likely due to a mismatched LogicalSectorByteSize"
+    WriteLog "BytesPerSector value from Win32_Diskdrive is $BytesPerSector"
+    if ($BytesPerSector -eq 4096){
+        WriteLog "The FFU build process by default uses a 512 LogicalSectorByteSize. Rebuild the FFU by adding -LogicalSectorByteSize 4096 to the command line"
+    }
+    elseif($BytesPerSector -eq 512){
+        WriteLog "This FFU was likely built with a LogicalSectorByteSize of 4096. Rebuild the FFU by adding -LogicalSectorByteSize 512 to the command line"
+    }
+    #Copy DISM log to USBDrive
+    invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
+    exit
 }
 else{
     Writelog "Failed to apply FFU - LastExitCode = $LASTEXITCODE also check dism.log on the USB drive for more info"
@@ -465,41 +491,6 @@ else{
     invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
     exit
 }
-
-#Remove recovery partition - this is needed in order to extend the Windows partition so it uses the full disk size. If dism /optimize-ffu worked, this wouldn't be needed
-# $disk = get-disk -Number $DiskID
-# $RecoveryPartition = $disk | get-partition | Where-Object {$_.type -eq 'Recovery'}
-# if ($RecoveryPartition){
-#     $RecoveryPartitionNumber = $RecoveryPartition.PartitionNumber
-#     if ($RecoveryPartitionNumber -eq 4){
-#         try {
-#             WriteLog 'Removing recovery partition'
-#             Remove-partition -DiskNumber $DiskID -PartitionNumber $RecoveryPartitionNumber -Confirm:$false
-#         }
-#         catch {
-#             WriteLog 'Error removing recovery partition, exiting'
-#             throw $_
-#         }
-#     }
-#     else{
-#         WriteLog 'Recovery partition not partition 4. Script will exit. Please create the FFU with the recovery partition as the last partition. This is the default and recommended way.'
-#         exit
-#     }
-# }
-
-#COMMENT THIS WHOLE BLOCK OUT AFTER FFUPROVIDER FIX IS IN
-# # Extend Windows partition and create recovery partition
-# Writelog 'Extending Windows partition'
-# Invoke-Process diskpart.exe "/S $ExtendPartition"
-# if($LASTEXITCODE -eq 0){
-#     WriteLog 'Successfully extended Windows partition and created recovery partition'
-# }
-# else{
-#     Writelog "Failed to extend Windows partition and/or create recovery partition - LastExitCode = $LASTEXITCODE"
-# }
-
-#UNCOMMENT THIS AFTER FFUPROVIDER FIX IS IN
-# Set W: drive letter to Windows partition
 Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
 
 #Copy modified WinRE if folder exists, else copy inbox WinRE
@@ -515,16 +506,6 @@ If (Test-Path -Path $WinRE)
     Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object Type -eq Recovery | Remove-PartitionAccessPath -AccessPath R:
     WriteLog 'Registering location of recovery tools succeeded'
 }
-# else
-# {
-#     WriteLog 'Copying default WinRE to Recovery directory'
-#     Invoke-Process xcopy.exe "/h W:\Windows\System32\Recovery\Winre.wim R:\Recovery\WindowsRE\ /Y"
-#     WriteLog 'Copying WinRE to Recovery directory succeeded'
-#     WriteLog 'Registering location of recovery tools'
-#     Invoke-process W:\Windows\System32\Reagentc.exe "/Setreimage /Path R:\Recovery\WindowsRE /Target W:\Windows"
-#     WriteLog 'Registering location of recovery tools succeeded'
-# }
-
 #Autopilot JSON
 If ($APFileToInstall){
     WriteLog "Copying $APFileToInstall to W:\windows\provisioning\autopilot"
