@@ -1,0 +1,209 @@
+{
+    "apps": [
+        {
+            "name": "Windows Terminal",
+            "id": "9N0DX20HK701",
+            "source": "msstore"
+        },
+        {
+            "name": "Cross Device Experience Host",
+            "id": "9NTXGKQ8P7N0",
+            "source": "msstore"
+        },
+        {
+            "name": "Movies & TV",
+            "id": "9WZDNCRFJ3P2",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Photos",
+            "id": "9WZDNCRFJBH4",
+            "source": "msstore"
+        },
+        {
+            "name": "Mail and Calendar",
+            "id": "9WZDNCRFHVQM",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Sticky Notes",
+            "id": "9NBLGGH4QGHW",
+            "source": "msstore"
+        },
+        {
+            "name": "Power Automate",
+            "id": "9NFTCH6J7FHV",
+            "source": "msstore"
+        },
+        {
+            "name": "Snipping Tool",
+            "id": "9MZ95KL8MR0L",
+            "source": "msstore"
+        },
+        {
+            "name": "Phone Link",
+            "id": "9NMPJ99VJBWV",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft 365 (Office Hub)",
+            "id": "9WZDNCRFJBH4",
+            "source": "msstore"
+        },
+        {
+            "name": "App Installer",
+            "id": "9NBLGGH4NNS1",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Clipchamp",
+            "id": "9P1J8S7CCWWT",
+            "source": "msstore"
+        },
+        {
+            "name": "Webp Image Extensions",
+            "id": "9PG2DK419DRG",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Web Experience Pack",
+            "id": "9MSSGKG348SP",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox",
+            "id": "9MV0B5HZVK9Z",
+            "source": "msstore"
+        },
+        {
+            "name": "Paint",
+            "id": "9PCFS5B6T72H",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Camera",
+            "id": "9WZDNCRFJBBG",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Notepad",
+            "id": "9MSMLRH6LZF3",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Sound Recorder",
+            "id": "9WZDNCRFHWKN",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Calculator",
+            "id": "9WZDNCRFHVN5",
+            "source": "msstore"
+        },
+        {
+            "name": "Feedback Hub",
+            "id": "9NBLGGH4R32N",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox Identity Provider",
+            "id": "9WZDNCRD1HKW",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Media Player",
+            "id": "9WZDNCRFJ3PT",
+            "source": "msstore"
+        },
+        {
+            "name": "MSN Weather",
+            "id": "9WZDNCRFJ3Q2",
+            "source": "msstore"
+        },
+        {
+            "name": "Game Bar",
+            "id": "9NZKPSTSNW4P",
+            "source": "msstore"
+        },
+        {
+            "name": "Web Media Extensions",
+            "id": "9N5TDP8VCMHS",
+            "source": "msstore"
+        },
+        {
+            "name": "Get Help",
+            "id": "9PKDZBMV1H3T",
+            "source": "msstore"
+        },
+        {
+            "name": "Raw Image Extension",
+            "id": "9NCTDW2W1BH8",
+            "source": "msstore"
+        },
+        {
+            "name": "Store Experience Host",
+            "id": "9NBLGGH4LS1F",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Maps",
+            "id": "9WZDNCRDTBVB",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Clock",
+            "id": "9WZDNCRFJ3PR",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft To Do",
+            "id": "9NBLGGH5R558",
+            "source": "msstore"
+        },
+        {
+            "name": "Cortana",
+            "id": "9NFFX4SZZ23L",
+            "source": "msstore"
+        },
+        {
+            "name": "Quick Assist",
+            "id": "9P7BP5VNWKX5",
+            "source": "msstore"
+        },
+        {
+            "name": "HEIF Image Extensions",
+            "id": "9PMMSR1CGPWG",
+            "source": "msstore"
+        },
+        {
+            "name": "VP9 Video Extensions",
+            "id": "9N4D0MSMP0PT",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox Live in-game experience",
+            "id": "9NKNC0LD5NN6",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox Game Speech Window",
+            "id": "9P086NHDNB9W",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft News",
+            "id": "9WZDNCRFHVFW",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Store",
+            "id": "9WZDNCRFJBMP",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Tips",
+            "id": "9WZDNCRDTBJJ",
+            "source": "msstore"
+        }
+    ]
+}

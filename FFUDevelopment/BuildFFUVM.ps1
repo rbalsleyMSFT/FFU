@@ -310,7 +310,7 @@ param(
         "Upgrade-Insecure-Requests" = "1"
     }
 )
-$version = '2406.1'
+$version = '2407.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -334,8 +334,8 @@ else {
 # Set default values for variables that depend on other parameters
 if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps.iso" }
 if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
-if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy.iso" }
-if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture.iso" }
+if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy_$WindowsArch.iso" }
+if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture_$WindowsArch.iso" }
 if (-not $OfficePath) { $OfficePath = "$AppsPath\Office" }
 if (-not $rand) { $rand = Get-Random }
 if (-not $VMLocation) { $VMLocation = "$FFUDevelopmentPath\VM" }
@@ -1533,7 +1533,7 @@ function Get-WindowsESD {
         [int]$WindowsRelease,
 
         [Parameter(Mandatory = $false)]
-        [ValidateSet('x86', 'x64')]
+        [ValidateSet('x86', 'x64', 'ARM64')]
         [string]$WindowsArch,
 
         [Parameter(Mandatory = $false)]
@@ -1657,6 +1657,298 @@ function Get-Office {
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
     }
 }
+
+function Install-WinGet {
+    param (
+        [string]$Architecture
+    )
+    $packages = @(
+        @{Name = "VCLibs"; Url = "https://aka.ms/Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"; File = "Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"},
+        @{Name = "UIXaml"; Url = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.$Architecture.appx"; File = "Microsoft.UI.Xaml.2.8.$Architecture.appx"},
+        @{Name = "WinGet"; Url = "https://aka.ms/getwinget"; File = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"}
+    )
+    foreach ($package in $packages) {
+        $destination = Join-Path -Path $env:TEMP -ChildPath $package.File
+        WriteLog "Downloading $($package.Name) from $($package.Url) to $destination"
+        Start-BitsTransferWithRetry -Source $package.Url -Destination $destination
+        WriteLog "Installing $($package.Name)..."
+        Add-AppxPackage -Path $destination -ErrorAction SilentlyContinue
+        WriteLog "Removing $($package.Name)..."
+        Remove-Item -Path $destination -Force -ErrorAction SilentlyContinue
+    }
+    WriteLog "WinGet installation complete."
+}
+
+function Confirm-WinGetInstallation {
+    WriteLog 'Checking if WinGet is installed...'
+    $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
+    $minVersion = [version]"1.8.1911"
+    if (-not (Test-Path -Path $wingetPath -PathType Leaf)) {
+        WriteLog "WinGet is not installed. Downloading WinGet..."
+        Install-WinGet -Architecture $WindowsArch
+        return
+    } 
+    if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
+        WriteLog "WinGet not found. Downloading WinGet..."
+        Install-WinGet -Architecture $WindowsArch
+        return
+    }
+    $wingetVersion = & winget.exe --version
+    WriteLog "Installed version of WinGet: $wingetVersion"
+    if ($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion) {
+        WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
+        Install-WinGet -Architecture $WindowsArch
+        return
+    }
+}
+
+function Add-Win32SilentInstallCommand {
+    param (
+        [string]$AppFolder,
+        [string]$AppFolderPath
+    )
+    $appName = $AppFolder
+    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction Stop
+    if (-not $installerPath) {
+        WriteLog "No win32 app installers were found. Skipping the inclusion of $AppFolder"
+        Remove-Item -Path $AppFolderPath -Recurse -Force
+        return $false
+    }
+    $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop
+    $yamlContent = Get-Content -Path $yamlFile -Raw
+    $silentInstallSwitch = [regex]::Match($yamlContent, 'Silent:\s*(.+)').Groups[1].Value.Replace("'", "").Trim()
+    if (-not $silentInstallSwitch) {
+        WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return $false
+    }
+    $installer = Split-Path -Path $installerPath -Leaf
+    if ($installerPath.Extension -eq ".exe") {
+        $silentInstallCommand = "`"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
+    } 
+    elseif ($installerPath.Extension -eq ".msi") {
+        $silentInstallCommand = "msiexec /i `"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
+    }
+    $cmdFile = "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent = Get-Content -Path $cmdFile
+    $UpdatedcmdContent = $CmdContent -replace '^(REM Winget Win32 Apps)', ("REM Winget Win32 Apps`r`nREM Win32 $($AppName)`r`n$($silentInstallCommand.Trim())")
+    WriteLog "Writing silent install command for $appName to InstallAppsandSysprep.cmd"
+    Set-Content -Path $cmdFile -Value $UpdatedcmdContent
+}
+
+function Set-InstallStoreAppsFlag {
+    $cmdPath = "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent = Get-Content -Path $cmdPath
+    if ($cmdContent -match 'set "INSTALL_STOREAPPS=false"') {
+        WriteLog "Setting INSTALL_STOREAPPS flag to true in InstallAppsandSysprep.cmd file."
+        $updatedcmdContent = $cmdContent -replace 'set "INSTALL_STOREAPPS=false"', 'set "INSTALL_STOREAPPS=true"'
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $updatedcmdContent
+    }
+}
+
+function Get-WinGetApp {
+    param (
+        [string]$WinGetAppName,
+        [string]$WinGetAppId
+    )
+    $wingetSearchResult = & winget.exe search --id "$WinGetAppId" --exact --accept-source-agreements --source winget
+    if ($wingetSearchResult -contains "No package found matching input criteria.") {
+        WriteLog "$WinGetAppName not found in WinGet repository. Skipping download."
+    }
+    $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
+    WriteLog "Creating $appFolderPath"
+    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+    WriteLog "Downloading $WinGetAppName to $appFolderPath"
+    $downloadParams = @(
+        "download", 
+        "--id", "$WinGetAppId",
+        "--exact",
+        "--download-directory", "$appFolderPath",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+        "--source", "winget",
+        "--scope", "machine",
+        "--architecture", "$WindowsArch"
+    )
+    WriteLog "winget command: winget.exe $downloadParams"
+    $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+    if ($wingetDownloadResult -match "No applicable installer found") {
+        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
+        $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
+        $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+        if ($wingetDownloadResult -match "Installer downloaded") {
+            WriteLog "Downloaded $WinGetAppName without specifying architecture."
+        }
+    }
+    if ($wingetDownloadResult -notmatch "Installer downloaded") {
+        WriteLog "No installer found for $WinGetAppName. Skipping download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+    }
+    WriteLog "$WinGetAppName downloaded to $appFolderPath"
+    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
+    $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
+    if ($uwpExtensions -contains $installerPath.Extension) {
+        $NewAppPath = "$AppsPath\MSStore\$WinGetAppName"
+        Writelog "$WinGetAppName is a UWP app. Moving to $NewAppPath"
+        WriteLog "Creating $NewAppPath"
+        New-Item -Path "$AppsPath\MSStore\$WinGetAppName" -ItemType Directory -Force | Out-Null
+        WriteLog "Moving $WinGetAppName to $NewAppPath"
+        Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$WinGetAppName" -Force
+        WriteLog "Removing $appFolderPath"
+        Remove-Item -Path $appFolderPath -Force
+        WriteLog "$WinGetAppName moved to $NewAppPath"
+        Set-InstallStoreAppsFlag
+    }
+    else {
+        Add-Win32SilentInstallCommand -AppFolder $WinGetAppName -AppFolderPath $appFolderPath
+    }
+}
+
+function Get-StoreApp {
+    param (
+        [string]$StoreAppName,
+        [string]$StoreAppId
+    )
+    $wingetSearchResult = & winget.exe search "$StoreAppId" --accept-source-agreements --source msstore
+    if ($wingetSearchResult -contains "No package found matching input criteria.") {
+        WriteLog "$StoreAppName not found in WinGet repository. Skipping download."
+        return
+    }
+    WriteLog "Checking if $StoreAppName is a win32 app..."
+    $appIsWin32 = $StoreAppId.StartsWith("XP")
+    if ($appIsWin32) {
+        WriteLog "$StoreAppName is a win32 app. Adding to $AppsPath\win32 folder"
+        $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreAppName
+    }
+    else {
+        WriteLog "$StoreAppName is not a win32 app."
+        $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
+    }
+    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+    WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
+    $downloadParams = @(
+        "download", "$StoreAppId",
+        "--download-directory", "$appFolderPath",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+        "--source", "msstore",
+        "--scope", "machine",
+        "--architecture", "$WindowsArch"
+    )
+    WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
+    WriteLog "Attempting to download $StoreAppName and dependencies for $WindowsArch architecture..."
+    $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+    # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
+    if ($wingetDownloadResult -match "No applicable installer found") {
+        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
+        $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
+        $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+        if ($wingetDownloadResult -match "Microsoft Store package download completed") {
+            WriteLog "Downloaded $StoreAppName without specifying architecture."
+        }
+    }
+    if ($wingetDownloadResult -notmatch "Installer downloaded|Microsoft Store package download completed") {
+        WriteLog "Download not supported for $StoreAppName. Skipping download."
+        Remove-Item -Path $appFolderPath -Recurse -Force
+        return
+    }
+    if ($appIsWin32) {
+        Add-Win32SilentInstallCommand -AppFolder $StoreAppName -AppFolderPath $appFolderPath
+    }
+    Set-InstallStoreAppsFlag
+    # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
+    if ($WindowsArch -eq 'ARM64') {
+        WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
+        $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
+        if ($dependencies) {
+            foreach ($dependency in $dependencies) {
+                if ($dependency.Name -notmatch 'ARM64') {
+                    WriteLog "Removing dependency file $($dependency.FullName)"
+                    Remove-Item -Path $dependency.FullName -Recurse -Force
+                }
+            }
+        }
+    }
+    WriteLog "$StoreAppName has completed downloading. Identifying the latest version of $StoreAppName."
+    $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
+    # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
+    $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
+    # Removing all packages that are not the latest version
+    WriteLog "Latest version of $StoreAppName has been identified as $latestPackage. Removing old versions of $StoreAppName that may have downloaded."
+    foreach ($package in $packages) {
+        if ($package.FullName -ne $latestPackage) {
+            try {
+                WriteLog "Removing $($package.FullName)"
+                Remove-Item -Path $package.FullName -Force
+            }
+            catch {
+                WriteLog "Failed to delete: $($package.FullName) - $_"
+                throw $_
+            }
+        }
+    }
+}
+
+function Get-Apps {
+    param (
+        [string]$AppList
+    )
+    $apps = Get-Content -Path $AppList -Raw | ConvertFrom-Json
+    if (-not $apps) {
+        WriteLog "No apps were specified in AppList.json file."
+        return
+    }
+    $wingetApps = $apps.apps | Where-Object { $_.source -eq "winget" }
+    # List each Winget app in the AppList.json file
+    if ($wingetApps) {
+        WriteLog 'Winget apps to be installed:'
+        foreach ($wingetapp in $wingetApps){
+            WriteLog "$($wingetapp.Name)"
+        }
+    }
+    $StoreApps = $apps.apps | Where-Object { $_.source -eq "msstore" }
+    # List each Store app in the AppList.json file
+    if ($StoreApps) {
+        WriteLog 'Store apps to be installed:'
+        foreach ($StoreApp in $StoreApps){
+            WriteLog "$($StoreApp.Name)"
+        }
+    }
+    Confirm-WinGetInstallation
+    $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
+    $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
+    if ($wingetApps) {
+        if (-not (Test-Path -Path $win32Folder -PathType Container)) {
+            WriteLog "Creating folder for Winget Win32 apps: $win32Folder"
+            New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
+            WriteLog "Folder created successfully."
+        }
+        foreach ($wingetApp in $wingetApps) {
+            try {
+                Get-WinGetApp -WinGetAppName $wingetApp.Name -WinGetAppId $wingetApp.Id
+            }
+            catch {
+                WriteLog "Error occurred while processing $wingetApp : $_"
+                throw $_
+            }
+        }
+    }
+    if ($storeApps) {
+        if (-not (Test-Path -Path $storeAppsFolder -PathType Container)) {
+            New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
+        }
+        foreach ($storeApp in $storeApps) {
+            try {
+                Get-StoreApp -StoreAppName $storeApp.Name -StoreAppId $storeApp.Id
+            }
+            catch {
+                WriteLog "Error occurred while processing $storeApp : $_"
+                throw $_
+            }
+        }
+    }
+}
+
 function Get-KBLink {
     param(
         [Parameter(Mandatory)]
@@ -1747,58 +2039,121 @@ function Save-KB {
     if ($WindowsArch -eq 'x64') {
         [array]$WindowsArch = @("x64", "amd64")
     }
-        
+    #Keep for now, will remove in future 
+    # foreach ($kb in $name) {
+    #     $links = Get-KBLink -Name $kb
+    #     foreach ($link in $links) {
+    #         #Check if $WindowsArch is an array
+    #         if ($WindowsArch -is [array]) { 
+    #             #Some file names include either x64 or amd64
+    #             if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
+    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                 $fileName = ($link -split '/')[-1]
+    #                 break
+    #             }
+    #             # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+    #             #     Write-Host "No architecture found in $link, assume it's for all architectures"
+    #             #     Start-BitsTransfer -Source $link -Destination $Path
+    #             #     $fileName = ($link -split '/')[-1]
+    #             #     break
+    #             # }
+    #             elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+    #                 WriteLog "No architecture found in $link, assume this is for all architectures"
+    #                 #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
+    #                 #Unfortunately there is no easy way to determine the architecture from the file name
+    #                 #There is a support doc that include links to download, but it's out of date (n-1)
+    #                 #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+    #                 #These files don't change that often, so will check the link above to see when it updates and may use that
+    #                 #For now this is hard-coded for these specific file names
+    #                 if ($link -match 'security'){
+    #                     #Make sure we're getting the correct architecture for the Security Health Setup update
+    #                     WriteLog "Link: $link matches security"
+    #                     if ($WindowsArch -eq 'x64'){
+    #                         if ($link -match 'securityhealthsetup_e1'){
+    #                             Writelog "Downloading $Link for $WindowsArch to $Path"
+    #                             Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                             $fileName = ($link -split '/')[-1]
+    #                             Writelog "Returning $fileName"
+    #                             break
+    #                         }
+    #                     }
+    #                     elseif ($WindowsArch -eq 'arm64'){
+    #                         if ($link -match 'securityhealthsetup_25'){
+    #                             Writelog "Downloading $Link for $WindowsArch to $Path"
+    #                             Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                             $fileName = ($link -split '/')[-1]
+    #                             Writelog "Returning $fileName"
+    #                             break
+    #                         }
+    #                     }
+    #                     continue
+    #                 }
+    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                 $fileName = ($link -split '/')[-1]
+    #             }
+    #         }
+    #         else {
+    #             if ($link -match $WindowsArch) {
+    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
+    #                 $fileName = ($link -split '/')[-1]
+    #                 break
+    #             }
+    #         }                
+    #     }
+    # }
     foreach ($kb in $name) {
         $links = Get-KBLink -Name $kb
         foreach ($link in $links) {
-            #Check if $WindowsArch is an array
-            if ($WindowsArch -is [array]) { 
-                #Some file names include either x64 or amd64
-                if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
-                    $fileName = ($link -split '/')[-1]
-                    break
-                }
-                # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                #     Write-Host "No architecture found in $link, assume it's for all architectures"
-                #     Start-BitsTransfer -Source $link -Destination $Path
-                #     $fileName = ($link -split '/')[-1]
-                #     break
-                # }
-                elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                    WriteLog "No architecture found in $link, assume this is for all architectures"
-                    #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
-                    #Unfortunately there is no easy way to determine the architecture from the file name
-                    #There is a support doc that include links to download, but it's out of date (n-1)
-                    #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-                    #These files don't change that often, so will check the link above to see when it updates and may use that
-                    #For now this is hard-coded for these specific file names
-                    if ($link -match 'security'){
-                        #Make sure we're getting the correct architecture for the Security Health Setup update
-                        if ($WindowsArch -eq 'x64'){
-                            if ($link -match 'securityhealthsetup_e1'){
-                                Start-BitsTransferWithRetry -Source $link -Destination $Path
-                                $fileName = ($link -split '/')[-1]
-                                break
-                            }
+            if (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
+                WriteLog "No architecture found in $link, assume this is for all architectures"
+                #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
+                #Unfortunately there is no easy way to determine the architecture from the file name
+                #There is a support doc that include links to download, but it's out of date (n-1)
+                #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+                #These files don't change that often, so will check the link above to see when it updates and may use that
+                #For now this is hard-coded for these specific file names
+                if ($link -match 'security') {
+                    #Make sure we're getting the correct architecture for the Security Health Setup update
+                    WriteLog "Link: $link matches security"
+                    if ($WindowsArch -eq 'x64') {
+                        if ($link -match 'securityhealthsetup_e1') {
+                            Writelog "Downloading $Link for $WindowsArch to $Path"
+                            Start-BitsTransferWithRetry -Source $link -Destination $Path
+                            $fileName = ($link -split '/')[-1]
+                            Writelog "Returning $fileName"
+                            break
                         }
-                        elseif ($WindowsArch -eq 'arm64'){
-                            if ($link -match 'securityhealthsetup_25'){
-                                Start-BitsTransferWithRetry -Source $link -Destination $Path
-                                $fileName = ($link -split '/')[-1]
-                                break
-                            }
-                        }
-                        continue
                     }
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
-                    $fileName = ($link -split '/')[-1]
+                    if ($WindowsArch -eq 'arm64') {
+                        if ($link -match 'securityhealthsetup_25') {
+                            Writelog "Downloading $Link for $WindowsArch to $Path"
+                            Start-BitsTransferWithRetry -Source $link -Destination $Path
+                            $fileName = ($link -split '/')[-1]
+                            Writelog "Returning $fileName"
+                            break
+                        }
+                    }
                 }
             }
-            else {
-                if ($link -match $WindowsArch) {
+
+            if ($link -match 'x64' -or $link -match 'amd64') {
+                if($WindowsArch -is [array]) {
+                    if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
+                        Writelog "Downloading $Link for $WindowsArch to $Path"
+                        Start-BitsTransferWithRetry -Source $link -Destination $Path
+                        $fileName = ($link -split '/')[-1]
+                        Writelog "Returning $fileName"
+                        break
+                    }
+                }
+                
+            }
+            if ($link -match 'arm64') {
+                if ($WindowsArch -eq 'arm64') {
+                    Writelog "Downloading $Link for $WindowsArch to $Path"
                     Start-BitsTransferWithRetry -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
+                    Writelog "Returning $fileName"
                     break
                 }
             }                
@@ -2224,7 +2579,12 @@ function New-PEMedia {
     }
 
     WriteLog "Copying WinPE files to $WinPEFFUPath"
-    & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
+    if($WindowsArch -eq 'x64') {
+        & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
+    }
+    elseif($WindowsArch -eq 'arm64') {
+        & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
+    }
     #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
     WriteLog 'Files copied successfully'
 
@@ -2247,7 +2607,13 @@ function New-PEMedia {
         "en-us\WinPE-DismCmdlets_en-us.cab"
     )
 
-    $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\"
+    if($WindowsArch -eq 'x64'){
+        $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\"
+    }
+    elseif($WindowsArch -eq 'arm64'){
+        $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\arm64\WinPE_OCs\"
+    }
+    
 
     foreach ($Package in $Packages) {
         $PackagePath = Join-Path $PackagePathBase $Package
@@ -2260,8 +2626,9 @@ function New-PEMedia {
         Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
         WriteLog "Copy complete"
         #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
-        Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
-        $WinPEISOName = 'WinPE_FFU_Capture.iso'
+        #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
+        # $WinPEISOName = 'WinPE_FFU_Capture.iso'
+        $WinPEISOFile = $CaptureISO
         $Capture = $false
     }
     If ($Deploy) {
@@ -2279,18 +2646,32 @@ function New-PEMedia {
             }
             WriteLog "Adding drivers complete"
         }
-        $WinPEISOName = 'WinPE_FFU_Deploy.iso'
+        # $WinPEISOName = 'WinPE_FFU_Deploy.iso'
+        $WinPEISOFile = $DeployISO
+
         $Deploy = $false
     }
     WriteLog 'Dismounting WinPE media' 
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
     WriteLog 'Dismount complete'
     #Make ISO
-    $OSCDIMGPath = "$adkPath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg"
+    if ($WindowsArch -eq 'x64') {
+        $OSCDIMGPath = "$adkPath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg"
+    }
+    elseif ($WindowsArch -eq 'arm64') {
+        $OSCDIMGPath = "$adkPath`Assessment and Deployment Kit\Deployment Tools\arm64\Oscdimg"
+    }
     $OSCDIMG = "$OSCDIMGPath\oscdimg.exe"
-    WriteLog "Creating WinPE ISO at $FFUDevelopmentPath\$WinPEISOName"
+    WriteLog "Creating WinPE ISO at $WinPEISOFile"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
-    Invoke-Process $OSCDIMG "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$FFUDevelopmentPath\$WinPEISOName`""
+    if($WindowsArch -eq 'x64'){
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+    
+    }
+    elseif($WindowsArch -eq 'arm64'){
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+    }
+    Invoke-Process $OSCDIMG $OSCDIMGArgs
     WriteLog "ISO created successfully"
     WriteLog "Cleaning up $WinPEFFUPath"
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
@@ -2640,10 +3021,20 @@ Function New-DeploymentUSB {
                     }
                     
                 }
-                #Copy Unattend folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+                #Copy Unattend file to the USB drive. 
                 if ($CopyUnattend) {
-                    WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
-                    Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
+                    # WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
+                    # Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
+                    $DeployUnattendPath = "$DeployPartitionDriveLetter\unattend"
+                    WriteLog "Copying unattend file to $DeployUnattendPath"
+                    New-Item -Path $DeployUnattendPath -ItemType Directory | Out-Null
+                    if ($WindowsArch -eq 'x64') {
+                        Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_x64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                    }
+                    else {
+                        Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_arm64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                    }
+                    WriteLog 'Copy completed'
                 }  
                 #Copy PPKG folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
                 if ($CopyPPKG) {
@@ -2787,8 +3178,16 @@ function Get-FFUEnvironment {
         WriteLog "Removing $EdgePath"
         Remove-Item -Path $EdgePath -Recurse -Force
         WriteLog 'Removal complete'
-    }    
-
+    }
+    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+        WriteLog "Cleaning up Win32 folder"
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    }
+    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+        WriteLog "Cleaning up MSStore folder"
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+    }   
+    Clear-InstallAppsandSysprep
     Writelog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
@@ -2800,6 +3199,14 @@ function Remove-FFU {
     WriteLog "Removal complete"
 }
 function Clear-InstallAppsandSysprep {
+    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove win32 app install commands"
+    $cmdContent -notmatch "REM Win32*" | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent -notmatch "D:\\win32*" | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+    WriteLog "Setting MSStore installation condition to false"
+    $cmdContent -replace 'set "INSTALL_STOREAPPS=true"', 'set "INSTALL_STOREAPPS=false"' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
     if ($UpdateLatestDefender) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -2877,6 +3284,19 @@ if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($Upda
     WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
     throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
 }
+if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
+    $InstallOffice = $false
+    WriteLog 'M365 Apps/Office currently fails to install on ARM64 VMs without an internet connection. Setting InstallOffice to false'
+}
+
+if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
+    $UpdateOneDrive = $false
+    WriteLog 'OneDrive currently fails to install on ARM64 VMs (even with the OneDrive ARM setup files). Setting UpdateOneDrive to false'
+}
+# if(($WindowsArch -eq 'ARM64') -and ($UpdateLatestDefender -eq $true)){
+#     $UpdateLatestDefender = $false
+#     WriteLog 'Defender ARM and x64 updates currently fail to install on ARM64 VMs. Setting UpdateLatestDefender to false'
+# }
 
 #Get script variable values
 LogVariableValues
@@ -2942,6 +3362,10 @@ if ($InstallApps) {
             exit
         }
         WriteLog "$AppsPath\InstallAppsandSysprep.cmd found"
+        If (Test-Path -Path "$AppsPath\AppList.json"){
+            WriteLog "$AppsPath\AppList.json found, checking for winget apps to install"
+            Get-Apps -AppList "$AppsPath\AppList.json"
+        }
         
         if (-not $InstallOffice) {
             #Modify InstallAppsandSysprep.cmd to REM out the office install command
@@ -2995,9 +3419,10 @@ if ($InstallApps) {
                 $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=x64'
             }
             if ($WindowsArch -eq 'ARM64') {
-                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm'
+                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm64'
             }
             try {
+                WriteLog "Defender definitions URL is $DefenderDefURL"
                 Start-BitsTransferWithRetry -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
                 WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
             }
@@ -3023,7 +3448,14 @@ if ($InstallApps) {
                 New-Item -Path $OneDrivePath -ItemType Directory -Force | Out-Null
             }
             WriteLog "Downloading latest OneDrive client"
-            $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
+            if($WindowsArch -eq 'x64')
+            {
+                $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
+            }
+            elseif($WindowsArch -eq 'ARM64')
+            {
+                $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=2271260'
+            }
             try {
                 Start-BitsTransferWithRetry -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
                 WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
@@ -3062,6 +3494,11 @@ if ($InstallApps) {
             WriteLog "Expanding $EdgeCABFilePath"
             Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath"
             WriteLog "Expansion complete"
+
+            #Remove Edge CAB file
+            WriteLog "Removing $EdgeCABFilePath"
+            Remove-Item -Path $EdgeCABFilePath -Force
+            WriteLog "Removal complete"
 
             #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Edge Stable
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Edge Stable $WindowsArch release"
@@ -3205,7 +3642,12 @@ try {
         #Copy Unattend file so VM Boots into Audit Mode
         WriteLog 'Copying unattend file to boot to audit mode'
         New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory | Out-Null
-        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+        if($WindowsArch -eq 'x64'){
+            Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+        }
+        else {
+            Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+        }
         WriteLog 'Copy completed'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
@@ -3342,6 +3784,20 @@ try {
 catch {
     Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
     Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
+    throw $_
+}
+try {
+    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+        WriteLog "Cleaning up Win32 folder"
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    }
+    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+        WriteLog "Cleaning up MSStore folder"
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+    }
+}
+catch {
+    WriteLog "$_"
     throw $_
 }
 #Create Deployment Media
