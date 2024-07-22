@@ -16,7 +16,7 @@ To support the newly released Copilot+ PCs, we now support the creation and depl
 * The host machine you're building the FFU from must be ARM64
 * Office/M365 apps don't currently support installing the ARM64 native bits from an offline system. If you pass `-InstallOffice $true`  the script will change the value to false. You can install office after the fact when connected to the internet. I'm investigating this behavior and will issue a fix if/when this gets resolved. I still don't recommend building the FFU VM on the internet.
 * The [Defender Updates Site](https://www.microsoft.com/en-us/wdsi/defenderupdates) provides download links for Defender definitions. The ARM link doesn't work for ARM64 and mpam-fe.exe fails to install. However there might be an undocumented ARM64 URL that may work. I've included it, but haven't tested it as I'm writing these notes. So we'll see if that works out.
-* Drivers - I know Surface Laptop 7 and Pro
+* Drivers - Surface Laptop 7 and Pro 11 don't have ARM64 drivers available yet (there are entries, but they just point to a .txt file). Other OEMs may have drivers available.
 
 In all, testing has gone very well.
 
