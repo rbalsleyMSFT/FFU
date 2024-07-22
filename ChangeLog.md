@@ -24,7 +24,7 @@ In all, testing has gone very well.
 
 Big thanks to [Zehadi Alam](https://github.com/zehadialam) for his contributions to get this added to the project. You can now add any application in the msstore or winget source via the Winget command line utility. In the 1.8 Winget release the ability to download apps from the msstore source was added, which means being able to download apps like the Company Portal. For those of you that have been asking for Company Portal to be inbox in Windows, this is the next best thing. The script will check if Winget 1.8 is installed and if not, it'll install it.
 
-The way this works is if `-InstallApps $true`  and the FFUDevelopment\Apps\AppList.json file exists, whatever apps defined in that json file will be downloaded via Winget and will be installed in the FFU VM prior to capture. We've included two files: AppList_InboxAppsSample.json and AppList_Sample.json. The AppList_InboxAppsSample.json contains all of the apps that are installed in Windows by default and are searchable via `winget search AppID` . Some of these apps do not download and we're investigating why they come up via search, but fail to download. The AppList_Sample.json has Company Portal and New Teams. 
+The way this works is if `-InstallApps $true`  and the FFUDevelopment\Apps\AppList.json file exists, whatever apps defined in that json file will be downloaded via Winget and will be installed in the FFU VM prior to capture. We've included two files: AppList_InboxAppsSample.json and AppList_Sample.json. The AppList_InboxAppsSample.json contains all of the apps that are installed in Windows by default and are searchable via `winget search AppID` . Some of these apps do not download and we're investigating why they come up via search, but fail to download. The AppList_Sample.json has Company Portal and New Teams.
 
 ![1721678632154](image/ChangeLog/1721678632154.png)
 
@@ -37,11 +37,13 @@ In sticking with the idea of having the most up to date Windows build, inbox sto
 
 Updated means latest .NET, Defender (definition and platform updates), Edge, OneDrive, and all updates available via Winget for Store Apps have been provisioned in the FFU. The numbers in the table are cumulative, meaning the FFU was laid down, store apps were updated via running Get Apps from the Microsoft Store app and data usage was gathered from Settings, then Windows Update was manually kicked off via Settings and data usage was gathered.
 
-In order to get apps to help build your AppList.json file, just run `winget search "AppName"`  
+In order to get apps to help build your AppList.json file, just run `winget search "AppName"`
 
 ![1721679421727](image/ChangeLog/1721679421727.png)
 
 In this example we see that Firefox is published to both the msstore and winget sources. It's up to you which one you'd like to pick (I assume the msstore and the 128 version from the winget source are both the same version, but that may not be the case). You'll want to use the Name, ID, and Source values to help create your AppList.json file.
+
+When downloading msstore apps, it does require an Entra ID. If you're building your FFUs from a machine that is not signed in with an Entra ID, you will be prompted for credentials for each app you download AND for the license file for each app (2 prompts per app). If downloading many store apps is something you plan on doing, I highly recommend signing in with an Entra ID to prevent the authentication prompts.
 
 Other improvements
 
