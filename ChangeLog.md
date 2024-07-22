@@ -12,10 +12,47 @@ This is another major release that includes:
 To support the newly released Copilot+ PCs, we now support the creation and deployment of FFUs created with ARM64 media. There are some caveats to this:
 
 * The -WindowsArch parameter must be set to ARM64 (by default this parameter is set to x64)
-* If you do not pass -ISOPath with a path to the ARM64 ISO, it will download an ARM64 ESD file from the Media Creation Tool (which is about 7-8 months old now). ARM64 ISOs are available via VLSC, but are not available via Visual Studio Downloads.
+* If you do not pass -ISOPath with a path to the ARM64 ISO, it will download an ARM64 ESD file from the Media Creation Tool (which is about 7-8 months old now). ARM64 ISOs are available via VLSC, but are not available via Visual Studio Downloads (Yet - unknown if they will ever be made available).
 * The host machine you're building the FFU from must be ARM64
 * Office/M365 apps don't currently support installing the ARM64 native bits from an offline system. If you pass `-InstallOffice $true`  the script will change the value to false. You can install office after the fact when connected to the internet. I'm investigating this behavior and will issue a fix if/when this gets resolved. I still don't recommend building the FFU VM on the internet.
-* The ARM64 native bits from the Microsoft
+* The [Defender Updates Site](https://www.microsoft.com/en-us/wdsi/defenderupdates) provides download links for Defender definitions. The ARM link doesn't work for ARM64 and mpam-fe.exe fails to install. However there might be an undocumented ARM64 URL that may work. I've included it, but haven't tested it as I'm writing these notes. So we'll see if that works out.
+* Drivers - I know Surface Laptop 7 and Pro
+
+In all, testing has gone very well.
+
+### Winget Support
+
+Big thanks to [Zehadi Alam](https://github.com/zehadialam) for his contributions to get this added to the project. You can now add any application in the msstore or winget source via the Winget command line utility. In the 1.8 Winget release the ability to download apps from the msstore source was added, which means being able to download apps like the Company Portal. For those of you that have been asking for Company Portal to be inbox in Windows, this is the next best thing. The script will check if Winget 1.8 is installed and if not, it'll install it.
+
+The way this works is if `-InstallApps $true`  and the FFUDevelopment\Apps\AppList.json file exists, whatever apps defined in that json file will be downloaded via Winget and will be installed in the FFU VM prior to capture. We've included two files: AppList_InboxAppsSample.json and AppList_Sample.json. The AppList_InboxAppsSample.json contains all of the apps that are installed in Windows by default and are searchable via `winget search AppID` . Some of these apps do not download and we're investigating why they come up via search, but fail to download. The AppList_Sample.json has Company Portal and New Teams. 
+
+![1721678632154](image/ChangeLog/1721678632154.png)
+
+In sticking with the idea of having the most up to date Windows build, inbox store/UWP apps are notoriously out of date and use a lot of bandwidth. By updating all of the UWP apps, bandwidth reductions of ~70% can be achieved.
+
+|                                                                 | Total Data usage before updating store apps | Total Data usage after updating store apps | Total Data usage after updating Windows Update |
+| --------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------ | ---------------------------------------------- |
+| July 2024 Windows 11 23H2 Stock ISO Captured as FFU (7.5GB FFU) | 261MB                                       | 1.82GB                                     | 2.09GB                                         |
+| July 2024 Windows 11 23H2 Updated FFU (10.5GB)                  | 13MB                                        | 558MB                                      | 646MB                                          |
+
+Updated means latest .NET, Defender (definition and platform updates), Edge, OneDrive, and all updates available via Winget for Store Apps have been provisioned in the FFU. The numbers in the table are cumulative, meaning the FFU was laid down, store apps were updated via running Get Apps from the Microsoft Store app and data usage was gathered from Settings, then Windows Update was manually kicked off via Settings and data usage was gathered.
+
+In order to get apps to help build your AppList.json file, just run `winget search "AppName"`  
+
+![1721679421727](image/ChangeLog/1721679421727.png)
+
+In this example we see that Firefox is published to both the msstore and winget sources. It's up to you which one you'd like to pick (I assume the msstore and the 128 version from the winget source are both the same version, but that may not be the case). You'll want to use the Name, ID, and Source values to help create your AppList.json file.
+
+Other improvements
+
+* [mhaley](https://github.com/mhaley) made their first contribution to [assign the drive letter to the recovery partition when copying in a custom WinRE.wim](https://github.com/rbalsleyMSFT/FFU/pull/35)
+* [MKellyCBSD](https://github.com/MKellyCBSD) submitted a PR for a stand-alone USBImagingToolCreator.ps1 script which will create USB drives separate from the main BuildFUVM.ps1 script. This is helpful if you have technicans that need to build USB drives, or would like to make concurrent USB drives at the same time instead of one at a time. [His PR has all the details.](https://github.com/rbalsleyMSFT/FFU/pull/36)
+* The WinPE_FFU_Deploy.iso will now work on VMs. This made ARM64 testing a lot easier :) If you're looking to test your FFU on a VM, you'll want to build a new VHDX and add your FFU to it and boot from the WinPE_FFU_Deploy.iso. Make sure to eject the VHDX before adding/booting the new VM. When attaching the new VHDX with your FFU on it, make sure it's not the first SCSI device (it should be 1 or 2, most likely 2 as 0 should be the hard drive you want to install Windows to, and 1 will be the DVD drive). By default the WinPE_FFU_Deploy.iso file is removed after the script completes. Make sure to set `-CreateDeploymentMedia $true` and `-CleanupDeployISO $false` so the ISO remains in the FFUDevelopment folder after the script completes.
+
+  The below screenshot should help in understanding what the SCSI config should look like.
+
+  ![1721681140638](image/ChangeLog/1721681140638.png)
+* Cleaned up some old commented code from the ApplyFFU.ps1 file and other files.
 
 ## **2406.1**
 
