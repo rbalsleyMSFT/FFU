@@ -3419,7 +3419,7 @@ if ($InstallApps) {
                 $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=x64'
             }
             if ($WindowsArch -eq 'ARM64') {
-                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm'
+                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm64'
             }
             try {
                 WriteLog "Defender definitions URL is $DefenderDefURL"

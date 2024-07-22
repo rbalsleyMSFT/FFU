@@ -1,5 +1,22 @@
 # Change Log
 
+## **2407.1**
+
+This is another major release that includes:
+
+* Initial ARM64 support
+* Winget support
+
+### ARM64 Support
+
+To support the newly released Copilot+ PCs, we now support the creation and deployment of FFUs created with ARM64 media. There are some caveats to this:
+
+* The -WindowsArch parameter must be set to ARM64 (by default this parameter is set to x64)
+* If you do not pass -ISOPath with a path to the ARM64 ISO, it will download an ARM64 ESD file from the Media Creation Tool (which is about 7-8 months old now). ARM64 ISOs are available via VLSC, but are not available via Visual Studio Downloads.
+* The host machine you're building the FFU from must be ARM64
+* Office/M365 apps don't currently support installing the ARM64 native bits from an offline system. If you pass `-InstallOffice $true`  the script will change the value to false. You can install office after the fact when connected to the internet. I'm investigating this behavior and will issue a fix if/when this gets resolved. I still don't recommend building the FFU VM on the internet.
+* The ARM64 native bits from the Microsoft
+
 ## **2406.1**
 
 This is a major release that includes the ability to download drivers from the 4 major OEMs (Microsoft, Dell, HP, Lenovo) by simply passing the -Make and -Model parameters to the command line.
