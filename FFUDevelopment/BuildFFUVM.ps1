@@ -2963,9 +2963,13 @@ Function New-DeploymentUSB {
 
         $ScriptBlock = {
             param($DiskNumber)
-            Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
-            Get-Disk $DiskNumber | Get-Partition | Remove-Partition
             $Disk = Get-Disk -Number $DiskNumber
+            # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+            if ($Disk.PartitionStyle -ne "RAW") {
+                $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+            }
+            # Get-Disk $DiskNumber | Get-Partition | Remove-Partition
+            $Disk | Get-Partition | Remove-Partition
             $Disk | Set-Disk -PartitionStyle MBR
             $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
             $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
