@@ -903,69 +903,54 @@ function Get-LenovoDrivers {
         [int]$WindowsRelease
     )
 
-    # Parse the Lenovo PSREF search page for machine types
     function Get-LenovoPSREF {
         param (
             [string]$ModelName
         )
 
-        $url = "https://psref.lenovo.com/search"
-        WriteLog "Getting Lenovo PSREF page for model: $ModelName"
+        $url = "https://psref.lenovo.com/api/search/DefinitionFilterAndSearch/Suggest?kw=$ModelName"
+        WriteLog "Querying Lenovo PSREF API for model: $ModelName"
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
-        $webContent = Invoke-WebRequest -Uri $url
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
         $VerbosePreference = $OriginalVerbosePreference
         WriteLog "Complete"
 
-        # Access the parsed HTML
-        WriteLog "Parsing content"
-        $parsedHtml = $webContent.ParsedHtml
-    
-        # Select the nodes you are interested in
-        $productNameNodes = $parsedHtml.getElementsByTagName("li") | Where-Object { $_.className -contains "productname_li" }
+        $jsonResponse = $response.Content | ConvertFrom-Json
+
         $products = @()
-        # Iterate through the nodes
-        foreach ($product in $productNameNodes) {
-            $productA = $product.getElementsByTagName("a") | Where-Object { $_.tagName -eq "a" }
-            $innertext = @($productA.innertext) # Ensure innertext is treated as an array
-            $productName = $innertext[0]
-            
-            #if $productname contains 'Chromebook', skip the product
-            if ($productName -like '*Chromebook*') {
-                continue
-            }
-            $machineTypes = $innertext[1..($innertext.Count - 1)]
-    
-            if ($innertext -match $ModelName) {
-                foreach ($machineType in $machineTypes) {
-                    If ($machineType -eq $modelName) {
-                        WriteLog "Model name entered is a matching machine type"
-                        $products = @()
-                        $products += [pscustomobject]@{
-                            ProductName = $productName
-                            MachineType = $machineType
-                        }
-                        WriteLog "Product Name: $productName Machine Type: $machineType"
-                        continue
-                    }
+        foreach ($item in $jsonResponse.data) {
+            $productName = $item.ProductName
+            $machineTypes = $item.MachineType -split " / "
+
+            foreach ($machineType in $machineTypes) {
+                if ($machineType -eq $ModelName) {
+                    WriteLog "Model name entered is a matching machine type"
+                    $products = @()
                     $products += [pscustomobject]@{
                         ProductName = $productName
                         MachineType = $machineType
                     }
+                    WriteLog "Product Name: $productName Machine Type: $machineType"
+                    return $products
+                }
+                $products += [pscustomobject]@{
+                    ProductName = $productName
+                    MachineType = $machineType
                 }
             }
         }
-    
+
         return ,$products
     }
     
     # Parse the Lenovo PSREF page for the model
     $machineTypes = Get-LenovoPSREF -ModelName $Model
-    if ($machineTypes.Count -eq 0) {
+    if ($machineTypes.ProductName.Count -eq 0) {
         WriteLog "No machine types found for model: $Model"
         WriteLog "Enter a valid model or machine type in the -model parameter"
         exit
-    } elseif ($machineTypes.Count -eq 1) {
+    } elseif ($machineTypes.ProductName.Count -eq 1) {
         $machineType = $machineTypes[0].MachineType
         $model = $machineTypes[0].ProductName
     } else {
@@ -973,7 +958,7 @@ function Get-LenovoDrivers {
             Write-Output "Multiple machine types found for model: $Model"
         }
         WriteLog "Multiple machine types found for model: $Model"
-        for ($i = 0; $i -lt $machineTypes.Count; $i++) {
+        for ($i = 0; $i -lt $machineTypes.ProductName.Count; $i++) {
             if ($VerbosePreference -ne 'Continue'){
                 Write-Output "$($i + 1). $($machineTypes[$i].ProductName) ($($machineTypes[$i].MachineType))"
             }
