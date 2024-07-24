@@ -308,9 +308,10 @@ param(
         "Sec-Fetch-Site" = "none"
         "Sec-Fetch-User" = "?1"
         "Upgrade-Insecure-Requests" = "1"
-    }
+    },
+    [bool]$AllowExternalHardDiskMedia
 )
-$version = '2407.1'
+$version = '2408.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -2899,7 +2900,14 @@ Function Get-WindowsVersionInfo {
     }
 }
 Function Get-USBDrive {
-    $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+    # $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+    
+    If ($AllowExternalHardDiskMedia) {
+        $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
+    }
+    else {
+        $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+    }
     If ($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
     }
@@ -2965,12 +2973,20 @@ Function New-DeploymentUSB {
             param($DiskNumber)
             $Disk = Get-Disk -Number $DiskNumber
             # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+            # Clear-disk has an unusual behavior where it sets external hard disk media as RAW, however removable media is set as MBR.
             if ($Disk.PartitionStyle -ne "RAW") {
                 $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+                $Disk = Get-Disk -Number $DiskNumber
             }
-            # Get-Disk $DiskNumber | Get-Partition | Remove-Partition
-            $Disk | Get-Partition | Remove-Partition
-            $Disk | Set-Disk -PartitionStyle MBR
+            
+            if($Disk.PartitionStyle -eq "RAW") {
+                $Disk | Initialize-Disk -PartitionStyle MBR -Confirm:$false
+            }
+            elseif($Disk.PartitionStyle -ne "RAW"){
+                $Disk | Get-Partition | Remove-Partition -Confirm:$false
+                $Disk | Set-Disk -PartitionStyle MBR
+            }
+            # Get-Disk $DiskNumber | Get-Partition | Remove-Partition            
             $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
             $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
             Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false
@@ -2981,7 +2997,8 @@ Function New-DeploymentUSB {
         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
         WriteLog 'Done'
 
-        $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+        # $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+        $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveLetter IS NOT NULL").Name
         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
@@ -2989,7 +3006,8 @@ Function New-DeploymentUSB {
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
-                $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+                # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+                $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveLetter IS NOT NULL").Name
                 if ($SelectedFFUFile -is [array]) {
                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
                     foreach ($FFUFile in $SelectedFFUFile) {
