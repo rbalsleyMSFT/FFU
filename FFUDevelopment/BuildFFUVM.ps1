@@ -309,7 +309,8 @@ param(
         "Sec-Fetch-User" = "?1"
         "Upgrade-Insecure-Requests" = "1"
     },
-    [bool]$AllowExternalHardDiskMedia
+    [bool]$AllowExternalHardDiskMedia,
+    [bool]$PromptExternalHardDiskMedia = $true
 )
 $version = '2408.1'
 
@@ -2901,9 +2902,33 @@ Function Get-WindowsVersionInfo {
 }
 Function Get-USBDrive {
     # $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
-    
+    WriteLog 'Checking for USB drives'
     If ($AllowExternalHardDiskMedia) {
         $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
+        if ($PromptExternalHardDiskMedia){
+            # List all drives with MediaType='External hard disk media' and have the end user pick which one to use
+            [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
+            if ($ExternalHardDiskDrives) {
+                if ($VerbosePreference -ne 'Continue'){
+                    Write-Warning 'Found external hard disk media drives'
+                    Write-Warning 'Will prompt for user input to select the drive to use to prevent accidental data loss'
+                    Write-Warning 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+                }
+                WriteLog 'Found external hard disk media drives'
+                WriteLog 'Will prompt for user input to select the drive to use to prevent accidental data loss'
+                WriteLog 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+                for ($i = 0; $i -lt $ExternalHardDiskDrives.Count; $i++) {
+                    if ($VerbosePreference -ne 'Continue'){
+                        Write-Host ("{0}: {1}" -f ($i + 1), $ExternalHardDiskDrives[$i].Model)
+                    }
+                    WriteLog ("{0}: {1}" -f ($i + 1), $ExternalHardDiskDrives[$i].Model)
+                }
+                $inputChoice = Read-Host "Enter the number corresponding to the external hard disk media drive you want to use"
+                $selectedIndex = $inputChoice - 1
+                $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
+            }
+        }
+        
     }
     else {
         $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
