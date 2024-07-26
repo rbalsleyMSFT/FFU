@@ -2616,7 +2616,7 @@ function New-PEMedia {
         #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
         # $WinPEISOName = 'WinPE_FFU_Capture.iso'
         $WinPEISOFile = $CaptureISO
-        $Capture = $false
+        # $Capture = $false
     }
     If ($Deploy) {
         WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
@@ -2636,7 +2636,7 @@ function New-PEMedia {
         # $WinPEISOName = 'WinPE_FFU_Deploy.iso'
         $WinPEISOFile = $DeployISO
 
-        $Deploy = $false
+        # $Deploy = $false
     }
     WriteLog 'Dismounting WinPE media' 
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
