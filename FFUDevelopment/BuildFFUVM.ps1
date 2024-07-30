@@ -2927,22 +2927,44 @@ Function Get-USBDrive {
                 WriteLog 'Found external hard disk media drives'
                 WriteLog 'Will prompt for user input to select the drive to use to prevent accidental data loss'
                 WriteLog 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+                
                 for ($i = 0; $i -lt $ExternalHardDiskDrives.Count; $i++) {
+                     $ExternalDiskNumber = $ExternalHardDiskDrives[$i].DeviceID.Replace("\\.\PHYSICALDRIVE", "")
+                     $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
                     if ($VerbosePreference -ne 'Continue'){
-                        Write-Host ("{0}: {1}" -f ($i + 1), $ExternalHardDiskDrives[$i].Model)
+                       # Write-Host ("{0}: {1}" -f ($i + 1), $ExternalHardDiskDrives[$i].Model)
+                       Write-Host ("Drive {0}: {1} SN/{2} PartitionStyle={3} Status={4}" -f ($i + 1), $ExternalDisk.FriendlyName , $ExternalHardDiskDrives[$i].serialnumber, $ExternalDisk.PartitionStyle,$ExternalDisk.OperationalStatus ) -ForegroundColor Green
                     }
-                    WriteLog ("{0}: {1}" -f ($i + 1), $ExternalHardDiskDrives[$i].Model)
+                    WriteLog ("Drive {0}: {1} SN/{2} PartitionStyle={3} Status={4}" -f ($i + 1), $ExternalDisk.FriendlyName , $ExternalHardDiskDrives[$i].serialnumber, $ExternalDisk.PartitionStyle,$ExternalDisk.OperationalStatus )
                 }
-                $inputChoice = Read-Host "Enter the number corresponding to the external hard disk media drive you want to use"
-                $selectedIndex = $inputChoice - 1
-    
+                    while ($true) {
+                        try {
+                            # Ask the user for input
+                            #$userInput = Read-Host "Please enter a number"
+                            $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
+                
+                            # Convert the input to a float
+                            $ISnumber = [float]$inputChoice
+                
+                            # Display the entered number
+                            Write-Host "You selected Disk: $ISnumber"
+                            $selectedIndex = $inputChoice - 1
+                            break
+                        }
+                        catch {
+                            # If the input is not a valid number, display an error message
+                            Write-Host "Invalid input. Please try again."
+                        }
+                    }
+                
+
                 if ($selectedIndex -ge 0 -and $selectedIndex -lt $ExternalHardDiskDrives.Count) {
                     $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
                 } else {
-                    Write-Error "Invalid selection. Exiting."
+                    Write-Warning "Invalid selection. Exiting." | Out-Null
                     exit 1
                 }
-
+                
             }
         }
         
