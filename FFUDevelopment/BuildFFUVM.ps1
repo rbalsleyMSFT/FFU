@@ -2935,7 +2935,14 @@ Function Get-USBDrive {
                 }
                 $inputChoice = Read-Host "Enter the number corresponding to the external hard disk media drive you want to use"
                 $selectedIndex = $inputChoice - 1
-                $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
+    
+                if ($selectedIndex -ge 0 -and $selectedIndex -lt $ExternalHardDiskDrives.Count) {
+                    $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
+                } else {
+                    Write-Error "Invalid selection. Exiting."
+                    exit 1
+                }
+
             }
         }
         
