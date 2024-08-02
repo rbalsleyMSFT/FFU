@@ -2946,7 +2946,7 @@ Function Get-USBDrive {
                             # Convert the input to a float
                             $ISnumber = [float]$inputChoice
                 
-                            # Display the entered number
+                            # Display the entered number used for Debugging
                             Write-Host "You selected Disk: $ISnumber"
                             $selectedIndex = $inputChoice - 1
                             break
@@ -2959,7 +2959,8 @@ Function Get-USBDrive {
                 
 
                 if ($selectedIndex -ge 0 -and $selectedIndex -lt $ExternalHardDiskDrives.Count) {
-                    if ($ExternalDisk.OperationalStatus -eq 'Offline') {
+                    #Check if Selected Drive is in an Offline State. Useful when presenting the FFU Driv to Hyper-V VMs and forget to Online Again
+                    if ($ExternalDisk.OperationalStatus -eq 'Offline') { 
                         Write-Warning "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
                         exit 1
                     }
@@ -3041,9 +3042,7 @@ Function New-DeploymentUSB {
                      }
      
                      try {
-                        
-                       #  $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
-             
+                      
                          # Convert the input to a float
                          $ISnumber = [float]$inputChoice
              
@@ -3062,7 +3061,8 @@ Function New-DeploymentUSB {
                          $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
                          break
                      }
-                     else{
+                     else{ 
+                        #No correct input so prompt again and repeat Checks.
                         Write-Host "Invalid FFU Number. Please try again."
                         $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
                        }
