@@ -3029,7 +3029,7 @@ Function New-DeploymentUSB {
                 
              }
              #$inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
-             $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
+             $inputChoice = $(Write-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
              
              Write-Host "You selected FFU: $inputChoice"
              WriteLog "You selected FFU: $inputChoice"
@@ -3066,7 +3066,7 @@ Function New-DeploymentUSB {
                      else{ 
                         #No correct input for FFU selection, so prompt again and repeat Checks.
                         Write-Host "Invalid FFU Number. Please try again."
-                        $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
+                        $inputChoice = $(Write-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
                        }
                  }   
              WriteLog "$SelectedFFUFile was selected"
