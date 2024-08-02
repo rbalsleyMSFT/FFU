@@ -3035,6 +3035,7 @@ Function New-DeploymentUSB {
              WriteLog "You selected FFU: $inputChoice"
              
              while ($true) {
+                    #If 'A' is selected copy all the FFUs found
                      if ($inputChoice -eq 'A') {
                          $SelectedFFUFile = $FFUFiles.FullName
                          Write-Host "You selected $inputChoice"
@@ -3043,7 +3044,7 @@ Function New-DeploymentUSB {
      
                      try {
                       
-                         # Convert the input to a float
+                         # Try to Convert the inputChoice to a float
                          $ISnumber = [float]$inputChoice
              
                          # Display the entered number for debuggin
@@ -3051,10 +3052,11 @@ Function New-DeploymentUSB {
                                         
                      }
                      catch {
-                         # If the input is not a valid number, display an error message
+                         # If inputChoice is not a valid number, must have been a character, so display an error message
                          Write-Host "Invalid input. Please try again."
                        
                      }
+                     # If InputChoice is a number check that its withing the range of 
                      if ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
                          $selectedIndex = $inputChoice - 1
                          Write-Host "You Selected FFU $selectedIndex"
@@ -3062,7 +3064,7 @@ Function New-DeploymentUSB {
                          break
                      }
                      else{ 
-                        #No correct input so prompt again and repeat Checks.
+                        #No correct input for FFU selection, so prompt again and repeat Checks.
                         Write-Host "Invalid FFU Number. Please try again."
                         $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
                        }
