@@ -1637,8 +1637,8 @@ function Get-Office {
     $officeCommand = "d:\Office\setup.exe /configure d:\Office\DeployFFU.xml"
 
     # Check if Office command is not commented out or missing and fix it if it is
-    if ($content[2] -ne $officeCommand) {
-        $content[2] = $officeCommand
+    if ($content[3] -ne $officeCommand) {
+        $content[3] = $officeCommand
 
         # Write the modified content back to the file
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
@@ -3200,34 +3200,34 @@ function Get-FFUEnvironment {
     #Clean up $KBPath
     If (Test-Path -Path $KBPath) {
         WriteLog "Removing $KBPath"
-        Remove-Item -Path $KBPath -Recurse -Force
+        Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $DefenderPath
     If (Test-Path -Path $DefenderPath) {
         WriteLog "Removing $DefenderPath"
-        Remove-Item -Path $DefenderPath -Recurse -Force
+        Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $OneDrivePath
     If (Test-Path -Path $OneDrivePath) {
         WriteLog "Removing $OneDrivePath"
-        Remove-Item -Path $OneDrivePath -Recurse -Force
+        Remove-Item -Path $OneDrivePath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $EdgePath
     If (Test-Path -Path $EdgePath) {
         WriteLog "Removing $EdgePath"
-        Remove-Item -Path $EdgePath -Recurse -Force
+        Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
         WriteLog "Cleaning up Win32 folder"
-        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
         WriteLog "Cleaning up MSStore folder"
-        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force -ErrorAction SilentlyContinue
     }   
     Clear-InstallAppsandSysprep
     Writelog 'Removing dirty.txt file'
@@ -3253,29 +3253,29 @@ function Clear-InstallAppsandSysprep {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Defender*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        #Remove $DefenderPath
-        WriteLog "Removing $DefenderPath"
-        Remove-Item -Path $DefenderPath -Recurse -Force
-        WriteLog "Removal complete"
+        # #Remove $DefenderPath
+        # WriteLog "Removing $DefenderPath"
+        # Remove-Item -Path $DefenderPath -Recurse -Force
+        # WriteLog "Removal complete"
 
     }
     if ($UpdateOneDrive) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        #Remove $OneDrivePath
-        WriteLog "Removing $OneDrivePath"
-        Remove-Item -Path $OneDrivePath -Recurse -Force
-        WriteLog "Removal complete"  
+        # #Remove $OneDrivePath
+        # WriteLog "Removing $OneDrivePath"
+        # Remove-Item -Path $OneDrivePath -Recurse -Force
+        # WriteLog "Removal complete"  
     }
     if ($UpdateEdge) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Edge install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        #Remove $EdgePath
-        WriteLog "Removing $EdgePath"
-        Remove-Item -Path $EdgePath -Recurse -Force
-        WriteLog "Removal complete"
+        # #Remove $EdgePath
+        # WriteLog "Removing $EdgePath"
+        # Remove-Item -Path $EdgePath -Recurse -Force
+        # WriteLog "Removal complete"
     }
 }
 
