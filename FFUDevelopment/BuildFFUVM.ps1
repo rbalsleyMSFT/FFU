@@ -2946,7 +2946,7 @@ Function Get-USBDrive {
                             # Convert the input to a float
                             $ISnumber = [float]$inputChoice
                 
-                            # Display the entered number
+                            # Display the entered number used for Debugging
                             Write-Host "You selected Disk: $ISnumber"
                             $selectedIndex = $inputChoice - 1
                             break
@@ -2959,7 +2959,15 @@ Function Get-USBDrive {
                 
 
                 if ($selectedIndex -ge 0 -and $selectedIndex -lt $ExternalHardDiskDrives.Count) {
-                    $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
+                    #Check if Selected Drive is in an Offline State. Useful when presenting the FFU Driv to Hyper-V VMs and forget to Online Again
+                    if ($ExternalDisk.OperationalStatus -eq 'Offline') { 
+                        Write-Warning "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                        exit 1
+                    }
+                    else {
+                        $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
+                    }
+                    
                 } else {
                     Write-Warning "Invalid selection. Exiting." | Out-Null
                     exit 1
@@ -2996,35 +3004,75 @@ Function New-DeploymentUSB {
     WriteLog "BuildUSBPath is $BuildUSBPath"
 
     $SelectedFFUFile = $null
-
+    
     if ($CopyFFU.IsPresent) {
         $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
 
-        if ($FFUFiles.Count -eq 1) {
-            $SelectedFFUFile = $FFUFiles.FullName
-        }
-        elseif ($FFUFiles.Count -gt 1) {
-            WriteLog 'Found multiple FFU files'
-            for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
-                WriteLog ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
-            }
-            $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
-            
-            if ($inputChoice -eq 'A') {
-                $SelectedFFUFile = $FFUFiles.FullName
-            }
-            elseif ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
-                $selectedIndex = $inputChoice - 1
-                $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
-            }
-            WriteLog "$SelectedFFUFile was selected"
-        }
-        else {
-            WriteLog "No FFU files found in the current directory."
-            Write-Error "No FFU files found in the current directory."
-            Return
-        }
-    }
+
+         if (-not $FFUFiles) {
+        # WriteLog "No FFU files found in the current directory."
+         Write-Error "No FFU files found in the current directory."
+         Return
+         }
+     
+         elseif ($FFUFiles.Count -eq 1) {
+             $SelectedFFUFile = $FFUFiles.FullName
+         }
+         elseif ($FFUFiles.Count -gt 1) {
+             WriteLog 'Found multiple FFU files'
+             Write-Warning 'Found multiple FFU files'
+             for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
+                 WriteLog ("FFU {0}: {1}   Modified: {2}" -f ($i + 1), $FFUFiles[$i].Name, $FFUFiles[$i].LastWriteTime)
+                 if ($VerbosePreference -ne 'Continue') {
+                    Write-Host ("FFU {0}: {1}   Modified: {2}" -f ($i + 1), $FFUFiles[$i].Name, $FFUFiles[$i].LastWriteTime) -ForegroundColor Green
+                 }
+                
+             }
+             #$inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+             $inputChoice = $(Write-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
+             
+             Write-Host "You selected FFU: $inputChoice"
+             WriteLog "You selected FFU: $inputChoice"
+             
+             while ($true) {
+                    #If 'A' is selected copy all the FFUs found
+                     if ($inputChoice -eq 'A') {
+                         $SelectedFFUFile = $FFUFiles.FullName
+                         Write-Host "You selected $inputChoice"
+                         break
+                     }
+     
+                     try {
+                      
+                         # Try to Convert the inputChoice to a float
+                         $ISnumber = [float]$inputChoice
+             
+                         # Display the entered number for debuggin
+                         #Write-Host "You selected Disk: $ISnumber"
+                                        
+                     }
+                     catch {
+                         # If inputChoice is not a valid number, must have been a character, so display an error message
+                         Write-Host "Invalid input. Please try again."
+                       
+                     }
+                     # If InputChoice is a number check that its withing the range of 
+                     if ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
+                         $selectedIndex = $inputChoice - 1
+                         Write-Host "You Selected FFU $selectedIndex"
+                         $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
+                         break
+                     }
+                     else{ 
+                        #No correct input for FFU selection, so prompt again and repeat Checks.
+                        Write-Host "Invalid FFU Number. Please try again."
+                        $inputChoice = $(Write-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
+                       }
+                 }   
+             WriteLog "$SelectedFFUFile was selected"
+             Write-Host "$SelectedFFUFile was selected"
+         }
+    }     
     $counter = 0
 
     foreach ($USBDrive in $USBDrives) {
@@ -3314,7 +3362,9 @@ function Clear-InstallAppsandSysprep {
 if (Test-Path -Path $Logfile) {
     Remove-item -Path $LogFile -Force
 }
-Write-Host "FFU build process has begun. This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
+$startTime = Get-Date
+Write-Host "FFU build process has begun at" $startTime -ForegroundColor DarkYellow
+Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
 Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
 
 WriteLog 'Begin Logging'
@@ -3968,4 +4018,19 @@ Remove-Item -Path .\dirty.txt -Force | out-null
 if ($VerbosePreference -ne 'Continue'){
     Write-Host 'Script complete'
 }
+# Record the end time
+$endTime = Get-Date
+Write-Host "FFU build process has completed at" $endTime -ForegroundColor DarkYellow
+
+# Calculate the total run time
+$runTime = $endTime - $startTime
+$runTimeInMinutes = [math]::Round($runTime.TotalMinutes, 2)
+
+# Format the runtime as minutes and seconds
+$runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
+
+Write-Host $runTimeFormatted -ForegroundColor DarkGreen
+
+
+
 WriteLog 'Script complete'
