@@ -38,14 +38,16 @@ Chapters:
 
 [00:00](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=0s) Begin
 
-
 [03:21](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=201s) Quick Start Prereqs
 
-
 [07:19](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=439s) Quick Start Demo
+
 [14:12](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=852s) Script Parameters
+
 [17:22](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1042s) Obtaining Windows Media
+
 [25:55](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1555s) Adding Applications
+
 [26:59](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1619s) Adding M365 Apps/Office
 [29:21](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1761s) Adding Applications via Winget
 [34:59](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=2099s) Bring your own Applications
