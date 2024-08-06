@@ -2911,15 +2911,22 @@ Function Get-WindowsVersionInfo {
     }
 }
 Function Get-USBDrive {
-    # $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+    # Log the start of the USB drive check
     WriteLog 'Checking for USB drives'
+    
+    # Check if external hard disk media is allowed
     If ($AllowExternalHardDiskMedia) {
-        $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
-        if ($PromptExternalHardDiskMedia){
-            # List all drives with MediaType='External hard disk media' and have the end user pick which one to use
-            [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
+        # Get all removable and external hard disk media drives
+        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
+        [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
+        $ExternalCount = $ExternalHardDiskDrives.Count
+        $USBDrivesCount = $USBDrives.Count
+        
+        # Check if user should be prompted for external hard disk media
+        if ($PromptExternalHardDiskMedia) {
             if ($ExternalHardDiskDrives) {
-                if ($VerbosePreference -ne 'Continue'){
+                # Log and warn about found external hard disk media drives
+                if ($VerbosePreference -ne 'Continue') {
                     Write-Warning 'Found external hard disk media drives'
                     Write-Warning 'Will prompt for user input to select the drive to use to prevent accidental data loss'
                     Write-Warning 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
@@ -2928,71 +2935,105 @@ Function Get-USBDrive {
                 WriteLog 'Will prompt for user input to select the drive to use to prevent accidental data loss'
                 WriteLog 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
                 
+                # Prepare output for user selection
+                $Output = @()
                 for ($i = 0; $i -lt $ExternalHardDiskDrives.Count; $i++) {
-                     $ExternalDiskNumber = $ExternalHardDiskDrives[$i].DeviceID.Replace("\\.\PHYSICALDRIVE", "")
-                     $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
-                    if ($VerbosePreference -ne 'Continue'){
-                       # Write-Host ("{0}: {1}" -f ($i + 1), $ExternalHardDiskDrives[$i].Model)
-                       Write-Host ("Drive {0}: {1} SN/{2} PartitionStyle={3} Status={4}" -f ($i + 1), $ExternalDisk.FriendlyName , $ExternalHardDiskDrives[$i].serialnumber, $ExternalDisk.PartitionStyle,$ExternalDisk.OperationalStatus ) -ForegroundColor Green
+                    $ExternalDiskNumber = $ExternalHardDiskDrives[$i].Index
+                    $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
+                    $Index = $i + 1
+                    $Name = $ExternalDisk.FriendlyName
+                    $SerialNumber = $ExternalHardDiskDrives[$i].serialnumber
+                    $PartitionStyle = $ExternalDisk.PartitionStyle
+                    $Status = $ExternalDisk.OperationalStatus
+                    $Properties = [ordered]@{
+                        'Drive Number'    = $Index
+                        'Drive Name'      = $Name
+                        'Serial Number'   = $SerialNumber
+                        'Partition Style' = $PartitionStyle
+                        'Status'          = $Status
                     }
-                    WriteLog ("Drive {0}: {1} SN/{2} PartitionStyle={3} Status={4}" -f ($i + 1), $ExternalDisk.FriendlyName , $ExternalHardDiskDrives[$i].serialnumber, $ExternalDisk.PartitionStyle,$ExternalDisk.OperationalStatus )
+                    $Output += New-Object PSObject -Property $Properties
                 }
-                    while ($true) {
-                        try {
-                            # Ask the user for input
-                            #$userInput = Read-Host "Please enter a number"
-                            $inputChoice = $(Write-Host "Enter the number corresponding to the external hard disk media drive you want to use: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
                 
-                            # Convert the input to a float
-                            $ISnumber = [float]$inputChoice
+                # Format and display the output
+                $FormattedOutput = $Output | Format-Table -AutoSize -Property 'Drive Number', 'Drive Name', 'Serial Number', 'Partition Style', 'Status' | Out-String
+                if ($VerbosePreference -ne 'Continue') {
+                    $FormattedOutput | Out-Host
+                }
+                WriteLog $FormattedOutput
                 
-                            # Display the entered number used for Debugging
-                            Write-Host "You selected Disk: $ISnumber"
-                            $selectedIndex = $inputChoice - 1
-                            break
+                # Prompt user to select a drive
+                do {
+                    $inputChoice = Read-Host "Enter the number corresponding to the external hard disk media drive you want to use"
+                    if ($inputChoice -match '^\d+$') {
+                        $inputChoice = [int]$inputChoice
+                        if ($inputChoice -ge 1 -and $inputChoice -le $ExternalCount) {
+                            $SelectedIndex = $inputChoice - 1
+                            $ExternalDiskNumber = $ExternalHardDiskDrives[$SelectedIndex].Index
+                            $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
+                            $USBDrives = $ExternalHardDiskDrives[$SelectedIndex]
+                            $USBDrivesCount = $USBDrives.Count
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Drive $inputChoice was selected"
+                            }
+                            WriteLog "Drive $inputChoice was selected"
                         }
-                        catch {
-                            # If the input is not a valid number, display an error message
-                            Write-Host "Invalid input. Please try again."
+                        else {
+                            # Handle invalid selection
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Invalid selection. Please try again."
+                            }
+                            WriteLog "Invalid selection. Please try again."
                         }
-                    }
-                
-
-                if ($selectedIndex -ge 0 -and $selectedIndex -lt $ExternalHardDiskDrives.Count) {
-                    #Check if Selected Drive is in an Offline State. Useful when presenting the FFU Driv to Hyper-V VMs and forget to Online Again
-                    if ($ExternalDisk.OperationalStatus -eq 'Offline') { 
-                        Write-Warning "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
-                        exit 1
+                        
+                        # Check if the selected drive is offline
+                        if ($ExternalDisk.OperationalStatus -eq 'Offline') {
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Error "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                            }
+                            WriteLog "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                            exit 1
+                        }
                     }
                     else {
-                        $USBDrives = $ExternalHardDiskDrives[$selectedIndex]
+                        # Handle invalid input
+                        if ($VerbosePreference -ne 'Continue') {
+                            Write-Host "Invalid selection. Please try again."
+                        }
+                        WriteLog "Invalid selection. Please try again."
                     }
-                    
-                } else {
-                    Write-Warning "Invalid selection. Exiting." | Out-Null
-                    exit 1
-                }
-                
+                } while ($null -eq $selectedIndex)
             }
         }
-        
+        else {
+            # Log the count of found USB drives
+            if ($VerbosePreference -ne 'Continue') {
+                Write-Host "Found $USBDrivesCount total USB drives"
+                If ($ExternalCount -gt 0) {
+                    Write-Host "$ExternalCount are external drives"
+                }
+            }
+            WriteLog "Found $USBDrivesCount total USB drives"
+            If ($ExternalCount -gt 0) {
+                WriteLog "$ExternalCount are external drives"
+            }
+        }
     }
     else {
-        $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
-    }
-    If ($USBDrives -and ($null -eq $USBDrives.count)) {
-        $USBDrivesCount = 1
-    }
-    else {
+        # Get only removable media drives
+        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
         $USBDrivesCount = $USBDrives.Count
+        WriteLog "Found $USBDrivesCount Removable USB drives"
     }
-    WriteLog "Found $USBDrivesCount USB drives"
-
+    
+    # Check if any USB drives were found
     if ($null -eq $USBDrives) {
         WriteLog "No removable USB drive found. Exiting"
         Write-Error "No removable USB drive found. Exiting"
         exit 1
     }
+    
+    # Return the found USB drives and their count
     return $USBDrives, $USBDrivesCount
 }
 Function New-DeploymentUSB {
@@ -3004,75 +3045,88 @@ Function New-DeploymentUSB {
     WriteLog "BuildUSBPath is $BuildUSBPath"
 
     $SelectedFFUFile = $null
-    
+
+    # Check if the CopyFFU switch is present
     if ($CopyFFU.IsPresent) {
+        # Get all FFU files in the specified directory
         $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+        $FFUCount = $FFUFiles.count
 
-
-         if (-not $FFUFiles) {
-        # WriteLog "No FFU files found in the current directory."
-         Write-Error "No FFU files found in the current directory."
-         Return
-         }
-     
-         elseif ($FFUFiles.Count -eq 1) {
-             $SelectedFFUFile = $FFUFiles.FullName
-         }
-         elseif ($FFUFiles.Count -gt 1) {
-             WriteLog 'Found multiple FFU files'
-             Write-Warning 'Found multiple FFU files'
-             for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
-                 WriteLog ("FFU {0}: {1}   Modified: {2}" -f ($i + 1), $FFUFiles[$i].Name, $FFUFiles[$i].LastWriteTime)
-                 if ($VerbosePreference -ne 'Continue') {
-                    Write-Host ("FFU {0}: {1}   Modified: {2}" -f ($i + 1), $FFUFiles[$i].Name, $FFUFiles[$i].LastWriteTime) -ForegroundColor Green
-                 }
-                
-             }
-             #$inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
-             $inputChoice = $(Write-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
-             
-             Write-Host "You selected FFU: $inputChoice"
-             WriteLog "You selected FFU: $inputChoice"
-             
-             while ($true) {
-                    #If 'A' is selected copy all the FFUs found
-                     if ($inputChoice -eq 'A') {
-                         $SelectedFFUFile = $FFUFiles.FullName
-                         Write-Host "You selected $inputChoice"
-                         break
-                     }
-     
-                     try {
-                      
-                         # Try to Convert the inputChoice to a float
-                         $ISnumber = [float]$inputChoice
-             
-                         # Display the entered number for debuggin
-                         #Write-Host "You selected Disk: $ISnumber"
-                                        
-                     }
-                     catch {
-                         # If inputChoice is not a valid number, must have been a character, so display an error message
-                         Write-Host "Invalid input. Please try again."
-                       
-                     }
-                     # If InputChoice is a number check that its withing the range of 
-                     if ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
-                         $selectedIndex = $inputChoice - 1
-                         Write-Host "You Selected FFU $selectedIndex"
-                         $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
-                         break
-                     }
-                     else{ 
-                        #No correct input for FFU selection, so prompt again and repeat Checks.
-                        Write-Host "Invalid FFU Number. Please try again."
-                        $inputChoice = $(Write-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files: " -ForegroundColor DarkYellow -NoNewline; Read-Host)
-                       }
-                 }   
-             WriteLog "$SelectedFFUFile was selected"
-             Write-Host "$SelectedFFUFile was selected"
-         }
-    }     
+        # If there is exactly one FFU file, select it
+        if ($FFUCount -eq 1) {
+            $SelectedFFUFile = $FFUFiles.FullName
+        }
+        # If there are multiple FFU files, prompt the user to select one
+        elseif ($FFUCount -gt 1) {
+            WriteLog "Found $FFUCount FFU files"
+            if($VerbosePreference -ne 'Continue'){
+                Write-Host "Found $FFUCount FFU files"
+            }
+            $output = @()
+            # Create a table of FFU files with their index, name, and last modified date
+            for ($i = 0; $i -lt $FFUCount; $i++) {
+                $index = $i + 1
+                $name = $FFUFiles[$i].Name
+                $modified = $FFUFiles[$i].LastWriteTime
+                $Properties = [ordered]@{
+                    'FFU Number'    = $index
+                    'FFU Name'      = $name
+                    'Last Modified' = $modified
+                }
+                $output += New-Object PSObject -Property $Properties
+            }
+            $output | Format-Table -AutoSize -Property 'FFU Number', 'FFU Name', 'Last Modified'
+            
+            # Loop until a valid FFU file is selected
+            do {
+                $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+                # Check if the input is a valid number or 'A'
+                if ($inputChoice -match '^\d+$' -or $inputChoice -eq 'A') {
+                    if ($inputChoice -eq 'A') {
+                        # Select all FFU files
+                        $SelectedFFUFile = $FFUFiles.FullName
+                        if ($VerbosePreference -ne 'Continue') {
+                            Write-Host 'Will copy all FFU files'
+                        }
+                        WriteLog 'Will copy all FFU Files'
+                    }
+                    else {
+                        # Convert input to integer and validate the selection
+                        $inputChoice = [int]$inputChoice
+                        if ($inputChoice -ge 1 -and $inputChoice -le $FFUCount) {
+                            $selectedIndex = $inputChoice - 1
+                            $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "$SelectedFFUFile was selected"
+                            }
+                            WriteLog "$SelectedFFUFile was selected"
+                        }
+                        else {
+                            # Handle invalid selection
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Invalid selection. Please try again."
+                            }
+                            WriteLog "Invalid selection. Please try again."
+                        }
+                    }
+                }
+                else {
+                    # Handle invalid input
+                    if ($VerbosePreference -ne 'Continue') {
+                        Write-Host "Invalid selection. Please try again."
+                    }
+                    WriteLog "Invalid selection. Please try again."
+                }
+            } while ($null -eq $SelectedFFUFile)
+            
+        }
+        else {
+            # Handle case where no FFU files are found
+            WriteLog "No FFU files found in the current directory."
+            Write-Error "No FFU files found in the current directory."
+            Return
+        }
+    }    
     $counter = 0
 
     foreach ($USBDrive in $USBDrives) {
@@ -3363,7 +3417,7 @@ if (Test-Path -Path $Logfile) {
     Remove-item -Path $LogFile -Force
 }
 $startTime = Get-Date
-Write-Host "FFU build process has begun at" $startTime -ForegroundColor DarkYellow
+Write-Host "FFU build process started at" $startTime
 Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
 Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
 
@@ -3874,7 +3928,7 @@ Catch {
     throw $_
     
 }
-#Clean up ffu_user and Share
+#Clean up ffu_user and Share and clean up apps
 If ($InstallApps) {
     try {
         Remove-FFUUserShare
@@ -3883,6 +3937,30 @@ If ($InstallApps) {
         Write-Host 'Cleaning up FFU User and/or share failed'
         WriteLog "Cleaning up FFU User and/or share failed with error $_"
         Remove-FFUVM -VMName $VMName
+        throw $_
+    }
+    #Clean up InstallAppsandSysprep.cmd
+    try {
+        WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
+        Clear-InstallAppsandSysprep
+    }
+    catch {
+        Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
+        Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
+        throw $_
+    }
+    try {
+        if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+            WriteLog "Cleaning up Win32 folder"
+            Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+        }
+        if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+            WriteLog "Cleaning up MSStore folder"
+            Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+        }
+    }
+    catch {
+        WriteLog "$_"
         throw $_
     }
 }
@@ -4020,17 +4098,15 @@ if ($VerbosePreference -ne 'Continue'){
 }
 # Record the end time
 $endTime = Get-Date
-Write-Host "FFU build process has completed at" $endTime -ForegroundColor DarkYellow
+Write-Host "FFU build process completed at" $endTime
 
 # Calculate the total run time
 $runTime = $endTime - $startTime
-$runTimeInMinutes = [math]::Round($runTime.TotalMinutes, 2)
 
 # Format the runtime as minutes and seconds
 $runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
 
-Write-Host $runTimeFormatted -ForegroundColor DarkGreen
-
-
-
-WriteLog 'Script complete'
+if ($VerbosePreference -ne 'Continue'){
+    Write-Host $runTimeFormatted
+}
+WriteLog 'Script complete: ' + $runTimeFormatted
