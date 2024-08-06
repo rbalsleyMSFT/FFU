@@ -30,17 +30,17 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 ## YouTube Detailed Walkthrough
 
-The first 15 minutes of the following video includes a quick start demo to get started. Below the video are a list of chapters 
+The first 15 minutes of the following video includes a quick start demo to get started. Below the video are a list of chapters
 
 [![Reimage Windows Fast with Full-Flash Update (FFU))](https://img.youtube.com/vi/rqXRbgeeKSQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=rqXRbgeeKSQ "Reimage Windows Fast with Full-Flash Update (FFU))")
 
 Chapters:
 
-[00:00](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=0s) Begin
-[03:21](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=201s) Quick Start Prereqs
-[07:19](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=439s) Quick Start Demo
-[14:12](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=852s) Script Parameters
-[17:22](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1042s) Obtaining Windows Media
+[00:00](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=0s) Begin 
+[03:21](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=201s) Quick Start Prereqs 
+[07:19](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=439s) Quick Start Demo 
+[14:12](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=852s) Script Parameters 
+[17:22](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1042s) Obtaining Windows Media 
 [25:55](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1555s) Adding Applications
 [26:59](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1619s) Adding M365 Apps/Office
 [29:21](https://www.youtube.com/watch?v=rqXRbgeeKSQ&t=1761s) Adding Applications via Winget
