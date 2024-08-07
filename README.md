@@ -30,7 +30,7 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 ## YouTube Detailed Walkthrough
 
-The first 15 minutes of the following video includes a quick start demo to get started. Below the video are a list of chapters
+The first 15 minutes of the following video includes a quick start demo to get started. Below the video are a list of chapters. This video was taken with the 2407.2 build. Features released after that will not be demonstrated in the video.
 
 [![Reimage Windows Fast with Full-Flash Update (FFU))](https://img.youtube.com/vi/rqXRbgeeKSQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=rqXRbgeeKSQ "Reimage Windows Fast with Full-Flash Update (FFU))")
 
