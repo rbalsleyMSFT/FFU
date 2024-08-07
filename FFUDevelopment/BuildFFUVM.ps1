@@ -336,7 +336,7 @@ param(
     [bool]$AllowExternalHardDiskMedia,
     [bool]$PromptExternalHardDiskMedia = $true
 )
-$version = '2408.1'
+$version = '2408.2'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -4133,4 +4133,5 @@ $runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
 if ($VerbosePreference -ne 'Continue'){
     Write-Host $runTimeFormatted
 }
-WriteLog 'Script complete: ' + $runTimeFormatted
+WriteLog 'Script complete'
+WriteLog $runTimeFormatted
