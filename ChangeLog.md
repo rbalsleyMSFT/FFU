@@ -27,6 +27,7 @@ Fixes/misc
 - Added Create-PEMedia.ps1 as a helper script to quickly generate Deploy or Capture media
 - Fixed an issue with clean up of Defender/OneDrive/Edge
 - Fixed an issue with the formatting of InstallAppsandSysprep.cmd file
+- Updated parameter documentation in the script to include newly added parameters
 
 ## **2407.1**
 

@@ -139,6 +139,30 @@ When set to $true, will remove the WinPE deployment ISO after the FFU has been c
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
+.PARAMETER DriversFolder
+Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
+
+.PARAMETER CleanupDrivers
+When set to $true, will remove the drivers folder after the FFU has been captured. Default is $true.
+
+.PARAMETER UserAgent
+User agent string to use when downloading files.
+
+.PARAMETER Headers
+Headers to use when downloading files.
+
+.PARAMETER AllowExternalHardDiskMedia
+When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
+
+.PARAMETER PromptExternalHardDiskMedia
+When set to $true, will prompt the user to confirm the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is $true.
+
+.PARAMETER Make
+Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'
+
+.PARAMETER Model
+Model of the device to download drivers. This is required if Make is set.
+
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
