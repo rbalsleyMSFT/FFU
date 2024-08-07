@@ -14,10 +14,6 @@ function Get-USBDrive(){
     return $USBDriveLetter
 }
 
-# function Get-HardDrive(){
-#     $DeviceID = (Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk'}).DeviceID
-#     return $DeviceID
-# }
 function Get-HardDrive(){
     $SystemInfo = Get-WmiObject -Class 'Win32_ComputerSystem'
     $Manufacturer = $SystemInfo.Manufacturer
@@ -127,27 +123,12 @@ function Invoke-Process {
 	
 }
 
-# This function can be used in instances where battery level might matter (e.g. installing firmware for Surface). The problem is that WinPE doesn't have
-# a driver for the battery installed, so you'll need to inject drivers, which can be tricky because just injecting the battery driver might not be enough,
-# you might also need other drivers that the battery driver is dependent on. 
-# function Get-Battery(){
-#     while (($BattLev = (Get-CimInstance win32_battery).EstimatedChargeRemaining) -lt "35")
-#     {
-#         WriteLog "Battery is currently at $BattLev`%. Waiting for 35`% to proceed..."
-#         Write-Host "Battery is currently at $BattLev`%. Waiting for 35`% to proceed..."
-#         Start-Sleep 60
-#     }
-
-#     WriteLog "Battery level is $BattLev `%, which is greater than 35'% applying FFU"
-#     Write-Host "Battery level is $BattLev `%, which is greater than 35'% applying FFU"
-# }
-
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2407.1'
+$version = '2408.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
@@ -432,10 +413,6 @@ If (Test-Path -Path $Drivers)
         Writelog 'No driver folders found'
     }
 }
-
-#If you want to enable battery level checking, uncomment the line below as well as the Get-Battery function near the top of the script
-#Get-Battery
-
 #Partition drive
 Writelog 'Clean Disk'
 try {

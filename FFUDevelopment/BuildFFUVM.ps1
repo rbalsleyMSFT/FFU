@@ -139,6 +139,30 @@ When set to $true, will remove the WinPE deployment ISO after the FFU has been c
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
+.PARAMETER DriversFolder
+Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
+
+.PARAMETER CleanupDrivers
+When set to $true, will remove the drivers folder after the FFU has been captured. Default is $true.
+
+.PARAMETER UserAgent
+User agent string to use when downloading files.
+
+.PARAMETER Headers
+Headers to use when downloading files.
+
+.PARAMETER AllowExternalHardDiskMedia
+When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
+
+.PARAMETER PromptExternalHardDiskMedia
+When set to $true, will prompt the user to confirm the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is $true.
+
+.PARAMETER Make
+Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'
+
+.PARAMETER Model
+Model of the device to download drivers. This is required if Make is set.
+
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
@@ -308,9 +332,11 @@ param(
         "Sec-Fetch-Site" = "none"
         "Sec-Fetch-User" = "?1"
         "Upgrade-Insecure-Requests" = "1"
-    }
+    },
+    [bool]$AllowExternalHardDiskMedia,
+    [bool]$PromptExternalHardDiskMedia = $true
 )
-$version = '2407.1'
+$version = '2408.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1635,8 +1661,8 @@ function Get-Office {
     $officeCommand = "d:\Office\setup.exe /configure d:\Office\DeployFFU.xml"
 
     # Check if Office command is not commented out or missing and fix it if it is
-    if ($content[2] -ne $officeCommand) {
-        $content[2] = $officeCommand
+    if ($content[3] -ne $officeCommand) {
+        $content[3] = $officeCommand
 
         # Write the modified content back to the file
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
@@ -2614,7 +2640,7 @@ function New-PEMedia {
         #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
         # $WinPEISOName = 'WinPE_FFU_Capture.iso'
         $WinPEISOFile = $CaptureISO
-        $Capture = $false
+        # $Capture = $false
     }
     If ($Deploy) {
         WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
@@ -2634,7 +2660,7 @@ function New-PEMedia {
         # $WinPEISOName = 'WinPE_FFU_Deploy.iso'
         $WinPEISOFile = $DeployISO
 
-        $Deploy = $false
+        # $Deploy = $false
     }
     WriteLog 'Dismounting WinPE media' 
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
@@ -2650,11 +2676,21 @@ function New-PEMedia {
     WriteLog "Creating WinPE ISO at $WinPEISOFile"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
     if($WindowsArch -eq 'x64'){
-        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-    
+        if($Capture){
+            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+        }
+        if($Deploy){
+            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+        }
     }
     elseif($WindowsArch -eq 'arm64'){
-        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+        if($Capture){
+            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+        }
+        if($Deploy){
+            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
+        }
+        
     }
     Invoke-Process $OSCDIMG $OSCDIMGArgs
     WriteLog "ISO created successfully"
@@ -2899,20 +2935,129 @@ Function Get-WindowsVersionInfo {
     }
 }
 Function Get-USBDrive {
-    $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
-    If ($USBDrives -and ($null -eq $USBDrives.count)) {
-        $USBDrivesCount = 1
+    # Log the start of the USB drive check
+    WriteLog 'Checking for USB drives'
+    
+    # Check if external hard disk media is allowed
+    If ($AllowExternalHardDiskMedia) {
+        # Get all removable and external hard disk media drives
+        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
+        [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
+        $ExternalCount = $ExternalHardDiskDrives.Count
+        $USBDrivesCount = $USBDrives.Count
+        
+        # Check if user should be prompted for external hard disk media
+        if ($PromptExternalHardDiskMedia) {
+            if ($ExternalHardDiskDrives) {
+                # Log and warn about found external hard disk media drives
+                if ($VerbosePreference -ne 'Continue') {
+                    Write-Warning 'Found external hard disk media drives'
+                    Write-Warning 'Will prompt for user input to select the drive to use to prevent accidental data loss'
+                    Write-Warning 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+                }
+                WriteLog 'Found external hard disk media drives'
+                WriteLog 'Will prompt for user input to select the drive to use to prevent accidental data loss'
+                WriteLog 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+                
+                # Prepare output for user selection
+                $Output = @()
+                for ($i = 0; $i -lt $ExternalHardDiskDrives.Count; $i++) {
+                    $ExternalDiskNumber = $ExternalHardDiskDrives[$i].Index
+                    $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
+                    $Index = $i + 1
+                    $Name = $ExternalDisk.FriendlyName
+                    $SerialNumber = $ExternalHardDiskDrives[$i].serialnumber
+                    $PartitionStyle = $ExternalDisk.PartitionStyle
+                    $Status = $ExternalDisk.OperationalStatus
+                    $Properties = [ordered]@{
+                        'Drive Number'    = $Index
+                        'Drive Name'      = $Name
+                        'Serial Number'   = $SerialNumber
+                        'Partition Style' = $PartitionStyle
+                        'Status'          = $Status
+                    }
+                    $Output += New-Object PSObject -Property $Properties
+                }
+                
+                # Format and display the output
+                $FormattedOutput = $Output | Format-Table -AutoSize -Property 'Drive Number', 'Drive Name', 'Serial Number', 'Partition Style', 'Status' | Out-String
+                if ($VerbosePreference -ne 'Continue') {
+                    $FormattedOutput | Out-Host
+                }
+                WriteLog $FormattedOutput
+                
+                # Prompt user to select a drive
+                do {
+                    $inputChoice = Read-Host "Enter the number corresponding to the external hard disk media drive you want to use"
+                    if ($inputChoice -match '^\d+$') {
+                        $inputChoice = [int]$inputChoice
+                        if ($inputChoice -ge 1 -and $inputChoice -le $ExternalCount) {
+                            $SelectedIndex = $inputChoice - 1
+                            $ExternalDiskNumber = $ExternalHardDiskDrives[$SelectedIndex].Index
+                            $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
+                            $USBDrives = $ExternalHardDiskDrives[$SelectedIndex]
+                            $USBDrivesCount = $USBDrives.Count
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Drive $inputChoice was selected"
+                            }
+                            WriteLog "Drive $inputChoice was selected"
+                        }
+                        else {
+                            # Handle invalid selection
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Invalid selection. Please try again."
+                            }
+                            WriteLog "Invalid selection. Please try again."
+                        }
+                        
+                        # Check if the selected drive is offline
+                        if ($ExternalDisk.OperationalStatus -eq 'Offline') {
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Error "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                            }
+                            WriteLog "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                            exit 1
+                        }
+                    }
+                    else {
+                        # Handle invalid input
+                        if ($VerbosePreference -ne 'Continue') {
+                            Write-Host "Invalid selection. Please try again."
+                        }
+                        WriteLog "Invalid selection. Please try again."
+                    }
+                } while ($null -eq $selectedIndex)
+            }
+        }
+        else {
+            # Log the count of found USB drives
+            if ($VerbosePreference -ne 'Continue') {
+                Write-Host "Found $USBDrivesCount total USB drives"
+                If ($ExternalCount -gt 0) {
+                    Write-Host "$ExternalCount are external drives"
+                }
+            }
+            WriteLog "Found $USBDrivesCount total USB drives"
+            If ($ExternalCount -gt 0) {
+                WriteLog "$ExternalCount are external drives"
+            }
+        }
     }
     else {
+        # Get only removable media drives
+        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
         $USBDrivesCount = $USBDrives.Count
+        WriteLog "Found $USBDrivesCount Removable USB drives"
     }
-    WriteLog "Found $USBDrivesCount USB drives"
-
+    
+    # Check if any USB drives were found
     if ($null -eq $USBDrives) {
         WriteLog "No removable USB drive found. Exiting"
         Write-Error "No removable USB drive found. Exiting"
         exit 1
     }
+    
+    # Return the found USB drives and their count
     return $USBDrives, $USBDrivesCount
 }
 Function New-DeploymentUSB {
@@ -2925,34 +3070,87 @@ Function New-DeploymentUSB {
 
     $SelectedFFUFile = $null
 
+    # Check if the CopyFFU switch is present
     if ($CopyFFU.IsPresent) {
+        # Get all FFU files in the specified directory
         $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+        $FFUCount = $FFUFiles.count
 
-        if ($FFUFiles.Count -eq 1) {
+        # If there is exactly one FFU file, select it
+        if ($FFUCount -eq 1) {
             $SelectedFFUFile = $FFUFiles.FullName
         }
-        elseif ($FFUFiles.Count -gt 1) {
-            WriteLog 'Found multiple FFU files'
-            for ($i = 0; $i -lt $FFUFiles.Count; $i++) {
-                WriteLog ("{0}: {1}" -f ($i + 1), $FFUFiles[$i].Name)
+        # If there are multiple FFU files, prompt the user to select one
+        elseif ($FFUCount -gt 1) {
+            WriteLog "Found $FFUCount FFU files"
+            if($VerbosePreference -ne 'Continue'){
+                Write-Host "Found $FFUCount FFU files"
             }
-            $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+            $output = @()
+            # Create a table of FFU files with their index, name, and last modified date
+            for ($i = 0; $i -lt $FFUCount; $i++) {
+                $index = $i + 1
+                $name = $FFUFiles[$i].Name
+                $modified = $FFUFiles[$i].LastWriteTime
+                $Properties = [ordered]@{
+                    'FFU Number'    = $index
+                    'FFU Name'      = $name
+                    'Last Modified' = $modified
+                }
+                $output += New-Object PSObject -Property $Properties
+            }
+            $output | Format-Table -AutoSize -Property 'FFU Number', 'FFU Name', 'Last Modified'
             
-            if ($inputChoice -eq 'A') {
-                $SelectedFFUFile = $FFUFiles.FullName
-            }
-            elseif ($inputChoice -ge 1 -and $inputChoice -le $FFUFiles.Count) {
-                $selectedIndex = $inputChoice - 1
-                $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
-            }
-            WriteLog "$SelectedFFUFile was selected"
+            # Loop until a valid FFU file is selected
+            do {
+                $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+                # Check if the input is a valid number or 'A'
+                if ($inputChoice -match '^\d+$' -or $inputChoice -eq 'A') {
+                    if ($inputChoice -eq 'A') {
+                        # Select all FFU files
+                        $SelectedFFUFile = $FFUFiles.FullName
+                        if ($VerbosePreference -ne 'Continue') {
+                            Write-Host 'Will copy all FFU files'
+                        }
+                        WriteLog 'Will copy all FFU Files'
+                    }
+                    else {
+                        # Convert input to integer and validate the selection
+                        $inputChoice = [int]$inputChoice
+                        if ($inputChoice -ge 1 -and $inputChoice -le $FFUCount) {
+                            $selectedIndex = $inputChoice - 1
+                            $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "$SelectedFFUFile was selected"
+                            }
+                            WriteLog "$SelectedFFUFile was selected"
+                        }
+                        else {
+                            # Handle invalid selection
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Invalid selection. Please try again."
+                            }
+                            WriteLog "Invalid selection. Please try again."
+                        }
+                    }
+                }
+                else {
+                    # Handle invalid input
+                    if ($VerbosePreference -ne 'Continue') {
+                        Write-Host "Invalid selection. Please try again."
+                    }
+                    WriteLog "Invalid selection. Please try again."
+                }
+            } while ($null -eq $SelectedFFUFile)
+            
         }
         else {
+            # Handle case where no FFU files are found
             WriteLog "No FFU files found in the current directory."
             Write-Error "No FFU files found in the current directory."
             Return
         }
-    }
+    }    
     $counter = 0
 
     foreach ($USBDrive in $USBDrives) {
@@ -2963,10 +3161,22 @@ Function New-DeploymentUSB {
 
         $ScriptBlock = {
             param($DiskNumber)
-            Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
-            Get-Disk $DiskNumber | Get-Partition | Remove-Partition
             $Disk = Get-Disk -Number $DiskNumber
-            $Disk | Set-Disk -PartitionStyle MBR
+            # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+            # Clear-disk has an unusual behavior where it sets external hard disk media as RAW, however removable media is set as MBR.
+            if ($Disk.PartitionStyle -ne "RAW") {
+                $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+                $Disk = Get-Disk -Number $DiskNumber
+            }
+            
+            if($Disk.PartitionStyle -eq "RAW") {
+                $Disk | Initialize-Disk -PartitionStyle MBR -Confirm:$false
+            }
+            elseif($Disk.PartitionStyle -ne "RAW"){
+                $Disk | Get-Partition | Remove-Partition -Confirm:$false
+                $Disk | Set-Disk -PartitionStyle MBR
+            }
+            # Get-Disk $DiskNumber | Get-Partition | Remove-Partition            
             $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
             $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
             Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false
@@ -2977,7 +3187,8 @@ Function New-DeploymentUSB {
         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
         WriteLog 'Done'
 
-        $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+        # $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+        $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveLetter IS NOT NULL").Name
         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
@@ -2985,7 +3196,8 @@ Function New-DeploymentUSB {
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
-                $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+                # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+                $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveLetter IS NOT NULL").Name
                 if ($SelectedFFUFile -is [array]) {
                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
                     foreach ($FFUFile in $SelectedFFUFile) {
@@ -3143,34 +3355,34 @@ function Get-FFUEnvironment {
     #Clean up $KBPath
     If (Test-Path -Path $KBPath) {
         WriteLog "Removing $KBPath"
-        Remove-Item -Path $KBPath -Recurse -Force
+        Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $DefenderPath
     If (Test-Path -Path $DefenderPath) {
         WriteLog "Removing $DefenderPath"
-        Remove-Item -Path $DefenderPath -Recurse -Force
+        Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $OneDrivePath
     If (Test-Path -Path $OneDrivePath) {
         WriteLog "Removing $OneDrivePath"
-        Remove-Item -Path $OneDrivePath -Recurse -Force
+        Remove-Item -Path $OneDrivePath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $EdgePath
     If (Test-Path -Path $EdgePath) {
         WriteLog "Removing $EdgePath"
-        Remove-Item -Path $EdgePath -Recurse -Force
+        Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
         WriteLog "Cleaning up Win32 folder"
-        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
         WriteLog "Cleaning up MSStore folder"
-        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force -ErrorAction SilentlyContinue
     }   
     Clear-InstallAppsandSysprep
     Writelog 'Removing dirty.txt file'
@@ -3196,29 +3408,29 @@ function Clear-InstallAppsandSysprep {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Defender*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        #Remove $DefenderPath
-        WriteLog "Removing $DefenderPath"
-        Remove-Item -Path $DefenderPath -Recurse -Force
-        WriteLog "Removal complete"
+        # #Remove $DefenderPath
+        # WriteLog "Removing $DefenderPath"
+        # Remove-Item -Path $DefenderPath -Recurse -Force
+        # WriteLog "Removal complete"
 
     }
     if ($UpdateOneDrive) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        #Remove $OneDrivePath
-        WriteLog "Removing $OneDrivePath"
-        Remove-Item -Path $OneDrivePath -Recurse -Force
-        WriteLog "Removal complete"  
+        # #Remove $OneDrivePath
+        # WriteLog "Removing $OneDrivePath"
+        # Remove-Item -Path $OneDrivePath -Recurse -Force
+        # WriteLog "Removal complete"  
     }
     if ($UpdateEdge) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Edge install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        #Remove $EdgePath
-        WriteLog "Removing $EdgePath"
-        Remove-Item -Path $EdgePath -Recurse -Force
-        WriteLog "Removal complete"
+        # #Remove $EdgePath
+        # WriteLog "Removing $EdgePath"
+        # Remove-Item -Path $EdgePath -Recurse -Force
+        # WriteLog "Removal complete"
     }
 }
 
@@ -3228,7 +3440,9 @@ function Clear-InstallAppsandSysprep {
 if (Test-Path -Path $Logfile) {
     Remove-item -Path $LogFile -Force
 }
-Write-Host "FFU build process has begun. This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
+$startTime = Get-Date
+Write-Host "FFU build process started at" $startTime
+Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
 Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
 
 WriteLog 'Begin Logging'
@@ -3738,7 +3952,7 @@ Catch {
     throw $_
     
 }
-#Clean up ffu_user and Share
+#Clean up ffu_user and Share and clean up apps
 If ($InstallApps) {
     try {
         Remove-FFUUserShare
@@ -3747,6 +3961,30 @@ If ($InstallApps) {
         Write-Host 'Cleaning up FFU User and/or share failed'
         WriteLog "Cleaning up FFU User and/or share failed with error $_"
         Remove-FFUVM -VMName $VMName
+        throw $_
+    }
+    #Clean up InstallAppsandSysprep.cmd
+    try {
+        WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
+        Clear-InstallAppsandSysprep
+    }
+    catch {
+        Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
+        Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
+        throw $_
+    }
+    try {
+        if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+            WriteLog "Cleaning up Win32 folder"
+            Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+        }
+        if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+            WriteLog "Cleaning up MSStore folder"
+            Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+        }
+    }
+    catch {
+        WriteLog "$_"
         throw $_
     }
 }
@@ -3882,4 +4120,17 @@ Remove-Item -Path .\dirty.txt -Force | out-null
 if ($VerbosePreference -ne 'Continue'){
     Write-Host 'Script complete'
 }
-WriteLog 'Script complete'
+# Record the end time
+$endTime = Get-Date
+Write-Host "FFU build process completed at" $endTime
+
+# Calculate the total run time
+$runTime = $endTime - $startTime
+
+# Format the runtime as minutes and seconds
+$runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
+
+if ($VerbosePreference -ne 'Continue'){
+    Write-Host $runTimeFormatted
+}
+WriteLog 'Script complete: ' + $runTimeFormatted

@@ -1,5 +1,34 @@
 # Change Log
 
+## **2408.1**
+
+### External Drive Support
+
+Up until now, the USB build process has supported using drives identified by Windows as removable drives. Most USB sticks will identify as removable, however faster drives may show up as external hard disk media. You may also have a smaller, portable SSD drive that you'd like to use for imaging since these are typically much faster than regular USB 3.x thumb drives.
+
+In adding this support, I do realize that there is potential for data loss for those that might have external hard drives attached to their machines.
+
+To handle this, with help from [HedgeComp](https://github.com/HedgeComp), we've refactored the `Get-USBDrives` function. Two new variables have been created:
+
+| Parameter                   | Type | Description                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AllowExternalHardDiskMedia  | Bool | If `$true`, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.                                                                                                                                                                                                        |
+| PromptExternalHardDiskMedia | Bool | If `$true` and AllowExternalHardDiskMedia is `$true`, the script will prompt to select which drive to use. When set to `$true`, only a single drive will be created. If `$false`, the script won't prompt for which external hard disk to use and can use multiple external hard disks, similar to how removable USB drives function. |
+
+By default, this functionality won't effect previous USB drive creation behavior. However if you want to take advantage of the new functionality, set `-AllowExternalHardDiskMedia $true`
+
+Fixes/misc
+
+- Fixed a display issue where if multiple FFU files were in the FFU folder, the script wouldn't display which FFUs to choose from when running the script without -verbose. This will now display a table with the last modified date whether you run with the -verbose switch or not.
+- Added start/end/duration time (thanks [HedgeComp](https://github.com/HedgeComp))
+- Fixed an issue where deployment media wasn't prompting for a key to be pressed as expected
+- Fixed an issue when creating the USB drive and the drive had a RAW partition style that clear-disk would generate an error
+- Cleaned up some commented code
+- Added Create-PEMedia.ps1 as a helper script to quickly generate Deploy or Capture media
+- Fixed an issue with clean up of Defender/OneDrive/Edge
+- Fixed an issue with the formatting of InstallAppsandSysprep.cmd file
+- Updated parameter documentation in the script to include newly added parameters
+
 ## **2407.1**
 
 This is another major release that includes:
