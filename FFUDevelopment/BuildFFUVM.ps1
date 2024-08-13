@@ -1764,7 +1764,15 @@ function Get-WinGetApp {
     )
     $wingetSearchResult = & winget.exe search --id "$WinGetAppId" --exact --accept-source-agreements --source winget
     if ($wingetSearchResult -contains "No package found matching input criteria.") {
-        WriteLog "$WinGetAppName not found in WinGet repository. Skipping download."
+        if ($VerbosePreference -ne 'Continue'){
+            Write-Error "$WinGetAppName not found in WinGet repository. Skipping download."
+            Write-Error "Check the AppList.json file and make sure the AppID is correct."
+            Write-Error "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
+        }
+        WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
+        WriteLog "Check the AppList.json file and make sure the AppID is correct."
+        WriteLog "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
+        Exit 1
     }
     $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
     WriteLog "Creating $appFolderPath"
