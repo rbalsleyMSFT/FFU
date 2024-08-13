@@ -336,7 +336,7 @@ param(
     [bool]$AllowExternalHardDiskMedia,
     [bool]$PromptExternalHardDiskMedia = $true
 )
-$version = '2408.2'
+$version = '2408.3'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
