@@ -3218,20 +3218,45 @@ Function New-DeploymentUSB {
                     }
                     
                 }
-                #Copy Unattend file to the USB drive. 
                 if ($CopyUnattend) {
                     # WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
                     # Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
                     $DeployUnattendPath = "$DeployPartitionDriveLetter\unattend"
-                    WriteLog "Copying unattend file to $DeployUnattendPath"
+                    $Unattend_x64 = "$FFUDevelopmentPath\unattend\unattend_x64.xml"
+                    $Unattend_arm64 = "$FFUDevelopmentPath\unattend\unattend_arm64.xml"
+                    $PrefixCompName = "$FFUDevelopmentPath\unattend\prefixes.txt"
+
                     New-Item -Path $DeployUnattendPath -ItemType Directory | Out-Null
-                    if ($WindowsArch -eq 'x64') {
-                        Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_x64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
-                    }
-                    else {
-                        Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_arm64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
-                    }
-                    WriteLog 'Copy completed'
+                    WriteLog "Checking for Unattend Files"
+                    #make sure the UnattendFiles or Prefixes.txt are present.
+                    if ((Test-Path "$Unattend_x64") -or (Test-Path "$Unattend_arm64") -or (Test-Path "$PrefixCompName")) {
+                        if(($WindowsArch -eq 'x64') -and (Test-Path $Unattend_x64)) {
+                            WriteLog "Copying unattend file to $DeployUnattendPath"
+                            Copy-Item -Path $Unattend_x64 -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                        }
+                        elseif (($WindowsArch -eq 'ARM64') -and (Test-Path $Unattend_arm64)) {
+                            WriteLog "Copying unattend file to $DeployUnattendPath"
+                            Copy-Item -Path $Unattend_arm64 -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                        } 
+                        else {
+                        WriteLog "No unattend file Found. Checking Prefix File next."
+                         
+                        }
+
+                        if(Test-Path "$PrefixCompName")    {
+                             
+                            WriteLog "Prefixes.txt exists. Copying file to $DeployUnattendPath"
+                            Copy-Item -Path $PrefixCompName -Destination "$DeployUnattendPath\prefixes.txt" -Force | Out-Null
+                        }
+
+
+                        WriteLog 'Unattend Folder Copy completed'  
+    
+                        }
+                        
+                else {
+                    WriteLog "No Unattned Files found. Skipping Copy"
+                }
                 }  
                 #Copy PPKG folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
                 if ($CopyPPKG) {
