@@ -106,6 +106,9 @@ When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU fol
 .PARAMETER UpdateLatestCU
 When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false.
 
+.PARAMETER UpdatePreviewCU
+When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false.
+
 .PARAMETER UpdateLatestNet
 When set to $true, will download and install the latest .NET Framework for Windows 10/11. Default is $false.
 
@@ -300,6 +303,7 @@ param(
     [bool]$CopyPEDrivers,
     [bool]$RemoveFFU,
     [bool]$UpdateLatestCU,
+    [bool]$UpdatePreviewCU,
     [bool]$UpdateLatestNet,
     [bool]$UpdateLatestDefender,
     [bool]$UpdateEdge,
@@ -3886,10 +3890,10 @@ try {
 
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
 
-    #Update latest Cumulative Update
+    #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
     #Changed to use MU Catalog instead of using Get-LatestWindowsKB
     #The Windows release info page is updated later than the MU Catalog
-    if ($UpdateLatestCU) {
+    if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
         $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         #Check if $KBPath exists, if not, create it
@@ -3902,6 +3906,20 @@ try {
         WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
 
+    #Update Latest Preview Cumlative Update 
+    #will take Precendence over $UpdateLastestCU if both were set to $true
+    if ($UpdatePreviewCU) {
+        Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
+        $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        #Check if $KBPath exists, if not, create it
+        If (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"
+            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "Latest Preview CU saved to $KBPath\$KBFilePath"
+    }
 
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
@@ -3932,7 +3950,7 @@ try {
     
     
     #Add Windows packages
-    if ($UpdateLatestCU -or $UpdateLatestNet) {
+    if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
             WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
