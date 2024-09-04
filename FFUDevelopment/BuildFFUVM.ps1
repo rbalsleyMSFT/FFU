@@ -3672,7 +3672,7 @@ if ($InstallApps) {
             #Modify InstallAppsandSysprep.cmd to add in $OneDrivePath on the line after REM Install Defender Definitions
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include OneDrive client"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install OneDrive Per Machine)', ("REM Install OneDrive Per Machine`r`nd:\OneDrive\OneDriveSetup.exe /allusers")
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install OneDrive Per Machine)', ("REM Install OneDrive Per Machine`r`nd:\OneDrive\OneDriveSetup.exe /allusers /silent")
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
@@ -4125,14 +4125,19 @@ if ($VerbosePreference -ne 'Continue'){
     Write-Host 'Script complete'
 }
 # Record the end time
+
 $endTime = Get-Date
 Write-Host "FFU build process completed at" $endTime
 
 # Calculate the total run time
 $runTime = $endTime - $startTime
 
-# Format the runtime as minutes and seconds
-$runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
+# Format the runtime with hours, minutes, and seconds
+if ($runTime.TotalHours -ge 1) {
+    $runTimeFormatted = 'Duration: {0:hh} hr {0:mm} min {0:ss} sec' -f $runTime
+} else {
+    $runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
+}
 
 if ($VerbosePreference -ne 'Continue'){
     Write-Host $runTimeFormatted
