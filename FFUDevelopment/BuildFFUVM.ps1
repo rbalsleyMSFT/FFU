@@ -332,7 +332,7 @@ param(
     [bool]$AllowExternalHardDiskMedia,
     [bool]$PromptExternalHardDiskMedia = $true
 )
-$version = '2408.2'
+$version = '2409.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -1679,33 +1679,82 @@ function Install-WinGet {
         WriteLog "Downloading $($package.Name) from $($package.Url) to $destination"
         Start-BitsTransferWithRetry -Source $package.Url -Destination $destination
         WriteLog "Installing $($package.Name)..."
+        # Don't show progress bar for Add-AppxPackage - there's a weird issue where the progress stays on the screen after the apps are installed
+        $ProgressPreference = 'SilentlyContinue'
         Add-AppxPackage -Path $destination -ErrorAction SilentlyContinue
+        # Set progress preference back to default
+        $ProgressPreference = 'Continue'
         WriteLog "Removing $($package.Name)..."
         Remove-Item -Path $destination -Force -ErrorAction SilentlyContinue
     }
     WriteLog "WinGet installation complete."
 }
+# function Confirm-WinGetInstallation {
+#     WriteLog 'Checking if WinGet is installed...'
+#     $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
+#     $minVersion = [version]"1.8.1911"
+#     if (-not (Test-Path -Path $wingetPath -PathType Leaf)) {
+#         WriteLog "WinGet is not installed. Downloading WinGet..."
+#         Install-WinGet -Architecture $WindowsArch
+#     } 
+#     if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
+#         WriteLog "WinGet not found. Downloading WinGet..."
+#         Install-WinGet -Architecture $WindowsArch
+#     }
+#     $wingetVersion = & winget.exe --version
+#     WriteLog "Installed version of WinGet: $wingetVersion"
+#     if ($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion) {
+#         WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
+#         Install-WinGet -Architecture $WindowsArch
+#     }
+
+#     # Check if Winget PowerShell module version 1.8.1911 or later is installed
+#     $wingetModule = Get-InstalledModule -Name Microsoft.Winget.Client -ErrorAction SilentlyContinue
+#     if ($wingetModule.Version -lt $minVersion -or -not $wingetModule) {
+#         WriteLog 'Microsoft.Winget.Client module is not installed or is an older version. Installing the latest version...'
+#         #Check if PSGallery is a trusted repository
+#         $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
+#         if($PSGalleryTrust -eq 'Untrusted'){
+#             WriteLog 'Temporarily setting PSGallery as a trusted repository...'
+#             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+#         }
+#         Install-Module -Name Microsoft.Winget.Client -Force -Repository 'PSGallery'
+#         if($PSGalleryTrust -eq 'Untrusted'){
+#             WriteLog 'Setting PSGallery back to untrusted repository...'
+#             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
+#             WriteLog 'Done'
+#         }
+#     }
+# }
 
 function Confirm-WinGetInstallation {
     WriteLog 'Checking if WinGet is installed...'
-    $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
     $minVersion = [version]"1.8.1911"
-    if (-not (Test-Path -Path $wingetPath -PathType Leaf)) {
-        WriteLog "WinGet is not installed. Downloading WinGet..."
-        Install-WinGet -Architecture $WindowsArch
-        return
-    } 
-    if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
-        WriteLog "WinGet not found. Downloading WinGet..."
-        Install-WinGet -Architecture $WindowsArch
-        return
+    # Check if Winget PowerShell module version 1.8.1911 or later is installed
+    $wingetModule = Get-InstalledModule -Name Microsoft.Winget.Client -ErrorAction SilentlyContinue
+    if ($wingetModule.Version -lt $minVersion -or -not $wingetModule) {
+        WriteLog 'Microsoft.Winget.Client module is not installed or is an older version. Installing the latest version...'
+        #Check if PSGallery is a trusted repository
+        $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
+        if($PSGalleryTrust -eq 'Untrusted'){
+            WriteLog 'Temporarily setting PSGallery as a trusted repository...'
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+        }
+        Install-Module -Name Microsoft.Winget.Client -Force -Repository 'PSGallery'
+        if($PSGalleryTrust -eq 'Untrusted'){
+            WriteLog 'Setting PSGallery back to untrusted repository...'
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
+            WriteLog 'Done'
+        }
     }
-    $wingetVersion = & winget.exe --version
-    WriteLog "Installed version of WinGet: $wingetVersion"
-    if ($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion) {
-        WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
+    $wingetVersion = Get-WinGetVersion
+    if (-not $wingetVersion) {
+        WriteLog "WinGet is not installed. Installing WinGet..."
         Install-WinGet -Architecture $WindowsArch
-        return
+    }
+    if (($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion)) {
+        WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Installing the latest version of WinGet..."
+        Install-WinGet -Architecture $WindowsArch
     }
 }
 
@@ -1753,51 +1802,106 @@ function Set-InstallStoreAppsFlag {
     }
 }
 
+# function Get-WinGetApp {
+#     param (
+#         [string]$WinGetAppName,
+#         [string]$WinGetAppId
+#     )
+#     $wingetSearchResult = & winget.exe search --id "$WinGetAppId" --exact --accept-source-agreements --source winget
+#     if ($wingetSearchResult -contains "No package found matching input criteria.") {
+#         if ($VerbosePreference -ne 'Continue'){
+#             Write-Error "$WinGetAppName not found in WinGet repository. Skipping download."
+#             Write-Error "Check the AppList.json file and make sure the AppID is correct."
+#             Write-Error "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
+#         }
+#         WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
+#         WriteLog "Check the AppList.json file and make sure the AppID is correct."
+#         WriteLog "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
+#         Exit 1
+#     }
+#     $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
+#     WriteLog "Creating $appFolderPath"
+#     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+#     WriteLog "Downloading $WinGetAppName to $appFolderPath"
+#     $downloadParams = @(
+#         "download", 
+#         "--id", "$WinGetAppId",
+#         "--exact",
+#         "--download-directory", "$appFolderPath",
+#         "--accept-package-agreements",
+#         "--accept-source-agreements",
+#         "--source", "winget",
+#         "--scope", "machine",
+#         "--architecture", "$WindowsArch"
+#     )
+#     WriteLog "winget command: winget.exe $downloadParams"
+#     $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+#     if ($wingetDownloadResult -match "No applicable installer found") {
+#         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
+#         $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
+#         $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+#         if ($wingetDownloadResult -match "Installer downloaded") {
+#             WriteLog "Downloaded $WinGetAppName without specifying architecture."
+#         }
+#     }
+#     if ($wingetDownloadResult -notmatch "Installer downloaded") {
+#         WriteLog "No installer found for $WinGetAppName. Skipping download."
+#         Remove-Item -Path $appFolderPath -Recurse -Force
+#     }
+#     WriteLog "$WinGetAppName downloaded to $appFolderPath"
+#     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
+#     $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
+#     if ($uwpExtensions -contains $installerPath.Extension) {
+#         $NewAppPath = "$AppsPath\MSStore\$WinGetAppName"
+#         Writelog "$WinGetAppName is a UWP app. Moving to $NewAppPath"
+#         WriteLog "Creating $NewAppPath"
+#         New-Item -Path "$AppsPath\MSStore\$WinGetAppName" -ItemType Directory -Force | Out-Null
+#         WriteLog "Moving $WinGetAppName to $NewAppPath"
+#         Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$WinGetAppName" -Force
+#         WriteLog "Removing $appFolderPath"
+#         Remove-Item -Path $appFolderPath -Force
+#         WriteLog "$WinGetAppName moved to $NewAppPath"
+#         Set-InstallStoreAppsFlag
+#     }
+#     else {
+#         Add-Win32SilentInstallCommand -AppFolder $WinGetAppName -AppFolderPath $appFolderPath
+#     }
+# }
 function Get-WinGetApp {
     param (
         [string]$WinGetAppName,
         [string]$WinGetAppId
     )
-    $wingetSearchResult = & winget.exe search --id "$WinGetAppId" --exact --accept-source-agreements --source winget
-    if ($wingetSearchResult -contains "No package found matching input criteria.") {
+    $Source = 'winget'
+    $wingetSearchResult = Find-WinGetPackage -id $WinGetAppId -MatchOption Equals -Source $Source
+    if (-not $wingetSearchResult) {
         if ($VerbosePreference -ne 'Continue'){
-            Write-Error "$WinGetAppName not found in WinGet repository. Skipping download."
+            Write-Error "$WinGetAppName not found in WinGet repository. Exiting."
             Write-Error "Check the AppList.json file and make sure the AppID is correct."
-            Write-Error "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
         }
         WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
         WriteLog "Check the AppList.json file and make sure the AppID is correct."
-        WriteLog "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
         Exit 1
     }
     $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
     WriteLog "Creating $appFolderPath"
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
     WriteLog "Downloading $WinGetAppName to $appFolderPath"
-    $downloadParams = @(
-        "download", 
-        "--id", "$WinGetAppId",
-        "--exact",
-        "--download-directory", "$appFolderPath",
-        "--accept-package-agreements",
-        "--accept-source-agreements",
-        "--source", "winget",
-        "--scope", "machine",
-        "--architecture", "$WindowsArch"
-    )
-    WriteLog "winget command: winget.exe $downloadParams"
-    $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-    if ($wingetDownloadResult -match "No applicable installer found") {
+
+    WriteLog "WinGet command: Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source"
+    $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source
+    if ($wingetDownloadResult.status -eq 'NoApplicableInstallers') {
+        # If no applicable installer is found, try downloading without specifying architecture
         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-        $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
-        $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-        if ($wingetDownloadResult -match "Installer downloaded") {
+        $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Source $Source
+        if ($wingetDownloadResult.status -eq 'Ok') {
             WriteLog "Downloaded $WinGetAppName without specifying architecture."
         }
-    }
-    if ($wingetDownloadResult -notmatch "Installer downloaded") {
-        WriteLog "No installer found for $WinGetAppName. Skipping download."
-        Remove-Item -Path $appFolderPath -Recurse -Force
+        else{
+            WriteLog "No installer found for $WinGetAppName. Exiting."
+            Remove-Item -Path $appFolderPath -Recurse -Force
+            Exit 1
+        }
     }
     WriteLog "$WinGetAppName downloaded to $appFolderPath"
     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
@@ -1819,15 +1923,105 @@ function Get-WinGetApp {
     }
 }
 
+# function Get-StoreApp {
+#     param (
+#         [string]$StoreAppName,
+#         [string]$StoreAppId
+#     )
+#     $wingetSearchResult = & winget.exe search "$StoreAppId" --accept-source-agreements --source msstore
+#     if ($wingetSearchResult -contains "No package found matching input criteria.") {
+#         WriteLog "$StoreAppName not found in WinGet repository. Skipping download."
+#         return
+#     }
+#     WriteLog "Checking if $StoreAppName is a win32 app..."
+#     $appIsWin32 = $StoreAppId.StartsWith("XP")
+#     if ($appIsWin32) {
+#         WriteLog "$StoreAppName is a win32 app. Adding to $AppsPath\win32 folder"
+#         $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreAppName
+#     }
+#     else {
+#         WriteLog "$StoreAppName is not a win32 app."
+#         $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
+#     }
+#     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+#     WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
+#     $downloadParams = @(
+#         "download", "$StoreAppId",
+#         "--download-directory", "$appFolderPath",
+#         "--accept-package-agreements",
+#         "--accept-source-agreements",
+#         "--source", "msstore",
+#         "--scope", "machine",
+#         "--architecture", "$WindowsArch"
+#     )
+#     WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
+#     WriteLog "Attempting to download $StoreAppName and dependencies for $WindowsArch architecture..."
+#     $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+#     # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
+#     if ($wingetDownloadResult -match "No applicable installer found") {
+#         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
+#         $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
+#         $wingetDownloadResult = & winget.exe @downloadParams | Out-String
+#         if ($wingetDownloadResult -match "Microsoft Store package download completed") {
+#             WriteLog "Downloaded $StoreAppName without specifying architecture."
+#         }
+#     }
+#     if ($wingetDownloadResult -notmatch "Installer downloaded|Microsoft Store package download completed") {
+#         WriteLog "Download not supported for $StoreAppName. Skipping download."
+#         Remove-Item -Path $appFolderPath -Recurse -Force
+#         return
+#     }
+#     if ($appIsWin32) {
+#         Add-Win32SilentInstallCommand -AppFolder $StoreAppName -AppFolderPath $appFolderPath
+#     }
+#     Set-InstallStoreAppsFlag
+#     # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
+#     if ($WindowsArch -eq 'ARM64') {
+#         WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
+#         $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
+#         if ($dependencies) {
+#             foreach ($dependency in $dependencies) {
+#                 if ($dependency.Name -notmatch 'ARM64') {
+#                     WriteLog "Removing dependency file $($dependency.FullName)"
+#                     Remove-Item -Path $dependency.FullName -Recurse -Force
+#                 }
+#             }
+#         }
+#     }
+#     WriteLog "$StoreAppName has completed downloading. Identifying the latest version of $StoreAppName."
+#     $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
+#     # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
+#     $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
+#     # Removing all packages that are not the latest version
+#     WriteLog "Latest version of $StoreAppName has been identified as $latestPackage. Removing old versions of $StoreAppName that may have downloaded."
+#     foreach ($package in $packages) {
+#         if ($package.FullName -ne $latestPackage) {
+#             try {
+#                 WriteLog "Removing $($package.FullName)"
+#                 Remove-Item -Path $package.FullName -Force
+#             }
+#             catch {
+#                 WriteLog "Failed to delete: $($package.FullName) - $_"
+#                 throw $_
+#             }
+#         }
+#     }
+# }
 function Get-StoreApp {
     param (
         [string]$StoreAppName,
         [string]$StoreAppId
     )
-    $wingetSearchResult = & winget.exe search "$StoreAppId" --accept-source-agreements --source msstore
-    if ($wingetSearchResult -contains "No package found matching input criteria.") {
-        WriteLog "$StoreAppName not found in WinGet repository. Skipping download."
-        return
+    $Source = 'msstore'
+    $wingetSearchResult = Find-WinGetPackage -id $StoreAppId -MatchOption Equals -Source $Source
+    if (-not $wingetSearchResult) {
+        if ($VerbosePreference -ne 'Continue'){
+            Write-Error "$WinGetAppName not found in WinGet repository. Exiting."
+            Write-Error "Check the AppList.json file and make sure the AppID is correct."
+        }
+        WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
+        WriteLog "Check the AppList.json file and make sure the AppID is correct."
+        Exit 1
     }
     WriteLog "Checking if $StoreAppName is a win32 app..."
     $appIsWin32 = $StoreAppId.StartsWith("XP")
@@ -1841,31 +2035,22 @@ function Get-StoreApp {
     }
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
     WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
-    $downloadParams = @(
-        "download", "$StoreAppId",
-        "--download-directory", "$appFolderPath",
-        "--accept-package-agreements",
-        "--accept-source-agreements",
-        "--source", "msstore",
-        "--scope", "machine",
-        "--architecture", "$WindowsArch"
-    )
     WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
     WriteLog "Attempting to download $StoreAppName and dependencies for $WindowsArch architecture..."
-    $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-    # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
-    if ($wingetDownloadResult -match "No applicable installer found") {
+    WriteLog "WinGet command: Export-WinGetPackage -id $StoreAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source"
+    $wingetDownloadResult = Export-WinGetPackage -id $StoreAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source
+    if ($wingetDownloadResult.status -eq 'NoApplicableInstallerFound') {
+        # If no applicable installer is found, try downloading without specifying architecture
         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-        $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
-        $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-        if ($wingetDownloadResult -match "Microsoft Store package download completed") {
-            WriteLog "Downloaded $StoreAppName without specifying architecture."
+        $wingetDownloadResult = Export-WinGetPackage -id $StoreAppId -DownloadDirectory $appFolderPath -Source $Source
+        if ($wingetDownloadResult.status -eq 'Ok') {
+            WriteLog "Downloaded $WinGetAppName without specifying architecture."
         }
-    }
-    if ($wingetDownloadResult -notmatch "Installer downloaded|Microsoft Store package download completed") {
-        WriteLog "Download not supported for $StoreAppName. Skipping download."
-        Remove-Item -Path $appFolderPath -Recurse -Force
-        return
+        else{
+            WriteLog "No installer found for $WinGetAppName. Exiting"
+            Remove-Item -Path $appFolderPath -Recurse -Force
+            Exit 1
+        }
     }
     if ($appIsWin32) {
         Add-Win32SilentInstallCommand -AppFolder $StoreAppName -AppFolderPath $appFolderPath
@@ -2054,68 +2239,6 @@ function Save-KB {
     if ($WindowsArch -eq 'x64') {
         [array]$WindowsArch = @("x64", "amd64")
     }
-    #Keep for now, will remove in future 
-    # foreach ($kb in $name) {
-    #     $links = Get-KBLink -Name $kb
-    #     foreach ($link in $links) {
-    #         #Check if $WindowsArch is an array
-    #         if ($WindowsArch -is [array]) { 
-    #             #Some file names include either x64 or amd64
-    #             if ($link -match $WindowsArch[0] -or $link -match $WindowsArch[1]) {
-    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
-    #                 $fileName = ($link -split '/')[-1]
-    #                 break
-    #             }
-    #             # elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-    #             #     Write-Host "No architecture found in $link, assume it's for all architectures"
-    #             #     Start-BitsTransfer -Source $link -Destination $Path
-    #             #     $fileName = ($link -split '/')[-1]
-    #             #     break
-    #             # }
-    #             elseif (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-    #                 WriteLog "No architecture found in $link, assume this is for all architectures"
-    #                 #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
-    #                 #Unfortunately there is no easy way to determine the architecture from the file name
-    #                 #There is a support doc that include links to download, but it's out of date (n-1)
-    #                 #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-    #                 #These files don't change that often, so will check the link above to see when it updates and may use that
-    #                 #For now this is hard-coded for these specific file names
-    #                 if ($link -match 'security'){
-    #                     #Make sure we're getting the correct architecture for the Security Health Setup update
-    #                     WriteLog "Link: $link matches security"
-    #                     if ($WindowsArch -eq 'x64'){
-    #                         if ($link -match 'securityhealthsetup_e1'){
-    #                             Writelog "Downloading $Link for $WindowsArch to $Path"
-    #                             Start-BitsTransferWithRetry -Source $link -Destination $Path
-    #                             $fileName = ($link -split '/')[-1]
-    #                             Writelog "Returning $fileName"
-    #                             break
-    #                         }
-    #                     }
-    #                     elseif ($WindowsArch -eq 'arm64'){
-    #                         if ($link -match 'securityhealthsetup_25'){
-    #                             Writelog "Downloading $Link for $WindowsArch to $Path"
-    #                             Start-BitsTransferWithRetry -Source $link -Destination $Path
-    #                             $fileName = ($link -split '/')[-1]
-    #                             Writelog "Returning $fileName"
-    #                             break
-    #                         }
-    #                     }
-    #                     continue
-    #                 }
-    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
-    #                 $fileName = ($link -split '/')[-1]
-    #             }
-    #         }
-    #         else {
-    #             if ($link -match $WindowsArch) {
-    #                 Start-BitsTransferWithRetry -Source $link -Destination $Path
-    #                 $fileName = ($link -split '/')[-1]
-    #                 break
-    #             }
-    #         }                
-    #     }
-    # }
     foreach ($kb in $name) {
         $links = Get-KBLink -Name $kb
         foreach ($link in $links) {
@@ -3326,8 +3449,13 @@ function Get-FFUEnvironment {
         foreach ($image in $mountedImages) {
             $mountPath = $image.Path
             WriteLog "Dismounting image at $mountPath"
-            Dismount-WindowsImage -Path $mountPath -discard | Out-null
-            WriteLog "Successfully dismounted image at $mountPath"
+            try {
+                Dismount-WindowsImage -Path $mountPath -discard | Out-null
+                WriteLog "Successfully dismounted image at $mountPath"
+            }
+            catch {
+                WriteLog "Failed to dismount image at $mountPath with error: $_"
+            }
         }
     }
 
@@ -3356,6 +3484,7 @@ function Get-FFUEnvironment {
         Remove-FFUUserShare
         WriteLog 'Removal complete'
     }
+    Clear-InstallAppsandSysprep
     #Clean up $KBPath
     If (Test-Path -Path $KBPath) {
         WriteLog "Removing $KBPath"
@@ -3388,7 +3517,6 @@ function Get-FFUEnvironment {
         WriteLog "Cleaning up MSStore folder"
         Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force -ErrorAction SilentlyContinue
     }   
-    Clear-InstallAppsandSysprep
     Writelog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
@@ -3412,29 +3540,34 @@ function Clear-InstallAppsandSysprep {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Defender*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        # #Remove $DefenderPath
-        # WriteLog "Removing $DefenderPath"
-        # Remove-Item -Path $DefenderPath -Recurse -Force
-        # WriteLog "Removal complete"
-
+        #Clean up $DefenderPath
+        If (Test-Path -Path $DefenderPath) {
+            WriteLog "Removing $DefenderPath"
+            Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
     }
     if ($UpdateOneDrive) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        # #Remove $OneDrivePath
-        # WriteLog "Removing $OneDrivePath"
-        # Remove-Item -Path $OneDrivePath -Recurse -Force
-        # WriteLog "Removal complete"  
+        #Clean up $OneDrivePath
+        If (Test-Path -Path $OneDrivePath) {
+            WriteLog "Removing $OneDrivePath"
+            Remove-Item -Path $OneDrivePath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
     }
     if ($UpdateEdge) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Edge install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        # #Remove $EdgePath
-        # WriteLog "Removing $EdgePath"
-        # Remove-Item -Path $EdgePath -Recurse -Force
-        # WriteLog "Removal complete"
+        #Clean up $EdgePath
+        If (Test-Path -Path $EdgePath) {
+            WriteLog "Removing $EdgePath"
+            Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
     }
 }
 
@@ -4003,30 +4136,30 @@ catch {
     throw $_
 }
 
-#Clean up InstallAppsandSysprep.cmd
-try {
-    WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
-    Clear-InstallAppsandSysprep
-}
-catch {
-    Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
-    Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
-    throw $_
-}
-try {
-    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
-        WriteLog "Cleaning up Win32 folder"
-        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
-    }
-    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
-        WriteLog "Cleaning up MSStore folder"
-        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
-    }
-}
-catch {
-    WriteLog "$_"
-    throw $_
-}
+# #Clean up InstallAppsandSysprep.cmd
+# try {
+#     WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
+#     Clear-InstallAppsandSysprep
+# }
+# catch {
+#     Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
+#     Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
+#     throw $_
+# }
+# try {
+#     if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+#         WriteLog "Cleaning up Win32 folder"
+#         Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+#     }
+#     if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+#         WriteLog "Cleaning up MSStore folder"
+#         Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+#     }
+# }
+# catch {
+#     WriteLog "$_"
+#     throw $_
+# }
 #Create Deployment Media
 If ($CreateDeploymentMedia) {
     try {
