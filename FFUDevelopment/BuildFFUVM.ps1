@@ -210,16 +210,16 @@ param(
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
     [string]$Model,
-    [Parameter(Mandatory = $false)]
-    [ValidateScript({
-        if ($Make) {
-            return $true
-        }
-        if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
-            throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
-        }
-        return $true
-    })]
+    # [Parameter(Mandatory = $false)]
+    # [ValidateScript({
+    #     if ($Make) {
+    #         return $true
+    #     }
+    #     if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
+    #         throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
+    #     }
+    #     return $true
+    # })]
     [bool]$InstallDrivers,
     [uint64]$Memory = 4GB,
     [uint64]$Disksize = 30GB,
@@ -3359,8 +3359,13 @@ Function New-DeploymentUSB {
                     if ($WindowsArch -eq 'x64') {
                         Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_x64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
                     }
-                    else {
+                    if ($WindowsArch -eq 'arm64') {
                         Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_arm64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+                    }
+                    #Check for prefixes.txt file and copy it to the USB drive
+                    if (Test-Path "$FFUDevelopmentPath\unattend\prefixes.txt") {
+                        WriteLog "Copying prefixes.txt file to $DeployUnattendPath"
+                        Copy-Item -Path "$FFUDevelopmentPath\unattend\prefixes.txt" -Destination "$DeployUnattendPath\prefixes.txt" -Force | Out-Null
                     }
                     WriteLog 'Copy completed'
                 }  
@@ -3588,13 +3593,72 @@ Write-Host "To track progress, please open the log file $Logfile or use the -Ver
 
 WriteLog 'Begin Logging'
 
+#Validate drivers folder
+if ($InstallDrivers -or $CopyDrivers) {
+    WriteLog 'Doing driver validation'
+    if ($Make -and $Model){
+        WriteLog "Make and Model are set to $Make and $Model, will attempt to download drivers"
+    } else {
+        if (!(Test-Path -Path $DriversFolder)) {
+            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
+            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
+        }
+        if ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
+            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
+            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
+        }
+    }   
+}
+
+#Validate PPKG folder
+if ($CopyPPKG) {
+    WriteLog 'Doing PPKG validation'
+    if (!(Test-Path -Path $PPKGFolder)) {
+        WriteLog "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing"
+        throw "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing"
+    }
+    #Check for at least one .PPKG file
+    if (!(Get-ChildItem -Path $PPKGFolder -Filter *.ppkg)) {
+        WriteLog "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing a .PPKG file"
+        throw "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing a .PPKG file"
+    }
+}
+
+#Validate Autopilot folder
+if ($CopyAutopilot) {
+    WriteLog 'Doing Autopilot validation'
+    if (!(Test-Path -Path $AutopilotFolder)) {
+        WriteLog "-CopyAutopilot is set to `$true, but the $AutopilotFolder folder is missing"
+        throw "-CopyAutopilot is set to `$true, but the $AutopilotFolder folder is missing"
+    }
+    #Check for .JSON file
+    if (!(Get-ChildItem -Path $AutopilotFolder -Filter *.json)) {
+        WriteLog "-CopyAutopilot is set to `$true, but the $AutopilotFolder folder is missing a .JSON file"
+        throw "-CopyAutopilot is set to `$true, but the $AutopilotFolder folder is missing a .JSON file"
+    }
+}
+
+#Validate Unattend folder
+if ($CopyUnattend) {
+    WriteLog 'Doing Unattend validation'
+    if (!(Test-Path -Path $UnattendFolder)) {
+        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
+        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
+    }
+    #Check for .XML file
+    if (!(Get-ChildItem -Path $UnattendFolder -Filter unattend_*.xml)) {
+        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
+        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
+    }
+}
+
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
 #from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
 #This behavior doesn't happen with WIM files.
 If (-not ($ISOPath) -and (-not ($InstallApps))) {
     $InstallApps = $true
     WriteLog "Script will download Windows media. Setting `$InstallApps to `$true to build VM to capture FFU. Must do this when using MCT ESD."
-}   
+}
 
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
@@ -3740,17 +3804,20 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
 
-            #Get Windows Security platform update
-            $Name = "Windows Security platform definition updates"
-            WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
-            $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
-            WriteLog "Latest Security Platform Update saved to $DefenderPath\$KBFilePath"
-            #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
-            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Security Platform Update)', ("REM Install Windows Security Platform Update`r`nd:\Defender\$KBFilePath")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            WriteLog "Update complete"
+            ###### 9/4/2024 - Windows Security Platform update is no longer available from Update Catalog. Will change to using
+            ###### https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+            
+            # #Get Windows Security platform update
+            # $Name = "Windows Security platform definition updates"
+            # WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
+            # $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
+            # WriteLog "Latest Security Platform Update saved to $DefenderPath\$KBFilePath"
+            # #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
+            # WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
+            # $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            # $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Security Platform Update)', ("REM Install Windows Security Platform Update`r`nd:\Defender\$KBFilePath")
+            # Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            # WriteLog "Update complete"
 
             #Download latest Defender Definitions
             WriteLog "Downloading latest Defender Definitions"
@@ -3934,19 +4001,19 @@ try {
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
         WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
     }
-    #Update Latest Security Platform Update
-    if ($UpdateSecurityPlatform) {
-        WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
-        $Name = "Windows Security platform definition updates"
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
-        WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
-    }
+    # #Update Latest Security Platform Update
+    # if ($UpdateSecurityPlatform) {
+    #     WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
+    #     $Name = "Windows Security platform definition updates"
+    #     #Check if $KBPath exists, if not, create it
+    #     If (-not (Test-Path -Path $KBPath)) {
+    #         WriteLog "Creating $KBPath"
+    #         New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+    #     }
+    #     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
+    #     $KBFilePath = Save-KB -Name $Name -Path $KBPath
+    #     WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
+    # }
     
     
     #Add Windows packages
