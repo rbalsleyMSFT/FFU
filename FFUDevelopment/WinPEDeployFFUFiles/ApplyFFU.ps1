@@ -554,6 +554,12 @@ If (Test-Path -Path $Drivers)
     WriteLog 'Copying drivers succeeded'
 }
 
+WriteLog "Setting Windows Boot Manager to be first in the display order."
+Invoke-Process bcdedit.exe "/set {fwbootmgr} displayorder {bootmgr} /addfirst"
+WriteLog "Windows Boot Manager has been set to be first in the display order."
+WriteLog "Setting default Windows boot loader to be first in the display order."
+Invoke-Process bcdedit.exe "/set {bootmgr} displayorder {default} /addfirst"
+WriteLog "The default Windows boot loader has been set to be first in the display order."
 #Copy DISM log to USBDrive
 WriteLog "Copying dism log to $USBDrive"
 invoke-process xcopy "X:\Windows\logs\dism\dism.log $USBDrive /Y" 
