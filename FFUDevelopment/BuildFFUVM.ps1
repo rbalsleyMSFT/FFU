@@ -3613,6 +3613,8 @@ if ($InstallDrivers -or $CopyDrivers) {
 #Validate PPKG folder
 if ($CopyPPKG) {
     WriteLog 'Doing PPKG validation'
+$PPKGFolder = "$FFUDevelopmentPath\PPKG"
+
     if (!(Test-Path -Path $PPKGFolder)) {
         WriteLog "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing"
         throw "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing"
