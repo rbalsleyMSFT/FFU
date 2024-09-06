@@ -4349,8 +4349,12 @@ Write-Host "FFU build process completed at" $endTime
 # Calculate the total run time
 $runTime = $endTime - $startTime
 
-# Format the runtime as minutes and seconds
-$runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
+# Format the runtime with hours, minutes, and seconds
+if ($runTime.TotalHours -ge 1) {
+    $runTimeFormatted = 'Duration: {0:hh} hr {0:mm} min {0:ss} sec' -f $runTime
+} else {
+    $runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
+}
 
 if ($VerbosePreference -ne 'Continue'){
     Write-Host $runTimeFormatted
