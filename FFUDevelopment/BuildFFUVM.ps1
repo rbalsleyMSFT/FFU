@@ -3641,6 +3641,8 @@ if ($CopyAutopilot) {
 #Validate Unattend folder
 if ($CopyUnattend) {
     WriteLog 'Doing Unattend validation'
+
+    $UnattendFolder = "$FFUDevelopmentPath\unattend\"
     if (!(Test-Path -Path $UnattendFolder)) {
         WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
         throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
