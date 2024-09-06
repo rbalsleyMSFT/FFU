@@ -375,6 +375,11 @@ if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
+if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
+if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
+if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
+if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
+
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -3609,6 +3614,18 @@ if ($InstallDrivers -or $CopyDrivers) {
         }
     }   
 }
+#Validate PEDrivers folder
+if ($CopyPEDrivers) {
+    WriteLog 'Doing PEDriver validation'
+    if (!(Test-Path -Path $PEDriversFolder)) {
+        WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
+        throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
+    }
+    if ((Get-ChildItem -Path $PEDriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
+        WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
+        throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
+    }
+}
 
 #Validate PPKG folder
 if ($CopyPPKG) {
@@ -3806,7 +3823,7 @@ if ($InstallApps) {
 
             ###### 9/4/2024 - Windows Security Platform update is no longer available from Update Catalog. Will change to using
             ###### https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-            
+
             # #Get Windows Security platform update
             # $Name = "Windows Security platform definition updates"
             # WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
