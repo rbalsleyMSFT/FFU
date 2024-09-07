@@ -3598,6 +3598,8 @@ Write-Host "To track progress, please open the log file $Logfile or use the -Ver
 
 WriteLog 'Begin Logging'
 
+###PARAMETER VALIDATION
+
 #Validate drivers folder
 if ($InstallDrivers -or $CopyDrivers) {
     WriteLog 'Doing driver validation'
@@ -3612,6 +3614,7 @@ if ($InstallDrivers -or $CopyDrivers) {
             WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
             throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
         }
+        WriteLog 'Driver validation complete'
     }   
 }
 #Validate PEDrivers folder
@@ -3625,6 +3628,7 @@ if ($CopyPEDrivers) {
         WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
         throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
     }
+    WriteLog 'PEDriver validation complete'
 }
 
 #Validate PPKG folder
@@ -3639,6 +3643,7 @@ if ($CopyPPKG) {
         WriteLog "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing a .PPKG file"
         throw "-CopyPPKG is set to `$true, but the $PPKGFolder folder is missing a .PPKG file"
     }
+    WriteLog 'PPKG validation complete'
 }
 
 #Validate Autopilot folder
@@ -3653,6 +3658,7 @@ if ($CopyAutopilot) {
         WriteLog "-CopyAutopilot is set to `$true, but the $AutopilotFolder folder is missing a .JSON file"
         throw "-CopyAutopilot is set to `$true, but the $AutopilotFolder folder is missing a .JSON file"
     }
+    WriteLog 'Autopilot validation complete'
 }
 
 #Validate Unattend folder
@@ -3667,6 +3673,7 @@ if ($CopyUnattend) {
         WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
         throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
     }
+    WriteLog 'Unattend validation complete'
 }
 
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
@@ -3686,6 +3693,25 @@ if (($InstallApps -and ($VMSwitchName -eq ''))) {
 
 if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
     throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU. Please set -VMHostIPAddress and try again."
+}
+
+if (($VMHostIPAddress) -and ($VMSwitchName)){
+    WriteLog "Validating -VMSwitchName $VMSwitchName and -VMHostIPAddress $VMHostIPAddress"
+    #Check $VMSwitchName by using Get-VMSwitch
+    $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
+    if (-not $VMSwitch) {
+        throw "-VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
+    }
+    #Find the IP address of $VMSwitch and check if it matches $VMHostIPAddress
+    $interfaceAlias = "vEthernet ($VMSwitchName)"
+    $VMSwitchIPAddress = (Get-NetIPAddress -InterfaceAlias $interfaceAlias -AddressFamily 'IPv4' -ErrorAction SilentlyContinue).IPAddress
+    if (-not $VMSwitchIPAddress) {
+        throw "IP address for -VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
+    }
+    if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
+        throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+    }
+    WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
 }
 
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
@@ -3714,10 +3740,8 @@ if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
     $UpdateOneDrive = $false
     WriteLog 'OneDrive currently fails to install on ARM64 VMs (even with the OneDrive ARM setup files). Setting UpdateOneDrive to false'
 }
-# if(($WindowsArch -eq 'ARM64') -and ($UpdateLatestDefender -eq $true)){
-#     $UpdateLatestDefender = $false
-#     WriteLog 'Defender ARM and x64 updates currently fail to install on ARM64 VMs. Setting UpdateLatestDefender to false'
-# }
+
+###END PARAMETER VALIDATION
 
 #Get script variable values
 LogVariableValues
@@ -4369,7 +4393,8 @@ $runTime = $endTime - $startTime
 # Format the runtime with hours, minutes, and seconds
 if ($runTime.TotalHours -ge 1) {
     $runTimeFormatted = 'Duration: {0:hh} hr {0:mm} min {0:ss} sec' -f $runTime
-} else {
+}
+else {
     $runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
 }
 
