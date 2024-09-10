@@ -1,5 +1,21 @@
 # Change Log
 
+## **2409.1**
+
+### Fixes
+
+- Fix an issue with removal of Defender/OneDrive/Edge after FFU is complete
+- Migrate Winget downloads to use [Export-WingetPackage cmdlet](https://github.com/microsoft/winget-cli/blob/master/doc/specs/%23658%20-%20WinGet%20Download.md#winget-powershell-cmdlet) as per issue #50
+- Add support for preview updates https://github.com/rbalsleyMSFT/FFU/pull/51 - thanks to @HedgeComp
+- Refactor validation of Unattend/prefixes, PPKG, Autopilot to check for these files early in the process, similar to how we check for drivers
+- Add better logging when unable to find HDD when applying FFU. Will inform to add WinPE drivers to Deployment Media if HDD not found.
+- Remove ValidateScript on InstallDrivers and break it out in a validation block so -Make and -Model can be specified anywhere in the command line
+- Add validation for VMHostIPAddress and VMSwtichName and inform the user if these don't match. Should prevent issues where the FFU isn't getting created.
+- Removed installation of the Windows Security Platform Update as it has been removed from the MU Catalog. See issue #58
+- Thanks to w0 for PR #54 to change the validation set for WindowsSKU
+- Thanks to @zehadialam for PR #60 to fix an issue with Windows boot loader for certain devices where Windows Boot Manager is not the first boot entry after the FFU is applied.
+- Thanks to @HedgeComp  for PR #64 and PR #65
+
 ## **2408.1**
 
 ### External Drive Support

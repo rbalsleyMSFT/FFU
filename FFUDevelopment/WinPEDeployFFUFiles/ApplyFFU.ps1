@@ -128,13 +128,18 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2408.1'
+$version = '2409.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
 #Find PhysicalDrive
 # $PhysicalDeviceID = Get-HardDrive
 $hardDrive = Get-HardDrive
+if($hardDrive -eq $null){
+    WriteLog 'No hard drive found. Exiting'
+    WriteLog 'Try adding storage drivers to the PE boot image (you can re-create your FFU and USB drive and add the PE drivers to the PEDrivers folder and add -CopyPEDrivers $true to the command line, or manually add them via DISM)'
+    Exit
+}
 $PhysicalDeviceID = $hardDrive.DeviceID
 $BytesPerSector = $hardDrive.BytesPerSector
 WriteLog "Physical BytesPerSector is $BytesPerSector"
@@ -549,6 +554,12 @@ If (Test-Path -Path $Drivers)
     WriteLog 'Copying drivers succeeded'
 }
 
+WriteLog "Setting Windows Boot Manager to be first in the display order."
+Invoke-Process bcdedit.exe "/set {fwbootmgr} displayorder {bootmgr} /addfirst"
+WriteLog "Windows Boot Manager has been set to be first in the display order."
+WriteLog "Setting default Windows boot loader to be first in the display order."
+Invoke-Process bcdedit.exe "/set {bootmgr} displayorder {default} /addfirst"
+WriteLog "The default Windows boot loader has been set to be first in the display order."
 #Copy DISM log to USBDrive
 WriteLog "Copying dism log to $USBDrive"
 invoke-process xcopy "X:\Windows\logs\dism\dism.log $USBDrive /Y" 
