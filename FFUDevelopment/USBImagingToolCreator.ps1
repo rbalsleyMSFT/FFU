@@ -16,8 +16,7 @@ function Get-USBDrive {
     $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
     If ($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
-    }
-    else {
+    } else {
         $USBDrivesCount = $USBDrives.Count
     }
     WriteLog "Found $USBDrivesCount USB drives"
@@ -64,8 +63,7 @@ function Build-DeploymentUSB {
     if ($DrivesCount -gt 1) {
         writelog "Get file system information for all drives"
         $Partitions = Get-Partition | Get-Volume
-    }
-    else {
+    } else {
         writelog "Get file system information for drive number $DiskNumber"
         $Partitions = Get-Partition -DiskNumber $DriveNumber | Get-Volume
     }
@@ -129,8 +127,7 @@ function Build-DeploymentUSB {
     }
     if ($DrivesCount -gt 1) {
         Writelog "Building $DrivesCount drives concurrently...Please be patient..."
-    }
-    else {
+    } else {
         Writelog "Building the imaging tool on $model...Please be patient..."
     }
     Get-Job | Wait-Job | Out-Null
@@ -192,12 +189,11 @@ function New-DeploymentUSB {
     WriteLog "Closing all Diskpart windows to prevent drive lock errors"
     Stop-Process -Name diskpart -ErrorAction SilentlyContinue
     $Selection = $Drivelist[$DriveSelected].Number
-    $totalSteps = 5
+
     if ($Selection -eq $last) {
         Read-Host -Prompt "ALL DRIVES SELECTED! WILL ERASE ALL CURRENTLY CONNECTED USB DRIVES!! Press ENTER to continue"
         Build-DeploymentUSB -Drives $Drives
-    }
-    else {
+    } else {
         Read-Host -Prompt "Drive number $Selection was selected. Press ENTER to continue"
         Build-DeploymentUSB -Drives $Drives[$DriveSelected]
     }
