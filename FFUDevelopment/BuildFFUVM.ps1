@@ -198,11 +198,39 @@ Command line for those who want to download the latest Windows 11 Pro x64 media 
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false, Position = 0)]
+    [Parameter(Mandatory, Position = 0, ParameterSetName = "LocalISO")]
     [ValidateScript({ Test-Path $_ })]
-    [string]$ISOPath,
+    [string]
+    $ISOPath,
+
+    [Parameter(Mandatory, Position = 0, ParameterSetName = 'DownloadISO')]
+    [ValidateSet(10, 11)]
+    [int]
+    $WindowsRelease = 11,
+
+    [Parameter(Mandatory = $false, Position = 1, ParameterSetName = "DownloadISO")]
+    [Parameter(Mandatory = $false, Position = 1, ParameterSetName = "LocalISO")]
     [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')]
-    [string]$WindowsSKU = 'Pro',
+    [string]
+    $WindowsSKU = 'Pro',
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'DownloadISO')]
+    [ValidateSet('x86', 'x64', 'arm64')]
+    [string]
+    $WindowsArch = 'x64',
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'DownloadISO')]
+    [ValidateSet('ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee', 'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu',
+                'it-it', 'ja-jp', 'ko-kr', 'lt-lt', 'lv-lv', 'nb-no', 'nl-nl', 'pl-pl', 'pt-br', 'pt-pt', 'ro-ro', 'ru-ru', 'sk-sk', 'sl-si', 'sr-latn-rs', 'sv-se', 'th-th', 'tr-tr', 'uk-ua',
+                'zh-cn', 'zh-tw')]
+    [string]
+    $WindowsLang = 'en-us',
+
+    [Parameter(Mandatory = $false, ParameterSetName = 'DownloadISO')]
+    [ValidateSet('consumer', 'business')]
+    [string]
+    $MediaType = 'consumer',
+
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
@@ -266,26 +294,7 @@ param(
     [string]$OptionalFeatures,
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
-    [Parameter(Mandatory = $false)]
-    [ValidateSet(10, 11)]
-    [int]$WindowsRelease = 11,
-    [Parameter(Mandatory = $false)]
-    [string]$WindowsVersion = '23h2',
-    [Parameter(Mandatory = $false)]
-    [ValidateSet('x86', 'x64', 'arm64')]
-    [string]$WindowsArch = 'x64',
-    [ValidateScript({
-            $allowedLang = @('ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee', 'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu',
-                'it-it', 'ja-jp', 'ko-kr', 'lt-lt', 'lv-lv', 'nb-no', 'nl-nl', 'pl-pl', 'pt-br', 'pt-pt', 'ro-ro', 'ru-ru', 'sk-sk', 'sl-si', 'sr-latn-rs', 'sv-se', 'th-th', 'tr-tr', 'uk-ua',
-                'zh-cn', 'zh-tw')
-            if ($allowedLang -contains $_) { $true } else { throw "Invalid WindowsLang value. Allowed values: $($allowedLang -join ', ')" }
-            return $true
-        })]
-    [Parameter(Mandatory = $false)]
-    [string]$WindowsLang = 'en-us',
-    [Parameter(Mandatory = $false)]
-    [ValidateSet('consumer', 'business')]
-    [string]$MediaType = 'consumer',
+
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512,
     [bool]$Optimize = $true,
