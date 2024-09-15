@@ -115,6 +115,9 @@ When set to $true, will download and install the latest .NET Framework for Windo
 .PARAMETER UpdateLatestDefender
 When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false.
 
+.PARAMETER UpdateLatestMSRT
+When set to $true, will download and install the latest Windows Malicious Software Removal Tool. Default is $false
+
 .PARAMETER UpdateEdge
 When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false.
 
@@ -306,6 +309,7 @@ param(
     [bool]$UpdatePreviewCU,
     [bool]$UpdateLatestNet,
     [bool]$UpdateLatestDefender,
+    [bool]$UpdateLatestMSRT,
     [bool]$UpdateEdge,
     [bool]$UpdateOneDrive,
     [bool]$CopyPPKG,
@@ -372,6 +376,7 @@ if (-not $FFUCaptureLocation) { $FFUCaptureLocation = "$FFUDevelopmentPath\FFU" 
 if (-not $LogFile) { $LogFile = "$FFUDevelopmentPath\FFUDevelopment.log" }
 if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
+if (-not $MSRTPath) { $MSRTPath = "$AppsPath\MSRT" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
@@ -2309,6 +2314,39 @@ function Save-KB {
     return $fileName
 }
 
+function Get-MSRTUrl {
+    param (
+        [ValidateSet("x86", "x64")]
+        [string]$WindowsArch
+    )
+    try {
+        # Retrieve content of Windows Malicious Software Removal Tool page
+        $pattern = '\"url\":\"(https://download\.microsoft\.com/download/[^"]+)\"'
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        if ($WindowsArch -eq "x64") {
+            $MSRTWebPage = Invoke-RestMethod "https://www.microsoft.com/en-us/download/details.aspx?id=9905" -Headers $Headers -UserAgent $UserAgent
+        }
+        if ($WindowsArch -eq "x86") {
+            $MSRTWebPage = Invoke-RestMethod "https://www.microsoft.com/en-us/download/details.aspx?id=16" -Headers $Headers -UserAgent $UserAgent
+        }
+        $VerbosePreference = $OriginalVerbosePreference
+        # Extract download URL based on specified pattern
+        $MSRTMatch = [regex]::Match($MSRTWebPage, $pattern)
+        if (-not $MSRTMatch.Success) {
+            WriteLog "Failed to retrieve Malicious Software Removal Tool URL. Pattern match failed"
+            return
+        }
+        $MSRTUrl = $MSRTMatch.Groups[1].Value
+        return $MSRTUrl
+    }
+    catch {
+        WriteLog $_
+        Write-Error "Error occurred while retrieving Windows Malicious Software Removal Tool link"
+        throw $_
+    }
+}
+
 function New-AppsISO {
     #Create Apps ISO file
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -3511,6 +3549,12 @@ function Get-FFUEnvironment {
         Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
+    #Clean up $MSRTPath
+    if (Test-Path -Path $MSRTPath) {
+        WriteLog "Removing $MSRTPath"
+        Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
     #Clean up $OneDrivePath
     If (Test-Path -Path $OneDrivePath) {
         WriteLog "Removing $OneDrivePath"
@@ -3558,6 +3602,17 @@ function Clear-InstallAppsandSysprep {
         If (Test-Path -Path $DefenderPath) {
             WriteLog "Removing $DefenderPath"
             Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
+    }
+    if ($UpdateLatestMSRT) {
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Windows Malicious Software Removal Tool"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\MSRT*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Clean up $MSRTPath
+        If (Test-Path -Path $MSRTPath) {
+            WriteLog "Removing $MSRTPath"
+            Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
             WriteLog 'Removal complete'
         }
     }
@@ -3727,8 +3782,8 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
 if ($BuildUSBDrive -eq $true) {
     $USBDrives, $USBDrivesCount = Get-USBDrive
 }
-if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true))) {
-    WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true) -or ($UpdateLatestMSRT -eq $true))) {
+    WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
     throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
 }
 if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
@@ -3739,6 +3794,11 @@ if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
 if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
     $UpdateOneDrive = $false
     WriteLog 'OneDrive currently fails to install on ARM64 VMs (even with the OneDrive ARM setup files). Setting UpdateOneDrive to false'
+}
+
+if (($WindowsArch -eq 'ARM64') -and ($UpdateLatestMSRT -eq $true)) {
+    $UpdateLatestMSRT = $false
+    WriteLog 'Windows Malicious Software Removal Tool is not available for the ARM64 architecture.'
 }
 
 ###END PARAMETER VALIDATION
@@ -3884,6 +3944,32 @@ if ($InstallApps) {
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Definitions"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
             $UpdatedcmdContent = $CmdContent -replace '^(REM Install Defender Definitions)', ("REM Install Defender Definitions`r`nd:\Defender\mpam-fe.exe")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+        }
+        if ($UpdateLatestMSRT) {
+            WriteLog "`$UpdateLatestMSRT is set to true."
+            #Check if $MSRTPath exists, if not, create it
+            if (-not (Test-Path -Path $MSRTPath)) {
+                WriteLog "Creating $MSRTPath"
+                New-Item -Path $MSRTPath -ItemType Directory -Force | Out-Null
+            }
+            WriteLog "Getting Windows Malicious Software Removal Tool URL"
+            $MSRTUrl = Get-MSRTUrl -WindowsArch $WindowsArch
+            $MSRTFileName = Split-Path -Path $MSRTUrl -Leaf
+            try {
+                WriteLog "Windows Malicious Software Removal Tool URL for $WindowsArch is $MSRTUrl"
+                Start-BitsTransferWithRetry -Source $MSRTUrl -Destination "$MSRTPath\$MSRTFileName"
+                WriteLog "Windows Malicious Software Removal Tool downloaded to $MSRTPath\$MSRTFileName"
+            }
+            catch {
+                Write-Error "Downloading Windows Malicious Software Removal Tool failed"
+                WriteLog "Downloading Windows Malicious Software Removal Tool failed"
+                throw $_
+            }
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Malicious Software Removal Tool"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Malicious Software Removal Tool)', ("REM Install Windows Malicious Software Removal Tool`r`nStart /wait d:\MSRT\$MSRTFileName /quiet")
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
