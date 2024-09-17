@@ -30,11 +30,8 @@ for /d %%D in ("%basepath%\*") do (
             ) 
         )
     )
-    @REM for %%F in ("!appfolder!\*.xml") do (
-    @REM     set "licensefile=%%F"
-    @REM )
     if defined mainpackage (
-        set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
+        set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!" /Region:all /StubPackageOption:installfull"
         if exist "!dependenciesfolder!" (
             for %%G in ("!dependenciesfolder!\*") do (
                 set "dism_command=!dism_command! /DependencyPackagePath:"%%G""
@@ -48,7 +45,6 @@ for /d %%D in ("%basepath%\*") do (
         ) else (
             set "dism_command=!dism_command! /SkipLicense"
         )
-        set "dism_command=!dism_command! /Region:All"
         echo !dism_command!
         !dism_command!
     )
