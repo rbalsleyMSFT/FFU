@@ -336,7 +336,7 @@ param(
     [bool]$AllowExternalHardDiskMedia,
     [bool]$PromptExternalHardDiskMedia = $true
 )
-$version = '2409.1'
+$version = '2409.2'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -541,6 +541,163 @@ function Start-BitsTransferWithRetry {
     return $false
 }
 
+# function Get-MicrosoftDrivers {
+#     param (
+#         [string]$Make,
+#         [string]$Model,
+#         [int]$WindowsRelease
+#     )
+
+#     $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
+    
+#     # Download the webpage content
+#     WriteLog "Getting Surface driver information from $url"
+#     $OriginalVerbosePreference = $VerbosePreference
+#     $VerbosePreference = 'SilentlyContinue'
+#     $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+#     $VerbosePreference = $OriginalVerbosePreference
+#     WriteLog "Complete"
+
+#     # Parse the content of the relevant nested divs
+#     WriteLog "Parsing web content for models and download links"
+#     $html = $webContent.Content
+#     $nestedDivPattern = '<div id="ID0EBHFBH[1-8]" class="ocContentControlledByDropdown.*?">(.*?)</div>'
+#     $nestedDivMatches = [regex]::Matches($html, $nestedDivPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+#     $models = @()
+#     $modelPattern = '<p>(.*?)</p>\s*</td>\s*<td>\s*<p>\s*<a href="(.*?)"'
+
+#     foreach ($nestedDiv in $nestedDivMatches) {
+#         $nestedDivContent = $nestedDiv.Groups[1].Value
+#         $modelMatches = [regex]::Matches($nestedDivContent, $modelPattern)
+
+#         foreach ($match in $modelMatches) {
+#             $modelName = $match.Groups[1].Value
+#             $modelLink = $match.Groups[2].Value
+#             $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+#         }
+#     }
+#     WriteLog "Parsing complete"
+
+#     # Validate the model
+#     $selectedModel = $models | Where-Object { $_.Model -eq $Model }
+
+#     if ($null -eq $selectedModel) {
+#         if ($VerbosePreference -ne 'Continue') {
+#             Write-Host "The model '$Model' was not found in the list of available models."
+#             Write-Host "Please run the script with the -Verbose switch to see the list of available models."
+#         }
+#         WriteLog "The model '$Model' was not found in the list of available models."
+#         WriteLog "Please select a model from the list below by number:"
+        
+#         for ($i = 1; $i -lt $models.Count; $i++) {
+#             if ($VerbosePreference -ne 'Continue') {
+#                 Write-Host "$i. $($models[$i].Model)"
+#             }
+#             WriteLog "$i. $($models[$i].Model)"
+#         }
+
+#         do {
+#             $selection = Read-Host "Enter the number of the model you want to select"
+#             WriteLog "User selected model number: $selection"
+            
+#             if ($selection -match '^\d+$' -and [int]$selection -ge 0 -and [int]$selection -lt $models.Count) {
+#                 $selectedModel = $models[$selection]
+#             } else {
+#                 if ($VerbosePreference -ne 'Continue') {
+#                     Write-Host "Invalid selection. Please try again."
+#                 }
+#                 WriteLog "Invalid selection. Please try again."
+#             }
+#         } while ($null -eq $selectedModel)
+#     }
+
+#     $Model = $selectedModel.Model
+#     WriteLog "Model: $Model"
+#     WriteLog "Download Page: $($selectedModel.Link)"
+
+#     # Follow the link to the download page and parse the script tag
+#     WriteLog "Getting download page content"
+#     $OriginalVerbosePreference = $VerbosePreference
+#     $VerbosePreference = 'SilentlyContinue'
+#     $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+#     $VerbosePreference = $OriginalVerbosePreference
+#     WriteLog "Complete"
+#     WriteLog "Parsing download page for file"
+#     $scriptPattern = '<script>window.__DLCDetails__={(.*?)}</script>'
+#     $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
+
+#     if ($scriptMatch.Success) {
+#         $scriptContent = $scriptMatch.Groups[1].Value
+
+#         # Extract the download file information from the script tag
+#         $downloadFilePattern = '"name":"(.*?)",.*?"url":"(.*?)"'
+#         $downloadFileMatches = [regex]::Matches($scriptContent, $downloadFilePattern)
+
+#         $downloadLink = $null
+#         foreach ($downloadFile in $downloadFileMatches) {
+#             $fileName = $downloadFile.Groups[1].Value
+#             $fileUrl = $downloadFile.Groups[2].Value
+
+#             if ($fileName -match "Win$WindowsRelease") {
+#                 $downloadLink = $fileUrl
+#                 break
+#             }
+#         }
+
+#         if ($downloadLink) {
+#             WriteLog "Download Link for Windows ${WindowsRelease}: $downloadLink"
+        
+#             # Create directory structure
+#             if (-not (Test-Path -Path $DriversFolder)) {
+#                 WriteLog "Creating Drivers folder: $DriversFolder"
+#                 New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+#                 WriteLog "Drivers folder created"
+#             }
+#             $surfaceDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
+#             $modelPath = Join-Path -Path $surfaceDriversPath -ChildPath $Model
+#             if (-Not (Test-Path -Path $modelPath)) {
+#                 WriteLog "Creating model folder: $modelPath"
+#                 New-Item -Path $modelPath -ItemType Directory | Out-Null
+#                 WriteLog "Complete"
+#             }
+        
+#             # Download the file
+#             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
+#             WriteLog "Downloading $Model driver file to $filePath"
+#             Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
+#             WriteLog "Download complete"
+        
+#             # Determine file extension
+#             $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
+        
+#             if ($fileExtension -eq ".msi") {
+#                 # Extract the MSI file using an administrative install
+#                 WriteLog "Extracting MSI file to $modelPath"
+#                 $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
+#                 Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments
+#                 WriteLog "Extraction complete"
+#             } elseif ($fileExtension -eq ".zip") {
+#                 # Extract the ZIP file
+#                 WriteLog "Extracting ZIP file to $modelPath"
+#                 $ProgressPreference = 'SilentlyContinue'
+#                 Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
+#                 $ProgressPreference = 'Continue'
+#                 WriteLog "Extraction complete"
+#             } else {
+#                 WriteLog "Unsupported file type: $fileExtension"
+#             }
+#             # Remove the downloaded file
+#             WriteLog "Removing $filePath"
+#             Remove-Item -Path $filePath -Force
+#             WriteLog "Complete"
+#         } else {
+#             WriteLog "No download link found for Windows $WindowsRelease."
+#         }
+#     } else {
+#         WriteLog "Failed to parse the download page for the MSI file."
+#     }
+# }
 function Get-MicrosoftDrivers {
     param (
         [string]$Make,
@@ -558,23 +715,39 @@ function Get-MicrosoftDrivers {
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
 
-    # Parse the content of the relevant nested divs
+    # Parse the HTML content
     WriteLog "Parsing web content for models and download links"
     $html = $webContent.Content
-    $nestedDivPattern = '<div id="ID0EBHFBH[1-8]" class="ocContentControlledByDropdown.*?">(.*?)</div>'
-    $nestedDivMatches = [regex]::Matches($html, $nestedDivPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $document = New-Object -ComObject "HTMLFILE"
+    $document.IHTMLDocument2_write($html)
+    $document.Close()
 
     $models = @()
-    $modelPattern = '<p>(.*?)</p>\s*</td>\s*<td>\s*<p>\s*<a href="(.*?)"'
 
-    foreach ($nestedDiv in $nestedDivMatches) {
-        $nestedDivContent = $nestedDiv.Groups[1].Value
-        $modelMatches = [regex]::Matches($nestedDivContent, $modelPattern)
+    # Select all divs with class 'selectable-content-options__option-content'
+    $divs = $document.getElementsByTagName("div") | Where-Object {
+        $_.className -eq "selectable-content-options__option-content" -or $_.className -eq "selectable-content-options__option-content ocHidden"
+    }
 
-        foreach ($match in $modelMatches) {
-            $modelName = $match.Groups[1].Value
-            $modelLink = $match.Groups[2].Value
-            $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+    foreach ($div in $divs) {
+        $tables = $div.getElementsByTagName("table")
+        foreach ($table in $tables) {
+            $rows = $table.getElementsByTagName("tr")
+            foreach ($row in $rows) {
+                $cells = $row.getElementsByTagName("td")
+                if ($cells.length -ge 2) {
+                    $modelName = $cells[0].innerText.Trim()
+                    $linkElement = $cells[1].getElementsByTagName("a")
+                    if ($linkElement.length -gt 0) {
+                        $modelLink = $linkElement[0].href
+                        $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+                    } else {
+                        # Handle cases with instructions instead of links
+                        $modelLink = $cells[1].innerText.Trim()
+                        $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+                    }
+                }
+            }
         }
     }
     WriteLog "Parsing complete"
@@ -590,19 +763,19 @@ function Get-MicrosoftDrivers {
         WriteLog "The model '$Model' was not found in the list of available models."
         WriteLog "Please select a model from the list below by number:"
         
-        for ($i = 1; $i -lt $models.Count; $i++) {
+        for ($i = 0; $i -lt $models.Count; $i++) {
             if ($VerbosePreference -ne 'Continue') {
-                Write-Host "$i. $($models[$i].Model)"
+                Write-Host "$($i + 1). $($models[$i].Model)"
             }
-            WriteLog "$i. $($models[$i].Model)"
+            WriteLog "$($i + 1). $($models[$i].Model)"
         }
 
         do {
             $selection = Read-Host "Enter the number of the model you want to select"
             WriteLog "User selected model number: $selection"
             
-            if ($selection -match '^\d+$' -and [int]$selection -ge 0 -and [int]$selection -lt $models.Count) {
-                $selectedModel = $models[$selection]
+            if ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $models.Count) {
+                $selectedModel = $models[$selection - 1]
             } else {
                 if ($VerbosePreference -ne 'Continue') {
                     Write-Host "Invalid selection. Please try again."
@@ -698,6 +871,7 @@ function Get-MicrosoftDrivers {
         WriteLog "Failed to parse the download page for the MSI file."
     }
 }
+
 function Get-HPDrivers {
     [CmdletBinding()]
     param (
