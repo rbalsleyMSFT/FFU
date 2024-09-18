@@ -2321,7 +2321,7 @@ function Get-MSRTUrl {
     )
     try {
         # Retrieve content of Windows Malicious Software Removal Tool page
-        $pattern = '\"url\":\"(https://download\.microsoft\.com/download/[^"]+)\"'
+        $pattern = 'https:\/\/download\.microsoft\.com\/download\/[^\s]*\.exe'
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
         if ($WindowsArch -eq "x64") {
@@ -2337,7 +2337,7 @@ function Get-MSRTUrl {
             WriteLog "Failed to retrieve Malicious Software Removal Tool URL. Pattern match failed"
             return
         }
-        $MSRTUrl = $MSRTMatch.Groups[1].Value
+        $MSRTUrl = $MSRTMatch.Value
         return $MSRTUrl
     }
     catch {
