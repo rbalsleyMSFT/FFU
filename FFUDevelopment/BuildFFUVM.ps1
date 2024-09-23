@@ -4233,7 +4233,15 @@ try {
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        if ($WindowsRelease -le 11) {
+            $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -lt 2022) {
+            $Name = """Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        } else {
+            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -4248,7 +4256,15 @@ try {
     #will take Precendence over $UpdateLastestCU if both were set to $true
     if ($UpdatePreviewCU) {
         Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
-        $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+	if ($WindowsRelease -le 11) {
+            $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update Preview for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -lt 2022) {
+            $Name = """Cumulative update Preview for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        } else {
+            $Name = """Cumulative update Preview for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
