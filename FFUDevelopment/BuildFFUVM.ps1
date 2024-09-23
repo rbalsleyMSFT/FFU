@@ -1767,8 +1767,10 @@ function Get-WindowsESD {
     $cabFileUrl = if ($WindowsRelease -eq 10) {
         'https://go.microsoft.com/fwlink/?LinkId=841361'
     }
-    else {
+    elseif ($WindowsRelease -eq 11) {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
+    } else {
+        throw "Can't download Windows Server. Please download the Windows setup media from your subscription homepage."
     }
 
     # Download cab file
