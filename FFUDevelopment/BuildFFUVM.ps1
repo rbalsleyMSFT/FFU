@@ -2414,16 +2414,21 @@ function Get-KBLink {
 }
 function Get-LatestWindowsKB {
     param (
-        [ValidateSet(10, 11)]
-        [int]$WindowsRelease
+        [Parameter(Mandatory)]
+        [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
+        [int]$WindowsRelease,
+        [Parameter(Mandatory)]
+        [string]$WindowsVersion
     )
         
     # Define the URL of the update history page based on the Windows release
     if ($WindowsRelease -eq 11) {
         $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information'
     }
-    else {
+    elseif ($WindowsRelease -eq 10) {
         $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/release-information'
+    } else {
+        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info'
     }
         
     # Use Invoke-WebRequest to fetch the content of the page
@@ -2433,7 +2438,11 @@ function Get-LatestWindowsKB {
     $VerbosePreference = $OriginalVerbosePreference
         
     # Use a regular expression to find the KB article number
-    $kbArticleRegex = 'KB\d+'
+    if ($WindowsRelease -le 11) {
+        $kbArticleRegex = "(?:Version $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
+    } else {
+        $kbArticleRegex = "(?:Windows Server $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
+    }
     $kbArticle = [regex]::Match($response.Content, $kbArticleRegex).Value
         
     return $kbArticle
