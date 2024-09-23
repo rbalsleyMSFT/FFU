@@ -201,7 +201,11 @@ param(
     [Parameter(Mandatory = $false, Position = 0)]
     [ValidateScript({ Test-Path $_ })]
     [string]$ISOPath,
-    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')]
+    [ValidateScript({
+            $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')
+            if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
+            return $true
+        })]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
@@ -267,7 +271,7 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
     [Parameter(Mandatory = $false)]
-    [ValidateSet(10, 11)]
+    [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
     [string]$WindowsVersion = '23h2',
