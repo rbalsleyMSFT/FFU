@@ -2600,8 +2600,13 @@ function Get-Index {
     
     # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
     if($ISOPath){
-        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
-        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+        if ($WindowsSKU -notmatch "Standard|Datacenter") {
+            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+            $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+        } else {
+            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+            $WindowsImage = $imageIndex.ImageName.Substring(0, 19)
+        }
     }
     else{
         $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
@@ -2619,8 +2624,8 @@ function Get-Index {
         return $matchingImageIndex.ImageIndex
     }
     else {
-        # Look for either the number 10 or 11 in the ImageName
-        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -like "*10*") -or ($_.ImageName -like "*11*") }
+        # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
+        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
             
         while ($true) {
             # Present list of ImageNames to the end user if no matching ImageIndex is found
