@@ -1325,10 +1325,21 @@ function Get-DellDrivers {
         [string]$Model,
         [Parameter(Mandatory = $true)]
         [ValidateSet("x64", "x86", "ARM64")]
-        [string]$WindowsArch
+        [string]$WindowsArch,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsRelease
     )
 
-    $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
+    if ($WindowsRelease -le 11) {
+        $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
+        $DellCabFile = "$DriversFolder\CatalogPC.cab"
+        $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
+    } else {
+        $catalogUrl = "https://downloads.dell.com/catalog/Catalog.cab"
+        $DellCabFile = "$DriversFolder\Catalog.cab"
+        $DellCatalogXML = "$DriversFolder\Catalog.xml"
+    }
+    
     if (-not (Test-Url -Url $catalogUrl)) {
         WriteLog "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
         if ($VerbosePreference -ne 'Continue') {
@@ -1348,12 +1359,10 @@ function Get-DellDrivers {
     New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
     WriteLog "Dell Drivers folder created"
 
-    $DellCabFile = "$DriversFolder\CatalogPC.cab"
     WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
     Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
     WriteLog "Dell Catalog cab file downloaded"
 
-    $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
     WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
     Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML"
     WriteLog "Dell Catalog cab file extracted"
@@ -1367,7 +1376,19 @@ function Get-DellDrivers {
         $models = $component.SupportedSystems.Brand.Model
         foreach ($item in $models) {
             if ($item.Display.'#cdata-section' -match $Model) {
-                $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+	    	
+                if ($WindowsRelease -le 11) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+                } elseif ($WindowsRelease -eq 2016) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W14") }
+                } elseif ($WindowsRelease -eq 2019) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W19") }
+                } elseif ($WindowsRelease -eq 2022) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                } else {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                }
+		
                 if ($validOS) {
                     $driverPath = $component.path
                     $downloadUrl = $baseLocation + $driverPath
@@ -3952,7 +3973,7 @@ if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
         if ($make -eq 'Dell'){
             WriteLog 'Getting Dell drivers'
             #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
-            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch
+            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
             WriteLog 'Getting Dell drivers completed successfully'
         }
     }
