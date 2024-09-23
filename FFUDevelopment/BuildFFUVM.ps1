@@ -2563,9 +2563,13 @@ function Get-WimIndex {
     If ($ISOPath) {
         $wimindex = switch ($WindowsSKU) {
             'Home' { 1 }
+            'Standard' { 1 }
             'Home_N' { 2 }
+            'Standard (Desktop Experience)' { 1 }
             'Home_SL' { 3 }
+            'Datacenter' { 3 }
             'EDU' { 4 }
+            'Datacenter (Desktop Experience)' { 4 }
             'EDU_N' { 5 }
             'Pro' { 6 }
             'Pro_N' { 7 }
