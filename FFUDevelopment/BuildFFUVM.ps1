@@ -3265,14 +3265,25 @@ Function Get-WindowsVersionInfo {
         Enterprise { 'Ent' }
         Education { 'Edu' }
         ProfessionalWorkstation { 'Pro_Wks' }
+	ServerStandard { 'Srv_Std' }
+        ServerDatacenter { 'Srv_Dtc' }
     }
     WriteLog "Windows SKU Modified to: $SKU"
 
-    if ($CurrentBuild -ge 22000) {
-        $Name = 'Win11'
-    }
-    else {
-        $Name = 'Win10'
+    if ($SKU -notmatch "Srv") {
+        if ($CurrentBuild -ge 22000) {
+            $Name = 'Win11'
+        }
+        else {
+            $Name = 'Win10'
+        }
+    } else {
+        $Name = switch ($CurrentBuild) {
+            26100 { '2025' }
+            20348 { '2022' }
+            17763 { '2019' }
+            Default { $DisplayVersion }
+        }
     }
     
     WriteLog "Unloading registry"
