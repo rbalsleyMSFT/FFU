@@ -28,13 +28,24 @@ $SKU = switch ($SKU) {
     EducationN { 'EduN'}
     ProfessionalWorkstation { 'Pro_Wks' }
     ProfessionalWorkstationN { 'Pro_WksN' }
+    ServerStandard { 'Srv_Std' }
+    ServerDatacenter { 'Srv_Dtc' }
 }
 
-if($CurrentBuild -ge 22000){
-    $Name = 'Win11'
-}
-else{
-    $Name = 'Win10'
+if ($SKU -notmatch "Srv") {
+    if ($CurrentBuild -ge 22000) {
+        $Name = 'Win11'
+    }
+    else {
+        $Name = 'Win10'
+    }
+} else {
+    $Name = switch ($CurrentBuild) {
+        26100 { '2025' }
+        20348 { '2022' }
+        17763 { '2019' }
+        Default { $DisplayVersion }
+    }
 }
 
 #If Office is installed, modify the file name of the FFU
