@@ -2737,7 +2737,7 @@ function New-OSPartition {
     if ((Get-CimInstance Win32_OperatingSystem).Caption -match "Server") {
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
-    if ($CompactOS) {
+    elseif ($CompactOS) {
         WriteLog '$CompactOS is set to true, using -Compact switch to apply the WIM file to the OS partition.'
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\" -Compact)
     }
