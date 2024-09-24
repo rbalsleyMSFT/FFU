@@ -2314,39 +2314,6 @@ function Save-KB {
     return $fileName
 }
 
-function Get-MSRTUrl {
-    param (
-        [ValidateSet("x86", "x64")]
-        [string]$WindowsArch
-    )
-    try {
-        # Retrieve content of Windows Malicious Software Removal Tool page
-        $pattern = 'https:\/\/download\.microsoft\.com\/download\/[^\s]*\.exe'
-        $OriginalVerbosePreference = $VerbosePreference
-        $VerbosePreference = 'SilentlyContinue'
-        if ($WindowsArch -eq "x64") {
-            $MSRTWebPage = Invoke-RestMethod "https://www.microsoft.com/en-us/download/details.aspx?id=9905" -Headers $Headers -UserAgent $UserAgent
-        }
-        if ($WindowsArch -eq "x86") {
-            $MSRTWebPage = Invoke-RestMethod "https://www.microsoft.com/en-us/download/details.aspx?id=16" -Headers $Headers -UserAgent $UserAgent
-        }
-        $VerbosePreference = $OriginalVerbosePreference
-        # Extract download URL based on specified pattern
-        $MSRTMatch = [regex]::Match($MSRTWebPage, $pattern)
-        if (-not $MSRTMatch.Success) {
-            WriteLog "Failed to retrieve Malicious Software Removal Tool URL. Pattern match failed"
-            return
-        }
-        $MSRTUrl = $MSRTMatch.Value
-        return $MSRTUrl
-    }
-    catch {
-        WriteLog $_
-        Write-Error "Error occurred while retrieving Windows Malicious Software Removal Tool link"
-        throw $_
-    }
-}
-
 function New-AppsISO {
     #Create Apps ISO file
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -3949,24 +3916,15 @@ if ($InstallApps) {
         }
         if ($UpdateLatestMSRT) {
             WriteLog "`$UpdateLatestMSRT is set to true."
+            $Name = "Windows Malicious Software Removal Tool"
             #Check if $MSRTPath exists, if not, create it
             if (-not (Test-Path -Path $MSRTPath)) {
                 WriteLog "Creating $MSRTPath"
                 New-Item -Path $MSRTPath -ItemType Directory -Force | Out-Null
             }
             WriteLog "Getting Windows Malicious Software Removal Tool URL"
-            $MSRTUrl = Get-MSRTUrl -WindowsArch $WindowsArch
-            $MSRTFileName = Split-Path -Path $MSRTUrl -Leaf
-            try {
-                WriteLog "Windows Malicious Software Removal Tool URL for $WindowsArch is $MSRTUrl"
-                Start-BitsTransferWithRetry -Source $MSRTUrl -Destination "$MSRTPath\$MSRTFileName"
-                WriteLog "Windows Malicious Software Removal Tool downloaded to $MSRTPath\$MSRTFileName"
-            }
-            catch {
-                Write-Error "Downloading Windows Malicious Software Removal Tool failed"
-                WriteLog "Downloading Windows Malicious Software Removal Tool failed"
-                throw $_
-            }
+            $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath
+            WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Malicious Software Removal Tool"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
             $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Malicious Software Removal Tool)', ("REM Install Windows Malicious Software Removal Tool`r`nd:\MSRT\$MSRTFileName /quiet")
