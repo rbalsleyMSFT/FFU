@@ -5,6 +5,7 @@ REM d:\Office\setup.exe /configure d:\office\DeployFFU.xml
 REM Install Defender Platform Update
 REM Install Defender Definitions
 REM Install Windows Security Platform Update
+REM Install Windows Malicious Software Removal Tool
 REM Install OneDrive Per Machine
 REM Install Edge Stable
 REM Winget Win32 Apps
