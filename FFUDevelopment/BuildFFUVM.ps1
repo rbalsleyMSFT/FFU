@@ -4030,18 +4030,16 @@ if ($InstallApps) {
             WriteLog "Update complete"
         }
 
-        if (-not $AppsScriptVariables) {
-            #Modify InstallAppsandSysprep.cmd to remove the script variables
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $StartIndex = $CmdContent.IndexOf("REM START Batch variables placeholder")
-            $EndIndex = $CmdContent.IndexOf("REM END Batch variables placeholder")
-            if (($StartIndex + 1) -lt $EndIndex) {
-                for ($i = ($StartIndex + 1); $i -lt $EndIndex; $i++) {
-                    $CmdContent[$i] = $null
-                }
+        #Modify InstallAppsandSysprep.cmd to remove old script variables
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $StartIndex = $CmdContent.IndexOf("REM START Batch variables placeholder")
+        $EndIndex = $CmdContent.IndexOf("REM END Batch variables placeholder")
+        if (($StartIndex + 1) -lt $EndIndex) {
+            for ($i = ($StartIndex + 1); $i -lt $EndIndex; $i++) {
+                $CmdContent[$i] = $null
             }
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
         }
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
 
         if ($AppsScriptVariables) {
             #Modify InstallAppsandSysprep.cmd to add the script variables
