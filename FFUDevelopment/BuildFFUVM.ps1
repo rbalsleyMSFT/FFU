@@ -210,6 +210,7 @@ param(
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
+    [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
@@ -4028,6 +4029,31 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
+
+        if (-not $AppsScriptVariables) {
+            #Modify InstallAppsandSysprep.cmd to remove the script variables
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $StartIndex = $CmdContent.IndexOf("REM START Batch variables placeholder")
+            $EndIndex = $CmdContent.IndexOf("REM END Batch variables placeholder")
+            if (($StartIndex + 1) -lt $EndIndex) {
+                for ($i = ($StartIndex + 1); $i -lt $EndIndex; $i++) {
+                    $CmdContent[$i] = $null
+                }
+            }
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+        }
+
+        if ($AppsScriptVariables) {
+            #Modify InstallAppsandSysprep.cmd to add the script variables
+            $CmdContent = [System.Collections.ArrayList](Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd")
+            $ScriptIndex = $CmdContent.IndexOf("REM START Batch variables placeholder") + 1
+            foreach ($VariableKey in $AppsScriptVariables.Keys) {
+                $CmdContent.Insert($ScriptIndex, ("set {0}={1}" -f $VariableKey, $AppsScriptVariables[$VariableKey]))
+                $ScriptIndex++
+            }
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+        }
+	
         #Create Apps ISO
         WriteLog "Creating $AppsISO file"
         New-AppsISO
