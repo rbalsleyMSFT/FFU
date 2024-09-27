@@ -2727,8 +2727,9 @@ Function Set-CaptureFFU {
         $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
         $UpdatedContent = $ScriptContent -replace '(net use).*', ("$SharePath")
 	WriteLog 'Updating share command in CaptureFFU.ps1 script with new share information'
+        $UpdatedContent = $ScriptContent -replace '^\$CustomFFUNameTemplate \= .*#Custom naming', "#Custom naming placeholder"
 	if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
-            $UpdatedContent = $ScriptContent -replace '#Custom naming placeholder', ("`$CustomFFUNameTemplate = $CustomFFUNameTemplate")
+            $UpdatedContent = $ScriptContent -replace '#Custom naming placeholder', ("`$CustomFFUNameTemplate = '$CustomFFUNameTemplate'")
 	    WriteLog 'Updating share command in CaptureFFU.ps1 script with new ffu name template information'
         }
         Set-Content -Path $CaptureFFUScriptPath -Value $UpdatedContent
