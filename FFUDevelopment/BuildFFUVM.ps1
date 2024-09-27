@@ -3805,7 +3805,19 @@ if (($VMHostIPAddress) -and ($VMSwitchName)){
         throw "IP address for -VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
     }
     if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
-        throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        try {
+	    # Bypass the check for systems that could have a Hyper-V NAT switch
+	    $null = Get-NetNat -ErrorAction Stop
+     	    $NetNat = @(Get-NetNat -ErrorAction Stop);
+     	} catch {
+     	    throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        }
+	if ($NetNat.Count -gt 0) {
+            WriteLog "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress!"
+	    WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
+        } else {
+	    throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+	}
     }
     WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
 }
