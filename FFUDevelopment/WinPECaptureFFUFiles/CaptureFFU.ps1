@@ -56,7 +56,7 @@ if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{yyyy}", (Get-Date -UFormat "%Y")
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{MM}", (Get-Date -UFormat "%m")
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{dd}", (Get-Date -UFormat "%d")
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{H}", (Get-Date -UFormat "%H")
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{HH}", (Get-Date -UFormat "%H")
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{hh}", (Get-Date -UFormat "%I")
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{mm}", (Get-Date -UFormat "%M")
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace "{tt}", (Get-Date -UFormat "%p")
