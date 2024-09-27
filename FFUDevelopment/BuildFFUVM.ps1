@@ -169,6 +169,9 @@ Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell'
 .PARAMETER Model
 Model of the device to download drivers. This is required if Make is set.
 
+.PARAMETER CustomFFUNameTemplate
+Sets a custom FFU output name with placeholders. Allowed placeholders are: {Name}, {DisplayVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}
+
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
@@ -231,8 +234,9 @@ param(
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
     [string]$FFUCaptureLocation,
-    [String]$ShareName = "FFUCaptureShare",
+    [string]$ShareName = "FFUCaptureShare",
     [string]$Username = "ffu_user",
+    [string]$CustomFFUNameTemplate,
     [Parameter(Mandatory = $false)]
     [string]$VMHostIPAddress,
     [bool]$CreateCaptureMedia = $true,
@@ -2722,7 +2726,11 @@ Function Set-CaptureFFU {
     if (Test-Path -Path $CaptureFFUScriptPath) {
         $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
         $UpdatedContent = $ScriptContent -replace '(net use).*', ("$SharePath")
-        WriteLog 'Updating share command in CaptureFFU.ps1 script with new share information'
+	WriteLog 'Updating share command in CaptureFFU.ps1 script with new share information'
+	if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
+            $UpdatedContent = $ScriptContent -replace '#Custom naming placeholder', ("`$CustomFFUNameTemplate = $CustomFFUNameTemplate")
+	    WriteLog 'Updating share command in CaptureFFU.ps1 script with new ffu name template information'
+        }
         Set-Content -Path $CaptureFFUScriptPath -Value $UpdatedContent
         WriteLog 'Update complete'
     }
