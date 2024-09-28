@@ -2267,11 +2267,13 @@ function Find-CachedKB {
         [string]$Link 
     )
 
+    WriteLog "Searching for cached download of $Link"
     $fileHash = ($Link | Select-String -Pattern "(?<=^[^_]*_).*(?=\..*$)").Matches[0].Value
     $file = [System.IO.FileInfo]::new((Join-Path -Path $KBCachePath -ChildPath ($Link -split '/')[-1]))
 
     if ($file.Exists) {
         if ((Get-FileHash -Path $file.FullName -Algorithm SHA1).Hash -eq $fileHash) {
+            WriteLog "Found cached download of $Link as $($file.FullName)"
             Robocopy.exe $($KBCachePath) $($KBPath) $file.Name /E /R:5 /W:5 /J /Copy:DAT
             return $file.Name
         }
@@ -2288,7 +2290,7 @@ function Invoke-KBDownload {
     )
 
     if ($AllowUpdateCaching) {
-        $fileName = Find-CachedKB
+        $fileName = Find-CachedKB -Link $Link
         if (![string]::IsNullOrEmpty($fileName)) {
             Writelog "Found $Link for $WindowsArch in $KBCachePath"
             Writelog "Returning $fileName"
