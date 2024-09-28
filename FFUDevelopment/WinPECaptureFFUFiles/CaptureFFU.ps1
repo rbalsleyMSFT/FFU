@@ -65,7 +65,7 @@ if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
         $CustomFFUNameTemplate += ".ffu"
     }
 
-    $dismArgs = "/capture-ffu /imagefile=$CustomFFUNameTemplate /capturedrive=\\.\PhysicalDrive0 /name:$Name$DisplayVersion$SKU /Compress:Default"
+    $dismArgs = "/capture-ffu /imagefile=W:\$CustomFFUNameTemplate /capturedrive=\\.\PhysicalDrive0 /name:$Name$DisplayVersion$SKU /Compress:Default"
 }
 
 #Unload Registry
