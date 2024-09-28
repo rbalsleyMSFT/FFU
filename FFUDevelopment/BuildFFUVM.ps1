@@ -2264,7 +2264,8 @@ function Get-LatestWindowsKB {
 
 function Find-CachedKB {
     param(
-        [string]$Link 
+        [string]$Link,
+        [string]$Path 
     )
 
     WriteLog "Searching for cached download of $Link"
@@ -2274,7 +2275,7 @@ function Find-CachedKB {
     if ($file.Exists) {
         if ((Get-FileHash -Path $file.FullName -Algorithm SHA1).Hash -eq $fileHash) {
             WriteLog "Found cached download of $Link as $($file.FullName)"
-            Robocopy.exe $($KBCachePath) $($KBPath) $file.Name /E /R:5 /W:5 /J /Copy:DAT
+            Robocopy.exe $($KBCachePath) $($Path) $file.Name /E /R:5 /W:5 /J /Copy:DAT | ForEach-Object { }
             return $file.Name
         }
     }
@@ -2289,8 +2290,8 @@ function Invoke-KBDownload {
         [string]$Path
     )
 
-    if ($AllowUpdateCaching) {
-        $fileName = Find-CachedKB -Link $Link
+    if ($AllowUpdateCaching) 
+        $fileName = Find-CachedKB -Link $Link -Path $Path
         if (![string]::IsNullOrEmpty($fileName)) {
             Writelog "Found $Link for $WindowsArch in $KBCachePath"
             Writelog "Returning $fileName"
@@ -2300,6 +2301,10 @@ function Invoke-KBDownload {
     Writelog "Downloading $Link for $WindowsArch to $Path"
     Start-BitsTransferWithRetry -Source $link -Destination $Path
     $fileName = ($link -split '/')[-1]
+    if ($AllowUpdateCaching) {
+        WriteLog "Caching $fileName for later use"
+        Robocopy.exe $($Path) $($KBCachePath) $fileName /E /R:5 /W:5 /J /Copy:DAT | ForEach-Object { }
+    }
     Writelog "Returning $fileName"
     return $fileName
 }
