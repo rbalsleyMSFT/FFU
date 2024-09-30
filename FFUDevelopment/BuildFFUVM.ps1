@@ -172,6 +172,9 @@ Model of the device to download drivers. This is required if Make is set.
 .PARAMETER CustomFFUNameTemplate
 Sets a custom FFU output name with placeholders. Allowed placeholders are: {Name}, {DisplayVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}
 
+.PARAMETER AppsScriptVariables
+When passed a hashtable, the script will alter the $FFUDevelopmentPath\Apps\InstallAppsandSysprep.cmd file to set variables with the hashtable keys as variable names and the hashtable values their content.
+
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
@@ -207,11 +210,16 @@ param(
     [Parameter(Mandatory = $false, Position = 0)]
     [ValidateScript({ Test-Path $_ })]
     [string]$ISOPath,
-    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')]
+    [ValidateScript({
+            $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')
+            if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
+            return $true
+        })]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
+    [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
@@ -274,7 +282,7 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
     [Parameter(Mandatory = $false)]
-    [ValidateSet(10, 11)]
+    [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
     [string]$WindowsVersion = '23h2',
@@ -1173,10 +1181,21 @@ function Get-DellDrivers {
         [string]$Model,
         [Parameter(Mandatory = $true)]
         [ValidateSet("x64", "x86", "ARM64")]
-        [string]$WindowsArch
+        [string]$WindowsArch,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsRelease
     )
 
-    $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
+    if ($WindowsRelease -le 11) {
+        $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
+        $DellCabFile = "$DriversFolder\CatalogPC.cab"
+        $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
+    } else {
+        $catalogUrl = "https://downloads.dell.com/catalog/Catalog.cab"
+        $DellCabFile = "$DriversFolder\Catalog.cab"
+        $DellCatalogXML = "$DriversFolder\Catalog.xml"
+    }
+    
     if (-not (Test-Url -Url $catalogUrl)) {
         WriteLog "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
         if ($VerbosePreference -ne 'Continue') {
@@ -1196,12 +1215,10 @@ function Get-DellDrivers {
     New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
     WriteLog "Dell Drivers folder created"
 
-    $DellCabFile = "$DriversFolder\CatalogPC.cab"
     WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
     Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
     WriteLog "Dell Catalog cab file downloaded"
 
-    $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
     WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
     Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML"
     WriteLog "Dell Catalog cab file extracted"
@@ -1215,7 +1232,19 @@ function Get-DellDrivers {
         $models = $component.SupportedSystems.Brand.Model
         foreach ($item in $models) {
             if ($item.Display.'#cdata-section' -match $Model) {
-                $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+	    	
+                if ($WindowsRelease -le 11) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+                } elseif ($WindowsRelease -eq 2016) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W14") }
+                } elseif ($WindowsRelease -eq 2019) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W19") }
+                } elseif ($WindowsRelease -eq 2022) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                } else {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                }
+		
                 if ($validOS) {
                     $driverPath = $component.path
                     $downloadUrl = $baseLocation + $driverPath
@@ -1594,8 +1623,10 @@ function Get-WindowsESD {
     $cabFileUrl = if ($WindowsRelease -eq 10) {
         'https://go.microsoft.com/fwlink/?LinkId=841361'
     }
-    else {
+    elseif ($WindowsRelease -eq 11) {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
+    } else {
+        throw "Can't download Windows Server. Please download the Windows setup media from your subscription homepage."
     }
 
     # Download cab file
@@ -2239,16 +2270,21 @@ function Get-KBLink {
 }
 function Get-LatestWindowsKB {
     param (
-        [ValidateSet(10, 11)]
-        [int]$WindowsRelease
+        [Parameter(Mandatory)]
+        [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
+        [int]$WindowsRelease,
+        [Parameter(Mandatory)]
+        [string]$WindowsVersion
     )
         
     # Define the URL of the update history page based on the Windows release
     if ($WindowsRelease -eq 11) {
         $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information'
     }
-    else {
+    elseif ($WindowsRelease -eq 10) {
         $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/release-information'
+    } else {
+        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info'
     }
         
     # Use Invoke-WebRequest to fetch the content of the page
@@ -2258,7 +2294,11 @@ function Get-LatestWindowsKB {
     $VerbosePreference = $OriginalVerbosePreference
         
     # Use a regular expression to find the KB article number
-    $kbArticleRegex = 'KB\d+'
+    if ($WindowsRelease -le 11) {
+        $kbArticleRegex = "(?:Version $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
+    } else {
+        $kbArticleRegex = "(?:Windows Server $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
+    }
     $kbArticle = [regex]::Match($response.Content, $kbArticleRegex).Value
         
     return $kbArticle
@@ -2379,9 +2419,13 @@ function Get-WimIndex {
     If ($ISOPath) {
         $wimindex = switch ($WindowsSKU) {
             'Home' { 1 }
+            'Standard' { 1 }
             'Home_N' { 2 }
+            'Standard (Desktop Experience)' { 1 }
             'Home_SL' { 3 }
+            'Datacenter' { 3 }
             'EDU' { 4 }
+            'Datacenter (Desktop Experience)' { 4 }
             'EDU_N' { 5 }
             'Pro' { 6 }
             'Pro_N' { 7 }
@@ -2412,8 +2456,13 @@ function Get-Index {
     
     # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
     if($ISOPath){
-        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
-        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+        if ($WindowsSKU -notmatch "Standard|Datacenter") {
+            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+            $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+        } else {
+            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+            $WindowsImage = $imageIndex.ImageName.Substring(0, 19)
+        }
     }
     else{
         $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
@@ -2431,8 +2480,8 @@ function Get-Index {
         return $matchingImageIndex.ImageIndex
     }
     else {
-        # Look for either the number 10 or 11 in the ImageName
-        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -like "*10*") -or ($_.ImageName -like "*11*") }
+        # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
+        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
             
         while ($true) {
             # Present list of ImageNames to the end user if no matching ImageIndex is found
@@ -2544,7 +2593,7 @@ function New-OSPartition {
     if ((Get-CimInstance Win32_OperatingSystem).Caption -match "Server") {
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
-    if ($CompactOS) {
+    elseif ($CompactOS) {
         WriteLog '$CompactOS is set to true, using -Compact switch to apply the WIM file to the OS partition.'
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\" -Compact)
     }
@@ -3077,14 +3126,25 @@ Function Get-WindowsVersionInfo {
         Enterprise { 'Ent' }
         Education { 'Edu' }
         ProfessionalWorkstation { 'Pro_Wks' }
+	ServerStandard { 'Srv_Std' }
+        ServerDatacenter { 'Srv_Dtc' }
     }
     WriteLog "Windows SKU Modified to: $SKU"
 
-    if ($CurrentBuild -ge 22000) {
-        $Name = 'Win11'
-    }
-    else {
-        $Name = 'Win10'
+    if ($SKU -notmatch "Srv") {
+        if ($CurrentBuild -ge 22000) {
+            $Name = 'Win11'
+        }
+        else {
+            $Name = 'Win10'
+        }
+    } else {
+        $Name = switch ($CurrentBuild) {
+            26100 { '2025' }
+            20348 { '2022' }
+            17763 { '2019' }
+            Default { $DisplayVersion }
+        }
     }
     
     WriteLog "Unloading registry"
@@ -3757,7 +3817,19 @@ if (($VMHostIPAddress) -and ($VMSwitchName)){
         throw "IP address for -VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
     }
     if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
-        throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        try {
+	    # Bypass the check for systems that could have a Hyper-V NAT switch
+	    $null = Get-NetNat -ErrorAction Stop
+     	    $NetNat = @(Get-NetNat -ErrorAction Stop);
+     	} catch {
+     	    throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        }
+	if ($NetNat.Count -gt 0) {
+            WriteLog "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress!"
+	    WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
+        } else {
+	    throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+	}
     }
     WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
 }
@@ -3827,7 +3899,7 @@ if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
         if ($make -eq 'Dell'){
             WriteLog 'Getting Dell drivers'
             #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
-            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch
+            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
             WriteLog 'Getting Dell drivers completed successfully'
         }
     }
@@ -4025,6 +4097,29 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
+
+        #Modify InstallAppsandSysprep.cmd to remove old script variables
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $StartIndex = $CmdContent.IndexOf("REM START Batch variables placeholder")
+        $EndIndex = $CmdContent.IndexOf("REM END Batch variables placeholder")
+        if (($StartIndex + 1) -lt $EndIndex) {
+            for ($i = ($StartIndex + 1); $i -lt $EndIndex; $i++) {
+                $CmdContent[$i] = $null
+            }
+        }
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+
+        if ($AppsScriptVariables) {
+            #Modify InstallAppsandSysprep.cmd to add the script variables
+            $CmdContent = [System.Collections.ArrayList](Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd")
+            $ScriptIndex = $CmdContent.IndexOf("REM START Batch variables placeholder") + 1
+            foreach ($VariableKey in $AppsScriptVariables.Keys) {
+                $CmdContent.Insert($ScriptIndex, ("set {0}={1}" -f $VariableKey, $AppsScriptVariables[$VariableKey]))
+                $ScriptIndex++
+            }
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+        }
+	
         #Create Apps ISO
         WriteLog "Creating $AppsISO file"
         New-AppsISO
@@ -4073,7 +4168,15 @@ try {
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        if ($WindowsRelease -le 11) {
+            $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -lt 2022) {
+            $Name = """Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        } else {
+            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -4088,7 +4191,15 @@ try {
     #will take Precendence over $UpdateLastestCU if both were set to $true
     if ($UpdatePreviewCU) {
         Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
-        $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+	if ($WindowsRelease -le 11) {
+            $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update Preview for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -lt 2022) {
+            $Name = """Cumulative update Preview for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        } else {
+            $Name = """Cumulative update Preview for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -4102,7 +4213,13 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        if ($WindowsRelease -le 11) {
+            $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        } elseif ($WindowsRelease -le 2022) {
+            $Name = "Cumulative update for .net framework windows 10 $WindowsVersion for $WindowsArch -preview"
+        } else {
+            $Name = "Cumulative update for .net framework windows 11 $WindowsVersion for $WindowsArch -preview"
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -4132,7 +4249,28 @@ try {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
             WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+
+            #Retry update install in case there are updates included that fail and need to applied twice
+            $addPackageSuccessful = $false
+            $addPackageFailedCount = 0
+            $currentWarningPreference = $WarningPreference
+            $WarningPreference = [System.Management.Automation.ActionPreference]::Stop
+            while (!$addPackageSuccessful -and ($addPackageFailedCount -lt 3)) {
+                try {
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+                    $addPackageSuccessful = $true
+                } catch {
+                    $addPackageFailedCount++
+                    WriteLog "Adding updates failed"
+                    WriteLog "Try $addPackageFailedCount/3"
+                }
+            }
+            $WarningPreference = $currentWarningPreference
+            if ($addPackageFailedCount -ge 3) {
+                WriteLog "Adding KBs failed"
+                WriteLog "Please check the parameters"
+            }
+     
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
