@@ -2863,11 +2863,12 @@ function Optimize-FFUCaptureDrive {
     )
     try {
         WriteLog 'Mounting VHDX for volume optimization'
-        Mount-VHD -Path $VhdxPath
+        $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+        $osPartition = $mountedDisk | Get-Partition | Where-Object { $_.GptType -eq "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" }
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose 
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority -Verbose 
         WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority -Verbose
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VhdxPath
         WriteLog 'Mounting VHDX as read-only for optimization'
