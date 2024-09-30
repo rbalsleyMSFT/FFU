@@ -1,8 +1,10 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
   <settings pass="specialize">
+  <!--<ComputerName> must be in the first Component Element  "Microsoft-Windows-Shell-Setup" . Do not change the order or remove it -->
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="arm64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <ComputerName>MyComputer</ComputerName>
     </component>
+  <!--Place addtional Components Elements and settings below here. -->
   </settings>
 </unattend>
