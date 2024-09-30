@@ -312,6 +312,7 @@ param(
     [bool]$UpdateLatestMSRT,
     [bool]$UpdateEdge,
     [bool]$UpdateOneDrive,
+    [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
     [bool]$CopyAutopilot,
@@ -341,6 +342,23 @@ param(
     [bool]$PromptExternalHardDiskMedia = $true
 )
 $version = '2410.1'
+
+#Class definition for vhdx cache
+class VhdxCacheUpdateItem {
+    [string]$Name
+    VhdxCacheUpdateItem([string]$Name) {
+        $this.Name = $Name
+    }
+}
+
+class VhdxCacheItem {
+    [string]$VhdxFileName = ""
+    [string]$WindowsSKU = ""
+    [string]$WindowsRelease = ""
+    [string]$WindowsVersion = ""
+    [string]$OptionalFeatures = ""
+    [VhdxCacheUpdateItem[]]$IncludedUpdates = @()
+}
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -384,6 +402,7 @@ if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
+if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
 
 
 #FUNCTIONS
@@ -4032,6 +4051,127 @@ if ($InstallApps) {
 #Create VHDX
 try {
 
+    #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
+    #Changed to use MU Catalog instead of using Get-LatestWindowsKB
+    #The Windows release info page is updated later than the MU Catalog
+    if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
+        Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
+        if ($WindowsRelease -le 11) {
+            $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -lt 2022) {
+            $Name = """Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        } else {
+            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "Latest CU saved to $KBPath\$KBFilePath"
+    }
+
+    #Update Latest Preview Cumlative Update 
+    #will take Precendence over $UpdateLastestCU if both were set to $true
+    if ($UpdatePreviewCU) {
+        Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
+	if ($WindowsRelease -le 11) {
+            $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update Preview for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
+        } elseif ($WindowsRelease -lt 2022) {
+            $Name = """Cumulative update Preview for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        } else {
+            $Name = """Cumulative update Preview for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "Latest Preview CU saved to $KBPath\$KBFilePath"
+    }
+
+    #Update Latest .NET Framework
+    if ($UpdateLatestNet) {
+        Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
+        if ($WindowsRelease -le 11) {
+            $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        } elseif ($WindowsRelease -le 2022) {
+            $Name = "Cumulative update for .net framework windows 10 $WindowsVersion for $WindowsArch -preview"
+        } else {
+            $Name = "Cumulative update for .net framework windows 11 $WindowsVersion for $WindowsArch -preview"
+        }
+        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
+        $KBFilePath = Save-KB -Name $Name -Path $KBPath
+        WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
+    }
+    # #Update Latest Security Platform Update
+    # if ($UpdateSecurityPlatform) {
+    #     WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
+    #     $Name = "Windows Security platform definition updates"
+    #     #Check if $KBPath exists, if not, create it
+    #     If (-not (Test-Path -Path $KBPath)) {
+    #         WriteLog "Creating $KBPath"
+    #         New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+    #     }
+    #     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
+    #     $KBFilePath = Save-KB -Name $Name -Path $KBPath
+    #     WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
+    # }
+
+    #Search for cached VHDX and skip VHDX creation if there's a cached version
+    if ($AllowVHDXCaching) {
+        if (Test-Path -Path $VHDXCacheFolder) {
+            $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter "*_config.json" | Sort-Object -Property CreationTime -Descending)
+            $downloadedKBs = @(Get-ChildItem -File -Path $KBPath)
+            #$jsonDeserializer = [System.Web.Script.Serialization.JavaScriptSerializer]::new()
+
+            foreach ($vhdxJson in $vhdxJsons) {
+                try {
+                    #$vhdxCacheItem = $jsonDeserializer.Deserialize((Get-Content -Path $vhdxJson.FullName -Raw), [VhdxCacheItem])
+                    $vhdxCacheItem = Get-Content -Path $vhdxJson.FullName -Raw | ConvertFrom-Json
+
+                    if ((($vhdxCacheItem.WindowsSKU -ne $WindowsSKU) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsSKU) -xor [string]::IsNullOrEmpty($WindowsSKU)))) {
+                        WriteLog "WindowsSKU not equal"
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.WindowsRelease -ne $WindowsRelease) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsRelease) -xor [string]::IsNullOrEmpty($WindowsRelease)))) {
+                        WriteLog "WindowsRelease not equal"
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.WindowsVersion -ne $WindowsVersion) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsVersion) -xor [string]::IsNullOrEmpty($WindowsVersion)))) {
+                        WriteLog "WindowsVersion not equal"
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.OptionalFeatures) -xor [string]::IsNullOrEmpty($OptionalFeatures)))) {
+                        WriteLog "OptionalFeatures not equal"
+                        continue
+                    }
+
+                    if ((Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name).Length -gt 0) {
+                        (Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name)
+                        $downloadedKBs.Name
+                        $vhdxCacheItem.IncludedUpdates.Name
+                        WriteLog "Updates not equal"
+                        continue
+                    }
+
+                    WriteLog "Found cached VHDX file with same parameters and patches"
+                    $cachedVHDXFileFound = $true
+                    $cachedVHDXInfo = $vhdxCacheItem
+                    break
+                } catch {
+                    WriteLog "Reading $vhdxJson Failed with error $_"
+                }
+            }
+        }
+    }
+    
+    if (-Not $cachedVHDXFileFound) {
     if ($ISOPath) {
         $wimPath = Get-WimFromISO
     }
@@ -4060,63 +4200,16 @@ try {
 
     Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
 
-    #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
-    #Changed to use MU Catalog instead of using Get-LatestWindowsKB
-    #The Windows release info page is updated later than the MU Catalog
-    if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
-        Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+    if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
+        #Check if $KBCachePath exists, if not, create it
+        if ($AllowUpdateCaching) {
+            if (-not (Test-Path -Path $KBCachePath)) {
+                WriteLog "Creating $KBCachePath"
+                New-Item -Path $KBCachePath -ItemType Directory -Force | Out-Null
+            }
         }
-        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
 
-    #Update Latest Preview Cumlative Update 
-    #will take Precendence over $UpdateLastestCU if both were set to $true
-    if ($UpdatePreviewCU) {
-        Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
-        $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
-        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest Preview CU saved to $KBPath\$KBFilePath"
-    }
-
-    #Update Latest .NET Framework
-    if ($UpdateLatestNet) {
-        Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
-        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
-    }
-    # #Update Latest Security Platform Update
-    # if ($UpdateSecurityPlatform) {
-    #     WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
-    #     $Name = "Windows Security platform definition updates"
-    #     #Check if $KBPath exists, if not, create it
-    #     If (-not (Test-Path -Path $KBPath)) {
-    #         WriteLog "Creating $KBPath"
-    #         New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-    #     }
-    #     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
-    #     $KBFilePath = Save-KB -Name $Name -Path $KBPath
-    #     WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
-    # }
     
     
     #Add Windows packages
@@ -4126,9 +4219,17 @@ try {
             WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
             Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
             WriteLog "KBs added to $WindowsPartition"
+            if ($AllowVHDXCaching) {
+                $cachedVHDXInfo = [VhdxCacheItem]::new()
+                $includedUpdates = Get-ChildItem -Path $KBPath -File
+                
+                foreach ($includedUpdate in $includedUpdates) {
+                    $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
+                }
+            }
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
-	        WriteLog "Clean Up the WinSxS Folder"
+            WriteLog "Clean Up the WinSxS Folder"
             Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
             WriteLog "Clean Up the WinSxS Folder completed"
         }
@@ -4139,11 +4240,25 @@ try {
         }  
     }
 
-
     #Enable Windows Optional Features (e.g. .Net3, etc)
     If ($OptionalFeatures) {
         $Source = Join-Path (Split-Path $wimpath) "sxs"
         Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+    }    
+    
+    } else {
+        #Use cached vhdx file
+        WriteLog "Using cached VHDX file to speed up build proces"
+        WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
+
+        Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J
+        $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
+
+        $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
+        $osPartition = $vhdxDisk | Get-Partition | Where-Object { $_.GptType -eq "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" }
+        $osPartitionDriveLetter = $osPartition.DriveLetter
+        $WindowsPartition = $osPartitionDriveLetter + ":\"
+
     }
 
     #Set Product key
@@ -4165,7 +4280,7 @@ try {
     If ($InstallApps) {
         #Copy Unattend file so VM Boots into Audit Mode
         WriteLog 'Copying unattend file to boot to audit mode'
-        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory | Out-Null
+        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory -Force | Out-Null
         if($WindowsArch -eq 'x64'){
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
@@ -4173,6 +4288,35 @@ try {
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
         WriteLog 'Copy completed'
+    }
+
+    if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
+        WriteLog 'New cachabe VHDX created'
+
+        WriteLog 'Defragmenting Windows partition...'
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority -Verbose 
+        WriteLog 'Performing slab consolidation on Windows partition...'
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority -Verbose
+        WriteLog 'Dismounting VHDX'
+        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+
+        WriteLog 'Copying to cache dir'
+
+        #Assuming there are now name collisons
+        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J
+
+        #Only create new instance if not created during patching
+        if ($null -eq $cachedVHDXInfo) {
+            $cachedVHDXInfo = [VhdxCacheItem]::new()
+        }
+        $cachedVHDXInfo.VhdxFileName = $("$VMName.vhdx")
+        $cachedVHDXInfo.WindowsSKU = $WindowsSKU
+        $cachedVHDXInfo.WindowsRelease = $WindowsRelease
+        $cachedVHDXInfo.WindowsVersion = $WindowsVersion
+        $cachedVHDXInfo.OptionalFeatures = $OptionalFeatures
+        
+        $cachedVHDXInfo | ConvertTo-Json | Out-File -FilePath ("{0}\{1}_config.json" -f $($VHDXCacheFolder), $VMName)
+    } else {
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 }
