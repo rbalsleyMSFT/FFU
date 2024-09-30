@@ -4240,7 +4240,28 @@ try {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
             WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+
+            #Retry update install in case there are updates included that fail and need to applied twice
+            $addPackageSuccessful = $false
+            $addPackageFailedCount = 0
+            $currentWarningPreference = $WarningPreference
+            $WarningPreference = [System.Management.Automation.ActionPreference]::Stop
+            while (!$addPackageSuccessful -and ($addPackageFailedCount -lt 3)) {
+                try {
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+                    $addPackageSuccessful = $true
+                } catch {
+                    $addPackageFailedCount++
+                    WriteLog "Adding updates failed"
+                    WriteLog "Try $addPackageFailedCount/3"
+                }
+            }
+            $WarningPreference = $currentWarningPreference
+            if ($addPackageFailedCount -ge 3) {
+                WriteLog "Adding KBs failed"
+                WriteLog "Please check the parameters"
+            }
+     
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
