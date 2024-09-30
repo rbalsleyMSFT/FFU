@@ -12,6 +12,7 @@ reg load "HKLM\FFU" $Software
 $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
 [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
 $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
+$InstallationType = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'InstallationType'
 $BuildDate = Get-Date -uformat %b%Y
 
 $SKU = switch ($SKU) {
@@ -32,7 +33,7 @@ $SKU = switch ($SKU) {
     ServerDatacenter { 'Srv_Dtc' }
 }
 
-if ($SKU -notmatch "Srv") {
+if ($InstallationType -eq "Client") {
     if ($CurrentBuild -ge 22000) {
         $Name = 'Win11'
     }
@@ -45,6 +46,9 @@ if ($SKU -notmatch "Srv") {
         20348 { '2022' }
         17763 { '2019' }
         Default { $DisplayVersion }
+    }
+    if ($InstallationType -eq "Server Core") {
+        $SKU += "_Core"
     }
 }
 
