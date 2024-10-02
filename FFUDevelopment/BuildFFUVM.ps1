@@ -4166,7 +4166,7 @@ try {
         } elseif ($WindowsRelease -lt 2022) {
             $Name = """Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
         } else {
-            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch"""
+            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch"" ""Security Updates"""
         }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
@@ -4206,10 +4206,14 @@ try {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
         if ($WindowsRelease -le 11) {
             $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
-        } elseif ($WindowsRelease -le 2022) {
-            $Name = "Cumulative update for .net framework windows 10 $WindowsVersion for $WindowsArch -preview"
+        } elseif ($WindowsRelease -eq 2016) {
+            $Name = '"Cumulative Update for .NET Framework" "4.8" for Windows 10 Version ' + $WindowsVersion + ' x64 -preview'
+        } elseif ($WindowsRelease -eq 2019) {
+            $Name = '"Cumulative Update for .NET Framework" "3.5, 4.7.2 and 4.8" for Windows 10 Version ' + $WindowsVersion + ' x64 -preview'
+        } elseif ($WindowsRelease -eq 2022) {
+            $Name = '"Cumulative Update" ".NET Framework" "3.5, 4.8 and 4.8.1" "server operating system " ' + $WindowsVersion + ' x64 -preview'
         } else {
-            $Name = "Cumulative update for .net framework windows 11 $WindowsVersion for $WindowsArch -preview"
+            $Name = '"Cumulative Update for .NET Framework" "3.5 and 4.8.1" for Windows 11 ' + $WindowsVersion + ' x64 -preview'
         }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
