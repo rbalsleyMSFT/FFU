@@ -4209,7 +4209,7 @@ try {
         } elseif ($WindowsRelease -eq 2016) {
             $Name = '"Cumulative Update for .NET Framework" "4.8" for Windows 10 Version ' + $WindowsVersion + ' x64 -preview'
         } elseif ($WindowsRelease -eq 2019) {
-            $Name = '"Cumulative Update for .NET Framework" "3.5, 4.7.2 and 4.8" for Windows 10 Version ' + $WindowsVersion + ' x64 -preview'
+            $Name = '"Cumulative Update for .NET Framework" "3.5, 4.7.2 and 4.8" Server ' + $WindowsRelease + ' x64 -preview'
         } elseif ($WindowsRelease -eq 2022) {
             $Name = '"Cumulative Update" ".NET Framework" "3.5, 4.8 and 4.8.1" "server operating system " ' + $WindowsVersion + ' x64 -preview'
         } else {
