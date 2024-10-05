@@ -207,15 +207,13 @@ param(
     [Parameter(Mandatory = $false, Position = 0)]
     [ValidateScript({ Test-Path $_ })]
     [string]$ISOPath,
-    [ValidateScript({
-            $allowedSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')
-            if ($allowedSKUs -contains $_) { $true } else { throw "Invalid WindowsSKU value. Allowed values: $($allowedSKUs -join ', ')" }
-            return $true
-        })]
+    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
+
     [bool]$InstallApps,
+
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
@@ -394,7 +392,15 @@ if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
-
+if (-not $installationType) { $installationType = if ($WindowsRelease.ToString().Length -eq 2) { 'Client' } else { 'Server' } }
+if ($installationType -eq 'Server'){
+    #Map $WindowsRelease to $WindowsVersion for Windows Server
+    switch ($WindowsRelease) {
+        2016 { $WindowsVersion = '1607' }
+        2019 { $WindowsVersion = '1809' }
+        2022 { $WindowsVersion = '21H2' }
+    }
+}
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -1181,9 +1187,10 @@ function Get-DellDrivers {
         [ValidateSet("x64", "x86", "ARM64")]
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
-        [string]$WindowsRelease
+        [int]$WindowsRelease
     )
 
+    #CatalogPC.cab is the catalog for Windows client PCs, Catalog.cab is the catalog for Windows Server
     if ($WindowsRelease -le 11) {
         $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
         $DellCabFile = "$DriversFolder\CatalogPC.cab"
@@ -1624,7 +1631,7 @@ function Get-WindowsESD {
     elseif ($WindowsRelease -eq 11) {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
     } else {
-        throw "Can't download Windows Server. Please download the Windows setup media from your subscription homepage."
+        throw "Downloading Windows Server is not supported. Please use the -ISOPath parameter to specify the path to the Windows Server ISO file."
     }
 
     # Download cab file
@@ -2657,7 +2664,7 @@ function New-RecoveryPartition {
         $calculatedRecoverySize = $RecoveryPartitionSize
     }
     else {
-        $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim"
+        $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim" -Attributes Hidden -ErrorAction SilentlyContinue
 
         if (($null -ne $winReWim) -and ($winReWim.Count -eq 1)) {
             # Wim size + 100MB is minimum WinRE partition size.
@@ -2951,9 +2958,9 @@ function Optimize-FFUCaptureDrive {
         WriteLog 'Mounting VHDX for volume optimization'
         Mount-VHD -Path $VhdxPath
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose 
+        Optimize-Volume -DriveLetter W -Defrag -NormalPriority
         WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
+        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VhdxPath
         WriteLog 'Mounting VHDX as read-only for optimization'
@@ -3143,8 +3150,12 @@ Function Get-WindowsVersionInfo {
     WriteLog "Windows SKU: $SKU"
     [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
     WriteLog "Windows Build: $CurrentBuild"
+    #DisplayVersion does not exist for 1607 builds (RS1 and Server 2016) and Server 2019
+    if($CurrentBuild -notin (14393, 17763)) {
     $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
     WriteLog "Windows Version: $DisplayVersion"
+    }
+    
     $BuildDate = Get-Date -uformat %b%Y
 
     $SKU = switch ($SKU) {
@@ -3154,7 +3165,7 @@ Function Get-WindowsVersionInfo {
         Enterprise { 'Ent' }
         Education { 'Edu' }
         ProfessionalWorkstation { 'Pro_Wks' }
-	ServerStandard { 'Srv_Std' }
+	    ServerStandard { 'Srv_Std' }
         ServerDatacenter { 'Srv_Dtc' }
     }
     WriteLog "Windows SKU Modified to: $SKU"
@@ -3166,11 +3177,13 @@ Function Get-WindowsVersionInfo {
         else {
             $Name = 'Win10'
         }
-    } else {
+    } 
+    else {
         $Name = switch ($CurrentBuild) {
             26100 { '2025' }
             20348 { '2022' }
             17763 { '2019' }
+            14393 { '2016' }
             Default { $DisplayVersion }
         }
     }
@@ -3851,18 +3864,20 @@ if (($VMHostIPAddress) -and ($VMSwitchName)){
     }
     if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
         try {
-	    # Bypass the check for systems that could have a Hyper-V NAT switch
-	    $null = Get-NetNat -ErrorAction Stop
-     	    $NetNat = @(Get-NetNat -ErrorAction Stop);
-     	} catch {
-     	    throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+            # Bypass the check for systems that could have a Hyper-V NAT switch
+            $null = Get-NetNat -ErrorAction Stop
+            $NetNat = @(Get-NetNat -ErrorAction Stop)
         }
-	if ($NetNat.Count -gt 0) {
+        catch {
+            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        }
+        if ($NetNat.Count -gt 0) {
             WriteLog "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress!"
-	    WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
-        } else {
-	    throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
-	}
+            WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
+        }
+        else {
+            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        }
     }
     WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
 }
@@ -4201,38 +4216,38 @@ try {
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        if ($WindowsRelease -le 11) {
+        if ($installationType -eq 'Client') {
             $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
-        } elseif ($WindowsRelease -eq 2022) {
-            $Name = """Cumulative Update for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
-        } elseif ($WindowsRelease -lt 2022) {
-            $Name = """Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
-        } else {
-            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch"""
+        }
+        if ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for Microsoft server operating system, version 22h2 for $WindowsArch"""
+        } 
+        if ($WindowsRelease -in 2016, 2019) {
+            $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch"""
         }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
+        #Get latest Servicing Stack Update for Windows Server 2016
+        if ($WindowsRelease -eq 2016) {
+            $SSUName = """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch"""
+            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
+            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
+            $SSUFilePath = "$KBPath\$SSUFile"
+            WriteLog "Latest SSU saved to $SSUFilePath"
+        }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
         WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
 
-    #Update Latest Preview Cumlative Update 
+    #Update Latest Preview Cumlative Update for Client OS only
     #will take Precendence over $UpdateLastestCU if both were set to $true
-    if ($UpdatePreviewCU) {
+    if ($UpdatePreviewCU -and $installationType -eq 'Client') {
         Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
-	if ($WindowsRelease -le 11) {
-            $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
-        } elseif ($WindowsRelease -eq 2022) {
-            $Name = """Cumulative Update Preview for Microsoft server operating system, version $WindowsVersion for $WindowsArch"""
-        } elseif ($WindowsRelease -lt 2022) {
-            $Name = """Cumulative update Preview for Windows 10 Version $WindowsVersion for $WindowsArch"""
-        } else {
-            $Name = """Cumulative update Preview for Windows 11 Version $WindowsVersion for $WindowsArch"""
-        }
+        $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -4246,12 +4261,17 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        if ($WindowsRelease -le 11) {
-            $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
-        } elseif ($WindowsRelease -le 2022) {
-            $Name = "Cumulative update for .net framework windows 10 $WindowsVersion for $WindowsArch -preview"
-        } else {
-            $Name = "Cumulative update for .net framework windows 11 $WindowsVersion for $WindowsArch -preview"
+        if ($installationType -eq 'Client') {
+        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        }
+        if ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" " + """operating system version 21H2 for x64"""
+        }
+        if ($WindowsRelease -eq 2019) {
+            $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64"""
+        }
+        if ($WindowsRelease -eq 2016) {
+            $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64"""
         }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
@@ -4282,7 +4302,22 @@ try {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
             WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+            # If WindowsRelease is 2016, we need to add the SSU first
+            if ($WindowsRelease -eq 2016) {
+                WriteLog "WindowsRelease is 2016, adding SSU first"
+                WriteLog "Adding SSU to $WindowsPartition"
+                # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
+                # Commenting out -preventpending as it causes an issue with the SSU being applied
+                # Seems to be because of the registry being mounted per dism.log
+                Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                WriteLog "SSU added to $WindowsPartition"
+                WriteLog "Removing $SSUFilePath"
+                Remove-Item -Path $SSUFilePath -Force | Out-Null
+                WriteLog 'SSU removed'
+                WriteLog "Adding CU to $WindowsPartition"
+            }
+            # Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
             WriteLog "KBs added to $WindowsPartition"
 	    if ($AllowUpdateCaching) {
                 WriteLog "Copying downloaded KBs from $KBPath to $KBCachePath"
@@ -4291,13 +4326,22 @@ try {
             }
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
-	    WriteLog "Clean Up the WinSxS Folder"
+            WriteLog "Clean Up the WinSxS Folder"
+            WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
             Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
             WriteLog "Clean Up the WinSxS Folder completed"
         }
         catch {
             Write-Host "Adding KB to VHDX failed with error $_"
             WriteLog "Adding KB to VHDX failed with error $_"
+            if ($_.Exception.HResult -eq -2146498525){
+                Write-Host 'Missing latest Servicing Stack Update'
+                Write-Host 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
+                Write-Host 'Recommended to use the latest media'
+                WriteLog 'Missing latest Servicing Stack Update'
+                WriteLog 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
+                WriteLog 'Recommended to use the latest media'
+            }
             throw $_
         }  
     }
