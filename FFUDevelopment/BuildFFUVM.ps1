@@ -4192,7 +4192,7 @@ try {
             $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         }
         if ($WindowsRelease -eq 2025) {
-            $Name = """Cumulative update for Windows 11 Version 24h2 for $WindowsArch"" ""Security Updates"""
+            $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch"""
         }
         if ($WindowsRelease -eq 2022) {
             $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch"""
