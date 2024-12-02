@@ -11,30 +11,49 @@ reg load "HKLM\FFU" $Software
 
 $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
 [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
-$DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
+if ($CurrentBuild -notin 14393, 17763) {
+    $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
+}
+$InstallationType = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'InstallationType'
 $BuildDate = Get-Date -uformat %b%Y
 
 $SKU = switch ($SKU) {
     Core { 'Home' }
-    CoreN { 'HomeN'}
-    CoreSingleLanguage { 'HomeSL'}
+    CoreN { 'HomeN' }
+    CoreSingleLanguage { 'HomeSL' }
     Professional { 'Pro' }
-    ProfessionalN { 'ProN'}
+    ProfessionalN { 'ProN' }
     ProfessionalEducation { 'Pro_Edu' }
     ProfessionalEducationN { 'Pro_EduN' }
     Enterprise { 'Ent' }
-    EnterpriseN { 'EntN'}
+    EnterpriseN { 'EntN' }
     Education { 'Edu' }
-    EducationN { 'EduN'}
+    EducationN { 'EduN' }
     ProfessionalWorkstation { 'Pro_Wks' }
     ProfessionalWorkstationN { 'Pro_WksN' }
+    ServerStandard { 'Srv_Std' }
+    ServerDatacenter { 'Srv_Dtc' }
 }
 
-if($CurrentBuild -ge 22000){
-    $Name = 'Win11'
+if ($InstallationType -eq "Client") {
+    if ($CurrentBuild -ge 22000) {
+        $Name = 'Win11'
+    }
+    else {
+        $Name = 'Win10'
+    }
 }
-else{
-    $Name = 'Win10'
+else {
+    $Name = switch ($CurrentBuild) {
+        26100 { '2025' }
+        20348 { '2022' }
+        17763 { '2019' }
+        14393 { '2016' }
+        Default { $DisplayVersion }
+    }
+    if ($InstallationType -eq "Server Core") {
+        $SKU += "_Core"
+    }
 }
 
 #If Office is installed, modify the file name of the FFU
@@ -55,8 +74,10 @@ else{
 #Unload Registry
 Set-Location X:\
 Remove-Variable SKU
+if ($CurrentBuild -notin 14393, 17763) {
+    Remove-Variable DisplayVersion
+}
 Remove-Variable CurrentBuild
-Remove-Variable DisplayVersion
 Remove-Variable Office
 reg unload "HKLM\FFU"
 #This prevents Critical Process Died errors you can have during deployment of the FFU - may not happen during capture from WinPE, but adding here to be consistent with VHDX capture

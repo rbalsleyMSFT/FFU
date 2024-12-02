@@ -5,9 +5,12 @@ REM d:\Office\setup.exe /configure d:\office\DeployFFU.xml
 REM Install Defender Platform Update
 REM Install Defender Definitions
 REM Install Windows Security Platform Update
+REM Install Windows Malicious Software Removal Tool
 REM Install OneDrive Per Machine
 REM Install Edge Stable
 REM Winget Win32 Apps
+REM START Batch variables placeholder
+REM END Batch variables placeholder
 REM Add additional apps below here
 REM Contoso App (Example)
 REM msiexec /i d:\Contoso\setup.msi /qn /norestart
@@ -30,11 +33,8 @@ for /d %%D in ("%basepath%\*") do (
             ) 
         )
     )
-    @REM for %%F in ("!appfolder!\*.xml") do (
-    @REM     set "licensefile=%%F"
-    @REM )
     if defined mainpackage (
-        set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!""
+        set "dism_command=DISM /Online /Add-ProvisionedAppxPackage /PackagePath:"!mainpackage!" /Region:all /StubPackageOption:installfull"
         if exist "!dependenciesfolder!" (
             for %%G in ("!dependenciesfolder!\*") do (
                 set "dism_command=!dism_command! /DependencyPackagePath:"%%G""
@@ -48,7 +48,6 @@ for /d %%D in ("%basepath%\*") do (
         ) else (
             set "dism_command=!dism_command! /SkipLicense"
         )
-        set "dism_command=!dism_command! /Region:All"
         echo !dism_command!
         !dism_command!
     )
