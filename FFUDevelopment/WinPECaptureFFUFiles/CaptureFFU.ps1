@@ -88,11 +88,13 @@ if ($CustomFFUNameTemplate) {
 #Unload Registry
 Set-Location X:\
 Remove-Variable SKU
+Remove-Variable CurrentBuild
 if ($CurrentBuild -notin 14393, 17763) {
     Remove-Variable WindowsVersion
 }
-Remove-Variable CurrentBuild
-Remove-Variable Office
+if($Office) {
+    Remove-Variable Office
+}
 reg unload "HKLM\FFU"
 #This prevents Critical Process Died errors you can have during deployment of the FFU - may not happen during capture from WinPE, but adding here to be consistent with VHDX capture
 Write-Host "Sleeping for 60 seconds to allow registry to unload prior to capture"
