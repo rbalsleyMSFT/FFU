@@ -4,19 +4,32 @@ param(
     $DeployISOPath,
     [Switch]$DisableAutoPlay
 )
-$Host.UI.RawUI.WindowTitle = 'USB Imaging Tool Creator'
+$Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator'
 
 if($DeployISOPath){
 $DevelopmentPath = $DeployISOPath | Split-Path
+$ImagesPath = "$DevelopmentPath\Images"
 function WriteLog($LogText) { 
 $LogFileName = '\Script.log'
 $LogFile = $DevelopmentPath + $LogFilename
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText" -Force -ErrorAction SilentlyContinue
     Write-Verbose $LogText
 }
-Function Get-USBDrive {
-    $USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
-    If ($USBDrives -and ($null -eq $USBDrives.count)) {
+
+function Write-ProgressLog {
+        param(
+            [string]$Activity,
+            [string]$Status
+        )
+        Write-Progress -Activity $Activity -Status $Status -PercentComplete (($currentStep / $totalSteps) * 100)
+        WriteLog $Status
+        $script:currentStep++
+      
+    }
+Function Get-RemovableDrive {
+writelog "Get information for all removable drives"
+$USBDrives = Get-WmiObject Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media"} 
+If($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
     }
     else {
@@ -27,20 +40,23 @@ Function Get-USBDrive {
     if ($null -eq $USBDrives) {
         WriteLog "No removable USB drive found. Exiting"
         Write-Error "No removable USB drive found. Exiting"
+        Pause
         exit 1
     }
-    return $USBDrives, $USBDrivesCount
-}
+  return $USBDrives, $USBDrivesCount
+  }
+  
 Function Build-DeploymentUSB{
       param(
             [Array]$Drives       
             )
-            writelog "Checking if ffu files are present in the ffu folder"
-            $Images = Get-ChildItem -Path $FFUPath -Filter "*.ffu" -File -Recurse
+            writelog "Creating list of FFU image files"
+            $Images = Get-ChildItem -Path $ImagesPath -Filter "*.ffu" -File -Recurse
             writelog "Checking if drivers are present in the drivers folder"
             $Drivers = Get-ChildItem -Path $DriversPath -Recurse
             $DrivesCount = $Drives.Count
-            Writelog "Creating partitions..."
+            Write-ProgressLog "Create Imaging Tool" "Creating partitions..."
+            writelog "Create job to partition each usb drive"
             foreach ($USBDrive in $Drives) {
             $DriveNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
             $Model = $USBDrive.model
@@ -91,18 +107,26 @@ $Destination = $Drive + ":\"
 if($Images){
 writelog "Copying FFU image files to all drives labeled deploy concurrently"
 foreach ($Drive in $DeployDrives) {
-$Destination = $Drive + ":\"
+$Destination = $Drive + ":\Images"
     $jobScriptBlock = {
         param (
             [string]$SFolder,
             [string]$DFolder
         )
+        New-Item -Path $DFolder -ItemType Directory -Force -Confirm: $false | Out-Null
         Robocopy $SFolder $DFolder /E /COPYALL /R:5 /W:5 /J
     }
 
     WriteLog "Start job to copy all FFU files to $Destination"
-    Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $FFUPath, $Destination | Out-Null
+    Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $ImagesPath, $Destination | Out-Null
     }
+}
+if(!($Images)){
+    foreach ($Drive in $DeployDrives) {
+        WriteLog "Create images directory"
+        $drivepath = $Drive + ":\"
+        New-Item -Path "$drivepath" -Name Images -ItemType Directory -Force -Confirm: $false | Out-Null
+        }
 }
 if($Drivers){
 writelog "Copying driver files to all drives labeled deploy concurrently"
@@ -128,14 +152,14 @@ if(!($Drivers)){
         }
 }
 if($DrivesCount -gt 1){
-Writelog "Building $DrivesCount drives concurrently...Please be patient..."
+Write-ProgressLog "Create Imaging Tool" "Building $DrivesCount drives concurrently...Please be patient..."
 }else{
-Writelog "Building the imaging tool on $model...Please be patient..."
+Write-ProgressLog "Create Imaging Tool" "Building the imaging tool on $model...Please be patient..."
 }
 Get-Job | Wait-Job | Out-Null
 
 Dismount-DiskImage -ImagePath $DeployISOPath | Out-Null
-Writelog "Drive creation jobs completed..."
+Write-ProgressLog "Create Imaging Tool" "Drive creation jobs completed..."
 }
 
 Function New-DeploymentUSB {
@@ -154,7 +178,7 @@ Function New-DeploymentUSB {
         $DriveSize = [math]::round($Drives[$i].size/1GB, 2)
         $DiskNumber = $Drives[$i].DeviceID.Replace("\\.\PHYSICALDRIVE", "")
 	    $Properties = [ordered]@{Number = $i + 1  ; DriveNumber = $DiskNumber ; DriveModel = $driveModel ; 'Size (GB)' = $DriveSize} 
-
+        
         $Drivelist += New-Object PSObject -Property $Properties
         }
         if($Count -gt 1){
@@ -167,20 +191,15 @@ Function New-DeploymentUSB {
             $var = $true
             $DriveSelected = Read-Host 'Enter the drive number to apply the .iso to'
             $DriveSelected = ($DriveSelected -as [int]) -1
-            if($Last){
-            writelog "All drives selected"
-            }else{
-            writelog "Drive $DriveSelected selected"}
+            writelog "Drive $DriveSelected selected"
             }
-            catch {
+
+        catch {
             Write-Host 'Input was not in correct format. Please enter a valid FFU number'
             $var = $false
         }
     } until (($DriveSelected -le $Count -1 -or $last) -and $var)
-
-    $DisableAutoPlayCurrentSetting = (Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name DisableAutoplay).DisableAutoplay
-    if($DisableAutoPlay -and $DisableAutoPlayCurrentSetting -ne 1){
-    writelog "Disable autoPlay current setting is $DisableAutoPlayCurrentSetting"
+    if($DisableAutoPlay){ 
     WriteLog "Setting the registry key to disable autoplay for all drives"
     Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 1 -Type DWORD
     }
@@ -199,10 +218,10 @@ Function New-DeploymentUSB {
     }
     WriteLog "Setting the registry key to re-enable autoplay for all drives"
     if($DisableAutoPlay){
-    Writelog "Setting disable autoplay setting back to $DisableAutoPlayCurrentSetting"
-    Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value $DisableAutoPlayCurrentSetting -Type DWORD
+    Write-ProgressLog "Create Imaging Tool" "Enabling Autoplay"
+    Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 0 -Type DWORD
     }
-    Writelog "Completed!"
+    Write-ProgressLog "Create Imaging Tool" "Completed!"
 }    
 #Get USB Drive and create log file
 if(Test-Path "$DevelopmentPath\Script.log"){
@@ -211,8 +230,11 @@ New-item -Path $DevelopmentPath -Name 'Script.log' -ItemType "file" -Force | Out
 }
 WriteLog 'Begin Logging'
 WriteLog 'Getting USB drive information and usb drive count'
-$USBDrives,$USBDrivesCount = Get-USBDrive
+$USBDrives,$USBDrivesCount = Get-RemovableDrive
+WriteLog 'Setting first step for percentage progress bar'
+$currentStep = 1 
 New-DeploymentUSB -Drives $USBDrives -Count $USBDrivesCount
+
 read-host -Prompt "USB drive creation complete. Press ENTER to exit"
 
 Exit
