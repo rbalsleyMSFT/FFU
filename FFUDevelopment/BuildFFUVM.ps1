@@ -420,6 +420,7 @@ if ($installationType -eq 'Server'){
         2016 { $WindowsVersion = '1607' }
         2019 { $WindowsVersion = '1809' }
         2022 { $WindowsVersion = '21H2' }
+        2025 { $WindowsVersion = '24H2' }
     }
 }
 
