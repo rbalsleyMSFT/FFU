@@ -172,6 +172,9 @@ Model of the device to download drivers. This is required if Make is set.
 .PARAMETER AppsScriptVariables
 When passed a hashtable, the script will alter the $FFUDevelopmentPath\Apps\InstallAppsandSysprep.cmd file to set variables with the hashtable keys as variable names and the hashtable values their content.
 
+.PARAMETER CustomFFUNameTemplate
+Sets a custom FFU output name with placeholders. Allowed placeholders are: {Name}, {DisplayVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}
+
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
@@ -237,8 +240,9 @@ param(
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
     [string]$FFUCaptureLocation,
-    [String]$ShareName = "FFUCaptureShare",
+    [string]$ShareName = "FFUCaptureShare",
     [string]$Username = "ffu_user",
+    [string]$CustomFFUNameTemplate,
     [Parameter(Mandatory = $false)]
     [string]$VMHostIPAddress,
     [bool]$CreateCaptureMedia = $true,
@@ -318,6 +322,7 @@ param(
     [bool]$UpdateLatestMSRT,
     [bool]$UpdateEdge,
     [bool]$UpdateOneDrive,
+    [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
     [bool]$CopyAutopilot,
@@ -347,6 +352,23 @@ param(
     [bool]$PromptExternalHardDiskMedia = $true
 )
 $version = '2410.1'
+
+#Class definition for vhdx cache
+class VhdxCacheUpdateItem {
+    [string]$Name
+    VhdxCacheUpdateItem([string]$Name) {
+        $this.Name = $Name
+    }
+}
+
+class VhdxCacheItem {
+    [string]$VhdxFileName = ""
+    [string]$WindowsSKU = ""
+    [string]$WindowsRelease = ""
+    [string]$WindowsVersion = ""
+    [string]$OptionalFeatures = ""
+    [VhdxCacheUpdateItem[]]$IncludedUpdates = @()
+}
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -390,6 +412,7 @@ if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
+if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
 if (-not $installationType) { $installationType = if ($WindowsRelease.ToString().Length -eq 2) { 'Client' } else { 'Server' } }
 if ($installationType -eq 'Server'){
     #Map $WindowsRelease to $WindowsVersion for Windows Server
@@ -2788,6 +2811,11 @@ Function Set-CaptureFFU {
         $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
         $UpdatedContent = $ScriptContent -replace '(net use).*', ("$SharePath")
         WriteLog 'Updating share command in CaptureFFU.ps1 script with new share information'
+	$UpdatedContent = $UpdatedContent -replace '^\$CustomFFUNameTemplate \= .*#Custom naming', "#Custom naming placeholder"
+	if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
+            $UpdatedContent = $UpdatedContent -replace '#Custom naming placeholder', ("`$CustomFFUNameTemplate = '$CustomFFUNameTemplate' #Custom naming")
+	    WriteLog 'Updating share command in CaptureFFU.ps1 script with new ffu name template information'
+        }
         Set-Content -Path $CaptureFFUScriptPath -Value $UpdatedContent
         WriteLog 'Update complete'
     }
@@ -2928,11 +2956,12 @@ function Optimize-FFUCaptureDrive {
     )
     try {
         WriteLog 'Mounting VHDX for volume optimization'
-        Mount-VHD -Path $VhdxPath
+        $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+        $osPartition = $mountedDisk | Get-Partition | Where-Object { $_.GptType -eq "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" }
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter W -Defrag -NormalPriority
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
         WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VhdxPath
         WriteLog 'Mounting VHDX as read-only for optimization'
@@ -3880,6 +3909,17 @@ if (($WindowsArch -eq 'ARM64') -and ($UpdateLatestMSRT -eq $true)) {
     $UpdateLatestMSRT = $false
     WriteLog 'Windows Malicious Software Removal Tool is not available for the ARM64 architecture.'
 }
+#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 24H2 for Windows 11
+#MCT media only provides 22H2 and 24H2 media
+#This prevents issues with VHDX Caching unecessarily and with searching for CUs
+if ($ISOPath -eq '') {
+    if ($WindowsRelease -eq '10') {
+        $WindowsVersion = '22H2'
+    }
+    if ($WindowsRelease -eq '11') {
+        $WindowsVersion = '24H2'
+    }
+}
 
 ###END PARAMETER VALIDATION
 
@@ -4155,34 +4195,6 @@ if ($InstallApps) {
 #Create VHDX
 try {
 
-    if ($ISOPath) {
-        $wimPath = Get-WimFromISO
-    }
-    else {
-        $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
-    }
-    #If index not specified by user, try and find based on WindowsSKU
-    if (-not($index) -and ($WindowsSKU)) {
-        $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
-    }
-
-    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
-
-    $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
-    
-    New-MSRPartition -VhdxDisk $vhdxDisk
-    
-    $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
-    $osPartitionDriveLetter = $osPartition[1].DriveLetter
-    $WindowsPartition = $osPartitionDriveLetter + ":\"
-
-    #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
-    $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
-
-    WriteLog "All necessary partitions created."
-
-    Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
-
     #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
     #Changed to use MU Catalog instead of using Get-LatestWindowsKB
     #The Windows release info page is updated later than the MU Catalog
@@ -4219,7 +4231,7 @@ try {
     }
 
     #Update Latest Preview Cumlative Update for Client OS only
-    #will take Precendence over $UpdateLastestCU if both were set to $true
+    #will take Precendence over $UpdateLatestCU if both were set to $true
     if ($UpdatePreviewCU -and $installationType -eq 'Client') {
         Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
         $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
@@ -4273,57 +4285,164 @@ try {
     #     $KBFilePath = Save-KB -Name $Name -Path $KBPath
     #     WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
     # }
-    
-    
-    #Add Windows packages
-    if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
-        try {
-            WriteLog "Adding KBs to $WindowsPartition"
-            WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
-            # If WindowsRelease is 2016, we need to add the SSU first
-            if ($WindowsRelease -eq 2016) {
-                WriteLog "WindowsRelease is 2016, adding SSU first"
-                WriteLog "Adding SSU to $WindowsPartition"
-                # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
-                # Commenting out -preventpending as it causes an issue with the SSU being applied
-                # Seems to be because of the registry being mounted per dism.log
-                Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
-                WriteLog "SSU added to $WindowsPartition"
-                WriteLog "Removing $SSUFilePath"
-                Remove-Item -Path $SSUFilePath -Force | Out-Null
-                WriteLog 'SSU removed'
-                WriteLog "Adding CU to $WindowsPartition"
+
+    #Search for cached VHDX and skip VHDX creation if there's a cached version
+    if ($AllowVHDXCaching) {
+        WriteLog 'AllowVHDXCaching is true, checking for cached VHDX file'
+        if (Test-Path -Path $VHDXCacheFolder) {
+            WriteLog "Found $VHDXCacheFolder"
+            $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
+            WriteLog "Found $($vhdxJsons.Count) cached VHDX files"
+            $downloadedKBs = @(Get-ChildItem -File -Path $KBPath)
+            #$jsonDeserializer = [System.Web.Script.Serialization.JavaScriptSerializer]::new()
+
+            foreach ($vhdxJson in $vhdxJsons) {
+                try {
+                    WriteLog "Processing $($vhdxJson.FullName)"
+                    #$vhdxCacheItem = $jsonDeserializer.Deserialize((Get-Content -Path $vhdxJson.FullName -Raw), [VhdxCacheItem])
+                    $vhdxCacheItem = Get-Content -Path $vhdxJson.FullName -Raw | ConvertFrom-Json
+
+                    if ((($vhdxCacheItem.WindowsSKU -ne $WindowsSKU) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsSKU) -xor [string]::IsNullOrEmpty($WindowsSKU)))) {
+                        WriteLog 'WindowsSKU mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.WindowsRelease -ne $WindowsRelease) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsRelease) -xor [string]::IsNullOrEmpty($WindowsRelease)))) {
+                        WriteLog 'WindowsRelease mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.WindowsVersion -ne $WindowsVersion) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsVersion) -xor [string]::IsNullOrEmpty($WindowsVersion)))) {
+                        Writelog 'WindowsVersion mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.OptionalFeatures) -xor [string]::IsNullOrEmpty($OptionalFeatures)))) {
+                        WriteLog 'OptionalFeatures mismatch, continuing'
+                        continue
+                    }
+
+                    if ((Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name).Length -gt 0) {
+                        (Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name)
+                        $downloadedKBs.Name
+                        $vhdxCacheItem.IncludedUpdates.Name
+                        WriteLog 'IncludedUpdates mismatch, continuing'
+                        continue
+                    }
+
+                    WriteLog "Found cached VHDX file $vhdxCacheFolder\$($vhdxCacheItem.VhdxFileName) with matching parameters and included updates"
+                    $cachedVHDXFileFound = $true
+                    $cachedVHDXInfo = $vhdxCacheItem
+                    break
+                } catch {
+                    WriteLog "Reading $vhdxJson Failed with error $_"
+                }
             }
-            # Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
-            WriteLog "KBs added to $WindowsPartition"
-            WriteLog "Removing $KBPath"
-            Remove-Item -Path $KBPath -Recurse -Force | Out-Null
-	        WriteLog "Clean Up the WinSxS Folder"
-            WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
-            Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
-            WriteLog "Clean Up the WinSxS Folder completed"
         }
-        catch {
-            Write-Host "Adding KB to VHDX failed with error $_"
-            WriteLog "Adding KB to VHDX failed with error $_"
-            if ($_.Exception.HResult -eq -2146498525){
-                Write-Host 'Missing latest Servicing Stack Update'
-                Write-Host 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
-                Write-Host 'Recommended to use the latest media'
-                WriteLog 'Missing latest Servicing Stack Update'
-                WriteLog 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
-                WriteLog 'Recommended to use the latest media'
-            }
-            throw $_
-        }  
     }
+    
+    if (-Not $cachedVHDXFileFound) {
+        if ($ISOPath) {
+            $wimPath = Get-WimFromISO
+        } else {
+            $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
+        }
+        #If index not specified by user, try and find based on WindowsSKU
+        if (-not($index) -and ($WindowsSKU)) {
+            $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+        }
 
+        $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
-    #Enable Windows Optional Features (e.g. .Net3, etc)
-    If ($OptionalFeatures) {
-        $Source = Join-Path (Split-Path $wimpath) "sxs"
-        Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+        $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
+    
+        New-MSRPartition -VhdxDisk $vhdxDisk
+    
+        $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
+        $osPartitionDriveLetter = $osPartition[1].DriveLetter
+        $WindowsPartition = $osPartitionDriveLetter + ':\'
+
+        #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+        $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+
+        WriteLog 'All necessary partitions created.'
+
+        Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
+    
+        #Add Windows packages
+        if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
+            try {
+                WriteLog "Adding KBs to $WindowsPartition"
+                WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
+                # If WindowsRelease is 2016, we need to add the SSU first
+                if ($WindowsRelease -eq 2016) {
+                    WriteLog 'WindowsRelease is 2016, adding SSU first'
+                    WriteLog "Adding SSU to $WindowsPartition"
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
+                    # Commenting out -preventpending as it causes an issue with the SSU being applied
+                    # Seems to be because of the registry being mounted per dism.log
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    WriteLog "SSU added to $WindowsPartition"
+                    WriteLog "Removing $SSUFilePath"
+                    Remove-Item -Path $SSUFilePath -Force | Out-Null
+                    WriteLog 'SSU removed'
+                    WriteLog "Adding CU to $WindowsPartition"
+                }
+                # Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+                Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+                WriteLog "KBs added to $WindowsPartition"
+                if ($AllowVHDXCaching) {
+                    $cachedVHDXInfo = [VhdxCacheItem]::new()
+                    $includedUpdates = Get-ChildItem -Path $KBPath -File
+                
+                    foreach ($includedUpdate in $includedUpdates) {
+                        $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
+                    }
+                }
+                WriteLog "Removing $KBPath"
+                Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+                WriteLog 'Clean Up the WinSxS Folder'
+                WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
+                Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+                WriteLog 'Clean Up the WinSxS Folder completed'
+            } catch {
+                Write-Host "Adding KB to VHDX failed with error $_"
+                WriteLog "Adding KB to VHDX failed with error $_"
+                if ($_.Exception.HResult -eq -2146498525) {
+                    Write-Host 'Missing latest Servicing Stack Update'
+                    Write-Host 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
+                    Write-Host 'Recommended to use the latest media'
+                    WriteLog 'Missing latest Servicing Stack Update'
+                    WriteLog 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
+                    WriteLog 'Recommended to use the latest media'
+                }
+                throw $_
+            }  
+        }
+
+        #Enable Windows Optional Features (e.g. .Net3, etc)
+        If ($OptionalFeatures) {
+            $Source = Join-Path (Split-Path $wimpath) 'sxs'
+            Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+        }    
+    
+    } else {
+        #Use cached vhdx file
+        WriteLog 'Using cached VHDX file to speed up build proces'
+        WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
+
+        Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J
+        $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
+
+        $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
+        $osPartition = $vhdxDisk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+        $osPartitionDriveLetter = $osPartition.DriveLetter
+        $WindowsPartition = $osPartitionDriveLetter + ':\'
+
     }
 
     #Set Product key
@@ -4336,16 +4455,18 @@ try {
         Dismount-DiskImage -ImagePath $ISOPath | Out-null
         WriteLog 'Done'
     }
-    else {
-        #Remove ESD file
+    #If $wimPath is an esd file, remove it
+    If ($wimPath -match '.esd') {
+        WriteLog "Deleting $wimPath file"
         Remove-Item -Path $wimPath -Force
+        WriteLog "$wimPath deleted"
     }
     
 
     If ($InstallApps) {
         #Copy Unattend file so VM Boots into Audit Mode
         WriteLog 'Copying unattend file to boot to audit mode'
-        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory | Out-Null
+        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory -Force | Out-Null
         if($WindowsArch -eq 'x64'){
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
@@ -4353,6 +4474,35 @@ try {
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
         WriteLog 'Copy completed'
+    }
+
+    if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
+        WriteLog 'New cached VHDX created'
+
+        WriteLog 'Defragmenting Windows partition...'
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
+        WriteLog 'Performing slab consolidation on Windows partition...'
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
+        WriteLog 'Dismounting VHDX'
+        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+
+        WriteLog 'Copying to cache dir'
+
+        #Assuming there are now name collisons
+        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J
+
+        #Only create new instance if not created during patching
+        if ($null -eq $cachedVHDXInfo) {
+            $cachedVHDXInfo = [VhdxCacheItem]::new()
+        }
+        $cachedVHDXInfo.VhdxFileName = $("$VMName.vhdx")
+        $cachedVHDXInfo.WindowsSKU = $WindowsSKU
+        $cachedVHDXInfo.WindowsRelease = $WindowsRelease
+        $cachedVHDXInfo.WindowsVersion = $WindowsVersion
+        $cachedVHDXInfo.OptionalFeatures = $OptionalFeatures
+        
+        $cachedVHDXInfo | ConvertTo-Json | Out-File -FilePath ("{0}\{1}_config.json" -f $($VHDXCacheFolder), $VMName)
+    } else {
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 }
@@ -4605,20 +4755,30 @@ If ($CleanupAppsISO) {
         Writelog "Removing $AppsISO failed with error $_"
         throw $_
     }
-If ($CleanupDrivers){
+}
+If ($CleanupDrivers) {
     try {
         If (Test-Path -Path $Driversfolder\$Make) {
             WriteLog "Removing $Driversfolder\$Make"
             Remove-Item -Path $Driversfolder\$Make -Force -Recurse
-            WriteLog "Removal complete"
+            WriteLog 'Removal complete'
         }     
-    }
-    catch {
+    } catch {
         Writelog "Removing $Driversfolder\$Make failed with error $_"
         throw $_
     }
-
 }
+if ($AllowVHDXCaching) {
+    try {
+        If (Test-Path -Path $KBPath) {
+            WriteLog "Removing $KBPath"
+            Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
+    } catch {
+        Writelog "Removing $KBPath failed with error $_"
+        throw $_
+    }
 }
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
