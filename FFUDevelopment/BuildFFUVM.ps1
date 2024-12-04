@@ -4203,8 +4203,11 @@ try {
         if ($installationType -eq 'Client') {
             $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         }
+        if ($WindowsRelease -eq 2025) {
+            $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch"""
+        }
         if ($WindowsRelease -eq 2022) {
-            $Name = """Cumulative Update for Microsoft server operating system, version 22h2 for $WindowsArch"""
+            $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch"""
         } 
         if ($WindowsRelease -in 2016, 2019) {
             $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch"""
@@ -4246,10 +4249,13 @@ try {
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
         if ($installationType -eq 'Client') {
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+            $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        }
+        if ($WindowsRelease -eq 2025) {
+            $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64 -preview"
         }
         if ($WindowsRelease -eq 2022) {
-            $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" " + """operating system version 21H2 for x64"""
+            $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" ""operating system version 21H2 for x64"""
         }
         if ($WindowsRelease -eq 2019) {
             $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64"""
