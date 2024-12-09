@@ -475,6 +475,16 @@ function LogVariableValues {
     WriteLog 'End logging variables'
 }
 
+function Get-ChildProcesses($parentId) {
+    $result = @()
+    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId"
+    foreach ($child in $children) {
+        $result += $child
+        $result += Get-ChildProcesses $child.ProcessId
+    }
+    return $result
+}
+
 function Invoke-Process {
     [CmdletBinding(SupportsShouldProcess)]
     param
@@ -485,7 +495,11 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [string]$ArgumentList
+        [string]$ArgumentList,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [bool]$Wait = $true
     )
 
     $ErrorActionPreference = 'Stop'
@@ -499,7 +513,7 @@ function Invoke-Process {
             ArgumentList           = $ArgumentList
             RedirectStandardError  = $stdErrTempFile
             RedirectStandardOutput = $stdOutTempFile
-            Wait                   = $true;
+            Wait                   = $($Wait);
             PassThru               = $true;
             NoNewWindow            = $true;
         }
@@ -507,7 +521,7 @@ function Invoke-Process {
             $cmd = Start-Process @startProcessParams
             $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
             $cmdError = Get-Content -Path $stdErrTempFile -Raw
-            if ($cmd.ExitCode -ne 0) {
+            if ($cmd.ExitCode -ne 0 -and $wait -eq $true) {
                 if ($cmdError) {
                     throw $cmdError.Trim()
                 }
@@ -525,15 +539,14 @@ function Invoke-Process {
     catch {
         #$PSCmdlet.ThrowTerminatingError($_)
         WriteLog $_
-        Write-Host "Script failed - $Logfile for more info"
+        # Write-Host "Script failed - $Logfile for more info"
         throw $_
 
     }
     finally {
         Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
-		
     }
-	
+    return $cmd
 }
 
 function Test-Url {
@@ -734,7 +747,7 @@ function Get-MicrosoftDrivers {
                 # Extract the MSI file using an administrative install
                 WriteLog "Extracting MSI file to $modelPath"
                 $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
-                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments
+                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments | Out-Null
                 WriteLog "Extraction complete"
             } elseif ($fileExtension -eq ".zip") {
                 # Extract the ZIP file
@@ -790,7 +803,7 @@ function Get-HPDrivers {
     Start-BitsTransferWithRetry -Source $PlatformListUrl -Destination $PlatformListCab
     WriteLog "Download complete"
     WriteLog "Expanding $PlatformListCab to $PlatformListXml"
-    Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml"
+    Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml" | Out-Null
     WriteLog "Expansion complete"
 
     # Parse the PlatformList.xml to find the SystemID based on the ProductName
@@ -920,7 +933,7 @@ function Get-HPDrivers {
     Writelog "Downloading HP Driver cab from $DriverCabUrl to $DriverCabFile"
     Start-BitsTransferWithRetry -Source $DriverCabUrl -Destination $DriverCabFile
     WriteLog "Expanding HP Driver cab to $DriverXmlFile"
-    Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile"
+    Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile" | Out-Null
 
     # Parse the extracted XML file to download individual drivers
     [xml]$DriverXmlContent = Get-Content -Path $DriverXmlFile
@@ -971,7 +984,7 @@ function Get-HPDrivers {
         # Extract the driver
         $arguments = "/s /e /f `"$extractFolder`""
         WriteLog "Extracting driver"
-        Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments
+        Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments | Out-Null
         WriteLog "Driver extracted to: $extractFolder"
 
         # Delete the .exe driver file after extraction
@@ -1181,7 +1194,7 @@ function Get-LenovoDrivers {
         # Extract the driver
         # Start-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait -NoNewWindow
         WriteLog "Extracting driver: $driverFilePath to $extractFolder"
-        Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand
+        Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand | Out-Null
         WriteLog "Driver extracted"
 
         # Delete the .exe driver file after extraction
@@ -1212,6 +1225,17 @@ function Get-DellDrivers {
         [int]$WindowsRelease
     )
 
+    if (-not (Test-Path -Path $DriversFolder)) {
+        WriteLog "Creating Drivers folder: $DriversFolder"
+        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+        WriteLog "Drivers folder created"
+    }
+
+    $DriversFolder = "$DriversFolder\$Make"
+    WriteLog "Creating Dell Drivers folder: $DriversFolder"
+    New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+    WriteLog "Dell Drivers folder created"
+
     #CatalogPC.cab is the catalog for Windows client PCs, Catalog.cab is the catalog for Windows Server
     if ($WindowsRelease -le 11) {
         $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
@@ -1231,23 +1255,12 @@ function Get-DellDrivers {
         exit
     }
 
-    if (-not (Test-Path -Path $DriversFolder)) {
-        WriteLog "Creating Drivers folder: $DriversFolder"
-        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
-        WriteLog "Drivers folder created"
-    }
-
-    $DriversFolder = "$DriversFolder\$Make"
-    WriteLog "Creating Dell Drivers folder: $DriversFolder"
-    New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
-    WriteLog "Dell Drivers folder created"
-
     WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
     Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
     WriteLog "Dell Catalog cab file downloaded"
 
     WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
-    Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML"
+    Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML" | Out-Null
     WriteLog "Dell Catalog cab file extracted"
 
     $xmlContent = [xml](Get-Content -Path $DellCatalogXML)
@@ -1268,6 +1281,8 @@ function Get-DellDrivers {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W19") }
                 } elseif ($WindowsRelease -eq 2022) {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                } elseif ($WindowsRelease -eq 2025) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W25") }
                 } else {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
                 }
@@ -1277,9 +1292,10 @@ function Get-DellDrivers {
                     $downloadUrl = $baseLocation + $driverPath
                     $driverFileName = [System.IO.Path]::GetFileName($driverPath)
                     $name = $component.Name.Display.'#cdata-section'
-                    $name = $name -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+                    $name = $name -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
                     $name = $name -replace '[\,]', '-'
                     $category = $component.Category.Display.'#cdata-section'
+                    $category = $category -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
                     $version = [version]$component.vendorVersion
                     $namePrefix = ($name -split '-')[0]
 
@@ -1327,7 +1343,7 @@ function Get-DellDrivers {
             $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driver.DriverFileName
             
             if (Test-Path -Path $driverFilePath) {
-                Write-Output "Driver already downloaded: $driverFilePath skipping"
+                WriteLog "Driver already downloaded: $driverFilePath skipping"
                 continue
             }
 
@@ -1349,13 +1365,66 @@ function Get-DellDrivers {
             
 
             $extractFolder = $downloadFolder + "\" + $driver.DriverFileName.TrimEnd($driver.DriverFileName[-4..-1])
-            WriteLog "Creating extraction folder: $extractFolder"
-            New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-            WriteLog "Extraction folder created"
+            # WriteLog "Creating extraction folder: $extractFolder"
+            # New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
+            # WriteLog "Extraction folder created"
 
-            $arguments = "/s /e=`"$extractFolder`""
-            WriteLog "Extracting driver: $driverFilePath to $extractFolder"
-            Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments
+            # $arguments = "/s /e=`"$extractFolder`""
+            $arguments = "/s /drivers=`"$extractFolder`""
+            WriteLog "Extracting driver: $driverFilePath $arguments"
+            try {
+                #If Category is Chipset, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel chipset driver which leaves a Window open
+                if ($driver.Category -eq "Chipset") {
+                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
+                    
+                    #Wait 5 seconds to allow for the extraction process to finish
+                    Start-Sleep -Seconds 5
+                                        
+                    $childProcesses = Get-ChildProcesses $process.Id
+
+                    # Find and stop the last created child process
+                    if ($childProcesses) {
+                        $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
+                        Stop-Process -Id $latestProcess.ProcessId -Force
+                        # Sleep 1 second to let process finish exiting so its installer can be removed
+                        Start-Sleep -Seconds 1
+                    }
+                #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
+                } elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
+
+                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
+
+                    #Sometimes the network drivers will extract on client OS, wait 5 seconds and check if the process is still running
+                    Start-Sleep -Seconds 5
+                    if ($process.HasExited -eq $false) {
+                        $childProcesses = Get-ChildProcesses $process.Id
+
+                        # Find and stop the last created child process
+                        if ($childProcesses) {
+                            $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
+                            Stop-Process -Id $latestProcess.ProcessId -Force
+                            #Move on to the next driver and skip this one - it won't extract on a client OS even with /s /e switches
+                            continue
+                        }
+                    }
+                } else {
+                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
+                }
+                # If $extractFolder is empty, try alternative extraction method
+                if (!(Get-ChildItem -Path $extractFolder -Recurse | Where-Object { -not $_.PSIsContainer })) {
+                    WriteLog 'Extraction with /drivers= switch failed. Removing folder and retrying with /s /e switches'
+                    Remove-Item -Path $extractFolder -Force -Recurse -ErrorAction SilentlyContinue
+                    $arguments = "/s /e=`"$extractFolder`""
+                    WriteLog "Extracting driver: $driverFilePath $arguments"
+                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
+                }
+            }
+            catch {
+                WriteLog 'Extraction with /drivers= switch failed. Retrying with /s /e switches'
+                $arguments = "/s /e=`"$extractFolder`""
+                WriteLog "Extracting driver: $driverFilePath $arguments"
+                Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
+            }
             WriteLog "Driver extracted"
 
             WriteLog "Deleting driver file: $driverFilePath"
@@ -1455,7 +1524,7 @@ function Install-ADK {
         WriteLog "$ADKOption downloaded to $installerLocation"
         
         WriteLog "Installing $ADKOption with $feature enabled"
-        Invoke-Process $installerLocation "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature"
+        Invoke-Process $installerLocation "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature" | Out-Null
         
         WriteLog "$ADKOption installation completed."
         WriteLog "Removing $installer from $installerLocation"
@@ -1512,7 +1581,7 @@ function Uninstall-ADK {
 
         $adkBundleCachePath = $adkRegKey.GetValue("BundleCachePath")
         WriteLog "Uninstalling $ADKOption..."
-        Invoke-Process $adkBundleCachePath "/uninstall /quiet"
+        Invoke-Process $adkBundleCachePath "/uninstall /quiet" | Out-Null
         WriteLog "$ADKOption uninstalled successfully."
     }
     catch {
@@ -1615,7 +1684,7 @@ function Get-ADK {
         if ($adkBundleCachePath) {
             WriteLog "Installing Windows Deployment Tools..."
             $adkInstallPath = $adkPath.TrimEnd('\')
-            Invoke-Process $adkBundleCachePath "/quiet /installpath ""$adkInstallPath"" /features OptionId.DeploymentTools"
+            Invoke-Process $adkBundleCachePath "/quiet /installpath ""$adkInstallPath"" /features OptionId.DeploymentTools" | Out-Null
             WriteLog "Windows Deployment Tools installed successfully."
         }
         else {
@@ -1668,7 +1737,7 @@ function Get-WindowsESD {
     # Extract XML from cab file
     WriteLog "Extracting Products XML from cab"
     $xmlFilePath = Join-Path $PSScriptRoot "products.xml"
-    Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath"
+    Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" | Out-Null
     WriteLog "Products XML extracted"
 
     # Load XML content
@@ -1729,7 +1798,7 @@ function Get-Office {
 
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
-    Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet"
+    Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet" | Out-Null
 
     # Run setup.exe with config.xml and modify xml file to download to $OfficePath
     $ConfigXml = "$OfficePath\DownloadFFU.xml"
@@ -1737,7 +1806,7 @@ function Get-Office {
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
     $xmlContent.Save($ConfigXml)
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
-    Invoke-Process $OfficePath\setup.exe "/download $ConfigXml"
+    Invoke-Process $OfficePath\setup.exe "/download $ConfigXml" | Out-Null
 
     WriteLog "Cleaning up ODT default config files and checking InstallAppsandSysprep.cmd file for proper command line"
     #Clean up default configuration files
@@ -1796,7 +1865,7 @@ function Install-WinGet {
 #     }
 #     $wingetVersion = & winget.exe --version
 #     WriteLog "Installed version of WinGet: $wingetVersion"
-#     if ($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion) {
+#     if ($wingetVersion -match 'v?(\d+\.\d+.\d+)' -and [version]$matches[1] -lt $minVersion) {
 #         WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
 #         Install-WinGet -Architecture $WindowsArch
 #     }
@@ -2415,7 +2484,7 @@ function New-AppsISO {
     #Create Apps ISO file
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
     #Start-Process -FilePath $OSCDIMG -ArgumentList "-n -m -d $Appspath $AppsISO" -wait
-    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO"
+    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO" | Out-Null
     
     #Remove the Office Download and ODT
     if ($InstallOffice) {
@@ -2707,7 +2776,7 @@ function Add-BootFiles {
     )
 
     WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`"..."
-    Invoke-Process bcdboot "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType"
+    Invoke-Process bcdboot "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
     WriteLog "Done."
 }
 
@@ -2848,7 +2917,7 @@ function New-PEMedia {
     elseif($WindowsArch -eq 'arm64') {
         & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
     }
-    #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
+    #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
     WriteLog 'Files copied successfully'
 
     WriteLog 'Mounting WinPE media to add WinPE optional components'
@@ -2944,7 +3013,7 @@ function New-PEMedia {
         }
         
     }
-    Invoke-Process $OSCDIMG $OSCDIMGArgs
+    Invoke-Process $OSCDIMG $OSCDIMGArgs | Out-Null
     WriteLog "ISO created successfully"
     WriteLog "Cleaning up $WinPEFFUPath"
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
@@ -3025,8 +3094,8 @@ function New-FFU {
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
-        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
@@ -3063,8 +3132,8 @@ function New-FFU {
     if ($Optimize -eq $true) {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
         #Need to use ADK version of DISM to address bug in DISM - perhaps Windows 11 24H2 will fix this
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
-        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
+        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
         WriteLog 'Optimizing FFU complete'
     }
     
@@ -3125,7 +3194,7 @@ function Remove-FFUVM {
     }
     #Remove unused mountpoints
     WriteLog 'Remove unused mountpoints'
-    Invoke-Process cmd "/c mountvol /r"
+    Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
 }
 Function Remove-FFUUserShare {
@@ -3145,7 +3214,7 @@ Function Get-WindowsVersionInfo {
     #Load Registry Hive
     $Software = "$osPartitionDriveLetter`:\Windows\System32\config\software"
     WriteLog "Loading Software registry hive"
-    Invoke-Process reg "load HKLM\FFU $Software"
+    Invoke-Process reg "load HKLM\FFU $Software" | Out-Null
 
     #Find Windows version values
     $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
@@ -3191,7 +3260,7 @@ Function Get-WindowsVersionInfo {
     }
     
     WriteLog "Unloading registry"
-    Invoke-Process reg "unload HKLM\FFU"
+    Invoke-Process reg "unload HKLM\FFU" | Out-Null
     #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
     WriteLog 'Sleep 60 seconds to allow registry to completely unload'
     Start-sleep 60
@@ -3579,7 +3648,7 @@ function Get-FFUEnvironment {
 
     # Remove unused mountpoints
     WriteLog 'Remove unused mountpoints'
-    Invoke-Process cmd "/c mountvol /r"
+    Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
 
     # Check for content in the VM folder and delete any folders that start with _FFU-
@@ -3621,8 +3690,8 @@ function Get-FFUEnvironment {
 
     #Clean up registry
     if (Test-Path -Path 'HKLM:\FFU') {
-        Writelog 'Found HKLM:\FFU, removing it'
-        Invoke-Process reg "unload HKLM\FFU"
+        Writelog 'Found HKLM:\FFU, removing it' 
+        Invoke-Process reg "unload HKLM\FFU" | Out-Null
     }
 
     #Remove FFU User and Share
@@ -4071,7 +4140,16 @@ if ($InstallApps) {
         if ($UpdateLatestMSRT) {
             WriteLog "`$UpdateLatestMSRT is set to true."
             if ($WindowsArch -eq 'x64') {
-                $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                if ($installationType -eq 'client') {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                }
+                #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
+                elseif ($installationType -eq 'server' -and $WindowsRelease -eq '24H2') {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server 2019"""
+                }
+                else {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server $WindowsRelease""" 
+                }
             }
             if ($WindowsArch -eq 'x86') {
                 $Name = """Windows Malicious Software Removal Tool""" + " " + """Windows $WindowsRelease""" 
@@ -4143,7 +4221,7 @@ if ($InstallApps) {
             $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
             $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
             WriteLog "Expanding $EdgeCABFilePath"
-            Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath"
+            Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath" | Out-Null
             WriteLog "Expansion complete"
 
             #Remove Edge CAB file
