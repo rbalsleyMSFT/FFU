@@ -1775,21 +1775,36 @@ function Get-WindowsESD {
 
 
 function Get-ODTURL {
+    try {
+        [String]$ODTPage = Invoke-WebRequest 'https://www.microsoft.com/en-us/download/details.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
 
-    # [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117'
-    [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent
-  
-    $MSWebPage | ForEach-Object {
-        if ($_ -match 'url=(https://.*officedeploymenttool.*\.exe)') {
-            $matches[1]
+        # Extract JSON data from the webpage
+        if ($ODTPage -match '<script>window\.__DLCDetails__=(.*?)<\/script>') {
+            # Parse JSON content
+            $jsonContent = $matches[1] | ConvertFrom-Json
+            $ODTURL = $jsonContent.dlcDetailsView.downloadFile[0].url
+
+            if ($ODTURL) {
+                return $ODTURL
+            } else {
+                WriteLog 'Cannot find the ODT download URL in the JSON content'
+                throw 'Cannot find the ODT download URL in the JSON content'
+            }
+        } else {
+            WriteLog 'Failed to extract JSON content from the ODT webpage'
+            throw 'Failed to extract JSON content from the ODT webpage'
         }
+    }
+    catch {
+        WriteLog $_.Exception.Message
+        throw 'An error occurred while retrieving the ODT URL.'
     }
 }
 
 function Get-Office {
     #Download ODT
     $ODTUrl = Get-ODTURL
-    $ODTInstallFile = "$env:TEMP\odtsetup.exe"
+    $ODTInstallFile = "$FFUDevelopmentPath\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
@@ -1825,6 +1840,11 @@ function Get-Office {
         # Write the modified content back to the file
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
     }
+
+    #Remove the ODT setup file
+    WriteLog "Removing ODT setup file"
+    Remove-Item -Path $ODTInstallFile -Force
+    WriteLog "ODT setup file removed"
 }
 
 function Install-WinGet {
