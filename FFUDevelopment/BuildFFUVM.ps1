@@ -100,6 +100,9 @@ When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers fo
 .PARAMETER CopyPEDrivers
 When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false.
 
+.PARAMETER UseDriversAsPEDrivers
+When set to $true, will copy the drivers from the specified drivers folder to the WinPE deployment media. Default is $false.
+
 .PARAMETER RemoveFFU
 When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false.
 
@@ -314,6 +317,7 @@ param(
         })]
     [bool]$CopyDrivers,
     [bool]$CopyPEDrivers,
+    [bool]$UseDriversAsPEDrivers,
     [bool]$RemoveFFU,
     [bool]$UpdateLatestCU,
     [bool]$UpdatePreviewCU,
@@ -2991,7 +2995,16 @@ function New-PEMedia {
         if ($CopyPEDrivers) {
             WriteLog "Adding drivers to WinPE media"
             try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\PEDrivers" -Recurse -ErrorAction SilentlyContinue | Out-null
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver $PEDriversFolder -Recurse -ErrorAction SilentlyContinue | Out-null
+            }
+            catch {
+                WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+            }
+            WriteLog "Adding drivers complete"
+        } elseif ($UseDriversAsPEDrivers) {
+            WriteLog "Adding drivers to WinPE media"
+            try {
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver $DriversFolder -Recurse -ErrorAction SilentlyContinue | Out-null
             }
             catch {
                 WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -3869,6 +3882,22 @@ if ($CopyPEDrivers) {
         throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
     }
     WriteLog 'PEDriver validation complete'
+}
+if ($UseDriversAsPEDrivers) {
+    WriteLog 'Doing PEDriver validation'
+    if ($Make -and $Model){
+        WriteLog "Make and Model are set to $Make and $Model, will attempt to download drivers"
+    } else {
+        if (!(Test-Path -Path $DriversFolder)) {
+            WriteLog "-UseDriversAsPEDrivers is set to `$true, but the $DriversFolder folder is missing"
+            throw "-UseDriversAsPEDriversis set to `$true, but the $DriversFolder folder is missing"
+        }
+        if ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
+            WriteLog "-UseDriversAsPEDrivers is set to `$true, but the $DriversFolder folder is empty"
+            throw "-UseDriversAsPEDrivers is set to `$true, but the $DriversFolder folder is empty"
+        }
+        WriteLog 'Driver validation complete'
+    }  
 }
 
 #Validate PPKG folder
