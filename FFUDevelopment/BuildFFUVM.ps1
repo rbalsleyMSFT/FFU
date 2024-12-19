@@ -13,7 +13,7 @@ This script creates a Windows 10/11 FFU and USB drive to help quickly get a Wind
 When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
 
 .PARAMETER AllowVHDXCaching
-When set to $true, will cache the VHDX file and create a config json file that will keep track of the Windows build information, the updates installed, and the logical sector byte size information. Default is $false.
+When set to $true, will cache the VHDX file to the $FFUDevelopmentPath\VHDXCache folder and create a config json file that will keep track of the Windows build information, the updates installed, and the logical sector byte size information. Default is $false.
 
 .PARAMETER AppsScriptVariables
 When passed a hashtable, the script will alter the $FFUDevelopmentPath\Apps\InstallAppsandSysprep.cmd file to set variables with the hashtable keys as variable names and the hashtable values their content.
@@ -68,6 +68,9 @@ Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic
 
 .PARAMETER DriversFolder
 Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
+
+.PARAMETER ExportConfigFile
+Path to a JSON file to export the parameters used for the script.
 
 .PARAMETER FFUCaptureLocation
 Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU.
