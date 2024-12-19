@@ -55,11 +55,18 @@ function Set-DiskpartAnswerFiles($DiskpartFile,$DiskID){
 
 function Set-Computername($computername){
     [xml]$xml = Get-Content $UnattendFile
-    if($xml.unattend.settings.component.Count -ge 2){
-        #Assumes that Computername is the first component element
-        $xml.unattend.settings.component[0].ComputerName = $computername
-    }else{
-        $xml.unattend.settings.component.ComputerName = $computername
+    $components = $xml.unattend.settings.component
+    $found = $false
+    foreach ($component in $components) {
+        if ($component.ComputerName) {
+            $component.ComputerName = $computername
+            $found = $true
+            break
+        }
+    }
+    if (-not $found) {
+        WriteLog 'ComputerName element not found in unattend.xml.'
+        throw 'ComputerName element not found in unattend.xml.'
     }
     $xml.Save($UnattendFile)
     return $computername
