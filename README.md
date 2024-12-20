@@ -20,7 +20,7 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Updates
 
-2409.1 has been released! Check out the changes in the [Change Log](ChangeLog.md)
+2412.1 has been released! Check out the changes in the [Change Log](ChangeLog.md)
 
 # Getting Started
 
