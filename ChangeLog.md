@@ -1,5 +1,159 @@
 # Change Log
 
+# 2412.1
+
+This is a major release with a number of quality-of-life improvements that will reduce the time it takes to create FFUs. I highly recommend you update to this release. 
+
+## Windows Server Support
+Thanks to [JonasKloseBW](https://github.com/JonasKloseBW) we have added support for Windows Server! This includes support for Windows Server 2016 through 2025 and supports both core and desktop experience. It will require you to provide your own Server ISO 
+using the `-ISOPath` parameter since we can't automatically download it like we can with client. You also will want to set the `-WindowsSKU` parameter to either `'Standard', 'Datacenter', 'Standard (Desktop Experience)', or 'Datacenter (Desktop Experience)'` depending on your needs.
+
+Cumulative Updates for Windows and .NET should work as expected. Defender updates should work too. If you notice anything that doesn't work, open an issue. 
+
+## VHDX Caching Support
+Thanks again to Jonas for adding VHDX caching support #89. For those of you that might be making many FFUs for different configurations, instead of building the VHDX every time, you can cache the VHDX and re-use it for your next build. In testing, this seems to save about 10 minutes, depending on how you're installing Windows (via MCT download, or your own ISO and how old your media is). 
+
+The way this works is a VHDXCache folder is created in the FFUDevelopment folder. If `-AllowVHDXCaching $true`, we store the VHDX file and a config file that keeps track of the following info
+
+```
+{
+  "VhdxFileName": "_FFU-808829869.vhdx",
+  "LogicalSectorSizeBytes": 512,
+  "WindowsSKU": "Pro",
+  "WindowsRelease": "11",
+  "WindowsVersion": "24H2",
+  "OptionalFeatures": "",
+  "IncludedUpdates": [
+    {
+      "Name": "windows11.0-kb5043080-x64_953449672073f8fb99badb4cc6d5d7849b9c83e8.msu"
+    },
+    {
+      "Name": "windows11.0-kb5045934-x64-ndp481_fa9c3adfb0532eb8f4e521f4fb92a179380184c5.msu"
+    },
+    {
+      "Name": "windows11.0-kb5048667-x64_d4ad0ca69de9a02bc356757581e0e0d6960c9f93.msu"
+    }
+  ]
+}
+```
+The VHDX files are cached before boot, so they've never been sysprepped. On subsequent runs, if `-AllowVHDXCaching $true` is set, we search the VHDXCache folder, loop through any config files, and look to see if we find one that matches the build information you've passed to the script. If a match is found, robocopy copies in the VHDX and uses the cached VHDX to build the FFU VM.
+
+## Configuration File Support
+A configuration file can now be used to configure the parameters in lieu of, or in conjunction with, parameters specified on the command line. Configuration files are especially helpful for those making FFUs for different models, Windows releases, application sets, and more. 
+
+To use, run:
+`.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose`
+
+### Creating your own Configuration Json file
+
+If you have a command line that you’ve been using for awhile and would like to convert it to a json file automatically, run your command line like normal, adding 
+`-exportConfigFile 'C:\FFUDevelopment\config\YourConfigFile.json'` 
+to the end of the command. Doing this will generate a well-formatted json file with your configuration settings. 
+
+You can also temporarily overwrite parameters while using a config file. Using the following sample command:
+
+`.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose`
+
+If you’d like to not include Office (the Sample_default.json file installs Office), you’d add `-InstallOffice $False` to the command line
+
+`.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose -InstallOffice $False`
+
+Doing this will temporarily overwrite whatever is in the json for the `InstallOffice` parameter. It will not modify the json file. If you would like to change the json file, you can add `-exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'` and that will overwrite the json file with the new parameter. 
+
+`.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose -InstallOffice $False -exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'`
+
+## Custom FFU Naming Support
+Thanks to Jonas, we now have custom FFU naming support. A new parameter -CustomFFUNameTemplate has been added.
+
+This parameter sets a custom FFU output name with placeholders. Allowed placeholders are: 
+
+`{WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}`
+
+And below is a description of what to expect when you use each placeholder.
+
+```
+{WindowsRelease} = 10, 11, 2016, 2019, 2022, 2025
+{WindowsVersion} = 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc
+{SKU} = Home, Home N, Home Single Language, Education, Education N, Pro, Pro N, Pro Education, Pro Education N, Pro for Workstations, Pro N for Workstations, Enterprise, Enterprise N, Standard, Standard (Desktop Experience), Datacenter, Datacenter (Desktop Experience)
+{BuildDate} = e.g. Dec2024
+{yyyy} = e.g. 2024
+{MM} = 2 digit month format (e.g. 12 for December)
+{dd} = Day of the month in 2 digit format (19)
+{HH} = Current hour in 24-hour format (e.g., 14 for 2 PM)
+{hh} = Current hour in 12-hour format (e.g., 02 for 2 PM)
+{mm} = Current minute in 2-digit format (e.g., 09)
+{tt} = Current AM/PM designator (e.g., AM or PM)
+```
+
+An example for Windows 11 24h2 Pro built today would be:
+
+`-CustomFFUNameTemplate '{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}'`
+
+Would result in a FFU file name of:
+
+`Win11_24h2_Pro_2024-12-20_1225.ffu`
+
+You can also mix in static text in the name
+
+`-CustomFFUNameTemplate '{WindowsRelease}_{WindowsVersion}_{SKU}_Office_{yyyy}-{MM}-{dd}_{HH}{mm}'`
+
+Would result in:
+
+`Win11_24h2_Pro_Office_2024-12-20_1225.ffu`
+
+## Additional PRs added
+#79 Includes the latest Microsoft Software Removal Tool from `@zehadialam` - use `-UpdateLatestMSRT $true`
+
+#72 Includes some Unattend Sample files from @HedgeComp in the `$FFUDevelopment\Unattend` folder 
+
+#74 Includes some improvements to the USBImagingToolCreator.ps1 file from @w0 
+
+#103 Includes some additional improvements to the USBImagingToolCreator.ps1 file from @MKellyCBSD 
+
+## Misc Fixes
+- Added server skus to validateset for $WindowsSKU 
+- Added new variable $installationType which uses $WindowsRelease to determine Server or Client. If $installationType is Server, $WindowsRelease version is used to set $WindowsVersion to the appropriate version (1607, 1809, 21H2)
+- Fixed an issue where the recovery partition wouldn't be created on server OSes due to winre.wim being hidden. Never saw this on client OSes even though it also was hidden IIRC.
+- Removed verbosity for Optimize-Volume as it was outputting when -verbose was not specified.
+- Modified some search strings for .NET CUs when installing on Server OS
+- Included SSU for Windows Server 2016 as it's mandatory
+- Added some error checking for Server 2019 and 2022 CU installations when CU fails due to lack of SSU. If you run into this error, you're using old media and should use the latest. Always use the latest ISO if you can.
+- $WindowsVersion set to 24h2, can override by using -WindowsVersion 23H2 if you want the old behavior
+- Removed the "Downloading information GUID" messages when downloading content from the Microsoft Update Catalog while -verbose was specified in the command line
+- In Get-KBLink, made a change to just grab the first result returned instead of the entire results page. This removes the need to use a break statement in Save-KB when downloading updates. This fixed an issue with the new 24H2 Checkpoint Cumulative Updates in Win11 and Server 2025.
+- Changed Windows MSRT search string for x64 and x86. This was mainly to get x64 to the top of the search results. x86 won't actually download since the code isn't in place for content from the MU Catalog to download x86 content (no idea if anyone actually builds x86 FFUs for Win10 - I hope not)
+- If not passing an ISO, hardcoded WindowsVersion of 22H2 for Windows 10 or 24H2 for Windows 11 since the ESD media only provides those two versions. Not doing this allowed for unnecessary VHDX creation since it checks the WindowsVersion via the json file. This also fixes an issue where CUs could be searched for that didn’t exist, but the media would still download
+- Added some additional logging entries
+- Removed verbose output of the Optimize-Volume command
+- Fixed an issue where not passing an ISO caused the script to fail
+- Cleaned up the KBPath folder at the end of the run
+- Changed some minor formatting items
+- Added Get-Childprocesses function to return child processes of parent process
+- Added a new -Wait boolean parameter to Invoke-Process function. This is to control whether Invoke-Process should wait in order to track stdout and stderr output. This is needed for processes that may hang, waiting for user input and there isn't a way to bypass (some Intel drivers provided by Dell leave dialog windows even when running silently)
+-Invoke-Process now returns process information (returns $cmd). This allows for process tracking when calling the function.
+- Since Invoke-Process now returns the process information, also needed to add Out-Null to the majority of the Invoke-Process references to prevent Invoke-Process from writing to the terminal
+- Refactored a lot of the Get-DellDrivers function due to inconsistencies with how driver extraction behaves between client and server devices. For client, /s /e seemed to work fine, but for server it would only extract the driver installer content and other dell related files, rather than the driver files themselves. We have since switched to using /s /drivers= which will extract the driver content. Not all drivers support /drivers= and may output some information to the terminal that looks like help documentation. If a driver doesn't support /drivers, the script falls back to using /s /e to do the extraction. If this doesn't work for you, you can always provide your own drivers that you manually download from Dell's website.
+- Updated Malicious Software Removal Tool (MSRT) code to handle Windows Server
+- Refactored the Get-ODTURL function to fix recent download issues. Also added some better error handling
+- Moved the odtsetup.exe download to the FFUDevelopment folder and will clean it up after office has downloaded
+Updated parameter definition block to be alphabetized (not to be confused by the param block, which is not alphabetized)
+- Added $PEDriversFolder script variable to the param block (for some reason it was missing)
+- Added ConfigFile and ExportConfigFile parameters to support json config files
+- Changed Version to 2412.1
+- Modified vhdxCacheItem class to include $LogicalSectorSizeBytes
+- Added new function Get-Parameters to help with new config and export config file functionality
+- Fixed Get-MicrosoftDrivers function to not require the HTMLFILE COM object, which isn't available in Windows 11. It seems to be installed with Office, which is what was allowing downloads to work and masked the issue.
+- Added long path support to prevent issues with oscdimg creating the Apps.iso.
+- Fixed an issue where the $PEDriversFolder variable wasn't being used (instead $FFUDevelopment\PEDrivers was used)
+- Created a new function New-FFUFileName - this works in conjunction with the new $CustomFFUNameTemplate. The function was needed to support both scenarios where $InstallApps is either $true or $false.
+- Added new function Export-ConfigFile. When passing -ExportConfigFile 'Path\To\ConfigFile.json' the script will generate a parameter dump of all of the configured parameters
+- Added driver folder validation to throw an error if spaces are detected in the folder name of the drivers folder (e.g. C:\FFUDevelopment\Drivers\Dell 3190). This is due to an issue with Dell drivers and their inability to handle paths with spaces consistently.
+- Added back the Windows Security Platform update which grabs it from the web instead of the Microsoft update catalog
+- Fixed an issue where the Drivers folder was being completely deleted instead of its sub-folders
+- Removed the Requires -PSEdition Desktop. The script works with both Desktop and Core, so pwsh 7 is fine.
+- Created a new config folder to hold config files. A new sample_default.json file is provided to show what the format looks like.
+- You can now set the computername in the unattend.xml file where ever you want. Prior it required that the computername was the first component element.
+
 ## **2409.1**
 
 ### Fixes
