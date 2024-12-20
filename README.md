@@ -1,6 +1,6 @@
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
-What if you could have a Windows image that has:
+What if you could have a Windows image (Windows 10/11 or Server) that has:
 
 - The latest Windows cumulative update
 - The latest .NET cumulative update
