@@ -19,7 +19,7 @@ When set to $true, will cache the VHDX file to the $FFUDevelopmentPath\VHDXCache
 When passed a hashtable, the script will alter the $FFUDevelopmentPath\Apps\InstallAppsandSysprep.cmd file to set variables with the hashtable keys as variable names and the hashtable values their content.
 
 .PARAMETER BuildUSBDrive
-When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc., you'll need to do that afterward.
+When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. 
 
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
@@ -61,7 +61,7 @@ When set to $true, this will create WinPE capture media for use when $InstallApp
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
 
 .PARAMETER CustomFFUNameTemplate
-Sets a custom FFU output name with placeholders. Allowed placeholders are: {Name}, {DisplayVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
+Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
 
 .PARAMETER Disksize
 Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk.
@@ -187,7 +187,7 @@ Integer value of 10 or 11. This is used to identify which release of Windows to 
 Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'.
 
 .PARAMETER WindowsVersion
-String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '23h2'.
+String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'.
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
@@ -3126,9 +3126,9 @@ function Optimize-FFUCaptureDrive {
 }
 function New-FFUFileName {
     $BuildDate = Get-Date -uformat %b%Y
-    # Replace '{WindowsRelease}' with the Windows release (e.g., 10/11 or server)
+    # Replace '{WindowsRelease}' with the Windows release (e.g., 10, 11, 2016, 2019, 2022, 2025)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsRelease}', $WindowsRelease
-    # Replace '{WindowsVersion}' with the Windows version (e.g., 24h2)
+    # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsVersion}', $WindowsVersion
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $SKU
