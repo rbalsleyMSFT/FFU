@@ -55,11 +55,18 @@ function Set-DiskpartAnswerFiles($DiskpartFile,$DiskID){
 
 function Set-Computername($computername){
     [xml]$xml = Get-Content $UnattendFile
-    if($xml.unattend.settings.component.Count -ge 2){
-        #Assumes that Computername is the first component element
-        $xml.unattend.settings.component[0].ComputerName = $computername
-    }else{
-        $xml.unattend.settings.component.ComputerName = $computername
+    $components = $xml.unattend.settings.component
+    $found = $false
+    foreach ($component in $components) {
+        if ($component.ComputerName) {
+            $component.ComputerName = $computername
+            $found = $true
+            break
+        }
+    }
+    if (-not $found) {
+        WriteLog 'ComputerName element not found in unattend.xml.'
+        throw 'ComputerName element not found in unattend.xml.'
     }
     $xml.Save($UnattendFile)
     return $computername
@@ -128,14 +135,14 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2409.1'
+$version = '2412.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
 #Find PhysicalDrive
 # $PhysicalDeviceID = Get-HardDrive
 $hardDrive = Get-HardDrive
-if($hardDrive -eq $null){
+if($null -eq $hardDrive){
     WriteLog 'No hard drive found. Exiting'
     WriteLog 'Try adding storage drivers to the PE boot image (you can re-create your FFU and USB drive and add the PE drivers to the PEDrivers folder and add -CopyPEDrivers $true to the command line, or manually add them via DISM)'
     Exit

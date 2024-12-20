@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+  <settings pass="specialize">
+    <!--<ComputerName> must be in the first Component Element  "Microsoft-Windows-Shell-Setup" . Do not change the order or remove it -->
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <ComputerName>MYCOMPUTER</ComputerName><!--Leave Default will be renamed-->
+      <TimeZone>Eastern Standard Time</TimeZone><!--Add Your Local TimeZone-->
+    </component>
+    <!-- Place additional Components Elements and Settings below here: -->
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <RunASynchronous>
+        <RunASynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>cmd.exe /c date 09-07-2024</Path> <!--Set the device clock to the current date. Helpful when BIOS clocks out of sync. -->
+          <Description>Set system date to a specific date</Description>
+        </RunASynchronousCommand>
+      </RunASynchronous>
+    </component>
+  </settings>
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <InputLocale>0409:00000409</InputLocale><!--Set your Keybaord and System Local https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-8.1-and-8/hh825682(v=win.10) -->
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <OOBE>
+        <ProtectYourPC>3</ProtectYourPC> <!--Disable Diagnostic Data sent to Microsoft-->
+        <HideEULAPage>true</HideEULAPage><!--Hide the End User License agreement -->
+        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE> <!--Show Wifi Setup -->
+      </OOBE>
+    </component>
+  </settings>
+</unattend>

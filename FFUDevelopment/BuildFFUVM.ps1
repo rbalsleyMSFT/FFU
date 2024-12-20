@@ -1,6 +1,5 @@
 
 #Requires -Modules Hyper-V, Storage
-#Requires -PSEdition Desktop
 #Requires -RunAsAdministrator
 
 <#
@@ -10,89 +9,38 @@ A PowerShell script to create a Windows 10/11 FFU file.
 .DESCRIPTION
 This script creates a Windows 10/11 FFU and USB drive to help quickly get a Windows device reimaged. FFU can be customized with drivers, apps, and additional settings. 
 
-.PARAMETER ISOPath
-Path to the Windows 10/11 ISO file.
+.PARAMETER AllowExternalHardDiskMedia
+When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
 
-.PARAMETER WindowsSKU
-Edition of Windows 10/11 to be installed, e.g., accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'
+.PARAMETER AllowVHDXCaching
+When set to $true, will cache the VHDX file to the $FFUDevelopmentPath\VHDXCache folder and create a config json file that will keep track of the Windows build information, the updates installed, and the logical sector byte size information. Default is $false.
 
-.PARAMETER FFUDevelopmentPath
-Path to the FFU development folder (default is C:\FFUDevelopment).
-
-.PARAMETER InstallApps
-When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.ISO, install the Apps, sysprep, and capture the VM. When set to $False, the FFU is created from a VHDX file. No VM is created.
-
-.PARAMETER InstallOffice
-Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM
-
-.PARAMETER InstallDrivers
-Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU.
-
-.PARAMETER Memory
-Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Use 4GB if necesary.
-
-.PARAMETER Disksize
-Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk.
-
-.PARAMETER Processors
-Number of virtual processors for the virtual machine. Recommended to use at least 4.
-
-.PARAMETER VMSwitchName
-Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is *external*, but you will likely need to change this. 
-
-.PARAMETER VMLocation
-Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to. 
-
-.PARAMETER FFUPrefix
-Prefix for the generated FFU file. Default is _FFU
-
-.PARAMETER FFUCaptureLocation
-Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU
-
-.PARAMETER ShareName
-Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
-
-.PARAMETER Username
-Username for accessing the shared folder. The default is ffu_user. The script will auto create the account and password. When finished, it will remove the account.
-
-.PARAMETER VMHostIPAddress
-IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto detect your IP (depending on your network adapters, it may not find the correct IP).
-
-.PARAMETER CreateCaptureMedia
-When set to $true, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM and the boot order will be changed to automate the capture of the FFU.
-
-.PARAMETER CreateDeploymentMedia
-When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
-
-.PARAMETER OptionalFeatures
-Provide a semi-colon separated list of Windows optional features you want to include in the FFU (e.g. netfx3;TFTP)
-
-.PARAMETER ProductKey
-Product key for the Windows 10/11 edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here.
+.PARAMETER AppsScriptVariables
+When passed a hashtable, the script will alter the $FFUDevelopmentPath\Apps\InstallAppsandSysprep.cmd file to set variables with the hashtable keys as variable names and the hashtable values their content.
 
 .PARAMETER BuildUSBDrive
-When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward.
+When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. 
 
-.PARAMETER WindowsRelease
-Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
+.PARAMETER CleanupAppsISO
+When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
-.PARAMETER WindowsVersion
-String value of the Windows version to download. This is used to identify which version of Windows to download. Default is 23h2.
+.PARAMETER CleanupCaptureISO
+When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true.
 
-.PARAMETER WindowsArch
-String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.
+.PARAMETER CleanupDeployISO
+When set to $true, will remove the WinPE deployment ISO after the FFU has been captured. Default is $true.
 
-.PARAMETER WindowsLang
-String value in language-region format (e.g. en-us). This is used to identify which language of media to download. Default is en-us.
+.PARAMETER CleanupDrivers
+When set to $true, will remove the drivers folder after the FFU has been captured. Default is $true.
 
-.PARAMETER MediaType
-String value of either business or consumer. This is used to identify which media type to download. Default is consumer.
+.PARAMETER CompactOS
+When set to $true, will compact the OS when building the FFU. Default is $true.
 
-.PARAMETER LogicalSectorBytes
-unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512.
+.PARAMETER ConfigFile
+Path to a JSON file containing parameters to use for the script. Default is $null.
 
-.PARAMETER Optimize
-When set to $true, will optimize the FFU file. Default is $true.
+.PARAMETER CopyAutopilot
+When set to $true, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is $false.
 
 .PARAMETER CopyDrivers
 When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false.
@@ -100,8 +48,92 @@ When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers fo
 .PARAMETER CopyPEDrivers
 When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false.
 
+.PARAMETER CopyPPKG
+When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
+
+.PARAMETER CopyUnattend
+When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
+
+.PARAMETER CreateCaptureMedia
+When set to $true, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM, and the boot order will be changed to automate the capture of the FFU.
+
+.PARAMETER CreateDeploymentMedia
+When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
+
+.PARAMETER CustomFFUNameTemplate
+Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
+
+.PARAMETER Disksize
+Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk.
+
+.PARAMETER DriversFolder
+Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
+
+.PARAMETER ExportConfigFile
+Path to a JSON file to export the parameters used for the script.
+
+.PARAMETER FFUCaptureLocation
+Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU.
+
+.PARAMETER FFUDevelopmentPath
+Path to the FFU development folder. Default is C:\FFUDevelopment.
+
+.PARAMETER FFUPrefix
+Prefix for the generated FFU file. Default is _FFU.
+
+.PARAMETER Headers
+Headers to use when downloading files. Not recommended to modify.
+
+.PARAMETER InstallApps
+When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created.
+
+.PARAMETER InstallDrivers
+Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU.
+
+.PARAMETER InstallOffice
+Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM.
+
+.PARAMETER ISOPath
+Path to the Windows 10/11 ISO file.
+
+.PARAMETER LogicalSectorSizeBytes
+Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.
+
+.PARAMETER Make
+Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'.
+
+.PARAMETER MediaType
+String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'.
+
+.PARAMETER Memory
+Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB.
+
+.PARAMETER Model
+Model of the device to download drivers. This is required if Make is set.
+
+.PARAMETER Optimize
+When set to $true, will optimize the FFU file. Default is $true.
+
+.PARAMETER OptionalFeatures
+Provide a semicolon-separated list of Windows optional features you want to include in the FFU (e.g., netfx3;TFTP).
+
+.PARAMETER Processors
+Number of virtual processors for the virtual machine. Recommended to use at least 4.
+
+.PARAMETER ProductKey
+Product key for the Windows edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here.
+
+.PARAMETER PromptExternalHardDiskMedia
+When set to $true, will prompt the user to confirm the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is $true.
+
 .PARAMETER RemoveFFU
 When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false.
+
+.PARAMETER ShareName
+Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
+
+.PARAMETER UpdateEdge
+When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false.
 
 .PARAMETER UpdateLatestCU
 When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false.
@@ -115,56 +147,47 @@ When set to $true, will download and install the latest .NET Framework for Windo
 .PARAMETER UpdateLatestDefender
 When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false.
 
-.PARAMETER UpdateEdge
-When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false.
+.PARAMETER UpdateLatestMSRT
+When set to $true, will download and install the latest Windows Malicious Software Removal Tool. Default is $false.
+
+.PARAMETER UpdateLatestNet
+When set to $true, will download and install the latest .NET Framework for Windows 10/11. Default is $false.
 
 .PARAMETER UpdateOneDrive
-When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per machine installation instead of per user. Default is $false.
+When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per-machine installation instead of per-user. Default is $false.
 
-.PARAMETER CopyPPKG
-When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
-
-.PARAMETER CopyUnattend
-When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
-
-.PARAMETER CopyAutopilot
-When set to $true, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is $false.
-
-.PARAMETER CompactOS
-When set to $true, will compact the OS when building the FFU. Default is $true.
-
-.PARAMETER CleanupCaptureISO
-When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true.
-
-.PARAMETER CleanupDeployISO
-When set to $true, will remove the WinPE deployment ISO after the FFU has been captured. Default is $true.
-
-.PARAMETER CleanupAppsISO
-When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
-
-.PARAMETER DriversFolder
-Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
-
-.PARAMETER CleanupDrivers
-When set to $true, will remove the drivers folder after the FFU has been captured. Default is $true.
+.PARAMETER UpdatePreviewCU
+When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false.
 
 .PARAMETER UserAgent
 User agent string to use when downloading files.
 
-.PARAMETER Headers
-Headers to use when downloading files.
+.PARAMETER Username
+Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account.
 
-.PARAMETER AllowExternalHardDiskMedia
-When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
+.PARAMETER VMHostIPAddress
+IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP).
 
-.PARAMETER PromptExternalHardDiskMedia
-When set to $true, will prompt the user to confirm the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is $true.
+.PARAMETER VMLocation
+Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.
 
-.PARAMETER Make
-Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'
+.PARAMETER VMSwitchName
+Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this.
 
-.PARAMETER Model
-Model of the device to download drivers. This is required if Make is set.
+.PARAMETER WindowsArch
+String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
+
+.PARAMETER WindowsLang
+String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'.
+
+.PARAMETER WindowsRelease
+Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
+
+.PARAMETER WindowsSKU
+Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'.
+
+.PARAMETER WindowsVersion
+String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'.
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
@@ -201,25 +224,18 @@ param(
     [Parameter(Mandatory = $false, Position = 0)]
     [ValidateScript({ Test-Path $_ })]
     [string]$ISOPath,
-    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')]
+    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
+
     [bool]$InstallApps,
+
+    [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
     [string]$Model,
-    # [Parameter(Mandatory = $false)]
-    # [ValidateScript({
-    #     if ($Make) {
-    #         return $true
-    #     }
-    #     if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
-    #         throw 'InstallDrivers is set to $true, but either the Drivers folder is missing or empty'
-    #     }
-    #     return $true
-    # })]
     [bool]$InstallDrivers,
     [uint64]$Memory = 4GB,
     [uint64]$Disksize = 30GB,
@@ -228,8 +244,9 @@ param(
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
     [string]$FFUCaptureLocation,
-    [String]$ShareName = "FFUCaptureShare",
+    [string]$ShareName = "FFUCaptureShare",
     [string]$Username = "ffu_user",
+    [string]$CustomFFUNameTemplate,
     [Parameter(Mandatory = $false)]
     [string]$VMHostIPAddress,
     [bool]$CreateCaptureMedia = $true,
@@ -267,10 +284,10 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
     [Parameter(Mandatory = $false)]
-    [ValidateSet(10, 11)]
+    [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
-    [string]$WindowsVersion = '23h2',
+    [string]$WindowsVersion = '24h2',
     [Parameter(Mandatory = $false)]
     [ValidateSet('x86', 'x64', 'arm64')]
     [string]$WindowsArch = 'x64',
@@ -306,8 +323,10 @@ param(
     [bool]$UpdatePreviewCU,
     [bool]$UpdateLatestNet,
     [bool]$UpdateLatestDefender,
+    [bool]$UpdateLatestMSRT,
     [bool]$UpdateEdge,
     [bool]$UpdateOneDrive,
+    [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
     [bool]$CopyAutopilot,
@@ -316,6 +335,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true,
     [string]$DriversFolder,
+    [string]$PEDriversFolder,
     [bool]$CleanupDrivers = $true,
     [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
     #Microsoft sites will intermittently fail on downloads. These headers are to help with that.
@@ -334,9 +354,69 @@ param(
         "Upgrade-Insecure-Requests" = "1"
     },
     [bool]$AllowExternalHardDiskMedia,
-    [bool]$PromptExternalHardDiskMedia = $true
+    [bool]$PromptExternalHardDiskMedia = $true,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ $_ -eq $null -or (Test-Path $_) })]
+    [string]$ConfigFile,
+    [Parameter(Mandatory = $false)]
+    [string]$ExportConfigFile
 )
-$version = '2409.2'
+$version = '2412.1'
+
+# If a config file is specified and it exists, load it
+if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
+    $configData = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+    $keys = $configData.psobject.Properties.Name
+    
+    # Iterate through the keys in the config data
+    foreach ($key in $keys) {
+        $value = $configdata.$key
+        
+        # If $value is empty, skip
+        if ($null -eq $value -or 
+        ([string]::IsNullOrEmpty([string]$value)) -or 
+        ($value -is [System.Collections.Hashtable] -and $value.Count -eq 0) -or 
+        ($value -is [System.UInt32] -and $value -eq 0) -or 
+        ($value -is [System.UInt64] -and $value -eq 0) -or 
+        ($value -is [System.Int32] -and $value -eq 0)) {
+            continue
+        }
+
+        # If this is the Headers parameter, convert PSCustomObject to hashtable
+        if ($key -eq 'Headers' -and $value -is [System.Management.Automation.PSCustomObject]) {
+            $headers = [hashtable]::new()
+            foreach ($prop in $value.psobject.Properties) {
+                $headers[$prop.Name] = $prop.Value
+            }
+            $value = $headers
+        }
+
+        # Check if this key matches a parameter in the script
+        # and if the user did NOT explicitly supply it on the command line
+        if ($MyInvocation.MyCommand.Parameters.ContainsKey($key) -and -not $PSBoundParameters.ContainsKey($key)) {
+            # Set the parameter's value to what's in the config file
+            Set-Variable -Name $key -Value $value -Scope 0
+        }
+    }
+}
+
+#Class definition for vhdx cache
+class VhdxCacheUpdateItem {
+    [string]$Name
+    VhdxCacheUpdateItem([string]$Name) {
+        $this.Name = $Name
+    }
+}
+
+class VhdxCacheItem {
+    [string]$VhdxFileName = ""
+    [uint32]$LogicalSectorSizeBytes = ""
+    [string]$WindowsSKU = ""
+    [string]$WindowsRelease = ""
+    [string]$WindowsVersion = ""
+    [string]$OptionalFeatures = ""
+    [VhdxCacheUpdateItem[]]$IncludedUpdates = @()
+}
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -372,6 +452,7 @@ if (-not $FFUCaptureLocation) { $FFUCaptureLocation = "$FFUDevelopmentPath\FFU" 
 if (-not $LogFile) { $LogFile = "$FFUDevelopmentPath\FFUDevelopment.log" }
 if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
+if (-not $MSRTPath) { $MSRTPath = "$AppsPath\MSRT" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
@@ -379,12 +460,36 @@ if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
-
+if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
+if (-not $installationType) { $installationType = if ($WindowsRelease.ToString().Length -eq 2) { 'Client' } else { 'Server' } }
+if ($installationType -eq 'Server'){
+    #Map $WindowsRelease to $WindowsVersion for Windows Server
+    switch ($WindowsRelease) {
+        2016 { $WindowsVersion = '1607' }
+        2019 { $WindowsVersion = '1809' }
+        2022 { $WindowsVersion = '21H2' }
+        2025 { $WindowsVersion = '24H2' }
+    }
+}
 
 #FUNCTIONS
 function WriteLog($LogText) { 
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText" -Force -ErrorAction SilentlyContinue
     Write-Verbose $LogText
+}
+
+function Get-Parameters{
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        $ParamNames
+    )
+# Define unwanted parameters
+$excludedParams = 'Debug','ErrorAction','ErrorVariable','InformationAction','InformationVariable','OutBuffer','OutVariable','PipelineVariable','Verbose','WarningAction','WarningVariable'
+
+# Filter out the unwanted parameters
+$filteredParamNames = $paramNames | Where-Object { $excludedParams -notcontains $_ }
+return $filteredParamNames
 }
 
 function LogVariableValues {
@@ -432,6 +537,16 @@ function LogVariableValues {
     WriteLog 'End logging variables'
 }
 
+function Get-ChildProcesses($parentId) {
+    $result = @()
+    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId"
+    foreach ($child in $children) {
+        $result += $child
+        $result += Get-ChildProcesses $child.ProcessId
+    }
+    return $result
+}
+
 function Invoke-Process {
     [CmdletBinding(SupportsShouldProcess)]
     param
@@ -442,7 +557,11 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [string]$ArgumentList
+        [string]$ArgumentList,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [bool]$Wait = $true
     )
 
     $ErrorActionPreference = 'Stop'
@@ -456,7 +575,7 @@ function Invoke-Process {
             ArgumentList           = $ArgumentList
             RedirectStandardError  = $stdErrTempFile
             RedirectStandardOutput = $stdOutTempFile
-            Wait                   = $true;
+            Wait                   = $($Wait);
             PassThru               = $true;
             NoNewWindow            = $true;
         }
@@ -464,7 +583,7 @@ function Invoke-Process {
             $cmd = Start-Process @startProcessParams
             $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
             $cmdError = Get-Content -Path $stdErrTempFile -Raw
-            if ($cmd.ExitCode -ne 0) {
+            if ($cmd.ExitCode -ne 0 -and $wait -eq $true) {
                 if ($cmdError) {
                     throw $cmdError.Trim()
                 }
@@ -482,15 +601,14 @@ function Invoke-Process {
     catch {
         #$PSCmdlet.ThrowTerminatingError($_)
         WriteLog $_
-        Write-Host "Script failed - $Logfile for more info"
+        # Write-Host "Script failed - $Logfile for more info"
         throw $_
 
     }
     finally {
         Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
-		
     }
-	
+    return $cmd
 }
 
 function Test-Url {
@@ -541,163 +659,6 @@ function Start-BitsTransferWithRetry {
     return $false
 }
 
-# function Get-MicrosoftDrivers {
-#     param (
-#         [string]$Make,
-#         [string]$Model,
-#         [int]$WindowsRelease
-#     )
-
-#     $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
-    
-#     # Download the webpage content
-#     WriteLog "Getting Surface driver information from $url"
-#     $OriginalVerbosePreference = $VerbosePreference
-#     $VerbosePreference = 'SilentlyContinue'
-#     $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
-#     $VerbosePreference = $OriginalVerbosePreference
-#     WriteLog "Complete"
-
-#     # Parse the content of the relevant nested divs
-#     WriteLog "Parsing web content for models and download links"
-#     $html = $webContent.Content
-#     $nestedDivPattern = '<div id="ID0EBHFBH[1-8]" class="ocContentControlledByDropdown.*?">(.*?)</div>'
-#     $nestedDivMatches = [regex]::Matches($html, $nestedDivPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-#     $models = @()
-#     $modelPattern = '<p>(.*?)</p>\s*</td>\s*<td>\s*<p>\s*<a href="(.*?)"'
-
-#     foreach ($nestedDiv in $nestedDivMatches) {
-#         $nestedDivContent = $nestedDiv.Groups[1].Value
-#         $modelMatches = [regex]::Matches($nestedDivContent, $modelPattern)
-
-#         foreach ($match in $modelMatches) {
-#             $modelName = $match.Groups[1].Value
-#             $modelLink = $match.Groups[2].Value
-#             $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
-#         }
-#     }
-#     WriteLog "Parsing complete"
-
-#     # Validate the model
-#     $selectedModel = $models | Where-Object { $_.Model -eq $Model }
-
-#     if ($null -eq $selectedModel) {
-#         if ($VerbosePreference -ne 'Continue') {
-#             Write-Host "The model '$Model' was not found in the list of available models."
-#             Write-Host "Please run the script with the -Verbose switch to see the list of available models."
-#         }
-#         WriteLog "The model '$Model' was not found in the list of available models."
-#         WriteLog "Please select a model from the list below by number:"
-        
-#         for ($i = 1; $i -lt $models.Count; $i++) {
-#             if ($VerbosePreference -ne 'Continue') {
-#                 Write-Host "$i. $($models[$i].Model)"
-#             }
-#             WriteLog "$i. $($models[$i].Model)"
-#         }
-
-#         do {
-#             $selection = Read-Host "Enter the number of the model you want to select"
-#             WriteLog "User selected model number: $selection"
-            
-#             if ($selection -match '^\d+$' -and [int]$selection -ge 0 -and [int]$selection -lt $models.Count) {
-#                 $selectedModel = $models[$selection]
-#             } else {
-#                 if ($VerbosePreference -ne 'Continue') {
-#                     Write-Host "Invalid selection. Please try again."
-#                 }
-#                 WriteLog "Invalid selection. Please try again."
-#             }
-#         } while ($null -eq $selectedModel)
-#     }
-
-#     $Model = $selectedModel.Model
-#     WriteLog "Model: $Model"
-#     WriteLog "Download Page: $($selectedModel.Link)"
-
-#     # Follow the link to the download page and parse the script tag
-#     WriteLog "Getting download page content"
-#     $OriginalVerbosePreference = $VerbosePreference
-#     $VerbosePreference = 'SilentlyContinue'
-#     $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
-#     $VerbosePreference = $OriginalVerbosePreference
-#     WriteLog "Complete"
-#     WriteLog "Parsing download page for file"
-#     $scriptPattern = '<script>window.__DLCDetails__={(.*?)}</script>'
-#     $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
-
-#     if ($scriptMatch.Success) {
-#         $scriptContent = $scriptMatch.Groups[1].Value
-
-#         # Extract the download file information from the script tag
-#         $downloadFilePattern = '"name":"(.*?)",.*?"url":"(.*?)"'
-#         $downloadFileMatches = [regex]::Matches($scriptContent, $downloadFilePattern)
-
-#         $downloadLink = $null
-#         foreach ($downloadFile in $downloadFileMatches) {
-#             $fileName = $downloadFile.Groups[1].Value
-#             $fileUrl = $downloadFile.Groups[2].Value
-
-#             if ($fileName -match "Win$WindowsRelease") {
-#                 $downloadLink = $fileUrl
-#                 break
-#             }
-#         }
-
-#         if ($downloadLink) {
-#             WriteLog "Download Link for Windows ${WindowsRelease}: $downloadLink"
-        
-#             # Create directory structure
-#             if (-not (Test-Path -Path $DriversFolder)) {
-#                 WriteLog "Creating Drivers folder: $DriversFolder"
-#                 New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
-#                 WriteLog "Drivers folder created"
-#             }
-#             $surfaceDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
-#             $modelPath = Join-Path -Path $surfaceDriversPath -ChildPath $Model
-#             if (-Not (Test-Path -Path $modelPath)) {
-#                 WriteLog "Creating model folder: $modelPath"
-#                 New-Item -Path $modelPath -ItemType Directory | Out-Null
-#                 WriteLog "Complete"
-#             }
-        
-#             # Download the file
-#             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
-#             WriteLog "Downloading $Model driver file to $filePath"
-#             Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
-#             WriteLog "Download complete"
-        
-#             # Determine file extension
-#             $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
-        
-#             if ($fileExtension -eq ".msi") {
-#                 # Extract the MSI file using an administrative install
-#                 WriteLog "Extracting MSI file to $modelPath"
-#                 $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
-#                 Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments
-#                 WriteLog "Extraction complete"
-#             } elseif ($fileExtension -eq ".zip") {
-#                 # Extract the ZIP file
-#                 WriteLog "Extracting ZIP file to $modelPath"
-#                 $ProgressPreference = 'SilentlyContinue'
-#                 Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
-#                 $ProgressPreference = 'Continue'
-#                 WriteLog "Extraction complete"
-#             } else {
-#                 WriteLog "Unsupported file type: $fileExtension"
-#             }
-#             # Remove the downloaded file
-#             WriteLog "Removing $filePath"
-#             Remove-Item -Path $filePath -Force
-#             WriteLog "Complete"
-#         } else {
-#             WriteLog "No download link found for Windows $WindowsRelease."
-#         }
-#     } else {
-#         WriteLog "Failed to parse the download page for the MSI file."
-#     }
-# }
 function Get-MicrosoftDrivers {
     param (
         [string]$Make,
@@ -706,7 +667,7 @@ function Get-MicrosoftDrivers {
     )
 
     $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
-    
+
     # Download the webpage content
     WriteLog "Getting Surface driver information from $url"
     $OriginalVerbosePreference = $VerbosePreference
@@ -715,41 +676,66 @@ function Get-MicrosoftDrivers {
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
 
-    # Parse the HTML content
+    # Parse the HTML content using Regex instead of the HTMLFILE COM object
     WriteLog "Parsing web content for models and download links"
     $html = $webContent.Content
-    $document = New-Object -ComObject "HTMLFILE"
-    $document.IHTMLDocument2_write($html)
-    $document.Close()
+
+    # Regex to match divs with selectable-content-options__option-content classes
+    $divPattern = '<div[^>]*class="selectable-content-options__option-content(?: ocHidden)?"[^>]*>(.*?)</div>'
+    $divMatches = [regex]::Matches($html, $divPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
     $models = @()
 
-    # Select all divs with class 'selectable-content-options__option-content'
-    $divs = $document.getElementsByTagName("div") | Where-Object {
-        $_.className -eq "selectable-content-options__option-content" -or $_.className -eq "selectable-content-options__option-content ocHidden"
-    }
+    foreach ($divMatch in $divMatches) {
+        $divContent = $divMatch.Groups[1].Value
 
-    foreach ($div in $divs) {
-        $tables = $div.getElementsByTagName("table")
-        foreach ($table in $tables) {
-            $rows = $table.getElementsByTagName("tr")
-            foreach ($row in $rows) {
-                $cells = $row.getElementsByTagName("td")
-                if ($cells.length -ge 2) {
-                    $modelName = $cells[0].innerText.Trim()
-                    $linkElement = $cells[1].getElementsByTagName("a")
-                    if ($linkElement.length -gt 0) {
-                        $modelLink = $linkElement[0].href
-                        $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+        # Find all tables within the div
+        $tablePattern = '<table[^>]*>(.*?)</table>'
+        $tableMatches = [regex]::Matches($divContent, $tablePattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+        foreach ($tableMatch in $tableMatches) {
+            $tableContent = $tableMatch.Groups[1].Value
+
+            # Find all rows in the table
+            $rowPattern = '<tr[^>]*>(.*?)</tr>'
+            $rowMatches = [regex]::Matches($tableContent, $rowPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+            foreach ($rowMatch in $rowMatches) {
+                $rowContent = $rowMatch.Groups[1].Value
+
+                # Extract cells from the row
+                $cellPattern = '<td[^>]*>\s*(?:<p[^>]*>)?(.*?)(?:</p>)?\s*</td>'
+                $cellMatches = [regex]::Matches($rowContent, $cellPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+                if ($cellMatches.Count -ge 2) {
+                    # Model name in the first TD
+                    $modelName = ($cellMatches[0].Groups[1].Value).Trim()
+
+                    # # Remove <p> and </p> tags if present
+                    # $modelName = $modelName -replace '<p[^>]*>', '' -replace '</p>', ''
+                    # $modelName = $modelName.Trim()
+
+
+                    # The second TD might contain a link or just text
+                    $secondTdContent = $cellMatches[1].Groups[1].Value.Trim()
+
+                    # Look for a link in the second TD
+                    $linkPattern = '<a[^>]+href="([^"]+)"[^>]*>'
+                    $linkMatch = [regex]::Match($secondTdContent, $linkPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+                    if ($linkMatch.Success) {
+                        $modelLink = $linkMatch.Groups[1].Value
                     } else {
-                        # Handle cases with instructions instead of links
-                        $modelLink = $cells[1].innerText.Trim()
-                        $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
+                        # No link, just text instructions
+                        $modelLink = $secondTdContent
                     }
+
+                    $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
                 }
             }
         }
     }
+
     WriteLog "Parsing complete"
 
     # Validate the model
@@ -762,7 +748,7 @@ function Get-MicrosoftDrivers {
         }
         WriteLog "The model '$Model' was not found in the list of available models."
         WriteLog "Please select a model from the list below by number:"
-        
+
         for ($i = 0; $i -lt $models.Count; $i++) {
             if ($VerbosePreference -ne 'Continue') {
                 Write-Host "$($i + 1). $($models[$i].Model)"
@@ -773,7 +759,7 @@ function Get-MicrosoftDrivers {
         do {
             $selection = Read-Host "Enter the number of the model you want to select"
             WriteLog "User selected model number: $selection"
-            
+
             if ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $models.Count) {
                 $selectedModel = $models[$selection - 1]
             } else {
@@ -797,7 +783,7 @@ function Get-MicrosoftDrivers {
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
     WriteLog "Parsing download page for file"
-    $scriptPattern = '<script>window.__DLCDetails__={(.*?)}</script>'
+    $scriptPattern = '<script>window.__DLCDetails__={(.*?)}<\/script>'
     $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
 
     if ($scriptMatch.Success) {
@@ -820,7 +806,7 @@ function Get-MicrosoftDrivers {
 
         if ($downloadLink) {
             WriteLog "Download Link for Windows ${WindowsRelease}: $downloadLink"
-        
+
             # Create directory structure
             if (-not (Test-Path -Path $DriversFolder)) {
                 WriteLog "Creating Drivers folder: $DriversFolder"
@@ -834,21 +820,21 @@ function Get-MicrosoftDrivers {
                 New-Item -Path $modelPath -ItemType Directory | Out-Null
                 WriteLog "Complete"
             }
-        
+
             # Download the file
             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
             WriteLog "Downloading $Model driver file to $filePath"
             Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
             WriteLog "Download complete"
-        
+
             # Determine file extension
             $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
-        
+
             if ($fileExtension -eq ".msi") {
                 # Extract the MSI file using an administrative install
                 WriteLog "Extracting MSI file to $modelPath"
                 $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
-                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments
+                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments | Out-Null
                 WriteLog "Extraction complete"
             } elseif ($fileExtension -eq ".zip") {
                 # Extract the ZIP file
@@ -904,7 +890,7 @@ function Get-HPDrivers {
     Start-BitsTransferWithRetry -Source $PlatformListUrl -Destination $PlatformListCab
     WriteLog "Download complete"
     WriteLog "Expanding $PlatformListCab to $PlatformListXml"
-    Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml"
+    Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml" | Out-Null
     WriteLog "Expansion complete"
 
     # Parse the PlatformList.xml to find the SystemID based on the ProductName
@@ -1034,7 +1020,7 @@ function Get-HPDrivers {
     Writelog "Downloading HP Driver cab from $DriverCabUrl to $DriverCabFile"
     Start-BitsTransferWithRetry -Source $DriverCabUrl -Destination $DriverCabFile
     WriteLog "Expanding HP Driver cab to $DriverXmlFile"
-    Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile"
+    Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile" | Out-Null
 
     # Parse the extracted XML file to download individual drivers
     [xml]$DriverXmlContent = Get-Content -Path $DriverXmlFile
@@ -1085,7 +1071,7 @@ function Get-HPDrivers {
         # Extract the driver
         $arguments = "/s /e /f `"$extractFolder`""
         WriteLog "Extracting driver"
-        Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments
+        Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments | Out-Null
         WriteLog "Driver extracted to: $extractFolder"
 
         # Delete the .exe driver file after extraction
@@ -1295,7 +1281,7 @@ function Get-LenovoDrivers {
         # Extract the driver
         # Start-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait -NoNewWindow
         WriteLog "Extracting driver: $driverFilePath to $extractFolder"
-        Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand
+        Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand | Out-Null
         WriteLog "Driver extracted"
 
         # Delete the .exe driver file after extraction
@@ -1321,17 +1307,10 @@ function Get-DellDrivers {
         [string]$Model,
         [Parameter(Mandatory = $true)]
         [ValidateSet("x64", "x86", "ARM64")]
-        [string]$WindowsArch
+        [string]$WindowsArch,
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease
     )
-
-    $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
-    if (-not (Test-Url -Url $catalogUrl)) {
-        WriteLog "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
-        if ($VerbosePreference -ne 'Continue') {
-            Write-Host "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
-        }
-        exit
-    }
 
     if (-not (Test-Path -Path $DriversFolder)) {
         WriteLog "Creating Drivers folder: $DriversFolder"
@@ -1344,14 +1323,31 @@ function Get-DellDrivers {
     New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
     WriteLog "Dell Drivers folder created"
 
-    $DellCabFile = "$DriversFolder\CatalogPC.cab"
+    #CatalogPC.cab is the catalog for Windows client PCs, Catalog.cab is the catalog for Windows Server
+    if ($WindowsRelease -le 11) {
+        $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
+        $DellCabFile = "$DriversFolder\CatalogPC.cab"
+        $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
+    } else {
+        $catalogUrl = "https://downloads.dell.com/catalog/Catalog.cab"
+        $DellCabFile = "$DriversFolder\Catalog.cab"
+        $DellCatalogXML = "$DriversFolder\Catalog.xml"
+    }
+    
+    if (-not (Test-Url -Url $catalogUrl)) {
+        WriteLog "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
+        if ($VerbosePreference -ne 'Continue') {
+            Write-Host "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
+        }
+        exit
+    }
+
     WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
     Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
     WriteLog "Dell Catalog cab file downloaded"
 
-    $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
     WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
-    Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML"
+    Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML" | Out-Null
     WriteLog "Dell Catalog cab file extracted"
 
     $xmlContent = [xml](Get-Content -Path $DellCatalogXML)
@@ -1363,15 +1359,30 @@ function Get-DellDrivers {
         $models = $component.SupportedSystems.Brand.Model
         foreach ($item in $models) {
             if ($item.Display.'#cdata-section' -match $Model) {
-                $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+	    	
+                if ($WindowsRelease -le 11) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+                } elseif ($WindowsRelease -eq 2016) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W14") }
+                } elseif ($WindowsRelease -eq 2019) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W19") }
+                } elseif ($WindowsRelease -eq 2022) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                } elseif ($WindowsRelease -eq 2025) {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W25") }
+                } else {
+                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
+                }
+		
                 if ($validOS) {
                     $driverPath = $component.path
                     $downloadUrl = $baseLocation + $driverPath
                     $driverFileName = [System.IO.Path]::GetFileName($driverPath)
                     $name = $component.Name.Display.'#cdata-section'
-                    $name = $name -replace '[\\\/\:\*\?\"\<\>\|]', '_'
+                    $name = $name -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
                     $name = $name -replace '[\,]', '-'
                     $category = $component.Category.Display.'#cdata-section'
+                    $category = $category -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
                     $version = [version]$component.vendorVersion
                     $namePrefix = ($name -split '-')[0]
 
@@ -1419,7 +1430,7 @@ function Get-DellDrivers {
             $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driver.DriverFileName
             
             if (Test-Path -Path $driverFilePath) {
-                Write-Output "Driver already downloaded: $driverFilePath skipping"
+                WriteLog "Driver already downloaded: $driverFilePath skipping"
                 continue
             }
 
@@ -1441,13 +1452,66 @@ function Get-DellDrivers {
             
 
             $extractFolder = $downloadFolder + "\" + $driver.DriverFileName.TrimEnd($driver.DriverFileName[-4..-1])
-            WriteLog "Creating extraction folder: $extractFolder"
-            New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-            WriteLog "Extraction folder created"
+            # WriteLog "Creating extraction folder: $extractFolder"
+            # New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
+            # WriteLog "Extraction folder created"
 
-            $arguments = "/s /e=`"$extractFolder`""
-            WriteLog "Extracting driver: $driverFilePath to $extractFolder"
-            Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments
+            # $arguments = "/s /e /f `"$extractFolder`""
+            $arguments = "/s /drivers=`"$extractFolder`""
+            WriteLog "Extracting driver: $driverFilePath $arguments"
+            try {
+                #If Category is Chipset, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel chipset driver which leaves a Window open
+                if ($driver.Category -eq "Chipset") {
+                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
+                    
+                    #Wait 5 seconds to allow for the extraction process to finish
+                    Start-Sleep -Seconds 5
+                                        
+                    $childProcesses = Get-ChildProcesses $process.Id
+
+                    # Find and stop the last created child process
+                    if ($childProcesses) {
+                        $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
+                        Stop-Process -Id $latestProcess.ProcessId -Force
+                        # Sleep 1 second to let process finish exiting so its installer can be removed
+                        Start-Sleep -Seconds 1
+                    }
+                #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
+                } elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
+
+                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
+
+                    #Sometimes the network drivers will extract on client OS, wait 5 seconds and check if the process is still running
+                    Start-Sleep -Seconds 5
+                    if ($process.HasExited -eq $false) {
+                        $childProcesses = Get-ChildProcesses $process.Id
+
+                        # Find and stop the last created child process
+                        if ($childProcesses) {
+                            $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
+                            Stop-Process -Id $latestProcess.ProcessId -Force
+                            #Move on to the next driver and skip this one - it won't extract on a client OS even with /s /e switches
+                            continue
+                        }
+                    }
+                } else {
+                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
+                }
+                # If $extractFolder is empty, try alternative extraction method
+                if (!(Get-ChildItem -Path $extractFolder -Recurse | Where-Object { -not $_.PSIsContainer })) {
+                    WriteLog 'Extraction with /drivers= switch failed. Removing folder and retrying with /s /e switches'
+                    Remove-Item -Path $extractFolder -Force -Recurse -ErrorAction SilentlyContinue
+                    $arguments = "/s /e=`"$extractFolder`""
+                    WriteLog "Extracting driver: $driverFilePath $arguments"
+                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
+                }
+            }
+            catch {
+                WriteLog 'Extraction with /drivers= switch failed. Retrying with /s /e switches'
+                $arguments = "/s /e=`"$extractFolder`""
+                WriteLog "Extracting driver: $driverFilePath $arguments"
+                Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
+            }
             WriteLog "Driver extracted"
 
             WriteLog "Deleting driver file: $driverFilePath"
@@ -1547,7 +1611,7 @@ function Install-ADK {
         WriteLog "$ADKOption downloaded to $installerLocation"
         
         WriteLog "Installing $ADKOption with $feature enabled"
-        Invoke-Process $installerLocation "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature"
+        Invoke-Process $installerLocation "/quiet /installpath ""%ProgramFiles(x86)%\Windows Kits\10"" /features $feature" | Out-Null
         
         WriteLog "$ADKOption installation completed."
         WriteLog "Removing $installer from $installerLocation"
@@ -1604,7 +1668,7 @@ function Uninstall-ADK {
 
         $adkBundleCachePath = $adkRegKey.GetValue("BundleCachePath")
         WriteLog "Uninstalling $ADKOption..."
-        Invoke-Process $adkBundleCachePath "/uninstall /quiet"
+        Invoke-Process $adkBundleCachePath "/uninstall /quiet" | Out-Null
         WriteLog "$ADKOption uninstalled successfully."
     }
     catch {
@@ -1707,7 +1771,7 @@ function Get-ADK {
         if ($adkBundleCachePath) {
             WriteLog "Installing Windows Deployment Tools..."
             $adkInstallPath = $adkPath.TrimEnd('\')
-            Invoke-Process $adkBundleCachePath "/quiet /installpath ""$adkInstallPath"" /features OptionId.DeploymentTools"
+            Invoke-Process $adkBundleCachePath "/quiet /installpath ""$adkInstallPath"" /features OptionId.DeploymentTools" | Out-Null
             WriteLog "Windows Deployment Tools installed successfully."
         }
         else {
@@ -1742,8 +1806,10 @@ function Get-WindowsESD {
     $cabFileUrl = if ($WindowsRelease -eq 10) {
         'https://go.microsoft.com/fwlink/?LinkId=841361'
     }
-    else {
+    elseif ($WindowsRelease -eq 11) {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
+    } else {
+        throw "Downloading Windows Server is not supported. Please use the -ISOPath parameter to specify the path to the Windows Server ISO file."
     }
 
     # Download cab file
@@ -1758,7 +1824,7 @@ function Get-WindowsESD {
     # Extract XML from cab file
     WriteLog "Extracting Products XML from cab"
     $xmlFilePath = Join-Path $PSScriptRoot "products.xml"
-    Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath"
+    Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" | Out-Null
     WriteLog "Products XML extracted"
 
     # Load XML content
@@ -1796,21 +1862,36 @@ function Get-WindowsESD {
 
 
 function Get-ODTURL {
+    try {
+        [String]$ODTPage = Invoke-WebRequest 'https://www.microsoft.com/en-us/download/details.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
 
-    # [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117'
-    [String]$MSWebPage = Invoke-RestMethod 'https://www.microsoft.com/en-us/download/confirmation.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent
-  
-    $MSWebPage | ForEach-Object {
-        if ($_ -match 'url=(https://.*officedeploymenttool.*\.exe)') {
-            $matches[1]
+        # Extract JSON data from the webpage
+        if ($ODTPage -match '<script>window\.__DLCDetails__=(.*?)<\/script>') {
+            # Parse JSON content
+            $jsonContent = $matches[1] | ConvertFrom-Json
+            $ODTURL = $jsonContent.dlcDetailsView.downloadFile[0].url
+
+            if ($ODTURL) {
+                return $ODTURL
+            } else {
+                WriteLog 'Cannot find the ODT download URL in the JSON content'
+                throw 'Cannot find the ODT download URL in the JSON content'
+            }
+        } else {
+            WriteLog 'Failed to extract JSON content from the ODT webpage'
+            throw 'Failed to extract JSON content from the ODT webpage'
         }
+    }
+    catch {
+        WriteLog $_.Exception.Message
+        throw 'An error occurred while retrieving the ODT URL.'
     }
 }
 
 function Get-Office {
     #Download ODT
     $ODTUrl = Get-ODTURL
-    $ODTInstallFile = "$env:TEMP\odtsetup.exe"
+    $ODTInstallFile = "$FFUDevelopmentPath\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
@@ -1819,7 +1900,7 @@ function Get-Office {
 
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
-    Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet"
+    Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet" | Out-Null
 
     # Run setup.exe with config.xml and modify xml file to download to $OfficePath
     $ConfigXml = "$OfficePath\DownloadFFU.xml"
@@ -1827,7 +1908,7 @@ function Get-Office {
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
     $xmlContent.Save($ConfigXml)
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
-    Invoke-Process $OfficePath\setup.exe "/download $ConfigXml"
+    Invoke-Process $OfficePath\setup.exe "/download $ConfigXml" | Out-Null
 
     WriteLog "Cleaning up ODT default config files and checking InstallAppsandSysprep.cmd file for proper command line"
     #Clean up default configuration files
@@ -1846,6 +1927,11 @@ function Get-Office {
         # Write the modified content back to the file
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
     }
+
+    #Remove the ODT setup file
+    WriteLog "Removing ODT setup file"
+    Remove-Item -Path $ODTInstallFile -Force
+    WriteLog "ODT setup file removed"
 }
 
 function Install-WinGet {
@@ -1886,7 +1972,7 @@ function Install-WinGet {
 #     }
 #     $wingetVersion = & winget.exe --version
 #     WriteLog "Installed version of WinGet: $wingetVersion"
-#     if ($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion) {
+#     if ($wingetVersion -match 'v?(\d+\.\d+.\d+)' -and [version]$matches[1] -lt $minVersion) {
 #         WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
 #         Install-WinGet -Architecture $WindowsArch
 #     }
@@ -2345,16 +2431,23 @@ function Get-KBLink {
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
 
-    Write-Verbose -Message "$kbids"
+    # Write-Verbose -Message "$kbids"
 
     if (-not $kbids) {
         Write-Warning -Message "No results found for $Name"
         return
     }
 
+    # $guids = $results.Links |
+    # Where-Object ID -match '_link' |
+    # Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
+    # ForEach-Object { $_.id.replace('_link', '') } |
+    # Where-Object { $_ -in $kbids }
+
     $guids = $results.Links |
     Where-Object ID -match '_link' |
     Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
+    Select-Object -First 1 |
     ForEach-Object { $_.id.replace('_link', '') } |
     Where-Object { $_ -in $kbids }
 
@@ -2364,7 +2457,7 @@ function Get-KBLink {
     }
 
     foreach ($guid in $guids) {
-        Write-Verbose -Message "Downloading information for $guid"
+        # Write-Verbose -Message "Downloading information for $guid"
         $post = @{ size = 0; updateID = $guid; uidInfo = $guid } | ConvertTo-Json -Compress
         $body = @{ updateIDs = "[$post]" }
         $OriginalVerbosePreference = $VerbosePreference
@@ -2387,16 +2480,21 @@ function Get-KBLink {
 }
 function Get-LatestWindowsKB {
     param (
-        [ValidateSet(10, 11)]
-        [int]$WindowsRelease
+        [Parameter(Mandatory)]
+        [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
+        [int]$WindowsRelease,
+        [Parameter(Mandatory)]
+        [string]$WindowsVersion
     )
         
     # Define the URL of the update history page based on the Windows release
     if ($WindowsRelease -eq 11) {
         $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information'
     }
-    else {
+    elseif ($WindowsRelease -eq 10) {
         $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/release-information'
+    } else {
+        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info'
     }
         
     # Use Invoke-WebRequest to fetch the content of the page
@@ -2406,7 +2504,11 @@ function Get-LatestWindowsKB {
     $VerbosePreference = $OriginalVerbosePreference
         
     # Use a regular expression to find the KB article number
-    $kbArticleRegex = 'KB\d+'
+    if ($WindowsRelease -le 11) {
+        $kbArticleRegex = "(?:Version $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
+    } else {
+        $kbArticleRegex = "(?:Windows Server $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
+    }
     $kbArticle = [regex]::Match($response.Content, $kbArticleRegex).Value
         
     return $kbArticle
@@ -2426,35 +2528,8 @@ function Save-KB {
         $links = Get-KBLink -Name $kb
         foreach ($link in $links) {
             if (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
-                WriteLog "No architecture found in $link, assume this is for all architectures"
-                #FIX: 3/22/2024 - the SecurityHealthSetup fix was updated and now includes two files (one is x64 and the other is arm64)
-                #Unfortunately there is no easy way to determine the architecture from the file name
-                #There is a support doc that include links to download, but it's out of date (n-1)
-                #https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-                #These files don't change that often, so will check the link above to see when it updates and may use that
-                #For now this is hard-coded for these specific file names
-                if ($link -match 'security') {
-                    #Make sure we're getting the correct architecture for the Security Health Setup update
-                    WriteLog "Link: $link matches security"
-                    if ($WindowsArch -eq 'x64') {
-                        if ($link -match 'securityhealthsetup_e1') {
-                            Writelog "Downloading $Link for $WindowsArch to $Path"
-                            Start-BitsTransferWithRetry -Source $link -Destination $Path
-                            $fileName = ($link -split '/')[-1]
-                            Writelog "Returning $fileName"
-                            break
-                        }
-                    }
-                    if ($WindowsArch -eq 'arm64') {
-                        if ($link -match 'securityhealthsetup_25') {
-                            Writelog "Downloading $Link for $WindowsArch to $Path"
-                            Start-BitsTransferWithRetry -Source $link -Destination $Path
-                            $fileName = ($link -split '/')[-1]
-                            Writelog "Returning $fileName"
-                            break
-                        }
-                    }
-                }
+                WriteLog "No architecture found in $link, skipping"
+                continue
             }
 
             if ($link -match 'x64' -or $link -match 'amd64') {
@@ -2464,7 +2539,8 @@ function Save-KB {
                         Start-BitsTransferWithRetry -Source $link -Destination $Path
                         $fileName = ($link -split '/')[-1]
                         Writelog "Returning $fileName"
-                        break
+                        #With Windows 11 24H2 and Checkpoint CUs, there are multiple files that are downloaded
+                        # break
                     }
                 }
                 
@@ -2475,7 +2551,8 @@ function Save-KB {
                     Start-BitsTransferWithRetry -Source $link -Destination $Path
                     $fileName = ($link -split '/')[-1]
                     Writelog "Returning $fileName"
-                    break
+                    #With Windows 11 24H2 and Checkpoint CUs, there are multiple files that are downloaded
+                    # break
                 }
             }                
         }
@@ -2486,8 +2563,9 @@ function Save-KB {
 function New-AppsISO {
     #Create Apps ISO file
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
-    #Start-Process -FilePath $OSCDIMG -ArgumentList "-n -m -d $Appspath $AppsISO" -wait
-    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO"
+    #Adding Long Path support for AppsPath to prevent issues with oscdimg
+    $AppsPath = '\\?\' + $AppsPath
+    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO" | Out-Null
     
     #Remove the Office Download and ODT
     if ($InstallOffice) {
@@ -2527,9 +2605,13 @@ function Get-WimIndex {
     If ($ISOPath) {
         $wimindex = switch ($WindowsSKU) {
             'Home' { 1 }
+            'Standard' { 1 }
             'Home_N' { 2 }
+            'Standard (Desktop Experience)' { 1 }
             'Home_SL' { 3 }
+            'Datacenter' { 3 }
             'EDU' { 4 }
+            'Datacenter (Desktop Experience)' { 4 }
             'EDU_N' { 5 }
             'Pro' { 6 }
             'Pro_N' { 7 }
@@ -2560,8 +2642,13 @@ function Get-Index {
     
     # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
     if($ISOPath){
-        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
-        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+        if ($WindowsSKU -notmatch "Standard|Datacenter") {
+            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+            $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+        } else {
+            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
+            $WindowsImage = $imageIndex.ImageName.Substring(0, 19)
+        }
     }
     else{
         $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
@@ -2579,8 +2666,8 @@ function Get-Index {
         return $matchingImageIndex.ImageIndex
     }
     else {
-        # Look for either the number 10 or 11 in the ImageName
-        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -like "*10*") -or ($_.ImageName -like "*11*") }
+        # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
+        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
             
         while ($true) {
             # Present list of ImageNames to the end user if no matching ImageIndex is found
@@ -2692,7 +2779,7 @@ function New-OSPartition {
     if ((Get-CimInstance Win32_OperatingSystem).Caption -match "Server") {
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\")
     }
-    if ($CompactOS) {
+    elseif ($CompactOS) {
         WriteLog '$CompactOS is set to true, using -Compact switch to apply the WIM file to the OS partition.'
         WriteLog (Expand-WindowsImage -ImagePath $WimPath -Index $WimIndex -ApplyPath "$($osPartition.DriveLetter):\" -Compact)
     }
@@ -2723,7 +2810,7 @@ function New-RecoveryPartition {
         $calculatedRecoverySize = $RecoveryPartitionSize
     }
     else {
-        $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim"
+        $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim" -Attributes Hidden -ErrorAction SilentlyContinue
 
         if (($null -ne $winReWim) -and ($winReWim.Count -eq 1)) {
             # Wim size + 100MB is minimum WinRE partition size.
@@ -2770,7 +2857,7 @@ function Add-BootFiles {
     )
 
     WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`"..."
-    Invoke-Process bcdboot "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType"
+    Invoke-Process bcdboot "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
     WriteLog "Done."
 }
 
@@ -2875,10 +2962,14 @@ Function Set-CaptureFFU {
         $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
         $UpdatedContent = $ScriptContent -replace '(net use).*', ("$SharePath")
         WriteLog 'Updating share command in CaptureFFU.ps1 script with new share information'
+        $UpdatedContent = $UpdatedContent -replace '^\$CustomFFUNameTemplate \= .*#Custom naming', '#Custom naming placeholder'
+        if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
+            $UpdatedContent = $UpdatedContent -replace '#Custom naming placeholder', ("`$CustomFFUNameTemplate = '$CustomFFUNameTemplate' #Custom naming")
+            WriteLog 'Updating CaptureFFU.ps1 script with new ffu name template information'
+        }
         Set-Content -Path $CaptureFFUScriptPath -Value $UpdatedContent
         WriteLog 'Update complete'
-    }
-    else {
+    } else {
         throw "CaptureFFU.ps1 script not found at $CaptureFFUScriptPath"
     }
 }
@@ -2906,7 +2997,7 @@ function New-PEMedia {
     elseif($WindowsArch -eq 'arm64') {
         & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
     }
-    #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
+    #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
     WriteLog 'Files copied successfully'
 
     WriteLog 'Mounting WinPE media to add WinPE optional components'
@@ -2960,7 +3051,7 @@ function New-PEMedia {
         if ($CopyPEDrivers) {
             WriteLog "Adding drivers to WinPE media"
             try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\PEDrivers" -Recurse -ErrorAction SilentlyContinue | Out-null
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
             }
             catch {
                 WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -3002,7 +3093,7 @@ function New-PEMedia {
         }
         
     }
-    Invoke-Process $OSCDIMG $OSCDIMGArgs
+    Invoke-Process $OSCDIMG $OSCDIMGArgs | Out-Null
     WriteLog "ISO created successfully"
     WriteLog "Cleaning up $WinPEFFUPath"
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
@@ -3015,11 +3106,12 @@ function Optimize-FFUCaptureDrive {
     )
     try {
         WriteLog 'Mounting VHDX for volume optimization'
-        Mount-VHD -Path $VhdxPath
+        $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+        $osPartition = $mountedDisk | Get-Partition | Where-Object { $_.GptType -eq "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" }
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose 
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
         WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VhdxPath
         WriteLog 'Mounting VHDX as read-only for optimization'
@@ -3031,6 +3123,35 @@ function Optimize-FFUCaptureDrive {
     } catch {
         throw $_
     }
+}
+function New-FFUFileName {
+    $BuildDate = Get-Date -uformat %b%Y
+    # Replace '{WindowsRelease}' with the Windows release (e.g., 10, 11, 2016, 2019, 2022, 2025)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsRelease}', $WindowsRelease
+    # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsVersion}', $WindowsVersion
+    # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $SKU
+    # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{BuildDate}', $BuildDate
+    # Replace '{yyyy}' with the current year in 4-digit format (e.g., 2023)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{yyyy}', (Get-Date -UFormat '%Y')
+    # Replace '{MM}' with the current month in 2-digit format (e.g., 01 for January)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{MM}', (Get-Date -UFormat '%m')
+    # Replace '{dd}' with the current day of the month in 2-digit format (e.g., 05)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{dd}', (Get-Date -UFormat '%d')
+    # Replace '{HH}' with the current hour in 24-hour format (e.g., 14 for 2 PM)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{HH}', (Get-Date -UFormat '%H')
+    # Replace '{hh}' with the current hour in 12-hour format (e.g., 02 for 2 PM)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{hh}', (Get-Date -UFormat '%I')
+    # Replace '{mm}' with the current minute in 2-digit format (e.g., 09)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{mm}', (Get-Date -UFormat '%M')
+    # Replace '{tt}' with the current AM/PM designator (e.g., AM or PM)
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{tt}', (Get-Date -UFormat '%p')
+    if($CustomFFUNameTemplate -notlike '*.ffu') {
+        $CustomFFUNameTemplate += '.ffu'
+    }
+    return $CustomFFUNameTemplate
 }
 
 function New-FFU {
@@ -3075,15 +3196,43 @@ function New-FFU {
             throw $_
         }
     }
-    elseif (-not $InstallApps) {
-        #Get Windows Version Information from the VHDX
-        $winverinfo = Get-WindowsVersionInfo
-        $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($winverinfo.SKU)`_$($winverinfo.BuildDate).ffu"
+    elseif (-not $InstallApps -and (-not $AllowVHDXCaching)) {
+        if ($CustomFFUNameTemplate) {
+            $FFUFileName = New-FFUFileName
+        }
+        else{
+            #Get Windows Version Information from the VHDX
+            $winverinfo = Get-WindowsVersionInfo
+            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($winverinfo.SKU)`_$($winverinfo.BuildDate).ffu"
+        }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
-        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        WriteLog 'FFU Capture complete'
+        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+    }
+    elseif (-not $InstallApps -and $AllowVHDXCaching) {
+        # Make $FFUFileName based on values in the config.json file
+        if ($CustomFFUNameTemplate) {
+            $FFUFileName = New-FFUFileName
+        } else {
+            $BuildDate = Get-Date -UFormat %b%Y
+            # Get Windows Information to make the FFU file name from the cachedVHDXInfo file
+            if ($installationType -eq 'Client') {
+                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($cachedVHDXInfo.WindowsSKU)`_$BuildDate.ffu"
+            } else {
+                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($cachedVHDXInfo.WindowsSKU)`_$BuildDate.ffu"
+            } 
+        }
+        WriteLog "FFU file name: $FFUFileName"
+        $FFUFile = "$FFUCaptureLocation\$FFUFileName"
+        #Dismount the VHDX
+        
+        #Capture the FFU
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($cachedVHDXInfo.WindowsSKU) /Compress:Default" | Out-Null
+        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
@@ -3120,8 +3269,8 @@ function New-FFU {
     if ($Optimize -eq $true) {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
         #Need to use ADK version of DISM to address bug in DISM - perhaps Windows 11 24H2 will fix this
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile"
-        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
+        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
         WriteLog 'Optimizing FFU complete'
     }
     
@@ -3182,7 +3331,7 @@ function Remove-FFUVM {
     }
     #Remove unused mountpoints
     WriteLog 'Remove unused mountpoints'
-    Invoke-Process cmd "/c mountvol /r"
+    Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
 }
 Function Remove-FFUUserShare {
@@ -3201,16 +3350,20 @@ Function Get-WindowsVersionInfo {
     WriteLog "Getting Windows Version info"
     #Load Registry Hive
     $Software = "$osPartitionDriveLetter`:\Windows\System32\config\software"
-    WriteLog "Loading Software registry hive"
-    Invoke-Process reg "load HKLM\FFU $Software"
+    WriteLog "Loading Software registry hive: $Software"
+    Invoke-Process reg "load HKLM\FFU $Software" | Out-Null
 
     #Find Windows version values
     $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
     WriteLog "Windows SKU: $SKU"
     [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
     WriteLog "Windows Build: $CurrentBuild"
+    #DisplayVersion does not exist for 1607 builds (RS1 and Server 2016) and Server 2019
+    if($CurrentBuild -notin (14393, 17763)) {
     $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
     WriteLog "Windows Version: $DisplayVersion"
+    }
+    
     $BuildDate = Get-Date -uformat %b%Y
 
     $SKU = switch ($SKU) {
@@ -3220,18 +3373,31 @@ Function Get-WindowsVersionInfo {
         Enterprise { 'Ent' }
         Education { 'Edu' }
         ProfessionalWorkstation { 'Pro_Wks' }
+	    ServerStandard { 'Srv_Std' }
+        ServerDatacenter { 'Srv_Dtc' }
     }
     WriteLog "Windows SKU Modified to: $SKU"
 
-    if ($CurrentBuild -ge 22000) {
-        $Name = 'Win11'
-    }
+    if ($SKU -notmatch "Srv") {
+        if ($CurrentBuild -ge 22000) {
+            $Name = 'Win11'
+        }
+        else {
+            $Name = 'Win10'
+        }
+    } 
     else {
-        $Name = 'Win10'
+        $Name = switch ($CurrentBuild) {
+            26100 { '2025' }
+            20348 { '2022' }
+            17763 { '2019' }
+            14393 { '2016' }
+            Default { $DisplayVersion }
+        }
     }
     
     WriteLog "Unloading registry"
-    Invoke-Process reg "unload HKLM\FFU"
+    Invoke-Process reg "unload HKLM\FFU" | Out-Null
     #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
     WriteLog 'Sleep 60 seconds to allow registry to completely unload'
     Start-sleep 60
@@ -3344,12 +3510,12 @@ Function Get-USBDrive {
             if ($VerbosePreference -ne 'Continue') {
                 Write-Host "Found $USBDrivesCount total USB drives"
                 If ($ExternalCount -gt 0) {
-                    Write-Host "$ExternalCount are external drives"
+                    Write-Host "$ExternalCount external drives"
                 }
             }
             WriteLog "Found $USBDrivesCount total USB drives"
             If ($ExternalCount -gt 0) {
-                WriteLog "$ExternalCount are external drives"
+                WriteLog "$ExternalCount external drives"
             }
         }
     }
@@ -3619,7 +3785,7 @@ function Get-FFUEnvironment {
 
     # Remove unused mountpoints
     WriteLog 'Remove unused mountpoints'
-    Invoke-Process cmd "/c mountvol /r"
+    Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
 
     # Check for content in the VM folder and delete any folders that start with _FFU-
@@ -3661,8 +3827,8 @@ function Get-FFUEnvironment {
 
     #Clean up registry
     if (Test-Path -Path 'HKLM:\FFU') {
-        Writelog 'Found HKLM:\FFU, removing it'
-        Invoke-Process reg "unload HKLM\FFU"
+        Writelog 'Found HKLM:\FFU, removing it' 
+        Invoke-Process reg "unload HKLM\FFU" | Out-Null
     }
 
     #Remove FFU User and Share
@@ -3683,6 +3849,12 @@ function Get-FFUEnvironment {
     If (Test-Path -Path $DefenderPath) {
         WriteLog "Removing $DefenderPath"
         Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+    #Clean up $MSRTPath
+    if (Test-Path -Path $MSRTPath) {
+        WriteLog "Removing $MSRTPath"
+        Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     #Clean up $OneDrivePath
@@ -3735,6 +3907,17 @@ function Clear-InstallAppsandSysprep {
             WriteLog 'Removal complete'
         }
     }
+    if ($UpdateLatestMSRT) {
+        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Windows Malicious Software Removal Tool"
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $CmdContent -notmatch 'd:\\MSRT*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Clean up $MSRTPath
+        If (Test-Path -Path $MSRTPath) {
+            WriteLog "Removing $MSRTPath"
+            Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
+    }
     if ($UpdateOneDrive) {
         WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
         $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
@@ -3758,8 +3941,32 @@ function Clear-InstallAppsandSysprep {
         }
     }
 }
+function Export-ConfigFile{
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        $paramNames
+    )
+    $filteredParamNames = Get-Parameters -ParamNames $paramNames
+    
+    # Retrieve their values
+    $paramsToExport = @{}
+    foreach ($paramName in $filteredParamNames) {
+        $paramsToExport[$paramName] = Get-Variable -Name $paramName -ValueOnly
+    }
+    
+    # Sort the keys alphabetically
+    $orderedParams = [ordered]@{}
+    foreach ($key in ($paramsToExport.Keys | Sort-Object)) {
+        $orderedParams[$key] = $paramsToExport[$key]
+    }
+    
+    # Convert to JSON and save
+    $orderedParams | ConvertTo-Json | Out-File $ExportConfigFile -Force
+}
 
 ###END FUNCTIONS
+
 
 #Remove old log file if found
 if (Test-Path -Path $Logfile) {
@@ -3772,11 +3979,48 @@ Write-Host "To track progress, please open the log file $Logfile or use the -Ver
 
 WriteLog 'Begin Logging'
 
+####### Generate Config File #######
+
+if($ExportConfigFile){
+    WriteLog 'Exporting Config File'
+    # Get the parameter names from the script and exclude ExportConfigFile
+    $paramNames = $MyInvocation.MyCommand.Parameters.Keys | Where-Object {$_ -ne 'ExportConfigFile'}
+    try{
+        Export-ConfigFile($paramNames)
+        WriteLog "Config file exported to $ExportConfigFile"
+    }
+    catch{
+        WriteLog 'Failed to export config file'
+        throw $_
+    }
+}
+
+####### End Generate Config File #######
+
+
+#Setting long path support - this prevents issues where some applications have deep directory structures
+#and oscdimg fails to create the Apps ISO
+try {
+    $LongPathsEnabled = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -ErrorAction Stop
+} catch {
+    $LongPathsEnabled = $null
+}
+if ($LongPathsEnabled -ne 1) {
+    WriteLog 'LongPathsEnabled is not set to 1. Setting it to 1'
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1
+    WriteLog 'LongPathsEnabled set to 1'
+}
+
+
 ###PARAMETER VALIDATION
 
 #Validate drivers folder
 if ($InstallDrivers -or $CopyDrivers) {
     WriteLog 'Doing driver validation'
+    if ($DriversFolder -match '\s') {
+        WriteLog "Driver folder path $DriversFolder contains spaces. Please remove spaces from the path and try again."
+        throw "Driver folder path $DriversFolder contains spaces. Please remove spaces from the path and try again."
+    }
     if ($Make -and $Model){
         WriteLog "Make and Model are set to $Make and $Model, will attempt to download drivers"
     } else {
@@ -3794,6 +4038,11 @@ if ($InstallDrivers -or $CopyDrivers) {
 #Validate PEDrivers folder
 if ($CopyPEDrivers) {
     WriteLog 'Doing PEDriver validation'
+    # Check if $PEdriversFolder has spaces in the path, if it does, throw an error
+    if ($PEDriversFolder -match '\s') {
+        WriteLog "Driver folder path $PEDriversFolder contains spaces. Please remove spaces from the path and try again."
+        throw "Driver folder path $PEDriversFolder contains spaces. Please remove spaces from the path and try again."
+    }
     if (!(Test-Path -Path $PEDriversFolder)) {
         WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
         throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
@@ -3883,7 +4132,21 @@ if (($VMHostIPAddress) -and ($VMSwitchName)){
         throw "IP address for -VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
     }
     if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
-        throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        try {
+            # Bypass the check for systems that could have a Hyper-V NAT switch
+            $null = Get-NetNat -ErrorAction Stop
+            $NetNat = @(Get-NetNat -ErrorAction Stop)
+        }
+        catch {
+            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        }
+        if ($NetNat.Count -gt 0) {
+            WriteLog "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress!"
+            WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
+        }
+        else {
+            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
+        }
     }
     WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
 }
@@ -3901,8 +4164,8 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
 if ($BuildUSBDrive -eq $true) {
     $USBDrives, $USBDrivesCount = Get-USBDrive
 }
-if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true))) {
-    WriteLog 'You have selected to update Defender, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true) -or ($UpdateLatestMSRT -eq $true))) {
+    WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
     throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
 }
 if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
@@ -3913,6 +4176,22 @@ if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
 if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
     $UpdateOneDrive = $false
     WriteLog 'OneDrive currently fails to install on ARM64 VMs (even with the OneDrive ARM setup files). Setting UpdateOneDrive to false'
+}
+
+if (($WindowsArch -eq 'ARM64') -and ($UpdateLatestMSRT -eq $true)) {
+    $UpdateLatestMSRT = $false
+    WriteLog 'Windows Malicious Software Removal Tool is not available for the ARM64 architecture.'
+}
+#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 24H2 for Windows 11
+#MCT media only provides 22H2 and 24H2 media
+#This prevents issues with VHDX Caching unecessarily and with searching for CUs
+if ($ISOPath -eq '') {
+    if ($WindowsRelease -eq '10') {
+        $WindowsVersion = '22H2'
+    }
+    if ($WindowsRelease -eq '11') {
+        $WindowsVersion = '24H2'
+    }
 }
 
 ###END PARAMETER VALIDATION
@@ -3948,7 +4227,7 @@ if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
         if ($make -eq 'Dell'){
             WriteLog 'Getting Dell drivers'
             #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
-            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch
+            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
             WriteLog 'Getting Dell drivers completed successfully'
         }
     }
@@ -4019,21 +4298,6 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
 
-            ###### 9/4/2024 - Windows Security Platform update is no longer available from Update Catalog. Will change to using
-            ###### https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-
-            # #Get Windows Security platform update
-            # $Name = "Windows Security platform definition updates"
-            # WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
-            # $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
-            # WriteLog "Latest Security Platform Update saved to $DefenderPath\$KBFilePath"
-            # #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
-            # WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
-            # $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            # $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Security Platform Update)', ("REM Install Windows Security Platform Update`r`nd:\Defender\$KBFilePath")
-            # Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            # WriteLog "Update complete"
-
             #Download latest Defender Definitions
             WriteLog "Downloading latest Defender Definitions"
             # Defender def updates can be found https://www.microsoft.com/en-us/wdsi/defenderupdates
@@ -4058,6 +4322,65 @@ if ($InstallApps) {
             WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Definitions"
             $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
             $UpdatedcmdContent = $CmdContent -replace '^(REM Install Defender Definitions)', ("REM Install Defender Definitions`r`nd:\Defender\mpam-fe.exe")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+
+            ###### 9/4/2024 - Windows Security Platform update is no longer available from Update Catalog. Will change to using
+            ###### https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
+
+            #Download Windows Security Platform Update
+            WriteLog "Downloading Windows Security Platform Update"
+            if ($WindowsArch -eq 'x64') {
+                $securityPlatformURL = 'https://definitionupdates.microsoft.com/download/DefinitionUpdates/windowssecurity/10.0.27703.1006/x64/securityhealthsetup.exe'
+            }
+            if ($WindowsArch -eq 'ARM64') {
+                $securityPlatformURL = 'https://definitionupdates.microsoft.com/download/DefinitionUpdates/windowssecurity/10.0.27703.1006/arm64/securityhealthsetup.exe'
+            }
+            try {
+                WriteLog "Windows Security Platform Update URL is $securityPlatformURL"
+                Start-BitsTransferWithRetry -Source $securityPlatformURL -Destination "$DefenderPath\securityhealthsetup.exe"
+                WriteLog "Windows Security Platform Update downloaded to $DefenderPath\securityhealthsetup.exe"
+            }
+            catch {
+                Write-Host "Downloading Windows Security Platform Update Failed"
+                WriteLog "Downloading Windows Security Platform Update Failed with error $_"
+                throw $_
+            }
+            # Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Security Platform Update)', ("REM Install Windows Security Platform Update`r`nd:\Defender\securityhealthsetup.exe")
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
+            WriteLog "Update complete"
+        }
+        if ($UpdateLatestMSRT) {
+            WriteLog "`$UpdateLatestMSRT is set to true."
+            if ($WindowsArch -eq 'x64') {
+                if ($installationType -eq 'client') {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                }
+                #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
+                elseif ($installationType -eq 'server' -and $WindowsRelease -eq '24H2') {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server 2019"""
+                }
+                else {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server $WindowsRelease""" 
+                }
+            }
+            if ($WindowsArch -eq 'x86') {
+                $Name = """Windows Malicious Software Removal Tool""" + " " + """Windows $WindowsRelease""" 
+            }
+            #Check if $MSRTPath exists, if not, create it
+            if (-not (Test-Path -Path $MSRTPath)) {
+                WriteLog "Creating $MSRTPath"
+                New-Item -Path $MSRTPath -ItemType Directory -Force | Out-Null
+            }
+            WriteLog "Getting Windows Malicious Software Removal Tool URL"
+            $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath
+            WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
+            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Malicious Software Removal Tool"
+            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Malicious Software Removal Tool)', ("REM Install Windows Malicious Software Removal Tool`r`nd:\MSRT\$MSRTFileName /quiet")
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
@@ -4114,7 +4437,7 @@ if ($InstallApps) {
             $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
             $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
             WriteLog "Expanding $EdgeCABFilePath"
-            Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath"
+            Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath" | Out-Null
             WriteLog "Expansion complete"
 
             #Remove Edge CAB file
@@ -4129,6 +4452,29 @@ if ($InstallApps) {
             Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
             WriteLog "Update complete"
         }
+
+        #Modify InstallAppsandSysprep.cmd to remove old script variables
+        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        $StartIndex = $CmdContent.IndexOf("REM START Batch variables placeholder")
+        $EndIndex = $CmdContent.IndexOf("REM END Batch variables placeholder")
+        if (($StartIndex + 1) -lt $EndIndex) {
+            for ($i = ($StartIndex + 1); $i -lt $EndIndex; $i++) {
+                $CmdContent[$i] = $null
+            }
+        }
+        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+
+        if ($AppsScriptVariables) {
+            #Modify InstallAppsandSysprep.cmd to add the script variables
+            $CmdContent = [System.Collections.ArrayList](Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd")
+            $ScriptIndex = $CmdContent.IndexOf("REM START Batch variables placeholder") + 1
+            foreach ($VariableKey in $AppsScriptVariables.Keys) {
+                $CmdContent.Insert($ScriptIndex, ("set {0}={1}" -f $VariableKey, $AppsScriptVariables[$VariableKey]))
+                $ScriptIndex++
+            }
+            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+        }
+	
         #Create Apps ISO
         WriteLog "Creating $AppsISO file"
         New-AppsISO
@@ -4144,53 +4490,44 @@ if ($InstallApps) {
 #Create VHDX
 try {
 
-    if ($ISOPath) {
-        $wimPath = Get-WimFromISO
-    }
-    else {
-        $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
-    }
-    #If index not specified by user, try and find based on WindowsSKU
-    if (-not($index) -and ($WindowsSKU)) {
-        $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
-    }
-
-    $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
-
-    $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
-    
-    New-MSRPartition -VhdxDisk $vhdxDisk
-    
-    $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
-    $osPartitionDriveLetter = $osPartition[1].DriveLetter
-    $WindowsPartition = $osPartitionDriveLetter + ":\"
-
-    #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
-    $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
-
-    WriteLog "All necessary partitions created."
-
-    Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
-
     #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
     #Changed to use MU Catalog instead of using Get-LatestWindowsKB
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        if ($installationType -eq 'Client') {
+            $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        }
+        if ($WindowsRelease -eq 2025) {
+            $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch"""
+        }
+        if ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch"""
+        } 
+        if ($WindowsRelease -in 2016, 2019) {
+            $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch"""
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        #Get latest Servicing Stack Update for Windows Server 2016
+        if ($WindowsRelease -eq 2016) {
+            $SSUName = """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch"""
+            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
+            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
+            $SSUFilePath = "$KBPath\$SSUFile"
+            WriteLog "Latest SSU saved to $SSUFilePath"
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
         WriteLog "Latest CU saved to $KBPath\$KBFilePath"
     }
 
-    #Update Latest Preview Cumlative Update 
-    #will take Precendence over $UpdateLastestCU if both were set to $true
-    if ($UpdatePreviewCU) {
+    #Update Latest Preview Cumlative Update for Client OS only
+    #will take Precendence over $UpdateLatestCU if both were set to $true
+    if ($UpdatePreviewCU -and $installationType -eq 'Client') {
         Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
         $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         #Check if $KBPath exists, if not, create it
@@ -4206,7 +4543,21 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        if ($installationType -eq 'Client') {
+            $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        }
+        if ($WindowsRelease -eq 2025) {
+            $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64 -preview"
+        }
+        if ($WindowsRelease -eq 2022) {
+            $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" ""operating system version 21H2 for x64"""
+        }
+        if ($WindowsRelease -eq 2019) {
+            $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64"""
+        }
+        if ($WindowsRelease -eq 2016) {
+            $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64"""
+        }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -4216,46 +4567,186 @@ try {
         $KBFilePath = Save-KB -Name $Name -Path $KBPath
         WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
     }
-    # #Update Latest Security Platform Update
-    # if ($UpdateSecurityPlatform) {
-    #     WriteLog "`$UpdateSecurityPlatform is set to true, checking for latest Security Platform Update"
-    #     $Name = "Windows Security platform definition updates"
-    #     #Check if $KBPath exists, if not, create it
-    #     If (-not (Test-Path -Path $KBPath)) {
-    #         WriteLog "Creating $KBPath"
-    #         New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-    #     }
-    #     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $KBPath"
-    #     $KBFilePath = Save-KB -Name $Name -Path $KBPath
-    #     WriteLog "Latest Security Platform Update saved to $KBPath\$KBFilePath"
-    # }
-    
-    
-    #Add Windows packages
-    if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
-        try {
-            WriteLog "Adding KBs to $WindowsPartition"
-            WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
-            WriteLog "KBs added to $WindowsPartition"
-            WriteLog "Removing $KBPath"
-            Remove-Item -Path $KBPath -Recurse -Force | Out-Null
-	        WriteLog "Clean Up the WinSxS Folder"
-            Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
-            WriteLog "Clean Up the WinSxS Folder completed"
+
+    #Search for cached VHDX and skip VHDX creation if there's a cached version
+    if ($AllowVHDXCaching) {
+        WriteLog 'AllowVHDXCaching is true, checking for cached VHDX file'
+        if (Test-Path -Path $VHDXCacheFolder) {
+            WriteLog "Found $VHDXCacheFolder"
+            $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
+            WriteLog "Found $($vhdxJsons.Count) cached VHDX files"
+            if (Test-Path -Path $KBPath){
+                $downloadedKBs = @(Get-ChildItem -File -Path $KBPath)
+            }
+            else {
+                $downloadedKBs = @()
+            }
+            #$jsonDeserializer = [System.Web.Script.Serialization.JavaScriptSerializer]::new()
+
+            foreach ($vhdxJson in $vhdxJsons) {
+                try {
+                    WriteLog "Processing $($vhdxJson.FullName)"
+                    #$vhdxCacheItem = $jsonDeserializer.Deserialize((Get-Content -Path $vhdxJson.FullName -Raw), [VhdxCacheItem])
+                    $vhdxCacheItem = Get-Content -Path $vhdxJson.FullName -Raw | ConvertFrom-Json
+
+                    if ((($vhdxCacheItem.WindowsSKU -ne $WindowsSKU) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsSKU) -xor [string]::IsNullOrEmpty($WindowsSKU)))) {
+                        WriteLog 'WindowsSKU mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.LogicalSectorSizeBytes -ne $LogicalSectorSizeBytes) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.LogicalSectorSizeBytes) -xor [string]::IsNullOrEmpty($LogicalSectorSizeBytes)))) {
+                        WriteLog 'LogicalSectorSizeBytes mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.WindowsRelease -ne $WindowsRelease) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsRelease) -xor [string]::IsNullOrEmpty($WindowsRelease)))) {
+                        WriteLog 'WindowsRelease mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.WindowsVersion -ne $WindowsVersion) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsVersion) -xor [string]::IsNullOrEmpty($WindowsVersion)))) {
+                        Writelog 'WindowsVersion mismatch, continuing'
+                        continue
+                    }
+
+                    if ((($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) -or
+                        ([string]::IsNullOrEmpty($vhdxCacheItem.OptionalFeatures) -xor [string]::IsNullOrEmpty($OptionalFeatures)))) {
+                        WriteLog 'OptionalFeatures mismatch, continuing'
+                        continue
+                    }
+
+                    if ((Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name).Length -gt 0) {
+                        (Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name)
+                        $downloadedKBs.Name
+                        $vhdxCacheItem.IncludedUpdates.Name
+                        WriteLog 'IncludedUpdates mismatch, continuing'
+                        continue
+                    }
+
+                    WriteLog "Found cached VHDX file $vhdxCacheFolder\$($vhdxCacheItem.VhdxFileName) with matching parameters and included updates"
+                    $cachedVHDXFileFound = $true
+                    $cachedVHDXInfo = $vhdxCacheItem
+                    break
+                } catch {
+                    WriteLog "Reading $vhdxJson Failed with error $_"
+                }
+            }
         }
-        catch {
-            Write-Host "Adding KB to VHDX failed with error $_"
-            WriteLog "Adding KB to VHDX failed with error $_"
-            throw $_
-        }  
     }
+    
+    if (-Not $cachedVHDXFileFound) {
+        if ($ISOPath) {
+            $wimPath = Get-WimFromISO
+        } else {
+            $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
+        }
+        #If index not specified by user, try and find based on WindowsSKU
+        if (-not($index) -and ($WindowsSKU)) {
+            $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+        }
 
+        $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
-    #Enable Windows Optional Features (e.g. .Net3, etc)
-    If ($OptionalFeatures) {
-        $Source = Join-Path (Split-Path $wimpath) "sxs"
-        Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+        $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
+    
+        New-MSRPartition -VhdxDisk $vhdxDisk
+    
+        $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
+        $osPartitionDriveLetter = $osPartition[1].DriveLetter
+        $WindowsPartition = $osPartitionDriveLetter + ':\'
+
+        #$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+        $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartition[1] -RecoveryPartitionSize $RecoveryPartitionSize -DataPartition $dataPartition
+
+        WriteLog 'All necessary partitions created.'
+
+        Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
+    
+        #Add Windows packages
+        if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
+            try {
+                WriteLog "Adding KBs to $WindowsPartition"
+                WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
+                # If WindowsRelease is 2016, we need to add the SSU first
+                if ($WindowsRelease -eq 2016) {
+                    WriteLog 'WindowsRelease is 2016, adding SSU first'
+                    WriteLog "Adding SSU to $WindowsPartition"
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
+                    # Commenting out -preventpending as it causes an issue with the SSU being applied
+                    # Seems to be because of the registry being mounted per dism.log
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    WriteLog "SSU added to $WindowsPartition"
+                    WriteLog "Removing $SSUFilePath"
+                    Remove-Item -Path $SSUFilePath -Force | Out-Null
+                    WriteLog 'SSU removed'
+                    WriteLog "Adding CU to $WindowsPartition"
+                }
+                # Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+                Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+                WriteLog "KBs added to $WindowsPartition"
+                if ($AllowVHDXCaching) {
+                    $cachedVHDXInfo = [VhdxCacheItem]::new()
+                    $includedUpdates = Get-ChildItem -Path $KBPath -File
+                
+                    foreach ($includedUpdate in $includedUpdates) {
+                        $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
+                    }
+                }
+                WriteLog "Removing $KBPath"
+                Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+                WriteLog 'Clean Up the WinSxS Folder'
+                WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
+                Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+                WriteLog 'Clean Up the WinSxS Folder completed'
+            } catch {
+                Write-Host "Adding KB to VHDX failed with error $_"
+                WriteLog "Adding KB to VHDX failed with error $_"
+                if ($_.Exception.HResult -eq -2146498525) {
+                    Write-Host 'Missing latest Servicing Stack Update'
+                    Write-Host 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
+                    Write-Host 'Recommended to use the latest media'
+                    WriteLog 'Missing latest Servicing Stack Update'
+                    WriteLog 'Media likely older than 2023-09 for Windows Server 2022 (KB5030216), or 2021-08 for Windows Server 2019 (KB5005112)'
+                    WriteLog 'Recommended to use the latest media'
+                }
+                throw $_
+            }  
+        }
+
+        #Enable Windows Optional Features (e.g. .Net3, etc)
+        If ($OptionalFeatures) {
+            $Source = Join-Path (Split-Path $wimpath) 'sxs'
+            Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+        }
+        If ($ISOPath) {
+            WriteLog 'Dismounting Windows ISO'
+            Dismount-DiskImage -ImagePath $ISOPath | Out-null
+            WriteLog 'Done'
+        }
+        #If $wimPath is an esd file, remove it
+        If ($wimPath -match '.esd') {
+            WriteLog "Deleting $wimPath file"
+            Remove-Item -Path $wimPath -Force
+            WriteLog "$wimPath deleted"
+        }
+    
+    } else {
+        #Use cached vhdx file
+        WriteLog 'Using cached VHDX file to speed up build proces'
+        WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
+
+        Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J
+        $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
+
+        $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
+        $osPartition = $vhdxDisk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+        $osPartitionDriveLetter = $osPartition.DriveLetter
+        $WindowsPartition = $osPartitionDriveLetter + ':\'
+
     }
 
     #Set Product key
@@ -4263,21 +4754,12 @@ try {
         WriteLog "Setting Windows Product Key"
         Set-WindowsProductKey -Path $WindowsPartition -ProductKey $ProductKey
     }
-    If ($ISOPath) {
-        WriteLog 'Dismounting Windows ISO'
-        Dismount-DiskImage -ImagePath $ISOPath | Out-null
-        WriteLog 'Done'
-    }
-    else {
-        #Remove ESD file
-        Remove-Item -Path $wimPath -Force
-    }
     
 
     If ($InstallApps) {
         #Copy Unattend file so VM Boots into Audit Mode
         WriteLog 'Copying unattend file to boot to audit mode'
-        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory | Out-Null
+        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory -Force | Out-Null
         if($WindowsArch -eq 'x64'){
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
@@ -4285,7 +4767,46 @@ try {
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
         WriteLog 'Copy completed'
+    }
+
+    if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
+        WriteLog 'Caching VHDX file'
+
+        WriteLog 'Defragmenting Windows partition...'
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
+        WriteLog 'Performing slab consolidation on Windows partition...'
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
+        WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
+
+        WriteLog 'Copying to cache dir'
+
+        #Assuming there are now name collisons
+        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J
+
+        #Only create new instance if not created during patching
+        if ($null -eq $cachedVHDXInfo) {
+            $cachedVHDXInfo = [VhdxCacheItem]::new()
+        }
+        $cachedVHDXInfo.VhdxFileName = $("$VMName.vhdx")
+        $cachedVHDXInfo.LogicalSectorSizeBytes = $LogicalSectorSizeBytes
+        $cachedVHDXInfo.WindowsSKU = $WindowsSKU
+        $cachedVHDXInfo.WindowsRelease = $WindowsRelease
+        $cachedVHDXInfo.WindowsVersion = $WindowsVersion
+        $cachedVHDXInfo.OptionalFeatures = $OptionalFeatures
+        
+        $cachedVHDXInfo | ConvertTo-Json | Out-File -FilePath ("{0}\{1}_config.json" -f $($VHDXCacheFolder), $VMName)
+        WriteLog "Cached VHDX file $("$VMName.vhdx")"
+
+        #Remount the VHDX file if $installapps is false so the VHDX can be captured to an FFU
+        If (-not $InstallApps) {
+            Mount-Vhd -Path $VHDXPath
+        }
+    } 
+    else {
+        if($InstallApps){
+            Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        }
     }
 }
 catch {
@@ -4537,21 +5058,40 @@ If ($CleanupAppsISO) {
         Writelog "Removing $AppsISO failed with error $_"
         throw $_
     }
-If ($CleanupDrivers){
+}
+If ($CleanupDrivers) {
     try {
-        If (Test-Path -Path $Driversfolder\$Make) {
-            WriteLog "Removing $Driversfolder\$Make"
-            Remove-Item -Path $Driversfolder\$Make -Force -Recurse
+        #Remove files in $Driversfolder, but keep $DriversFolder
+        If (Test-Path -Path $Driversfolder) {
+            WriteLog "Removing files in $Driversfolder"
+            Remove-Item -Path $Driversfolder\* -Force -Recurse
             WriteLog "Removal complete"
-        }     
-    }
-    catch {
-        Writelog "Removing $Driversfolder\$Make failed with error $_"
+        }  
+    } catch {
+        Writelog "Removing $Driversfolder\* failed with error $_"
         throw $_
     }
+}
+if ($AllowVHDXCaching) {
+    try {
+        If (Test-Path -Path $KBPath) {
+            WriteLog "Removing $KBPath"
+            Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
+    } catch {
+        Writelog "Removing $KBPath failed with error $_"
+        throw $_
+    }
+}
+#Set $LongPathsEnabled registry value back to original value. $LongPathsEnabled could be $null if the registry value was not found
+if ($null -eq $LongPathsEnabled) {
+    Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -ErrorAction SilentlyContinue
+}
+else {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value $LongPathsEnabled
+}
 
-}
-}
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
 if ($VerbosePreference -ne 'Continue'){
