@@ -12,171 +12,16 @@ Add-Type -AssemblyName PresentationCore,PresentationFramework
 Add-Type -AssemblyName System.Windows.Forms  # Added to load Windows Forms for OpenFileDialog
 
 # Define the path to the info.png image
-$infoImagePath = "$PSScriptRoot\info.png"
+$infoImagePath = Join-Path -Path $PSScriptRoot -ChildPath "info.png"
 
-# Replace the XAML string with one that uses ToolTips instead of Popups and adjusts their placement
-$xamlString = @"
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="FFU Builder UI"
-        Height="600" Width="900">
-    
-    <!-- Define ToolTip Style to offset from mouse pointer -->
-    <Window.Resources>
-        <Style TargetType="ToolTip">
-            <Setter Property="Placement" Value="Mouse"/>
-            <Setter Property="HorizontalOffset" Value="10"/>
-            <Setter Property="VerticalOffset" Value="-30"/> <!-- Changed from -20 to -30 -->
-            <!-- Removed OverridesDefaultStyle setter to allow default ToolTip styling -->
-        </Style>
-    </Window.Resources>
-    
-    <Grid Margin="10">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/> <!-- New row for Custom VM Switch Name -->
-        </Grid.RowDefinitions>
-        <TabControl TabStripPlacement="Left" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" FontSize="14" Padding="10" Grid.Row="0">
-            <TabItem Header="Basic Information" Padding="20">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/> <!-- Row 0: FFU Name -->
-                        <RowDefinition Height="Auto"/> <!-- Row 1: ISO Path -->
-                        <RowDefinition Height="Auto"/> <!-- Row 2: Windows SKU -->
-                        <RowDefinition Height="Auto"/> <!-- Row 3: VM Switch Name -->
-                        <RowDefinition Height="Auto"/> <!-- Row 4: Custom VM Switch Name -->
-                        <RowDefinition Height="Auto"/> <!-- Row 5: VM Host IP Address -->
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+# Load the XAML from the external file
+$xamlPath = Join-Path -Path $PSScriptRoot -ChildPath "BuildFFUVM_UI.xaml"
+if (-Not (Test-Path $xamlPath)) {
+    Write-Error "XAML file not found at path: $xamlPath"
+    exit
+}
 
-                    <!-- FFU Name -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="FFU Name:"/>
-                        <Image x:Name="imgFFUNameInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Enter a unique name for the FFU. Example format: {WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}" />
-                    </StackPanel>
-                    <TextBox x:Name="txtFFUName" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    
-                    <!-- ISO Path -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="ISO Path:"/>
-                        <Image x:Name="imgISOPathInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Specify the full path to the Windows ISO file you wish to use." />
-                    </StackPanel>
-                    <!-- Replace StackPanel with Grid for better alignment -->
-                    <Grid Grid.Row="1" Grid.Column="1" Margin="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtISOPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                        <Button x:Name="btnBrowseISO" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for a Windows ISO file."/>
-                    </Grid>
-                    
-                    <!-- Windows SKU -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows SKU:"/>
-                        <Image x:Name="imgWindowsSKUInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Select the edition of Windows you want to install (e.g., Pro, Enterprise)." />
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsSKU" Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    
-                    <!-- VM Switch Name -->
-                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="VM Switch Name:"/>
-                        <Image x:Name="imgVMSwitchNameInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Enter the name of the Hyper-V virtual switch to be used for the VM." />
-                    </StackPanel>
-                    <!-- Replace TextBox with ComboBox for listing VM Switches -->
-                    <ComboBox x:Name="cmbVMSwitchName" Grid.Row="3" Grid.Column="1" Margin="5"
-                              VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                    <!-- Add a new TextBox for custom VM Switch Name, initially hidden -->
-                    <TextBox x:Name="txtCustomVMSwitchName" Grid.Row="4" Grid.Column="1" Margin="5" 
-                             VerticalAlignment="Center" HorizontalAlignment="Stretch" 
-                             Visibility="Collapsed" 
-                             ToolTip="Enter your custom VM Switch Name." />
-
-                    <!-- VM Host IP Address -->
-                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="VM Host IP Address:"/>
-                        <Image x:Name="imgVMHostIPAddressInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Provide the IP address of the Hyper-V host machine." />
-                    </StackPanel>
-                    <TextBox x:Name="txtVMHostIPAddress" Grid.Row="5" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                </Grid>
-            </TabItem>
-            <TabItem Header="Application Information" Padding="20">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Install Office -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallOfficeInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Check to install Microsoft Office as part of the FFU." />
-                    </StackPanel>
-
-                    <!-- Install Apps -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkInstallApps" Content="Install Apps" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallAppsInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Check to include additional applications in the FFU." />
-                    </StackPanel>
-
-                    <!-- Install Drivers -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Check to include device drivers in the FFU." />
-                    </StackPanel>
-                    <!-- Add more application-related controls here using the Grid for alignment -->
-                </Grid>
-            </TabItem>
-        </TabControl>
-        
-        <!-- Progress Bar -->
-        <ProgressBar x:Name="progressBar" Height="20" Margin="0,10,0,0" Grid.Row="1" Visibility="Collapsed" 
-        />
-        
-        <!-- Status Text -->
-        <TextBlock x:Name="txtStatus" Grid.Row="2" Text="" Margin="0,5,0,0" 
-        />
-        
-        <!-- Run Button Row -->
-        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,20">
-            <!-- New Build Config File Button -->
-            <Button x:Name="btnBuildConfig" Content="Build Config File" Width="150" 
-                    VerticalAlignment="Bottom" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
-            
-            <!-- Existing Build FFU Button -->
-            <Button x:Name="btnRun" Content="Build FFU" Width="120" 
-                    VerticalAlignment="Bottom" FontSize="14" Padding="10,5"/>
-        </StackPanel>
-    </Grid>
-</Window>
-"@
+$xamlString = Get-Content -Path $xamlPath -Raw
 
 # Create the XmlReader
 $reader = New-Object System.IO.StringReader($xamlString)
@@ -214,6 +59,40 @@ if ($cmbWindowsSKU.Items.Count -gt 0) {
     Write-Host "No SKUs available to populate the ComboBox."
 }
 
+# Function to set image sources
+function Set-ImageSource {
+    param (
+        [System.Windows.Window]$window,
+        [string]$imageName,
+        [string]$sourcePath
+    )
+    $image = $window.FindName($imageName)
+    if ($image) {
+        $uri = New-Object System.Uri($sourcePath, [System.UriKind]::Absolute)
+        $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage($uri)
+        $image.Source = $bitmap
+    }
+}
+
+# List of Image control names
+$imageNames = @(
+    "imgFFUNameInfo",
+    "imgISOPathInfo",
+    "imgWindowsSKUInfo",
+    "imgVMSwitchNameInfo",
+    "imgVMHostIPAddressInfo",
+    "imgInstallOfficeInfo",
+    "imgInstallAppsInfo",
+    "imgInstallDriversInfo",
+    "imgCopyDriversInfo"  # Added Image control for Copy Drivers
+    # Add any other Image control names here
+)
+
+# Set the Source for each Image control
+foreach ($imgName in $imageNames) {
+    Set-ImageSource -window $window -imageName $imgName -sourcePath $infoImagePath
+}
+
 # Optional: Add logging for debugging purposes
 # Uncomment the following lines to enable debug output
 # Write-Host "Extracted SKU List: $skuList"
@@ -240,6 +119,7 @@ $runScriptHandler = {
         $installOffice = $window.FindName('chkInstallOffice').IsChecked
         $installApps = $window.FindName('chkInstallApps').IsChecked
         $installDrivers = $window.FindName('chkInstallDrivers').IsChecked
+        $copyDrivers = $window.FindName('chkCopyDrivers').IsChecked  # Retrieved Copy Drivers value
 
         # Create config object
         $config = @{
@@ -255,6 +135,7 @@ $runScriptHandler = {
             InstallOffice = $installOffice
             InstallApps = $installApps
             InstallDrivers = $installDrivers
+            CopyDrivers = $copyDrivers  # Added CopyDrivers to config
             # ...include other parameters as needed
         }
 
@@ -354,6 +235,7 @@ $btnBuildConfig.Add_Click({
                 InstallOffice = ($window.FindName('chkInstallOffice')).IsChecked
                 InstallApps = ($window.FindName('chkInstallApps')).IsChecked
                 InstallDrivers = ($window.FindName('chkInstallDrivers')).IsChecked
+                CopyDrivers = ($window.FindName('chkCopyDrivers')).IsChecked  # Added CopyDrivers to config
                 # ...include other parameters as needed
             }
 
