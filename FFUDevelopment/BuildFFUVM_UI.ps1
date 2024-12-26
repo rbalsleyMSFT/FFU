@@ -492,6 +492,27 @@ $window.Add_Loaded({
     if ($cmbMake.Items.Count -gt 0) {
         $cmbMake.SelectedIndex = 0
     }
+
+    $chkDownloadDrivers = $window.FindName('chkDownloadDrivers')
+    $spMakeModelSection = $window.FindName('spMakeModelSection')
+
+    # Control visibility when checkbox is checked/unchecked
+    $chkDownloadDrivers.Add_Checked({
+        $spMakeModelSection.Visibility = [System.Windows.Visibility]::Visible
+    })
+    $chkDownloadDrivers.Add_Unchecked({
+        $spMakeModelSection.Visibility = [System.Windows.Visibility]::Collapsed
+    })
+
+    $script:chkDownloadDrivers = [System.Windows.Controls.CheckBox]$window.FindName('chkDownloadDrivers')
+    $script:spMakeModelSection = [System.Windows.Controls.StackPanel]$window.FindName('spMakeModelSection')
+
+    $script:chkDownloadDrivers.Add_Checked({
+        $script:spMakeModelSection.Visibility = [System.Windows.Visibility]::Visible
+    })
+    $script:chkDownloadDrivers.Add_Unchecked({
+        $script:spMakeModelSection.Visibility = [System.Windows.Visibility]::Collapsed
+    })
 })
 
 # Show the window
