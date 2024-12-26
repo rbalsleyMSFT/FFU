@@ -120,6 +120,28 @@ $runScriptHandler = {
         $installApps = $window.FindName('chkInstallApps').IsChecked
         $installDrivers = $window.FindName('chkInstallDrivers').IsChecked
         $copyDrivers = $window.FindName('chkCopyDrivers').IsChecked  # Retrieved Copy Drivers value
+        $downloadDrivers = $window.FindName('chkDownloadDrivers').IsChecked
+        $make = $window.FindName('cmbMake').SelectedItem
+        $model = $window.FindName('cmbModel').Text  # Changed from SelectedItem
+        $driversFolder = $window.FindName('txtDriversFolder').Text
+        $peDriversFolder = $window.FindName('txtPEDriversFolder').Text
+
+        # Validate required fields
+        if ($installDrivers -and (-not $driversFolder)) {
+            throw "Drivers Folder is required when Install Drivers is checked."
+        }
+        if ($copyDrivers -and (-not $driversFolder)) {
+            throw "Drivers Folder is required when Copy Drivers is checked."
+        }
+        if ($copyPEDrivers -and (-not $peDriversFolder)) {
+            throw "PE Drivers Folder is required when Copy PE Drivers is checked."
+        }
+        if ($downloadDrivers -and (-not $make)) {
+            throw "Make is required when Download Drivers is checked."
+        }
+        if ($downloadDrivers -and (-not $model)) {
+            throw "Model is required when Download Drivers is checked."
+        }
 
         # Create config object
         $config = @{
@@ -136,6 +158,11 @@ $runScriptHandler = {
             InstallApps = $installApps
             InstallDrivers = $installDrivers
             CopyDrivers = $copyDrivers  # Added CopyDrivers to config
+            DownloadDrivers = $downloadDrivers
+            Make = if ($downloadDrivers) { $make.ToString() } else { $null }
+            Model = if ($downloadDrivers) { $model } else { $null }  # Changed from ToString()
+            DriversFolder = $driversFolder
+            PEDriversFolder = $peDriversFolder
             # ...include other parameters as needed
         }
 
@@ -179,6 +206,25 @@ $btnBrowseISO.Add_Click({
     
     if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $window.FindName('txtISOPath').Text = $openFileDialog.FileName
+    }
+})
+
+# Bind the Browse buttons for Drivers folders
+$btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
+$btnBrowseDriversFolder.Add_Click({
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = "Select Drivers Folder"
+    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtDriversFolder').Text = $folderBrowser.SelectedPath
+    }
+})
+
+$btnBrowsePEDrivers = $window.FindName('btnBrowsePEDrivers')
+$btnBrowsePEDrivers.Add_Click({
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = "Select PE Drivers Folder"
+    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtPEDriversFolder').Text = $folderBrowser.SelectedPath
     }
 })
 
@@ -226,6 +272,31 @@ $btnBuildConfig.Add_Click({
                 $vmSwitchName = $selectedVMSwitch.ToString()
             }
 
+            $installDrivers = ($window.FindName('chkInstallDrivers')).IsChecked
+            $copyDrivers = ($window.FindName('chkCopyDrivers')).IsChecked
+            $downloadDrivers = ($window.FindName('chkDownloadDrivers')).IsChecked
+            $make = ($window.FindName('cmbMake')).SelectedItem
+            $model = ($window.FindName('cmbModel')).Text  # Changed from SelectedItem
+            $driversFolder = ($window.FindName('txtDriversFolder')).Text
+            $peDriversFolder = ($window.FindName('txtPEDriversFolder')).Text
+
+            # Validate required fields
+            if ($installDrivers -and (-not $driversFolder)) {
+                throw "Drivers Folder is required when Install Drivers is checked."
+            }
+            if ($copyDrivers -and (-not $driversFolder)) {
+                throw "Drivers Folder is required when Copy Drivers is checked."
+            }
+            if ($copyPEDrivers -and (-not $peDriversFolder)) {
+                throw "PE Drivers Folder is required when Copy PE Drivers is checked."
+            }
+            if ($downloadDrivers -and (-not $make)) {
+                throw "Make is required when Download Drivers is checked."
+            }
+            if ($downloadDrivers -and (-not $model)) {
+                throw "Model is required when Download Drivers is checked."
+            }
+
             $config = @{
                 CustomFFUNameTemplate = ($window.FindName('txtFFUName')).Text
                 ISOPath = ($window.FindName('txtISOPath')).Text
@@ -234,8 +305,13 @@ $btnBuildConfig.Add_Click({
                 VMHostIPAddress = ($window.FindName('txtVMHostIPAddress')).Text
                 InstallOffice = ($window.FindName('chkInstallOffice')).IsChecked
                 InstallApps = ($window.FindName('chkInstallApps')).IsChecked
-                InstallDrivers = ($window.FindName('chkInstallDrivers')).IsChecked
-                CopyDrivers = ($window.FindName('chkCopyDrivers')).IsChecked  # Added CopyDrivers to config
+                InstallDrivers = $installDrivers
+                CopyDrivers = $copyDrivers
+                DownloadDrivers = $downloadDrivers
+                Make = if ($downloadDrivers) { $make.ToString() } else { $null }
+                Model = if ($downloadDrivers) { $model } else { $null }  # Changed from ToString()
+                DriversFolder = $driversFolder
+                PEDriversFolder = $peDriversFolder
                 # ...include other parameters as needed
             }
 
@@ -258,7 +334,7 @@ $btnBuildConfig.Add_Click({
 # After loading the window:
 $window.Add_Loaded({
     $script:vmSwitchMap = @{} 
-    $cmbVMSwitchName    = $window.FindName('cmbVMSwitchName')
+    $script:cmbVMSwitchName    = $window.FindName('cmbVMSwitchName')
 
     $allSwitches = Get-VMSwitch -ErrorAction SilentlyContinue
     foreach ($sw in $allSwitches) {
@@ -309,14 +385,14 @@ $window.Add_Loaded({
 
         if ($sender.SelectedItem -eq 'Other') {
             # Show the custom VM Switch Name TextBox
-            $window.FindName('txtCustomVMSwitchName').Visibility = 'Visible'
+            $window.FindName('txtCustomVMSwitchName').Visibility = [System.Windows.Visibility]::Visible
             
             # Optionally, clear the VM Host IP Address field
             $window.FindName('txtVMHostIPAddress').Text = ''
         }
         else {
             # Hide the custom VM Switch Name TextBox
-            $window.FindName('txtCustomVMSwitchName').Visibility = 'Collapsed'
+            $window.FindName('txtCustomVMSwitchName').Visibility = [System.Windows.Visibility]::Collapsed
             
             # Update VM Host IP Address based on selection
             if ($sender.SelectedItem) {
@@ -334,6 +410,88 @@ $window.Add_Loaded({
             }
         }
     })
+
+    # Cast to WPF CheckBox and ComboBoxes
+    $script:chkDownloadDrivers = [System.Windows.Controls.CheckBox]$window.FindName('chkDownloadDrivers')
+    $script:cmbMake = [System.Windows.Controls.ComboBox]$window.FindName('cmbMake')
+    $script:cmbModel = [System.Windows.Controls.TextBox]$window.FindName('cmbModel')  # Cast cmbModel as TextBox instead of ComboBox
+
+    # Cast to WPF TextBlocks for label visibility
+    $script:txtMakeLabel = [System.Windows.Controls.TextBlock]$window.FindName('txtMakeLabel')
+    $script:txtModelLabel = [System.Windows.Controls.TextBlock]$window.FindName('txtModelLabel')
+
+    # Set initial visibility based on the checkbox state
+    if ($chkDownloadDrivers.IsChecked) {
+        $script:cmbMake.Visibility = [System.Windows.Visibility]::Visible
+        $script:cmbModel.Visibility = [System.Windows.Visibility]::Visible
+        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Visible
+        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Visible
+    }
+    else {
+        $script:cmbMake.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:cmbModel.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Collapsed
+    }
+
+    $chkDownloadDrivers.Add_Checked({
+        $script:cmbMake.Visibility = [System.Windows.Visibility]::Visible
+        $script:cmbModel.Visibility = [System.Windows.Visibility]::Visible
+        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Visible
+        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Visible
+    })
+
+    $chkDownloadDrivers.Add_Unchecked({
+        $script:cmbMake.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:cmbModel.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Collapsed
+    })
+
+    # Remove or comment out the ComboBox population logic for cmbModel
+    # $script:cmbMake.Add_SelectionChanged({
+    #     param($sender, $eventArgs)
+    #
+    #     $selectedMake = $sender.SelectedItem  # Changed from $sender.SelectedItem.Content
+    #
+    #     $script:cmbModel.Items.Clear()
+    #
+    #     switch ($selectedMake) {
+    #         'Microsoft' {
+    #             $script:cmbModel.Items.Add('Surface Pro')
+    #             $script:cmbModel.Items.Add('Surface Laptop')
+    #             # Add more Microsoft models
+    #         }
+    #         'Dell' {
+    #             $script:cmbModel.Items.Add('XPS 13')
+    #             $script:cmbModel.Items.Add('Inspiron 15')
+    #             # Add more Dell models
+    #         }
+    #         'HP' {
+    #             $script:cmbModel.Items.Add('Spectre x360')
+    #             $script:cmbModel.Items.Add('Envy 13')
+    #             # Add more HP models
+    #         }
+    #         'Lenovo' {
+    #             $script:cmbModel.Items.Add('ThinkPad X1')
+    #             $script:cmbModel.Items.Add('Yoga 7i')
+    #             # Add more Lenovo models
+    #         }
+    #         default {
+    #             # Handle unexpected Make selections
+    #         }
+    #     }
+    # })
+
+    # Populate cmbMake ComboBox with Make options
+    $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo')  # Add more manufacturers as needed
+    foreach ($make in $makeList) {
+        $cmbMake.Items.Add($make) | Out-Null
+    }
+
+    if ($cmbMake.Items.Count -gt 0) {
+        $cmbMake.SelectedIndex = 0
+    }
 })
 
 # Show the window
