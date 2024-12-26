@@ -131,7 +131,13 @@
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/> <!-- Existing row for Install Drivers -->
+                        <RowDefinition Height="Auto"/> <!-- New row for Make -->
+                        <RowDefinition Height="Auto"/> <!-- New row for Model -->
+                        <RowDefinition Height="Auto"/> <!-- New row for PEDrivers Folder -->
+                        <RowDefinition Height="Auto"/> <!-- New row for Drivers Folder -->
                         <RowDefinition Height="Auto"/> <!-- New row for Copy Drivers -->
+                        <RowDefinition Height="Auto"/> <!-- New row for Copy PE Drivers -->
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150"/>
@@ -146,12 +152,76 @@
                                ToolTip="Check to include device drivers in the FFU." />
                     </StackPanel>
 
-                    <!-- Copy Drivers -->
+                    <!-- Download Drivers -->
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgCopyDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
+                        <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0,0,5,0"/>
+                        <Image x:Name="imgDownloadDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
                                Focusable="True" 
-                               ToolTip="Check to copy drivers to the deployment media." />
+                               ToolTip="Check to download drivers automatically." />
+                    </StackPanel>
+
+                    <!-- Make Row (Row 2) -->
+                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <TextBlock x:Name="txtMakeLabel" Text="Make:" VerticalAlignment="Center" />
+                        <Image x:Name="imgMakeInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
+                               ToolTip="Select the device manufacturer." />
+                    </StackPanel>
+                    <!-- Move ComboBox to Grid.Column=1 and set HorizontalAlignment to Stretch -->
+                    <ComboBox x:Name="cmbMake" Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
+
+                    <!-- Model Row (Row 3) -->
+                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <TextBlock x:Name="txtModelLabel" Text="Model:" VerticalAlignment="Center"/>
+                        <Image x:Name="imgModelInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
+                               ToolTip="Enter the device model." />
+                    </StackPanel>
+                    <!-- Replace ComboBox with TextBox and set HorizontalAlignment to Stretch -->
+                    <TextBox x:Name="cmbModel" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
+
+                    <!-- PE Drivers Folder (Row 4) -->
+                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center"/>
+                        <Image x:Name="imgPEDriversFolderInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
+                               Focusable="True" 
+                               ToolTip="Specify the path to the PE Drivers folder." />
+                    </StackPanel>
+                    <Grid Grid.Row="4" Grid.Column="1" Margin="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="txtPEDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
+                        <Button x:Name="btnBrowsePEDrivers" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for PE Drivers folder."/>
+                    </Grid>
+
+                    <!-- Drivers Folder (Row 5) -->
+                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <TextBlock Text="Drivers Folder:" VerticalAlignment="Center"/>
+                        <Image x:Name="imgDriversFolderInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
+                               Focusable="True" 
+                               ToolTip="Specify the path to the Drivers folder." />
+                    </StackPanel>
+                    <Grid Grid.Row="5" Grid.Column="1" Margin="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="txtDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
+                        <Button x:Name="btnBrowseDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for Drivers folder."/>
+                    </Grid>
+
+                    <!-- Copy Drivers (Row 6) -->
+                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers" Margin="0,0,5,0"/>
+                        <Image x:Name="imgCopyDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
+                               Focusable="True" ToolTip="Check to copy local Drivers folder to the build." />
+                    </StackPanel>
+
+                    <!-- Copy PE Drivers (Row 7) -->
+                    <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0"/>
+                        <Image x:Name="imgCopyPEDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
+                               Focusable="True" ToolTip="Check to copy local PE Drivers folder to the build." />
                     </StackPanel>
                 </Grid>
             </TabItem>
