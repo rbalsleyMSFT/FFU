@@ -130,13 +130,13 @@
             <TabItem Header="Drivers" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/> <!-- Existing row for Install Drivers -->
-                        <RowDefinition Height="Auto"/> <!-- New single row for Make/Model -->
-                        <RowDefinition Height="Auto"/> <!-- New row for PEDrivers Folder -->
-                        <RowDefinition Height="Auto"/> <!-- New row for Drivers Folder -->
-                        <RowDefinition Height="Auto"/> <!-- New row for Copy Drivers -->
-                        <RowDefinition Height="Auto"/> <!-- New row for Copy PE Drivers -->
+                        <RowDefinition Height="Auto"/> <!-- Row 0: Install Drivers -->
+                        <RowDefinition Height="Auto"/> <!-- Row 1: Copy Drivers -->
+                        <RowDefinition Height="Auto"/> <!-- Row 2: Download Drivers -->
+                        <RowDefinition Height="Auto"/> <!-- Row 3: Make/Model -->
+                        <RowDefinition Height="Auto"/> <!-- Row 4: PEDrivers Folder -->
+                        <RowDefinition Height="Auto"/> <!-- Row 5: Drivers Folder -->
+                        <RowDefinition Height="Auto"/> <!-- Row 6: Copy PE Drivers -->
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150"/>
@@ -148,11 +148,19 @@
                         <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers" Margin="0,0,5,0"/>
                         <Image x:Name="imgInstallDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
                                Focusable="True" 
-                               ToolTip="Check to include device drivers in the FFU." />
+                               ToolTip="Uses dism to service the drivers directly to the FFU. Recommended if making a FFU for a single model type." />
+                    </StackPanel>
+
+                    <!-- Copy Drivers -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers" Margin="0,0,5,0"/>
+                        <Image x:Name="imgCopyDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
+                               Focusable="True" 
+                               ToolTip="Copy the drivers folder to the Drivers folder on the USB deploy partition. This is recommended if you have multiple models and you're using a single FFU. When deploying the FFU you'll be prompted to select which drivers you want to use." />
                     </StackPanel>
 
                     <!-- Download Drivers -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0,0,5,0"/>
                         <Image x:Name="imgDownloadDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
                                Focusable="True" 
@@ -160,7 +168,7 @@
                     </StackPanel>
 
                     <!-- New container for Make & Model fields -->
-                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" x:Name="spMakeModelSection" Visibility="Collapsed" Margin="0">
+                    <StackPanel Grid.Row="3" Grid.ColumnSpan="2" x:Name="spMakeModelSection" Visibility="Collapsed" Margin="0">
                         <Grid Margin="0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -192,13 +200,13 @@
                     </StackPanel>
 
                     <!-- PE Drivers Folder (Row 4) -->
-                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center"/>
                         <Image x:Name="imgPEDriversFolderInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
                                Focusable="True" 
                                ToolTip="Specify the path to the PE Drivers folder." />
                     </StackPanel>
-                    <Grid Grid.Row="3" Grid.Column="1" Margin="5">
+                    <Grid Grid.Row="4" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -208,13 +216,13 @@
                     </Grid>
 
                     <!-- Drivers Folder (Row 5) -->
-                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <TextBlock Text="Drivers Folder:" VerticalAlignment="Center"/>
                         <Image x:Name="imgDriversFolderInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
                                Focusable="True" 
                                ToolTip="Specify the path to the Drivers folder." />
                     </StackPanel>
-                    <Grid Grid.Row="4" Grid.Column="1" Margin="5">
+                    <Grid Grid.Row="5" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -223,14 +231,7 @@
                         <Button x:Name="btnBrowseDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for Drivers folder."/>
                     </Grid>
 
-                    <!-- Copy Drivers (Row 6) -->
-                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgCopyDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
-                               Focusable="True" ToolTip="Check to copy local Drivers folder to the build." />
-                    </StackPanel>
-
-                    <!-- Copy PE Drivers (Row 7) -->
+                    <!-- Copy PE Drivers (Row 6) -->
                     <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0"/>
                         <Image x:Name="imgCopyPEDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
