@@ -513,6 +513,23 @@ $window.Add_Loaded({
     $script:chkDownloadDrivers.Add_Unchecked({
         $script:spMakeModelSection.Visibility = [System.Windows.Visibility]::Collapsed
     })
+
+    $script:chkInstallDrivers = [System.Windows.Controls.CheckBox]$window.FindName('chkInstallDrivers')
+    $script:chkCopyDrivers    = [System.Windows.Controls.CheckBox]$window.FindName('chkCopyDrivers')
+
+    $script:chkInstallDrivers.Add_Checked({
+        $script:chkCopyDrivers.IsEnabled = $false
+    })
+    $script:chkInstallDrivers.Add_Unchecked({
+        $script:chkCopyDrivers.IsEnabled = $true
+    })
+
+    $script:chkCopyDrivers.Add_Checked({
+        $script:chkInstallDrivers.IsEnabled = $false
+    })
+    $script:chkCopyDrivers.Add_Unchecked({
+        $script:chkInstallDrivers.IsEnabled = $true
+    })
 })
 
 # Show the window
