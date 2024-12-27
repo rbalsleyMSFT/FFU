@@ -160,7 +160,7 @@
                     </StackPanel>
 
                     <!-- New container for Make & Model fields -->
-                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" x:Name="spMakeModelSection" Visibility="Collapsed" Margin="5">
+                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" x:Name="spMakeModelSection" Visibility="Collapsed" Margin="0">
                         <Grid Margin="0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -172,21 +172,21 @@
                             </Grid.ColumnDefinitions>
                             
                             <!-- Make -->
-                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0">
+                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
                                 <TextBlock x:Name="txtMakeLabel" Text="Make:" VerticalAlignment="Center" />
                                 <Image x:Name="imgMakeInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
                                        ToolTip="Select the device manufacturer." />
                             </StackPanel>
-                            <ComboBox x:Name="cmbMake" Grid.Row="0" Grid.Column="1" Margin="0" 
+                            <ComboBox x:Name="cmbMake" Grid.Row="0" Grid.Column="1" Margin="5" 
                                       VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
                             
                             <!-- Model -->
-                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0">
+                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
                                 <TextBlock x:Name="txtModelLabel" Text="Model:" VerticalAlignment="Center"/>
                                 <Image x:Name="imgModelInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
                                        ToolTip="Enter the device model." />
                             </StackPanel>
-                            <TextBox x:Name="cmbModel" Grid.Row="1" Grid.Column="1" Margin="0" 
+                            <TextBox x:Name="cmbModel" Grid.Row="1" Grid.Column="1" Margin="5" 
                                      VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
                         </Grid>
                     </StackPanel>
