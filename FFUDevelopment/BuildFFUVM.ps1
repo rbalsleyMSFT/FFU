@@ -318,6 +318,7 @@ param(
         })]
     [bool]$CopyDrivers,
     [bool]$CopyPEDrivers,
+    [bool]$UseDriversAsPEDrivers,
     [bool]$RemoveFFU,
     [bool]$UpdateLatestCU,
     [bool]$UpdatePreviewCU,
@@ -417,6 +418,29 @@ class VhdxCacheItem {
     [string]$OptionalFeatures = ""
     [VhdxCacheUpdateItem[]]$IncludedUpdates = @()
 }
+
+#Support for ini reading
+$definition = @'
+[DllImport("kernel32.dll")]
+public static extern uint GetPrivateProfileString(
+    string lpAppName,
+    string lpKeyName,
+    string lpDefault,
+    System.Text.StringBuilder lpReturnedString,
+    uint nSize,
+    string lpFileName);
+'@
+Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
+
+$definition = @'
+[DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+public static extern uint GetPrivateProfileSection(
+    string lpAppName,
+    byte[] lpReturnedString,
+    uint nSize,
+    string lpFileName);
+'@
+Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -2974,6 +2998,85 @@ Function Set-CaptureFFU {
     }
 }
 
+function Get-PrivateProfileString {
+    param (
+        [Parameter()]
+        [string]$FileName,
+        [Parameter()]
+        [string]$SectionName,
+        [Parameter()]
+        [string]$KeyName
+    )
+    $sbuilder = [System.Text.StringBuilder]::new(1024)
+    [void][Win32.Kernel32]::GetPrivateProfileString($SectionName, $KeyName, "", $sbuilder, $sbuilder.Capacity, $FileName)
+
+    return $sbuilder.ToString()
+}
+
+function Get-PrivateProfileSection {
+    param (
+        [Parameter()]
+        [string]$FileName,
+        [Parameter()]
+        [string]$SectionName
+    )
+    $buffer = [byte[]]::new(2048)
+    [void][Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
+    $keyValues = [System.Text.Encoding]::Unicode.GetString($buffer).TrimEnd("`0").Split("`0")
+    $hashTable = @{}
+
+    foreach ($keyValue in $keyValues) {
+        if (![string]::IsNullOrEmpty($keyValue)) {
+            $parts = $keyValue -split "="
+            $hashTable[$parts[0]] = $parts[1]
+        }
+    }
+
+    return $hashTable
+}
+
+function Copy-Drivers {
+    param (
+        [Parameter()]
+        [string]$Path,
+        [Parameter()]
+        [string]$Output
+    )
+    #Find more information about device classes here:
+    #https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
+    #For now, included are system devices, scsi and raid controllers, keyboards and mice
+    $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{d36e96f-e325-11ce-bfc1-08002be10318}")
+    $pathLength = $Path.Length
+    $iniFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.ini"
+ 
+    for ($i = 0; $i -lt $iniFiles.Count; $i++) {
+        $iniFullName = $iniFiles[$i].FullName
+        $iniPath = Split-Path -Path $iniFullName
+        $childPath = $iniPath.Substring($pathLength)
+        $targetPath = Join-Path -Path $Output -ChildPath $childPath
+        
+        if ((Get-PrivateProfileString -FileName $iniFullName -SectionName "version" -KeyName "ClassGUID") -in $filterGUIDs) {
+            $providerName = (Get-PrivateProfileString -FileName $iniFullName -SectionName "Provider" -KeyName "Catalogfile").Trim("%")
+            
+            WriteLog "Copying PE drivers for $providerName"
+            Copy-Item -Path $iniFullName -Destination $targetPath -Force
+            $CatalogFileName = Get-PrivateProfileString -FileName $iniFullName -SectionName "version" -KeyName "Catalogfile"
+            Copy-Item -Path "$iniPath\$CatalogFileName" -Destination $targetPath -Force
+            
+            $sourceDiskFiles = Get-PrivateProfileSection -FileName $iniFullName -SectionName "SourceDisksFiles"
+            foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
+                Copy-Item -Path "$iniPath\$sourceDiskFile" -Destination $targetPath -Force
+            }
+
+            #Arch specific files override the files specified in the universal section
+            $sourceDiskFiles = Get-PrivateProfileSection -FileName $iniFullName -SectionName "SourceDisksFiles.$WindowsArch"
+            foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
+                Copy-Item -Path "$iniPath\$sourceDiskFile" -Destination $targetPath -Force
+            }
+        }
+    }
+}
+
 function New-PEMedia {
     param (
         [Parameter()]
@@ -3052,6 +3155,17 @@ function New-PEMedia {
             WriteLog "Adding drivers to WinPE media"
             try {
                 Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
+            }
+            catch {
+                WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+            }
+            WriteLog "Adding drivers complete"
+        } elseif ($UseDriversAsPEDrivers) {
+            WriteLog "Copying drivers required for WinPE media"
+            Copy-Drivers -Path $DriversFolder -Output $PEDriversFolder
+            WriteLog "Adding drivers to WinPE media"
+            try {
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver $PEDriversFolder -Recurse -ErrorAction SilentlyContinue | Out-null
             }
             catch {
                 WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
