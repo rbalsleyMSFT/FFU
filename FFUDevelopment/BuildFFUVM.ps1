@@ -3044,7 +3044,7 @@ function Copy-Drivers {
     #For now, included are system devices, scsi and raid controllers, keyboards and mice
     $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{d36e96f-e325-11ce-bfc1-08002be10318}")
     $pathLength = $Path.Length
-    $iniFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.ini"
+    $iniFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
  
     for ($i = 0; $i -lt $iniFiles.Count; $i++) {
         $iniFullName = $iniFiles[$i].FullName
@@ -3056,6 +3056,9 @@ function Copy-Drivers {
             $providerName = (Get-PrivateProfileString -FileName $iniFullName -SectionName "Provider" -KeyName "Catalogfile").Trim("%")
             
             WriteLog "Copying PE drivers for $providerName"
+            if (!(Test-Path -Path $targetPath)) {
+                New-Item -Path $targetPath -ItemType Directory
+            }
             Copy-Item -Path $iniFullName -Destination $targetPath -Force
             $CatalogFileName = Get-PrivateProfileString -FileName $iniFullName -SectionName "version" -KeyName "Catalogfile"
             Copy-Item -Path "$iniPath\$CatalogFileName" -Destination $targetPath -Force
