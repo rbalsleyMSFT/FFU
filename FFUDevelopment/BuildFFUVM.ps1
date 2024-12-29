@@ -3057,7 +3057,7 @@ function Copy-Drivers {
             
             WriteLog "Copying PE drivers for $providerName"
             if (!(Test-Path -Path $targetPath)) {
-                New-Item -Path $targetPath -ItemType Directory
+                [void](New-Item -Path $targetPath -ItemType Directory)
             }
             Copy-Item -Path $iniFullName -Destination $targetPath -Force
             $CatalogFileName = Get-PrivateProfileString -FileName $iniFullName -SectionName "version" -KeyName "Catalogfile"
