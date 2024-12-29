@@ -228,9 +228,7 @@ param(
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
-
     [bool]$InstallApps,
-
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
