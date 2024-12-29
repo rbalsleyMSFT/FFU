@@ -429,10 +429,7 @@ public static extern uint GetPrivateProfileString(
     System.Text.StringBuilder lpReturnedString,
     uint nSize,
     string lpFileName);
-'@
-Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
 
-$definition = @'
 [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
 public static extern uint GetPrivateProfileSection(
     string lpAppName,
