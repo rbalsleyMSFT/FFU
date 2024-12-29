@@ -3017,7 +3017,7 @@ function Get-PrivateProfileSection {
         [Parameter()]
         [string]$SectionName
     )
-    $buffer = [byte[]]::new(2048)
+    $buffer = [byte[]]::new(16384)
     [void][Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
     $keyValues = [System.Text.Encoding]::Unicode.GetString($buffer).TrimEnd("`0").Split("`0")
     $hashTable = @{}
@@ -3044,34 +3044,44 @@ function Copy-Drivers {
     #For now, included are system devices, scsi and raid controllers, keyboards and mice
     $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{d36e96f-e325-11ce-bfc1-08002be10318}")
     $pathLength = $Path.Length
-    $iniFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
+    $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
  
-    for ($i = 0; $i -lt $iniFiles.Count; $i++) {
-        $iniFullName = $iniFiles[$i].FullName
-        $iniPath = Split-Path -Path $iniFullName
-        $childPath = $iniPath.Substring($pathLength)
+    for ($i = 0; $i -lt $infFiles.Count; $i++) {
+        $infFullName = $infFiles[$i].FullName
+        $infPath = Split-Path -Path $infFullName
+        $childPath = $infPath.Substring($pathLength)
         $targetPath = Join-Path -Path $Output -ChildPath $childPath
         
-        if ((Get-PrivateProfileString -FileName $iniFullName -SectionName "version" -KeyName "ClassGUID") -in $filterGUIDs) {
-            $providerName = (Get-PrivateProfileString -FileName $iniFullName -SectionName "Provider" -KeyName "Catalogfile").Trim("%")
+        if ((Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "ClassGUID") -in $filterGUIDs) {
+            $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Provider" -KeyName "Catalogfile").Trim("%")
             
             WriteLog "Copying PE drivers for $providerName"
-            if (!(Test-Path -Path $targetPath)) {
-                [void](New-Item -Path $targetPath -ItemType Directory)
-            }
-            Copy-Item -Path $iniFullName -Destination $targetPath -Force
-            $CatalogFileName = Get-PrivateProfileString -FileName $iniFullName -SectionName "version" -KeyName "Catalogfile"
-            Copy-Item -Path "$iniPath\$CatalogFileName" -Destination $targetPath -Force
+            [void](New-Item -Path $targetPath -ItemType Directory -Force)
+            Copy-Item -Path $infFullName -Destination $targetPath -Force
+            $CatalogFileName = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "Catalogfile"
+            Copy-Item -Path "$infPath\$CatalogFileName" -Destination $targetPath -Force
             
-            $sourceDiskFiles = Get-PrivateProfileSection -FileName $iniFullName -SectionName "SourceDisksFiles"
+            $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName "SourceDisksFiles"
             foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
-                Copy-Item -Path "$iniPath\$sourceDiskFile" -Destination $targetPath -Force
+                if (!$sourceDiskFiles[$sourceDiskFile].Value.Contains(",")) {
+                    Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
+                } else {
+                    $subdir = ($sourceDiskFiles[$sourceDiskFile].Value -split ",")[1]
+                    [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
+                    Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
+                }
             }
 
             #Arch specific files override the files specified in the universal section
-            $sourceDiskFiles = Get-PrivateProfileSection -FileName $iniFullName -SectionName "SourceDisksFiles.$WindowsArch"
+            $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName "SourceDisksFiles.$WindowsArch"
             foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
-                Copy-Item -Path "$iniPath\$sourceDiskFile" -Destination $targetPath -Force
+                if (!$sourceDiskFiles[$sourceDiskFile].Value.Contains(",")) {
+                    Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
+                } else {
+                    $subdir = ($sourceDiskFiles[$sourceDiskFile].Value -split ",")[1]
+                    [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
+                    Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
+                }
             }
         }
     }
