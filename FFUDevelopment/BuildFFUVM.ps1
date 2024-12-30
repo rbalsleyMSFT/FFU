@@ -3043,6 +3043,7 @@ function Copy-Drivers {
     #https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
     #For now, included are system devices, scsi and raid controllers, keyboards and mice
     $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{d36e96f-e325-11ce-bfc1-08002be10318}")
+    $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware"
     $pathLength = $Path.Length
     $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
  
@@ -3053,9 +3054,9 @@ function Copy-Drivers {
         $targetPath = Join-Path -Path $Output -ChildPath $childPath
         
         if ((Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "ClassGUID") -in $filterGUIDs) {
-            #Avoid drivers that reference wdmaudio.inf or contain Smart Sound
-            if (((Get-Content -Path $infFullName) -match "wdmaudio.inf|Smart Sound").Length -eq 0) {
-                $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Provider" -KeyName "Catalogfile").Trim("%")
+            #Avoid drivers that reference keywords from the exclusion list to keep the total size small
+            if (((Get-Content -Path $infFullName) -match $exclusionList).Length -eq 0) {
+                $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Version" -KeyName "Provider").Trim("%")
                 
                 WriteLog "Copying PE drivers for $providerName"
                 WriteLog "Driver inf is: $infFullName"
