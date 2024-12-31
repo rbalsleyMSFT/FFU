@@ -352,6 +352,9 @@ $btnBuildConfig.Add_Click({
 })
 
 # After loading the window:
+# Initialize script-scoped variable
+$script:installAppsCheckedByOffice = $false
+
 $window.Add_Loaded({
     $script:vmSwitchMap = @{} 
     $script:cmbVMSwitchName    = $window.FindName('cmbVMSwitchName')
@@ -557,6 +560,70 @@ $window.Add_Loaded({
     # Set default values for Drivers Folder and PE Drivers Folder
     $window.FindName('txtDriversFolder').Text = Join-Path -Path $FFUDevelopmentPath -ChildPath "Drivers"
     $window.FindName('txtPEDriversFolder').Text = Join-Path -Path $FFUDevelopmentPath -ChildPath "PEDrivers"
+
+    # Find the Install Office and Install Apps checkboxes
+    $script:chkInstallOffice = $window.FindName('chkInstallOffice')
+    $script:chkInstallApps = $window.FindName('chkInstallApps')
+
+    # Add event handler for Install Office Checked
+    $script:chkInstallOffice.Add_Checked({
+        if (-not $script:chkInstallApps.IsChecked) {
+            $script:chkInstallApps.IsChecked = $true
+            $script:installAppsCheckedByOffice = $true
+        }
+        $script:chkInstallApps.IsEnabled = $false
+    })
+
+    # Add event handler for Install Office Unchecked
+    $script:chkInstallOffice.Add_Unchecked({
+        if ($script:installAppsCheckedByOffice) {
+            $script:chkInstallApps.IsChecked = $false
+            $script:installAppsCheckedByOffice = $false
+        }
+        $script:chkInstallApps.IsEnabled = $true
+    })
+
+    # Initialize additional script-scoped variables
+    $script:installAppsCheckedManually = $false
+
+    # Assign script-scoped variables
+    $script:chkInstallOffice = $window.FindName('chkInstallOffice')
+    $script:chkInstallApps = $window.FindName('chkInstallApps')
+    # ...assign other script-scoped variables...
+    
+    # Add event handler for Install Apps Checked manually
+    $script:chkInstallApps.Add_Checked({
+        if (-not $script:installAppsCheckedByOffice) {
+            # User checked Install Apps manually
+            $script:installAppsCheckedManually = $true
+        }
+    })
+    
+    # Add event handler for Install Apps Unchecked manually
+    $script:chkInstallApps.Add_Unchecked({
+        if (-not $script:installAppsCheckedByOffice) {
+            # User unchecked Install Apps manually
+            $script:installAppsCheckedManually = $false
+        }
+    })
+    
+    # Add event handler for Install Office Checked
+    $script:chkInstallOffice.Add_Checked({
+        if (-not $script:chkInstallApps.IsChecked) {
+            $script:chkInstallApps.IsChecked = $true
+            $script:installAppsCheckedByOffice = $true
+        }
+        $script:chkInstallApps.IsEnabled = $false
+    })
+    
+    # Add event handler for Install Office Unchecked
+    $script:chkInstallOffice.Add_Unchecked({
+        if ($script:installAppsCheckedByOffice) {
+            $script:chkInstallApps.IsChecked = $false
+            $script:installAppsCheckedByOffice = $false
+        }
+        $script:chkInstallApps.IsEnabled = $true
+    })
 })
 
 # Show the window
