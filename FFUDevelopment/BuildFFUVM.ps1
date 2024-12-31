@@ -3041,8 +3041,8 @@ function Copy-Drivers {
     )
     #Find more information about device classes here:
     #https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
-    #For now, included are system devices, scsi and raid controllers, keyboards and mice
-    $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{d36e96f-e325-11ce-bfc1-08002be10318}")
+    #For now, included are system devices, scsi and raid controllers, keyboards, mice and HID devices for touch support
+    $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{d36e96f-e325-11ce-bfc1-08002be10318}", "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}")
     $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware"
     $pathLength = $Path.Length
     $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
