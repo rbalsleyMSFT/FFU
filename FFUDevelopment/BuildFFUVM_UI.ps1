@@ -2,10 +2,8 @@
 [System.STAThread()] 
 param()
 
-# Define FFUDevelopmentPath early
-if (-not $FFUDevelopmentPath) {
-    $FFUDevelopmentPath = "C:\FFUDevelopment"
-}
+# Define FFUDevelopmentPath using $PSScriptRoot
+$FFUDevelopmentPath = $PSScriptRoot
 
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName PresentationCore,PresentationFramework
@@ -84,15 +82,14 @@ $imageNames = @(
     "imgInstallOfficeInfo",
     "imgInstallAppsInfo",
     "imgInstallDriversInfo",
-    "imgCopyDriversInfo"  # Added Image control for Copy Drivers
-    # Add any other Image control names here
+    "imgCopyDriversInfo",
+    "imgFFUDevPathInfo"
 )
 
 # Set the Source for each Image control
 foreach ($imgName in $imageNames) {
     Set-ImageSource -window $window -imageName $imgName -sourcePath $infoImagePath
 }
-
 # Optional: Add logging for debugging purposes
 # Uncomment the following lines to enable debug output
 # Write-Host "Extracted SKU List: $skuList"
@@ -108,6 +105,7 @@ $runScriptHandler = {
         $txtStatus.Text = "Starting FFU build..."
 
         # Gather user inputs from controls
+        $ffuDevPath = $window.FindName('txtFFUDevPath').Text
         $customFFUNameTemplate = $window.FindName('txtFFUName').Text
         $isoPath = $window.FindName('txtISOPath').Text
         $windowsSKU = $cmbWindowsSKU.SelectedItem
@@ -142,9 +140,13 @@ $runScriptHandler = {
         if ($downloadDrivers -and (-not $model)) {
             throw "Model is required when Download Drivers is checked."
         }
+        if (-not $ffuDevPath) {
+            throw "FFU Development Path is required."
+        }
 
         # Create config object
         $config = @{
+            FFUDevelopmentPath = $ffuDevPath
             CustomFFUNameTemplate = $customFFUNameTemplate
             ISOPath = $isoPath
             WindowsSKU = $windowsSKU
@@ -209,6 +211,19 @@ $btnBrowseISO.Add_Click({
     }
 })
 
+$btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
+$btnBrowseFFUDevPath.Add_Click({
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderBrowser.Description = "Select FFU Development Folder"
+    $folderBrowser.SelectedPath = $window.FindName('txtFFUDevPath').Text  # Set initial path
+    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtFFUDevPath').Text = $folderBrowser.SelectedPath
+    }
+})
+
+# Assign FFUDevelopmentPath to the TextBox
+$window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath
+
 # Bind the Browse buttons for Drivers folders
 $btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
 $btnBrowseDriversFolder.Add_Click({
@@ -252,6 +267,7 @@ $btnBuildConfig.Add_Click({
             $savePath = $saveFileDialog.FileName
 
             # Gather current configuration from UI controls using $window.FindName
+            $ffuDevPath = ($window.FindName('txtFFUDevPath')).Text
             $windowsSKU = ($window.FindName('cmbWindowsSKU')).SelectedItem
             if (-not $windowsSKU) {
                 throw "Windows SKU is not selected."
@@ -276,7 +292,7 @@ $btnBuildConfig.Add_Click({
             $copyDrivers = ($window.FindName('chkCopyDrivers')).IsChecked
             $downloadDrivers = ($window.FindName('chkDownloadDrivers')).IsChecked
             $make = ($window.FindName('cmbMake')).SelectedItem
-            $model = ($window.FindName('cmbModel')).Text  # Changed from SelectedItem
+            $model = ($window.FindName('txtModel')).Text  # Changed from SelectedItem
             $driversFolder = ($window.FindName('txtDriversFolder')).Text
             $peDriversFolder = ($window.FindName('txtPEDriversFolder')).Text
 
@@ -296,8 +312,12 @@ $btnBuildConfig.Add_Click({
             if ($downloadDrivers -and (-not $model)) {
                 throw "Model is required when Download Drivers is checked."
             }
+            if (-not $ffuDevPath) {
+                throw "FFU Development Path is required."
+            }
 
             $config = @{
+                FFUDevelopmentPath = $ffuDevPath
                 CustomFFUNameTemplate = ($window.FindName('txtFFUName')).Text
                 ISOPath = ($window.FindName('txtISOPath')).Text
                 WindowsSKU = $windowsSKU
@@ -530,6 +550,13 @@ $window.Add_Loaded({
     $script:chkCopyDrivers.Add_Unchecked({
         $script:chkInstallDrivers.IsEnabled = $true
     })
+
+    # Assign FFUDevelopmentPath to the TextBox
+    $window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath
+
+    # Set default values for Drivers Folder and PE Drivers Folder
+    $window.FindName('txtDriversFolder').Text = Join-Path -Path $FFUDevelopmentPath -ChildPath "Drivers"
+    $window.FindName('txtPEDriversFolder').Text = Join-Path -Path $FFUDevelopmentPath -ChildPath "PEDrivers"
 })
 
 # Show the window
