@@ -123,6 +123,27 @@
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Install Apps -->
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                        <CheckBox x:Name="chkInstallApps" Content="Install Apps" Margin="0,0,5,0"/>
+                        <Image x:Name="imgInstallAppsInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
+                               Focusable="True" 
+                               ToolTip="Check to include additional applications in the FFU." />
+                    </StackPanel>
+                    <!-- ...existing application-related controls... -->
+                </Grid>
+            </TabItem>
+
+            <!-- New M365 Apps/Office Tab -->
+            <TabItem Header="M365 Apps/Office" Padding="20">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
@@ -137,17 +158,9 @@
                                Focusable="True" 
                                ToolTip="Check to install Microsoft Office as part of the FFU." />
                     </StackPanel>
-
-                    <!-- Install Apps -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkInstallApps" Content="Install Apps" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallAppsInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Check to include additional applications in the FFU." />
-                    </StackPanel>
-                    <!-- ...existing application-related controls... -->
                 </Grid>
             </TabItem>
+
             <TabItem Header="Drivers" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
