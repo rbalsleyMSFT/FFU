@@ -1,37 +1,16 @@
 [CmdletBinding()]
-[System.STAThread()] 
+[System.STAThread()]
 param()
 
-# Define FFUDevelopmentPath using $PSScriptRoot
+# ------------------------------------------------------------------------------
+# SECTION 1: Variables & Constants
+# ------------------------------------------------------------------------------
 $FFUDevelopmentPath = $PSScriptRoot
+$infoImagePath      = Join-Path -Path $PSScriptRoot -ChildPath "info.png"
+$AppsPath           = Join-Path -Path $FFUDevelopmentPath -ChildPath "Apps"
+$OfficePath         = Join-Path -Path $AppsPath -ChildPath "Office"
 
-Add-Type -AssemblyName WindowsBase
-Add-Type -AssemblyName PresentationCore,PresentationFramework
-Add-Type -AssemblyName System.Windows.Forms  # Added to load Windows Forms for OpenFileDialog
-
-# Define the path to the info.png image
-$infoImagePath = Join-Path -Path $PSScriptRoot -ChildPath "info.png"
-
-# Load the XAML from the external file
-$xamlPath = Join-Path -Path $PSScriptRoot -ChildPath "BuildFFUVM_UI.xaml"
-if (-Not (Test-Path $xamlPath)) {
-    Write-Error "XAML file not found at path: $xamlPath"
-    exit
-}
-
-$xamlString = Get-Content -Path $xamlPath -Raw
-
-# Create the XmlReader
-$reader = New-Object System.IO.StringReader($xamlString)
-$xmlReader = [System.Xml.XmlReader]::Create($reader)
-
-# Load the window
-$window = [Windows.Markup.XamlReader]::Load($xmlReader)
-
-# Set the Text property programmatically
-$window.FindName('txtFFUName').Text = "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
-
-# Replace the dynamic SKU extraction with a static list
+# Static SKU list
 $skuList = @(
     'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro',
     'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations',
@@ -39,40 +18,7 @@ $skuList = @(
     'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'
 )
 
-# Get the ComboBox control
-$cmbWindowsSKU = $window.FindName('cmbWindowsSKU')
-
-# Clear existing items to avoid duplication when re-running the script
-$cmbWindowsSKU.Items.Clear()
-
-# Populate the ComboBox with SKUs
-foreach ($sku in $skuList) {
-    $cmbWindowsSKU.Items.Add($sku) | Out-Null
-}
-
-# Set default selection
-if ($cmbWindowsSKU.Items.Count -gt 0) {
-    $cmbWindowsSKU.SelectedIndex = 0
-} else {
-    Write-Host "No SKUs available to populate the ComboBox."
-}
-
-# Function to set image sources
-function Set-ImageSource {
-    param (
-        [System.Windows.Window]$window,
-        [string]$imageName,
-        [string]$sourcePath
-    )
-    $image = $window.FindName($imageName)
-    if ($image) {
-        $uri = New-Object System.Uri($sourcePath, [System.UriKind]::Absolute)
-        $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage($uri)
-        $image.Source = $bitmap
-    }
-}
-
-# List of Image control names
+# List of image controls to set
 $imageNames = @(
     "imgFFUNameInfo",
     "imgISOPathInfo",
@@ -83,350 +29,385 @@ $imageNames = @(
     "imgInstallAppsInfo",
     "imgInstallDriversInfo",
     "imgCopyDriversInfo",
-    "imgFFUDevPathInfo"
+    "imgFFUDevPathInfo",
+    "imgFFUDevPathInfoExtra",
+    "imgOfficePathInfo",
+    "imgCopyOfficeConfigXMLInfo",
+    "imgOfficeConfigXMLFileInfo",
+    "imgMakeInfo",
+    "imgModelInfo",
+    "imgDownloadDriversInfo",
+    "imgDriversFolderInfo",
+    "imgPEDriversFolderInfo",
+    "imgCopyPEDriversInfo"
 )
 
-# Set the Source for each Image control
+# ------------------------------------------------------------------------------
+# SECTION 2: Functions
+# ------------------------------------------------------------------------------
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# FUNCTION: Set-ImageSource
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+function Set-ImageSource {
+    param(
+        [System.Windows.Window]$window,
+        [string]$imageName,
+        [string]$sourcePath
+    )
+    $image = $window.FindName($imageName)
+    if ($image) {
+        $uri    = New-Object System.Uri($sourcePath, [System.UriKind]::Absolute)
+        $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage($uri)
+        $image.Source = $bitmap
+    }
+}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# FUNCTION: Get-UIConfig
+#    Gathers UI inputs, validates them, and returns a single $config hashtable.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+function Get-UIConfig {
+
+    # Grab references to UI controls
+    $ffuDevPath       = $window.FindName('txtFFUDevPath').Text
+    $customFFUName    = $window.FindName('txtFFUName').Text
+    $isoPath          = $window.FindName('txtISOPath').Text
+    $windowsSKU       = $cmbWindowsSKU.SelectedItem
+    $vmSwitchSelected = $window.FindName('cmbVMSwitchName').SelectedItem
+    $vmSwitchName     = if ($vmSwitchSelected -eq 'Other') {
+                            $window.FindName('txtCustomVMSwitchName').Text
+                        } else {
+                            $vmSwitchSelected
+                        }
+    $vmHostIPAddress  = $window.FindName('txtVMHostIPAddress').Text
+    $installOffice    = $window.FindName('chkInstallOffice').IsChecked
+    $installApps      = $window.FindName('chkInstallApps').IsChecked
+    $installDrivers   = $window.FindName('chkInstallDrivers').IsChecked
+    $copyDrivers      = $window.FindName('chkCopyDrivers').IsChecked
+    $downloadDrivers  = $window.FindName('chkDownloadDrivers').IsChecked
+    $make             = $window.FindName('cmbMake').SelectedItem
+    $model            = $window.FindName('cmbModel').Text
+    $driversFolder    = $window.FindName('txtDriversFolder').Text
+    $peDriversFolder  = $window.FindName('txtPEDriversFolder').Text
+    $officePath       = $window.FindName('txtOfficePath').Text
+    $copyOfficeConfig = $window.FindName('chkCopyOfficeConfigXML').IsChecked
+    $officeConfigXMLFile = $window.FindName('txtOfficeConfigXMLFilePath').Text
+    $copyPEDrivers    = $window.FindName('chkCopyPEDrivers').IsChecked
+
+    # Validate fields
+    if ($installDrivers -and (-not $driversFolder)) {
+        throw "Drivers Folder is required when Install Drivers is checked."
+    }
+    if ($copyDrivers -and (-not $driversFolder)) {
+        throw "Drivers Folder is required when Copy Drivers is checked."
+    }
+    if ($copyPEDrivers -and (-not $peDriversFolder)) {
+        throw "PE Drivers Folder is required when Copy PE Drivers is checked."
+    }
+    if ($downloadDrivers -and (-not $make)) {
+        throw "Make is required when Download Drivers is checked."
+    }
+    if ($downloadDrivers -and (-not $model)) {
+        throw "Model is required when Download Drivers is checked."
+    }
+    if (-not $ffuDevPath) {
+        throw "FFU Development Path is required."
+    }
+    if (-not $officePath) {
+        throw "Office Path is required."
+    }
+    if ($installOffice -and $copyOfficeConfig) {
+        if (-not (Test-Path -Path $officeConfigXMLFile)) {
+            throw "Selected Office Configuration XML file does not exist."
+        }
+    }
+
+    # Build the $config object (alphabetized)
+    $config = [ordered]@{
+        AppsPath              = $AppsPath
+        CopyDrivers           = $copyDrivers
+        CustomFFUNameTemplate = $customFFUName
+        DownloadDrivers       = $downloadDrivers
+        DriversFolder         = $driversFolder
+        FFUDevelopmentPath    = $ffuDevPath
+        InstallApps           = $installApps
+        InstallDrivers        = $installDrivers
+        InstallOffice         = $installOffice
+        ISOPath               = $isoPath
+        Make                  = if ($downloadDrivers) { $make.ToString() } else { $null }
+        Model                 = if ($downloadDrivers) { $model } else { $null }
+        OfficeConfigXMLFile   = if ($installOffice -and $copyOfficeConfig) { $officeConfigXMLFile } else { $null }
+        OfficePath            = $officePath
+        PEDriversFolder       = $peDriversFolder
+        VMHostIPAddress       = $vmHostIPAddress
+        VMSwitchName          = $vmSwitchName
+        WindowsSKU            = $windowsSKU
+    }
+
+    return $config
+}
+
+# ------------------------------------------------------------------------------
+# SECTION 3: Main Script
+# ------------------------------------------------------------------------------
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.1) Load XAML and Window
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName PresentationCore,PresentationFramework
+Add-Type -AssemblyName System.Windows.Forms
+
+# Build path to XAML
+$xamlPath = Join-Path -Path $PSScriptRoot -ChildPath "BuildFFUVM_UI.xaml"
+if (-not (Test-Path $xamlPath)) {
+    Write-Error "XAML file not found at path: $xamlPath"
+    exit
+}
+$xamlString = Get-Content -Path $xamlPath -Raw
+$reader     = New-Object System.IO.StringReader($xamlString)
+$xmlReader  = [System.Xml.XmlReader]::Create($reader)
+$window     = [Windows.Markup.XamlReader]::Load($xmlReader)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.2) BASIC TAB: FFU Name, FFU Dev Path, ISO Path, Windows SKU, VM Switch
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# 3.2.1 Default text for FFU Name
+$window.FindName('txtFFUName').Text = "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
+
+# 3.2.2 Populate Windows SKU
+$cmbWindowsSKU = $window.FindName('cmbWindowsSKU')
+$cmbWindowsSKU.Items.Clear()
+foreach ($sku in $skuList) {
+    $cmbWindowsSKU.Items.Add($sku) | Out-Null
+}
+if ($cmbWindowsSKU.Items.Count -gt 0) {
+    $cmbWindowsSKU.SelectedIndex = 0
+}
+
+# 3.2.3 Set images (for all tabs)
 foreach ($imgName in $imageNames) {
     Set-ImageSource -window $window -imageName $imgName -sourcePath $infoImagePath
 }
-# Optional: Add logging for debugging purposes
-# Uncomment the following lines to enable debug output
-# Write-Host "Extracted SKU List: $skuList"
-# Write-Host "ComboBox Items Count: $($cmbWindowsSKU.Items.Count)"
 
-# Define event handler with feedback mechanisms and error handling
+# 3.2.4 Browse for FFU Dev Path
+$btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
+$btnBrowseFFUDevPath.Add_Click({
+    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fbd.Description   = "Select FFU Development Folder"
+    $fbd.SelectedPath  = $window.FindName('txtFFUDevPath').Text
+    if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtFFUDevPath').Text = $fbd.SelectedPath
+    }
+})
+# Default text for txtFFUDevPath
+$window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath
+
+# 3.2.5 Browse for ISO
+$btnBrowseISO = $window.FindName('btnBrowseISO')
+$btnBrowseISO.Add_Click({
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Filter = "ISO files (*.iso)|*.iso"
+    $ofd.Title  = "Select Windows ISO File"
+    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtISOPath').Text = $ofd.FileName
+    }
+})
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.3) APPLICATIONS TAB: Install Apps
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# (Primarily handled in Window Loaded logic if needed.)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.4) M365 APPS/OFFICE TAB: Install Office, Office Path, Copy Office Config
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# 3.4.1 Browse for Office Path
+$btnBrowseOfficePath = $window.FindName('btnBrowseOfficePath')
+$btnBrowseOfficePath.Add_Click({
+    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fbd.Description = "Select Office Installation Folder"
+    if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtOfficePath').Text = $fbd.SelectedPath
+    }
+})
+# Default text for txtOfficePath
+$window.FindName('txtOfficePath').Text = $OfficePath
+
+# 3.4.2 Browse for Office Config XML File
+$btnBrowseOfficeConfigXMLFile = $window.FindName('btnBrowseOfficeConfigXMLFile')
+$btnBrowseOfficeConfigXMLFile.Add_Click({
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Filter = "XML files (*.xml)|*.xml"
+    $ofd.Title  = "Select Office Configuration XML File"
+    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtOfficeConfigXMLFilePath').Text = $ofd.FileName
+    }
+})
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.5) DRIVERS TAB: Install Drivers, Copy Drivers, Download Drivers, etc.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# 3.5.1 Browse for Drivers Folder
+$btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
+$btnBrowseDriversFolder.Add_Click({
+    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fbd.Description = "Select Drivers Folder"
+    if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtDriversFolder').Text = $fbd.SelectedPath
+    }
+})
+
+# 3.5.2 Browse for PE Drivers Folder
+$btnBrowsePEDrivers = $window.FindName('btnBrowsePEDrivers')
+$btnBrowsePEDrivers.Add_Click({
+    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fbd.Description = "Select PE Drivers Folder"
+    if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $window.FindName('txtPEDriversFolder').Text = $fbd.SelectedPath
+    }
+})
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.6) BUILD FFU & BUILD CONFIG FILE BUTTON EVENTS
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# 3.6.1 "Build FFU" button event
 $runScriptHandler = {
     try {
-        # Show progress bar and update status
         $progressBar = $window.FindName('progressBar')
-        $txtStatus = $window.FindName('txtStatus')
+        $txtStatus   = $window.FindName('txtStatus')
         $progressBar.Visibility = 'Visible'
         $txtStatus.Text = "Starting FFU build..."
 
-        # Gather user inputs from controls
-        $ffuDevPath = $window.FindName('txtFFUDevPath').Text
-        $customFFUNameTemplate = $window.FindName('txtFFUName').Text
-        $isoPath = $window.FindName('txtISOPath').Text
-        $windowsSKU = $cmbWindowsSKU.SelectedItem
-        $vmSwitchName = $cmbVMSwitchName.SelectedItem
-        if ($vmSwitchName -eq 'Other') {
-            $vmSwitchName = $window.FindName('txtCustomVMSwitchName').Text
-        }
-        $vmHostIPAddress = $window.FindName('txtVMHostIPAddress').Text
-        $installOffice = $window.FindName('chkInstallOffice').IsChecked
-        $installApps = $window.FindName('chkInstallApps').IsChecked
-        $installDrivers = $window.FindName('chkInstallDrivers').IsChecked
-        $copyDrivers = $window.FindName('chkCopyDrivers').IsChecked  # Retrieved Copy Drivers value
-        $downloadDrivers = $window.FindName('chkDownloadDrivers').IsChecked
-        $make = $window.FindName('cmbMake').SelectedItem
-        $model = $window.FindName('cmbModel').Text  # Changed from SelectedItem
-        $driversFolder = $window.FindName('txtDriversFolder').Text
-        $peDriversFolder = $window.FindName('txtPEDriversFolder').Text
+        # Gather + validate config once
+        $config = Get-UIConfig
 
-        # Validate required fields
-        if ($installDrivers -and (-not $driversFolder)) {
-            throw "Drivers Folder is required when Install Drivers is checked."
-        }
-        if ($copyDrivers -and (-not $driversFolder)) {
-            throw "Drivers Folder is required when Copy Drivers is checked."
-        }
-        if ($copyPEDrivers -and (-not $peDriversFolder)) {
-            throw "PE Drivers Folder is required when Copy PE Drivers is checked."
-        }
-        if ($downloadDrivers -and (-not $make)) {
-            throw "Make is required when Download Drivers is checked."
-        }
-        if ($downloadDrivers -and (-not $model)) {
-            throw "Model is required when Download Drivers is checked."
-        }
-        if (-not $ffuDevPath) {
-            throw "FFU Development Path is required."
-        }
+        # Save config as JSON
+        $configFilePath = Join-Path $config.FFUDevelopmentPath "FFUConfig.json"
+        $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
 
-        # Create config object
-        $config = @{
-            FFUDevelopmentPath = $ffuDevPath
-            CustomFFUNameTemplate = $customFFUNameTemplate
-            ISOPath = $isoPath
-            WindowsSKU = $windowsSKU
-            VMSwitchName = if ($cmbVMSwitchName.SelectedItem -eq 'Other') {
-                $window.FindName('txtCustomVMSwitchName').Text
-            } else {
-                $cmbVMSwitchName.SelectedItem.ToString()  # Convert SelectedItem to string
-            }
-            VMHostIPAddress = $vmHostIPAddress
-            InstallOffice = $installOffice
-            InstallApps = $installApps
-            InstallDrivers = $installDrivers
-            CopyDrivers = $copyDrivers  # Added CopyDrivers to config
-            DownloadDrivers = $downloadDrivers
-            Make = if ($downloadDrivers) { $make.ToString() } else { $null }
-            Model = if ($downloadDrivers) { $model } else { $null }  # Changed from ToString()
-            DriversFolder = $driversFolder
-            PEDriversFolder = $peDriversFolder
-            # ...include other parameters as needed
-        }
-
-        # Serialize config to JSON
-        $configJson = $config | ConvertTo-Json -Depth 10
-
-        # Save config file
-        $configFilePath = "$FFUDevelopmentPath\FFUConfig.json"
-        $configJson | Set-Content -Path $configFilePath -Encoding UTF8
-
-        # Update status
+        # Update status and run BuildFFUVM.ps1
         $txtStatus.Text = "Executing BuildFFUVM script with config file..."
-
-        # Call BuildFFUVM.ps1 with -ConfigFile
         & "$PSScriptRoot\BuildFFUVM.ps1" -ConfigFile $configFilePath -Verbose
 
-        # Update status after successful execution
+        # Copy Office XML if needed
+        if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {
+            Copy-Item -Path $config.OfficeConfigXMLFile -Destination $config.OfficePath -Force
+            $txtStatus.Text = "Office Configuration XML file copied successfully."
+        }
+
         $txtStatus.Text = "FFU build completed successfully."
     }
     catch {
-        # Show error message and update status
         [System.Windows.MessageBox]::Show("An error occurred: $_", "Error", "OK", "Error")
-        $txtStatus.Text = "FFU build failed."
+        $window.FindName('txtStatus').Text = "FFU build failed."
     }
     finally {
-        # Hide progress bar
         $window.FindName('progressBar').Visibility = 'Collapsed'
     }
 }
-
-# Bind the event handler once
 $btnRun = $window.FindName('btnRun')
 $btnRun.Add_Click($runScriptHandler)
 
-# Bind the Browse button event handler
-$btnBrowseISO = $window.FindName('btnBrowseISO')
-$btnBrowseISO.Add_Click({
-    $openFileDialog = New-Object System.Windows.Forms.OpenFileDialog
-    $openFileDialog.Filter = "ISO files (*.iso)|*.iso"
-    $openFileDialog.Title = "Select Windows ISO File"
-    
-    if ($openFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $window.FindName('txtISOPath').Text = $openFileDialog.FileName
-    }
-})
-
-$btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
-$btnBrowseFFUDevPath.Add_Click({
-    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-    $folderBrowser.Description = "Select FFU Development Folder"
-    $folderBrowser.SelectedPath = $window.FindName('txtFFUDevPath').Text  # Set initial path
-    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $window.FindName('txtFFUDevPath').Text = $folderBrowser.SelectedPath
-    }
-})
-
-# Assign FFUDevelopmentPath to the TextBox
-$window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath
-
-# Bind the Browse buttons for Drivers folders
-$btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
-$btnBrowseDriversFolder.Add_Click({
-    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-    $folderBrowser.Description = "Select Drivers Folder"
-    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $window.FindName('txtDriversFolder').Text = $folderBrowser.SelectedPath
-    }
-})
-
-$btnBrowsePEDrivers = $window.FindName('btnBrowsePEDrivers')
-$btnBrowsePEDrivers.Add_Click({
-    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
-    $folderBrowser.Description = "Select PE Drivers Folder"
-    if ($folderBrowser.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $window.FindName('txtPEDriversFolder').Text = $folderBrowser.SelectedPath
-    }
-})
-
-# Bind the Build Config File button event handler
+# 3.6.2 "Build Config File" button event
 $btnBuildConfig = $window.FindName('btnBuildConfig')
 $btnBuildConfig.Add_Click({
     try {
-        # Define default save path
-        $defaultConfigPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "config"
+        # Gather + validate config once
+        $config = Get-UIConfig
 
-        # Ensure the config directory exists
-        if (-not (Test-Path -Path $defaultConfigPath)) {
+        # Where to save
+        $defaultConfigPath = Join-Path $config.FFUDevelopmentPath "config"
+        if (-not (Test-Path $defaultConfigPath)) {
             New-Item -Path $defaultConfigPath -ItemType Directory -Force | Out-Null
         }
 
-        # Initialize SaveFileDialog
-        $saveFileDialog = New-Object System.Windows.Forms.SaveFileDialog
-        $saveFileDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-        $saveFileDialog.Title = "Save Configuration File"
-        $saveFileDialog.InitialDirectory = $defaultConfigPath
-        $saveFileDialog.FileName = "FFUConfig.json"
+        $sfd = New-Object System.Windows.Forms.SaveFileDialog
+        $sfd.Filter          = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+        $sfd.Title           = "Save Configuration File"
+        $sfd.InitialDirectory= $defaultConfigPath
+        $sfd.FileName        = "FFUConfig.json"
 
-        # Show SaveFileDialog
-        if ($saveFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $savePath = $saveFileDialog.FileName
+        if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $savePath = $sfd.FileName
+            $config | ConvertTo-Json -Depth 10 | Set-Content -Path $savePath -Encoding UTF8
 
-            # Gather current configuration from UI controls using $window.FindName
-            $ffuDevPath = ($window.FindName('txtFFUDevPath')).Text
-            $windowsSKU = ($window.FindName('cmbWindowsSKU')).SelectedItem
-            if (-not $windowsSKU) {
-                throw "Windows SKU is not selected."
-            }
-
-            $selectedVMSwitch = ($window.FindName('cmbVMSwitchName')).SelectedItem
-            if (-not $selectedVMSwitch) {
-                throw "VM Switch Name is not selected."
-            }
-
-            if ($selectedVMSwitch -eq 'Other') {
-                $vmSwitchName = ($window.FindName('txtCustomVMSwitchName')).Text
-                if (-not $vmSwitchName) {
-                    throw "Custom VM Switch Name is empty."
-                }
-            }
-            else {
-                $vmSwitchName = $selectedVMSwitch.ToString()
-            }
-
-            $installDrivers = ($window.FindName('chkInstallDrivers')).IsChecked
-            $copyDrivers = ($window.FindName('chkCopyDrivers')).IsChecked
-            $downloadDrivers = ($window.FindName('chkDownloadDrivers')).IsChecked
-            $make = ($window.FindName('cmbMake')).SelectedItem
-            $model = ($window.FindName('txtModel')).Text  # Changed from SelectedItem
-            $driversFolder = ($window.FindName('txtDriversFolder')).Text
-            $peDriversFolder = ($window.FindName('txtPEDriversFolder')).Text
-
-            # Validate required fields
-            if ($installDrivers -and (-not $driversFolder)) {
-                throw "Drivers Folder is required when Install Drivers is checked."
-            }
-            if ($copyDrivers -and (-not $driversFolder)) {
-                throw "Drivers Folder is required when Copy Drivers is checked."
-            }
-            if ($copyPEDrivers -and (-not $peDriversFolder)) {
-                throw "PE Drivers Folder is required when Copy PE Drivers is checked."
-            }
-            if ($downloadDrivers -and (-not $make)) {
-                throw "Make is required when Download Drivers is checked."
-            }
-            if ($downloadDrivers -and (-not $model)) {
-                throw "Model is required when Download Drivers is checked."
-            }
-            if (-not $ffuDevPath) {
-                throw "FFU Development Path is required."
-            }
-
-            $config = @{
-                FFUDevelopmentPath = $ffuDevPath
-                CustomFFUNameTemplate = ($window.FindName('txtFFUName')).Text
-                ISOPath = ($window.FindName('txtISOPath')).Text
-                WindowsSKU = $windowsSKU
-                VMSwitchName = $vmSwitchName
-                VMHostIPAddress = ($window.FindName('txtVMHostIPAddress')).Text
-                InstallOffice = ($window.FindName('chkInstallOffice')).IsChecked
-                InstallApps = ($window.FindName('chkInstallApps')).IsChecked
-                InstallDrivers = $installDrivers
-                CopyDrivers = $copyDrivers
-                DownloadDrivers = $downloadDrivers
-                Make = if ($downloadDrivers) { $make.ToString() } else { $null }
-                Model = if ($downloadDrivers) { $model } else { $null }  # Changed from ToString()
-                DriversFolder = $driversFolder
-                PEDriversFolder = $peDriversFolder
-                # ...include other parameters as needed
-            }
-
-            # Serialize config to JSON
-            $configJson = $config | ConvertTo-Json -Depth 10
-
-            # Save the config file
-            $configJson | Set-Content -Path $savePath -Encoding UTF8
-
-            # Inform the user of success
-            [System.Windows.MessageBox]::Show("Configuration file saved successfully to:`n$savePath", "Success", "OK", "Information")
+            [System.Windows.MessageBox]::Show(
+                "Configuration file saved to:`n$savePath",
+                "Success",
+                "OK",
+                "Information"
+            )
         }
     }
     catch {
-        # Show error message
-        [System.Windows.MessageBox]::Show("An error occurred while saving the configuration file:`n$_", "Error", "OK", "Error")
+        [System.Windows.MessageBox]::Show("Error saving config file:`n$_","Error","OK","Error")
     }
 })
 
-# After loading the window:
-# Initialize script-scoped variable
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.7) WINDOW LOADED LOGIC
+#    Reorganized below based on tab order:
+#    1) Basic, 2) Applications, 3) M365 Apps/Office, 4) Drivers
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 $script:installAppsCheckedByOffice = $false
 
 $window.Add_Loaded({
-    $script:vmSwitchMap = @{} 
-    $script:cmbVMSwitchName    = $window.FindName('cmbVMSwitchName')
-
+    # ---------------------------------------------------------
+    # (1) BASIC TAB
+    #     VM Switch combos & IP
+    # ---------------------------------------------------------
+    $script:vmSwitchMap     = @{}
+    $script:cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
     $allSwitches = Get-VMSwitch -ErrorAction SilentlyContinue
+
     foreach ($sw in $allSwitches) {
-        $cmbVMSwitchName.Items.Add($sw.Name)
-        
-        # Use partial match in the NetAdapter Name
-        $netAdapter = Get-NetAdapter -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like "*($($sw.Name))*" }
+        $script:cmbVMSwitchName.Items.Add($sw.Name) | Out-Null
+        $netAdapter = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*($($sw.Name))*" }
         if ($netAdapter) {
-            # Use InterfaceIndex for accurate matching
             $netIPs = Get-NetIPAddress -InterfaceIndex $netAdapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
             $validIPs = $netIPs | Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.IPAddress }
-
             if ($validIPs) {
                 $script:vmSwitchMap[$sw.Name] = ($validIPs | Select-Object -First 1).IPAddress
             }
         }
     }
+    $script:cmbVMSwitchName.Items.Add('Other') | Out-Null
 
-    # Add "Other" option to cmbVMSwitchName
-    $cmbVMSwitchName.Items.Add('Other') | Out-Null
-
-    # Force a default selection if any items exist
-    if ($cmbVMSwitchName.Items.Count -gt 0) {
-        # Select the first VM Switch if available, else select 'Other'
+    if ($script:cmbVMSwitchName.Items.Count -gt 0) {
         if ($allSwitches.Count -gt 0) {
-            $cmbVMSwitchName.SelectedIndex = 0
-            if ($cmbVMSwitchName.SelectedItem) {
-                $preSelected = $cmbVMSwitchName.SelectedItem.ToString()  # Converted to string
-                if ($script:vmSwitchMap.ContainsKey($preSelected)) {
-                    $window.FindName('txtVMHostIPAddress').Text = $script:vmSwitchMap[$preSelected]
-                }
-                else {
-                    $window.FindName('txtVMHostIPAddress').Text = ''
-                }
+            $script:cmbVMSwitchName.SelectedIndex = 0
+            $pre = $script:cmbVMSwitchName.SelectedItem.ToString()
+            if ($script:vmSwitchMap.ContainsKey($pre)) {
+                $window.FindName('txtVMHostIPAddress').Text = $script:vmSwitchMap[$pre]
+            }
+            else {
+                $window.FindName('txtVMHostIPAddress').Text = ''
             }
         }
         else {
-            # If no VM Switches exist, select 'Other' by default
-            $cmbVMSwitchName.SelectedItem = 'Other'
+            $script:cmbVMSwitchName.SelectedItem = 'Other'
             $window.FindName('txtCustomVMSwitchName').Visibility = 'Visible'
         }
     }
 
-    # Update IP on selection change using the prebuilt mapping
-    $cmbVMSwitchName.Add_SelectionChanged({
-        param($sender, $eventArgs)  # Define parameters for the event handler
-
+    $script:cmbVMSwitchName.Add_SelectionChanged({
+        param($sender, $eventArgs)
         if ($sender.SelectedItem -eq 'Other') {
-            # Show the custom VM Switch Name TextBox
-            $window.FindName('txtCustomVMSwitchName').Visibility = [System.Windows.Visibility]::Visible
-            
-            # Optionally, clear the VM Host IP Address field
+            $window.FindName('txtCustomVMSwitchName').Visibility = 'Visible'
             $window.FindName('txtVMHostIPAddress').Text = ''
         }
         else {
-            # Hide the custom VM Switch Name TextBox
-            $window.FindName('txtCustomVMSwitchName').Visibility = [System.Windows.Visibility]::Collapsed
-            
-            # Update VM Host IP Address based on selection
-            if ($sender.SelectedItem) {
-                $selectedSwitch = $sender.SelectedItem.ToString()
-                if ($script:vmSwitchMap.ContainsKey($selectedSwitch)) {
-                    $ipAddress = $script:vmSwitchMap[$selectedSwitch]
-                    $window.FindName('txtVMHostIPAddress').Text = $ipAddress
-                }
-                else {
-                    $window.FindName('txtVMHostIPAddress').Text = ''
-                }
+            $window.FindName('txtCustomVMSwitchName').Visibility = 'Collapsed'
+            if ($script:vmSwitchMap.ContainsKey($sender.SelectedItem)) {
+                $ip = $script:vmSwitchMap[$sender.SelectedItem]
+                $window.FindName('txtVMHostIPAddress').Text = $ip
             }
             else {
                 $window.FindName('txtVMHostIPAddress').Text = ''
@@ -434,111 +415,155 @@ $window.Add_Loaded({
         }
     })
 
-    # Cast to WPF CheckBox and ComboBoxes
-    $script:chkDownloadDrivers = [System.Windows.Controls.CheckBox]$window.FindName('chkDownloadDrivers')
-    $script:cmbMake = [System.Windows.Controls.ComboBox]$window.FindName('cmbMake')
-    $script:cmbModel = [System.Windows.Controls.TextBox]$window.FindName('cmbModel')  # Cast cmbModel as TextBox instead of ComboBox
+    # ---------------------------------------------------------
+    # (2) APPLICATIONS TAB
+    #     "Install Apps" interplay (with "Install Office")
+    # ---------------------------------------------------------
+    # We handle additional interplay in the next section, but if you have more
+    # "Applications" logic, put it here.
+    $script:chkInstallApps = $window.FindName('chkInstallApps')
+    # (No extra event code needed here—it's in the next section for synergy with Office.)
 
-    # Cast to WPF TextBlocks for label visibility
-    $script:txtMakeLabel = [System.Windows.Controls.TextBlock]$window.FindName('txtMakeLabel')
-    $script:txtModelLabel = [System.Windows.Controls.TextBlock]$window.FindName('txtModelLabel')
+    # ---------------------------------------------------------
+    # (3) M365 APPS/OFFICE TAB
+    #     "Install Office" + "Install Apps" interplay,
+    #     plus the Office config UI references/visibility
+    # ---------------------------------------------------------
+    $script:chkInstallOffice = $window.FindName('chkInstallOffice')
 
-    # Set initial visibility based on the checkbox state
-    if ($chkDownloadDrivers.IsChecked) {
-        $script:cmbMake.Visibility = [System.Windows.Visibility]::Visible
-        $script:cmbModel.Visibility = [System.Windows.Visibility]::Visible
-        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Visible
-        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Visible
+    # When Office is checked, ensure Apps is also checked
+    $script:chkInstallOffice.Add_Checked({
+        if (-not $script:chkInstallApps.IsChecked) {
+            $script:chkInstallApps.IsChecked = $true
+            $script:installAppsCheckedByOffice = $true
+        }
+        $script:chkInstallApps.IsEnabled = $false
+    })
+    $script:chkInstallOffice.Add_Unchecked({
+        if ($script:installAppsCheckedByOffice) {
+            $script:chkInstallApps.IsChecked = $false
+            $script:installAppsCheckedByOffice = $false
+        }
+        $script:chkInstallApps.IsEnabled = $true
+    })
+
+    $script:chkInstallApps.Add_Checked({
+        if (-not $script:installAppsCheckedByOffice) {
+            # user checked it manually
+        }
+    })
+    $script:chkInstallApps.Add_Unchecked({
+        if (-not $script:installAppsCheckedByOffice) {
+            # user unchecked it manually
+        }
+    })
+
+    # Office Path & Copy Office Config references
+    $script:stackOfficePath   = $window.FindName('OfficePathStackPanel')
+    $script:gridOfficePath    = $window.FindName('OfficePathGrid')
+    $script:CopyOfficeConfigXMLStackPanel = $window.FindName('CopyOfficeConfigXMLStackPanel')
+    $script:OfficeConfigurationXMLFileStackPanel = $window.FindName('OfficeConfigurationXMLFileStackPanel')
+    $script:OfficeConfigurationXMLFileGrid       = $window.FindName('OfficeConfigurationXMLFileGrid')
+    $script:chkCopyOfficeConfigXML = $window.FindName('chkCopyOfficeConfigXML')
+
+    # Initial visibility for Office controls
+    if ($script:chkInstallOffice.IsChecked) {
+        $script:stackOfficePath.Visibility = 'Visible'
+        $script:gridOfficePath.Visibility  = 'Visible'
+        $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
+        if ($script:chkCopyOfficeConfigXML.IsChecked) {
+            $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Visible'
+            $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Visible'
+        }
+        else {
+            $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+            $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Collapsed'
+        }
     }
     else {
-        $script:cmbMake.Visibility = [System.Windows.Visibility]::Collapsed
-        $script:cmbModel.Visibility = [System.Windows.Visibility]::Collapsed
-        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Collapsed
-        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:stackOfficePath.Visibility = 'Collapsed'
+        $script:gridOfficePath.Visibility  = 'Collapsed'
+        $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
+        $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+        $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Collapsed'
     }
 
-    $chkDownloadDrivers.Add_Checked({
-        $script:cmbMake.Visibility = [System.Windows.Visibility]::Visible
-        $script:cmbModel.Visibility = [System.Windows.Visibility]::Visible
-        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Visible
-        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Visible
+    $script:chkInstallOffice.Add_Checked({
+        $script:stackOfficePath.Visibility = 'Visible'
+        $script:gridOfficePath.Visibility  = 'Visible'
+        $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
+    })
+    $script:chkInstallOffice.Add_Unchecked({
+        $script:stackOfficePath.Visibility = 'Collapsed'
+        $script:gridOfficePath.Visibility  = 'Collapsed'
+        $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
+        $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+        $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Collapsed'
     })
 
-    $chkDownloadDrivers.Add_Unchecked({
-        $script:cmbMake.Visibility = [System.Windows.Visibility]::Collapsed
-        $script:cmbModel.Visibility = [System.Windows.Visibility]::Collapsed
-        $script:txtMakeLabel.Visibility = [System.Windows.Visibility]::Collapsed
-        $script:txtModelLabel.Visibility = [System.Windows.Visibility]::Collapsed
+    $script:chkCopyOfficeConfigXML.Add_Checked({
+        $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Visible'
+        $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Visible'
+    })
+    $script:chkCopyOfficeConfigXML.Add_Unchecked({
+        $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+        $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Collapsed'
     })
 
-    # Remove or comment out the ComboBox population logic for cmbModel
-    # $script:cmbMake.Add_SelectionChanged({
-    #     param($sender, $eventArgs)
-    #
-    #     $selectedMake = $sender.SelectedItem  # Changed from $sender.SelectedItem.Content
-    #
-    #     $script:cmbModel.Items.Clear()
-    #
-    #     switch ($selectedMake) {
-    #         'Microsoft' {
-    #             $script:cmbModel.Items.Add('Surface Pro')
-    #             $script:cmbModel.Items.Add('Surface Laptop')
-    #             # Add more Microsoft models
-    #         }
-    #         'Dell' {
-    #             $script:cmbModel.Items.Add('XPS 13')
-    #             $script:cmbModel.Items.Add('Inspiron 15')
-    #             # Add more Dell models
-    #         }
-    #         'HP' {
-    #             $script:cmbModel.Items.Add('Spectre x360')
-    #             $script:cmbModel.Items.Add('Envy 13')
-    #             # Add more HP models
-    #         }
-    #         'Lenovo' {
-    #             $script:cmbModel.Items.Add('ThinkPad X1')
-    #             $script:cmbModel.Items.Add('Yoga 7i')
-    #             # Add more Lenovo models
-    #         }
-    #         default {
-    #             # Handle unexpected Make selections
-    #         }
-    #     }
-    # })
+    # ---------------------------------------------------------
+    # (4) DRIVERS TAB
+    #     Download Drivers logic, Install/Copy Drivers, etc.
+    # ---------------------------------------------------------
+    $script:chkDownloadDrivers   = $window.FindName('chkDownloadDrivers')
+    $script:cmbMake              = $window.FindName('cmbMake')
+    $script:cmbModel             = $window.FindName('cmbModel')
+    $script:txtMakeLabel         = $window.FindName('txtMakeLabel')
+    $script:txtModelLabel        = $window.FindName('txtModelLabel')
+    $script:spMakeModelSection   = $window.FindName('spMakeModelSection')
 
-    # Populate cmbMake ComboBox with Make options
-    $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo')  # Add more manufacturers as needed
-    foreach ($make in $makeList) {
-        $cmbMake.Items.Add($make) | Out-Null
+    # "Download Drivers" logic
+    if ($script:chkDownloadDrivers.IsChecked) {
+        $script:cmbMake.Visibility      = 'Visible'
+        $script:cmbModel.Visibility     = 'Visible'
+        $script:txtMakeLabel.Visibility = 'Visible'
+        $script:txtModelLabel.Visibility= 'Visible'
+        $script:spMakeModelSection.Visibility = 'Visible'
     }
-
-    if ($cmbMake.Items.Count -gt 0) {
-        $cmbMake.SelectedIndex = 0
+    else {
+        $script:cmbMake.Visibility      = 'Collapsed'
+        $script:cmbModel.Visibility     = 'Collapsed'
+        $script:txtMakeLabel.Visibility = 'Collapsed'
+        $script:txtModelLabel.Visibility= 'Collapsed'
+        $script:spMakeModelSection.Visibility = 'Collapsed'
     }
-
-    $chkDownloadDrivers = $window.FindName('chkDownloadDrivers')
-    $spMakeModelSection = $window.FindName('spMakeModelSection')
-
-    # Control visibility when checkbox is checked/unchecked
-    $chkDownloadDrivers.Add_Checked({
-        $spMakeModelSection.Visibility = [System.Windows.Visibility]::Visible
-    })
-    $chkDownloadDrivers.Add_Unchecked({
-        $spMakeModelSection.Visibility = [System.Windows.Visibility]::Collapsed
-    })
-
-    $script:chkDownloadDrivers = [System.Windows.Controls.CheckBox]$window.FindName('chkDownloadDrivers')
-    $script:spMakeModelSection = [System.Windows.Controls.StackPanel]$window.FindName('spMakeModelSection')
-
     $script:chkDownloadDrivers.Add_Checked({
-        $script:spMakeModelSection.Visibility = [System.Windows.Visibility]::Visible
+        $script:cmbMake.Visibility      = 'Visible'
+        $script:cmbModel.Visibility     = 'Visible'
+        $script:txtMakeLabel.Visibility = 'Visible'
+        $script:txtModelLabel.Visibility= 'Visible'
+        $script:spMakeModelSection.Visibility = 'Visible'
     })
     $script:chkDownloadDrivers.Add_Unchecked({
-        $script:spMakeModelSection.Visibility = [System.Windows.Visibility]::Collapsed
+        $script:cmbMake.Visibility      = 'Collapsed'
+        $script:cmbModel.Visibility     = 'Collapsed'
+        $script:txtMakeLabel.Visibility = 'Collapsed'
+        $script:txtModelLabel.Visibility= 'Collapsed'
+        $script:spMakeModelSection.Visibility = 'Collapsed'
     })
 
-    $script:chkInstallDrivers = [System.Windows.Controls.CheckBox]$window.FindName('chkInstallDrivers')
-    $script:chkCopyDrivers    = [System.Windows.Controls.CheckBox]$window.FindName('chkCopyDrivers')
+    # Populate Make ComboBox
+    $makeList = @('Microsoft','Dell','HP','Lenovo')
+    foreach ($m in $makeList) {
+        $script:cmbMake.Items.Add($m) | Out-Null
+    }
+    if ($script:cmbMake.Items.Count -gt 0) {
+        $script:cmbMake.SelectedIndex = 0
+    }
+
+    # "Install Drivers" & "Copy Drivers" interplay
+    $script:chkInstallDrivers = $window.FindName('chkInstallDrivers')
+    $script:chkCopyDrivers    = $window.FindName('chkCopyDrivers')
+    $script:chkCopyPEDrivers  = $window.FindName('chkCopyPEDrivers')
 
     $script:chkInstallDrivers.Add_Checked({
         $script:chkCopyDrivers.IsEnabled = $false
@@ -546,7 +571,6 @@ $window.Add_Loaded({
     $script:chkInstallDrivers.Add_Unchecked({
         $script:chkCopyDrivers.IsEnabled = $true
     })
-
     $script:chkCopyDrivers.Add_Checked({
         $script:chkInstallDrivers.IsEnabled = $false
     })
@@ -554,77 +578,12 @@ $window.Add_Loaded({
         $script:chkInstallDrivers.IsEnabled = $true
     })
 
-    # Assign FFUDevelopmentPath to the TextBox
-    $window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath
-
-    # Set default values for Drivers Folder and PE Drivers Folder
-    $window.FindName('txtDriversFolder').Text = Join-Path -Path $FFUDevelopmentPath -ChildPath "Drivers"
-    $window.FindName('txtPEDriversFolder').Text = Join-Path -Path $FFUDevelopmentPath -ChildPath "PEDrivers"
-
-    # Find the Install Office and Install Apps checkboxes
-    $script:chkInstallOffice = $window.FindName('chkInstallOffice')
-    $script:chkInstallApps = $window.FindName('chkInstallApps')
-
-    # Add event handler for Install Office Checked
-    $script:chkInstallOffice.Add_Checked({
-        if (-not $script:chkInstallApps.IsChecked) {
-            $script:chkInstallApps.IsChecked = $true
-            $script:installAppsCheckedByOffice = $true
-        }
-        $script:chkInstallApps.IsEnabled = $false
-    })
-
-    # Add event handler for Install Office Unchecked
-    $script:chkInstallOffice.Add_Unchecked({
-        if ($script:installAppsCheckedByOffice) {
-            $script:chkInstallApps.IsChecked = $false
-            $script:installAppsCheckedByOffice = $false
-        }
-        $script:chkInstallApps.IsEnabled = $true
-    })
-
-    # Initialize additional script-scoped variables
-    $script:installAppsCheckedManually = $false
-
-    # Assign script-scoped variables
-    $script:chkInstallOffice = $window.FindName('chkInstallOffice')
-    $script:chkInstallApps = $window.FindName('chkInstallApps')
-    # ...assign other script-scoped variables...
-    
-    # Add event handler for Install Apps Checked manually
-    $script:chkInstallApps.Add_Checked({
-        if (-not $script:installAppsCheckedByOffice) {
-            # User checked Install Apps manually
-            $script:installAppsCheckedManually = $true
-        }
-    })
-    
-    # Add event handler for Install Apps Unchecked manually
-    $script:chkInstallApps.Add_Unchecked({
-        if (-not $script:installAppsCheckedByOffice) {
-            # User unchecked Install Apps manually
-            $script:installAppsCheckedManually = $false
-        }
-    })
-    
-    # Add event handler for Install Office Checked
-    $script:chkInstallOffice.Add_Checked({
-        if (-not $script:chkInstallApps.IsChecked) {
-            $script:chkInstallApps.IsChecked = $true
-            $script:installAppsCheckedByOffice = $true
-        }
-        $script:chkInstallApps.IsEnabled = $false
-    })
-    
-    # Add event handler for Install Office Unchecked
-    $script:chkInstallOffice.Add_Unchecked({
-        if ($script:installAppsCheckedByOffice) {
-            $script:chkInstallApps.IsChecked = $false
-            $script:installAppsCheckedByOffice = $false
-        }
-        $script:chkInstallApps.IsEnabled = $true
-    })
+    # Default text for Drivers folders
+    $window.FindName('txtDriversFolder').Text    = Join-Path $FFUDevelopmentPath "Drivers"
+    $window.FindName('txtPEDriversFolder').Text = Join-Path $FFUDevelopmentPath "PEDrivers"
 })
 
-# Show the window
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 3.8) SHOW THE WPF WINDOW
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 [void]$window.ShowDialog()
