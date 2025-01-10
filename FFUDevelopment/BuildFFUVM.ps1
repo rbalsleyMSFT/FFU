@@ -361,7 +361,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ExportConfigFile
 )
-$version = '2412.1'
+$version = '2412.3'
 
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
@@ -557,7 +557,7 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [string]$ArgumentList,
+        [string[]]$ArgumentList,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -1003,7 +1003,9 @@ function Get-HPDrivers {
     $Arch = $WindowsArch -replace "^x", ""
 
     # Construct the URL to download the driver XML cab for the model
-    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersion"
+    # The HPcloud reference site is case sensitve so we must convert the Windowsversion to lower 'h' first
+    $WindowsVersionHP = $WindowsVersion -replace 'H', 'h'
+    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersionHP"
     $DriverCabUrl = "https://hpia.hpcloud.hp.com/ref/$SystemID/$ModelRelease.cab"
     $DriverCabFile = "$DriversFolder\$ModelRelease.cab"
     $DriverXmlFile = "$DriversFolder\$ModelRelease.xml"
@@ -3051,7 +3053,7 @@ function New-PEMedia {
         if ($CopyPEDrivers) {
             WriteLog "Adding drivers to WinPE media"
             try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
             }
             catch {
                 WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -3124,14 +3126,57 @@ function Optimize-FFUCaptureDrive {
         throw $_
     }
 }
+
+function Get-ShortenedWindowsSKU {
+    param (
+        [string]$WindowsSKU
+    )
+        $shortenedWindowsSKU = switch ($WindowsSKU) {
+            'Core' { 'Home' }
+            'CoreN' { 'Home_N' }
+            'CoreSingleLanguage' { 'Home_SL' }
+            'Education' { 'Edu' }
+            'EducationN' { 'Edu_N' }
+            'Professional' { 'Pro' }
+            'ProfessionalN' { 'Pro_N' }
+            'ProfessionalEducation' { 'Pro_Edu' }
+            'ProfessionalEducationN' { 'Pro_Edu_N' }
+            'ProfessionalWorkstation' { 'Pro_WKS' }
+            'ProfessionalWorkstationN' { 'Pro_WKS_N' }
+            'Enterprise' { 'Ent' }
+            'EnterpriseN' { 'Ent_N' }
+            'ServerStandard' { 'Srv_Std' }
+            'ServerDatacenter' { 'Srv_Dtc' }
+            'Home' { 'Home' }
+            'Home N' { 'Home_N' }
+            'Home Single Language' { 'Home_SL' }
+            'Education' { 'Edu' }
+            'Education N' { 'Edu_N' }
+            'Professional' { 'Pro' }
+            'Pro N' { 'Pro_N' }
+            'Pro Education' { 'Pro_Edu' }
+            'Pro Education N' { 'Pro_Edu_N' }
+            'Pro for Workstations' { 'Pro_WKS' }
+            'Pro N for Workstations' { 'Pro_WKS_N' }
+            'Enterprise' { 'Ent' }
+            'Enterprise N' { 'Ent_N' }
+            'Standard' { 'Srv_Std' }
+            'Standard (Desktop Experience)' { 'Srv_Std_DE' }
+            'Datacenter' { 'Srv_Dtc' }
+            'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }  
+        }
+    return $shortenedWindowsSKU
+
+}
 function New-FFUFileName {
+    
     $BuildDate = Get-Date -uformat %b%Y
     # Replace '{WindowsRelease}' with the Windows release (e.g., 10, 11, 2016, 2019, 2022, 2025)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsRelease}', $WindowsRelease
     # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsVersion}', $WindowsVersion
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $SKU
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
     # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{BuildDate}', $BuildDate
     # Replace '{yyyy}' with the current year in 4-digit format (e.g., 2023)
@@ -3197,42 +3242,44 @@ function New-FFU {
         }
     }
     elseif (-not $InstallApps -and (-not $AllowVHDXCaching)) {
+        #Get Windows Version Information from the VHDX
+        $winverinfo = Get-WindowsVersionInfo
+        WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
             $FFUFileName = New-FFUFileName
         }
         else{
-            #Get Windows Version Information from the VHDX
-            $winverinfo = Get-WindowsVersionInfo
-            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($winverinfo.SKU)`_$($winverinfo.BuildDate).ffu"
+            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
-        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        WriteLog 'Capturing FFU'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
     elseif (-not $InstallApps -and $AllowVHDXCaching) {
         # Make $FFUFileName based on values in the config.json file
+        WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
             $FFUFileName = New-FFUFileName
-        } else {
+        }
+        else {
             $BuildDate = Get-Date -UFormat %b%Y
             # Get Windows Information to make the FFU file name from the cachedVHDXInfo file
             if ($installationType -eq 'Client') {
-                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($cachedVHDXInfo.WindowsSKU)`_$BuildDate.ffu"
-            } else {
-                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($cachedVHDXInfo.WindowsSKU)`_$BuildDate.ffu"
+                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
+            }
+            else {
+                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
             } 
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Dismount the VHDX
-        
         #Capture the FFU
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($cachedVHDXInfo.WindowsSKU) /Compress:Default" | Out-Null
-        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        WriteLog 'Capturing FFU'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null     
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
@@ -3354,8 +3401,8 @@ Function Get-WindowsVersionInfo {
     Invoke-Process reg "load HKLM\FFU $Software" | Out-Null
 
     #Find Windows version values
-    $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
-    WriteLog "Windows SKU: $SKU"
+    # $WindowsSKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
+    # WriteLog "Windows SKU: $WindowsSKU"
     [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
     WriteLog "Windows Build: $CurrentBuild"
     #DisplayVersion does not exist for 1607 builds (RS1 and Server 2016) and Server 2019
@@ -3366,19 +3413,18 @@ Function Get-WindowsVersionInfo {
     
     $BuildDate = Get-Date -uformat %b%Y
 
-    $SKU = switch ($SKU) {
-        Core { 'Home' }
-        Professional { 'Pro' }
-        ProfessionalEducation { 'Pro_Edu' }
-        Enterprise { 'Ent' }
-        Education { 'Edu' }
-        ProfessionalWorkstation { 'Pro_Wks' }
-	    ServerStandard { 'Srv_Std' }
-        ServerDatacenter { 'Srv_Dtc' }
-    }
-    WriteLog "Windows SKU Modified to: $SKU"
+    # $WindowsSKU = switch ($WindowsSKU) {
+    #     Core { 'Home' }
+    #     Professional { 'Pro' }
+    #     ProfessionalEducation { 'Pro_Edu' }
+    #     Enterprise { 'Ent' }
+    #     Education { 'Edu' }
+    #     ProfessionalWorkstation { 'Pro_Wks' }
+	#     ServerStandard { 'Srv_Std' }
+    #     ServerDatacenter { 'Srv_Dtc' }
+    # }
 
-    if ($SKU -notmatch "Srv") {
+    if ($shortenedWindowsSKU -notmatch "Srv") {
         if ($CurrentBuild -ge 22000) {
             $Name = 'Win11'
         }
@@ -3407,7 +3453,7 @@ Function Get-WindowsVersionInfo {
         DisplayVersion = $DisplayVersion
         BuildDate      = $buildDate
         Name           = $Name
-        SKU            = $SKU
+        # SKU            = $WindowsSKU
     }
 }
 Function Get-USBDrive {
@@ -4242,7 +4288,8 @@ if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
 try {
     $adkPath = Get-ADK
     #Need to use the Deployment and Imaging tools environment to use dism from the Sept 2023 ADK to optimize FFU 
-    $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
+    $DandIEnv = Join-Path $adkPath "Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
+
 }
 catch {
     WriteLog 'ADK not found'
@@ -4894,6 +4941,11 @@ try {
         New-FFU $FFUVM.Name
     }
     else {
+        #Shorten Windows SKU for use in FFU file name to remove spaces and long names
+        WriteLog 'Shortening Windows SKU for FFU file name'
+        $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
+        WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
+        #Create FFU file
         New-FFU
     }    
 }
