@@ -1003,7 +1003,9 @@ function Get-HPDrivers {
     $Arch = $WindowsArch -replace "^x", ""
 
     # Construct the URL to download the driver XML cab for the model
-    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersion"
+    # The HPcloud reference site is case sensitve so we must convert the Windowsversion to lower 'h' first
+    $WindowsVersionHP = $WindowsVersion -replace 'H', 'h'
+    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersionHP"
     $DriverCabUrl = "https://hpia.hpcloud.hp.com/ref/$SystemID/$ModelRelease.cab"
     $DriverCabFile = "$DriversFolder\$ModelRelease.cab"
     $DriverXmlFile = "$DriversFolder\$ModelRelease.xml"
