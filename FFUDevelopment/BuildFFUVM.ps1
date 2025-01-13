@@ -230,6 +230,7 @@ param(
     [string]$FFUDevelopmentPath = $PSScriptRoot,
 
     [bool]$InstallApps,
+    [string]$AppListPath,
 
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
@@ -471,6 +472,7 @@ if ($installationType -eq 'Server'){
         2025 { $WindowsVersion = '24H2' }
     }
 }
+if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -4307,9 +4309,9 @@ if ($InstallApps) {
             exit
         }
         WriteLog "$AppsPath\InstallAppsandSysprep.cmd found"
-        If (Test-Path -Path "$AppsPath\AppList.json"){
-            WriteLog "$AppsPath\AppList.json found, checking for winget apps to install"
-            Get-Apps -AppList "$AppsPath\AppList.json"
+        If (Test-Path -Path $AppListPath){
+            WriteLog "$AppListPath found, checking for winget apps to install"
+            Get-Apps -AppList "$AppListPath"
         }
         
         if (-not $InstallOffice) {
