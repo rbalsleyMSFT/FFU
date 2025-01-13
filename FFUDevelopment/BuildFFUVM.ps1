@@ -2915,6 +2915,9 @@ function New-FFUVM {
     Set-VMKeyProtector -VMName $VMName -KeyProtector $kp.RawData
     Enable-VMTPM -VMName $VMName
 
+    #Enable time sync
+    Enable-VMIntegrationService -VMName $VMName -Name "Time Synchronization"
+
     #Connect to VM
     WriteLog "Starting vmconnect localhost $VMName"
     & vmconnect localhost "$VMName"
@@ -3039,6 +3042,9 @@ function New-PEMedia {
         WriteLog "Copying $FFUDevelopmentPath\WinPECaptureFFUFiles\* to WinPE capture media"
         Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
         WriteLog "Copy complete"
+        WriteLog "Setting WinPE time zone to local time zone"
+        $LocalTimeZone = Get-TimeZone
+        Dism /Image:"$($WinPEFFUPath)\mount" /Set-TimeZone:"$($LocalTimeZone.Id)"
         #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
         #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
         # $WinPEISOName = 'WinPE_FFU_Capture.iso'
@@ -4795,6 +4801,10 @@ try {
         $WindowsPartition = $osPartitionDriveLetter + ':\'
 
     }
+    
+    WriteLog "Setting FFU vm time zone to local time zone"
+    $LocalTimeZone = Get-TimeZone
+    Dism /Image:"$($WindowsPartition)" /Set-TimeZone:"$($LocalTimeZone.Id)"
 
     #Set Product key
     If ($ProductKey) {
