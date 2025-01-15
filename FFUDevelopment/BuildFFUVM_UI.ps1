@@ -1,5 +1,6 @@
 [CmdletBinding()]
 [System.STAThread()]
+[System.STAThread()]
 param()
 
 # --------------------------------------------------------------------------
@@ -376,6 +377,7 @@ $window.Add_Loaded({
         }
     }
     $script:cmbVMSwitchName.Items.Add('Other') | Out-Null
+    $script:cmbVMSwitchName.Items.Add('Other') | Out-Null
 
     if ($script:cmbVMSwitchName.Items.Count -gt 0) {
         if ($script:allSwitches.Count -gt 0) {
@@ -389,6 +391,7 @@ $window.Add_Loaded({
             }
         }
         else {
+            $script:cmbVMSwitchName.SelectedItem = 'Other'
             $script:cmbVMSwitchName.SelectedItem = 'Other'
             $window.FindName('txtCustomVMSwitchName').Visibility = 'Visible'
         }

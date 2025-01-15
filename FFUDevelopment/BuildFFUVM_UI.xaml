@@ -9,6 +9,7 @@
             <Setter Property="Placement" Value="Mouse"/>
             <Setter Property="HorizontalOffset" Value="10"/>
             <Setter Property="VerticalOffset" Value="-30"/>
+            <Setter Property="VerticalOffset" Value="-30"/>
         </Style>
     </Window.Resources>
 
@@ -38,6 +39,7 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
@@ -148,6 +150,8 @@
                     </StackPanel>
                     <Grid Grid.Row="0" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
@@ -301,10 +305,12 @@
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="250"/>
+                        <ColumnDefinition Width="250"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Install Office -->
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                         <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,5,0"/>
                         <Image x:Name="imgInstallOfficeInfo"
@@ -408,6 +414,7 @@
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="250"/>
+                        <ColumnDefinition Width="250"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
@@ -451,6 +458,7 @@
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="250"/>
+                                <ColumnDefinition Width="250"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
@@ -481,6 +489,11 @@
                                      Margin="5"
                                      VerticalAlignment="Center"
                                      HorizontalAlignment="Stretch"/>
+                            <TextBox x:Name="cmbModel"
+                                     Grid.Row="1" Grid.Column="1"
+                                     Margin="5"
+                                     VerticalAlignment="Center"
+                                     HorizontalAlignment="Stretch"/>
                         </Grid>
                     </StackPanel>
 
@@ -494,6 +507,8 @@
                     </StackPanel>
                     <Grid Grid.Row="4" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
@@ -511,6 +526,7 @@
                     </Grid>
 
                     <!-- Copy PE Drivers -->
+                    <!-- Copy PE Drivers -->
                     <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0"/>
                         <Image x:Name="imgCopyPEDriversInfo"
@@ -519,6 +535,7 @@
                                ToolTip="Copy local PE Drivers folder to the build."/>
                     </StackPanel>
 
+                    <!-- PE Drivers Folder -->
                     <!-- PE Drivers Folder -->
                     <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center"/>
@@ -529,6 +546,8 @@
                     </StackPanel>
                     <Grid Grid.Row="6" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
