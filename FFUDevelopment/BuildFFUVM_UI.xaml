@@ -2,123 +2,274 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="FFU Builder UI"
         Height="600" Width="900">
-    
+
     <!-- Define ToolTip Style to offset from mouse pointer -->
     <Window.Resources>
         <Style TargetType="ToolTip">
             <Setter Property="Placement" Value="Mouse"/>
             <Setter Property="HorizontalOffset" Value="10"/>
-            <Setter Property="VerticalOffset" Value="-30"/> <!-- Changed from -20 to -30 -->
-            <!-- Removed OverridesDefaultStyle setter to allow default ToolTip styling -->
+            <Setter Property="VerticalOffset" Value="-30"/>
         </Style>
     </Window.Resources>
-    
+
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/> <!-- New row for Custom VM Switch Name -->
         </Grid.RowDefinitions>
-        <TabControl TabStripPlacement="Left" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" FontSize="14" Padding="10" Grid.Row="0">
+
+        <TabControl TabStripPlacement="Left"
+                    VerticalAlignment="Stretch"
+                    HorizontalAlignment="Stretch"
+                    FontSize="14"
+                    Padding="10"
+                    Grid.Row="0">
+
+            <!-- ================= TAB 1: BASIC ================= -->
             <TabItem Header="Basic" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/> <!-- Row 0: FFU Name -->
-                        <RowDefinition Height="Auto"/> <!-- Row 1: FFU Development Path -->
-                        <RowDefinition Height="Auto"/> <!-- Row 2: ISO Path -->
-                        <RowDefinition Height="Auto"/> <!-- Row 3: Windows SKU -->
-                        <RowDefinition Height="Auto"/> <!-- Row 4: VM Switch Name -->
-                        <RowDefinition Height="Auto"/> <!-- Row 5: Custom VM Switch Name -->
-                        <RowDefinition Height="Auto"/> <!-- Row 6: VM Host IP Address -->
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200"/> <!-- Increased from 150 to 200 for longer TextBlock -->
+                        <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- FFU Name -->
                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="FFU Name:"/>
-                        <Image x:Name="imgFFUNameInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Enter a unique name for the FFU. Example format: {WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}" />
+                        <Image x:Name="imgFFUNameInfo"
+                               Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
+                               ToolTip="Enter a unique name for the FFU. Example: {WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}" />
                     </StackPanel>
-                    <TextBox x:Name="txtFFUName" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    
-                    <!-- FFU Development Path -->
+                    <TextBox x:Name="txtFFUName"
+                             Grid.Row="0" Grid.Column="1"
+                             Margin="5"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Stretch"/>
+
+                    <!-- FFU Dev Path -->
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="FFU Development Path:"/>
-                        <Image x:Name="imgFFUDevPathInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Defaults to the location the script is run from. It's unlikely this will need to be changed." />
+                        <Image x:Name="imgFFUDevPathInfo"
+                               Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
+                               ToolTip="Defaults to the location the script is run from." />
                     </StackPanel>
                     <Grid Grid.Row="1" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2*"/> <!-- Reduced width for TextBox -->
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" /> <!-- Added Column for info image -->
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtFFUDevPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                        <Button x:Name="btnBrowseFFUDevPath" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for FFU Development folder."/>
-                        <Image x:Name="imgFFUDevPathInfoExtra" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Defaults to the location the script is run from. It's unlikely this will need to be changed." />
+                        <TextBox x:Name="txtFFUDevPath"
+                                 Grid.Column="0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"/>
+                        <Button x:Name="btnBrowseFFUDevPath"
+                                Grid.Column="1"
+                                Content="Browse..."
+                                Width="80"
+                                Margin="5,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Browse for FFU Development folder."/>
                     </Grid>
 
-                    <!-- ISO Path -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="ISO Path:"/>
-                        <Image x:Name="imgISOPathInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Specify the full path to the Windows ISO file you wish to use." />
-                    </StackPanel>
-                    <!-- Replace StackPanel with Grid for better alignment -->
-                    <Grid Grid.Row="2" Grid.Column="1" Margin="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtISOPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                        <Button x:Name="btnBrowseISO" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for a Windows ISO file."/>
-                    </Grid>
-                    
-                    <!-- Windows SKU -->
-                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows SKU:"/>
-                        <Image x:Name="imgWindowsSKUInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Select the edition of Windows you want to install (e.g., Pro, Enterprise)." />
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsSKU" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                    
                     <!-- VM Switch Name -->
-                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="VM Switch Name:"/>
-                        <Image x:Name="imgVMSwitchNameInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Enter the name of the Hyper-V virtual switch to be used for the VM." />
+                        <Image x:Name="imgVMSwitchNameInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Name of the Hyper-V virtual switch." />
                     </StackPanel>
-                    <!-- Replace TextBox with ComboBox for listing VM Switches -->
-                    <ComboBox x:Name="cmbVMSwitchName" Grid.Row="4" Grid.Column="1" Margin="5"
-                              VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                    <!-- Add a new TextBox for custom VM Switch Name, initially hidden -->
-                    <TextBox x:Name="txtCustomVMSwitchName" Grid.Row="5" Grid.Column="1" Margin="5" 
-                             VerticalAlignment="Center" HorizontalAlignment="Stretch" 
-                             Visibility="Collapsed" 
-                             ToolTip="Enter your custom VM Switch Name." />
+                    <ComboBox x:Name="cmbVMSwitchName"
+                              Grid.Row="2" Grid.Column="1"
+                              Margin="5"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Stretch"/>
+
+                    <!-- Custom VM Switch Name -->
+                    <TextBox x:Name="txtCustomVMSwitchName"
+                             Grid.Row="3" Grid.Column="1"
+                             Margin="5"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Stretch"
+                             Visibility="Collapsed"
+                             ToolTip="Enter your custom VM Switch Name."/>
 
                     <!-- VM Host IP Address -->
-                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="VM Host IP Address:"/>
-                        <Image x:Name="imgVMHostIPAddressInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Provide the IP address of the Hyper-V host machine." />
+                        <Image x:Name="imgVMHostIPAddressInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="IP address of the Hyper-V host machine." />
                     </StackPanel>
-                    <TextBox x:Name="txtVMHostIPAddress" Grid.Row="6" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                    <TextBox x:Name="txtVMHostIPAddress"
+                             Grid.Row="4" Grid.Column="1"
+                             Margin="5"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Stretch"/>
                 </Grid>
             </TabItem>
+
+            <!-- ============== TAB 2: WINDOWS SETTINGS ============== -->
+            <TabItem Header="Windows Settings" Padding="20">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- ISO Path -->
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Windows ISO Path:"/>
+                        <Image x:Name="imgISOPathInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Specify the full path to the Windows ISO file." />
+                    </StackPanel>
+                    <Grid Grid.Row="0" Grid.Column="1" Margin="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="txtISOPath"
+                                 Grid.Column="0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"/>
+                        <Button x:Name="btnBrowseISO"
+                                Grid.Column="1"
+                                Content="Browse..."
+                                Width="80"
+                                Margin="5,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Browse for a Windows ISO file."/>
+                    </Grid>
+
+                    <!-- Windows Release -->
+                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Windows Release:"/>
+                    </StackPanel>
+                    <ComboBox x:Name="cmbWindowsRelease"
+                              Grid.Row="1" Grid.Column="1"
+                              Margin="5"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Stretch" />
+
+                    <!-- Windows Version (Now a ComboBox) -->
+                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Windows Version:"/>
+                    </StackPanel>
+                    <ComboBox x:Name="cmbWindowsVersion"
+                              Grid.Row="2" Grid.Column="1"
+                              Margin="5"
+                              Width="120"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left"
+                              IsEnabled="False"
+                              ToolTip="Select the Windows Version." />
+
+                    <!-- Windows Architecture -->
+                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Windows Architecture:"/>
+                    </StackPanel>
+                    <ComboBox x:Name="cmbWindowsArch"
+                              Grid.Row="3" Grid.Column="1"
+                              Margin="5"
+                              Width="120"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left"/>
+
+                    <!-- Windows Language -->
+                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Windows Language:"/>
+                    </StackPanel>
+                    <ComboBox x:Name="cmbWindowsLang"
+                              Grid.Row="4" Grid.Column="1"
+                              Margin="5"
+                              Width="120"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left"/>
+
+                    <!-- Windows SKU -->
+                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Windows SKU:"/>
+                        <Image x:Name="imgWindowsSKUInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Select the edition of Windows you want to install." />
+                    </StackPanel>
+                    <ComboBox x:Name="cmbWindowsSKU"
+                              Grid.Row="5" Grid.Column="1"
+                              Margin="5"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Stretch"/>
+
+                    <!-- Media Type -->
+                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Media Type:"/>
+                    </StackPanel>
+                    <ComboBox x:Name="cmbMediaType"
+                              Grid.Row="6" Grid.Column="1"
+                              Margin="5"
+                              Width="120"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Left"/>
+
+                    <!-- Product Key -->
+                    <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock Text="Product Key:"/>
+                    </StackPanel>
+                    <TextBox x:Name="txtProductKey"
+                             Grid.Row="7" Grid.Column="1"
+                             Margin="5"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Stretch"/>
+
+                    <!-- Optional Features Expander -->
+                    <Expander x:Name="expOptionalFeatures"
+                              Grid.Row="8"
+                              Grid.ColumnSpan="2"
+                              Margin="5,5,0,0"
+                              Header="Optional Features"
+                              IsExpanded="False"
+                              ExpandDirection="Down">
+                        <StackPanel Margin="15,5">
+                            <TextBlock Text="Select the optional features you'd like to enable:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <CheckBox x:Name="chkTelnetClient"  Content="TelnetClient"  Margin="0,2"/>
+                            <CheckBox x:Name="chkNetFx3"        Content="NetFx3"        Margin="0,2"/>
+                            <CheckBox x:Name="chkDirectPlay"    Content="DirectPlay"    Margin="0,2"/>
+                            <CheckBox x:Name="chkSMB1Protocol"  Content="SMB1Protocol"  Margin="0,2"/>
+
+                            <TextBlock Text="Selected features (semicolon-separated):" Margin="0,10,0,5"/>
+                            <TextBox x:Name="txtOptionalFeatures"
+                                     IsReadOnly="True"
+                                     Margin="0,0,0,10"
+                                     ToolTip="Semicolon-delimited list of optional features"/>
+                        </StackPanel>
+                    </Expander>
+                </Grid>
+            </TabItem>
+
+            <!-- ============== TAB 3: APPLICATIONS ============== -->
             <TabItem Header="Applications" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -129,169 +280,302 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Install Apps -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                         <CheckBox x:Name="chkInstallApps" Content="Install Apps" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallAppsInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
+                        <Image x:Name="imgInstallAppsInfo"
+                               Width="16" Height="16"
+                               Cursor="Arrow"
                                ToolTip="Check to include additional applications in the FFU." />
                     </StackPanel>
-                    <!-- ...existing application-related controls... -->
                 </Grid>
             </TabItem>
 
-            <!-- New M365 Apps/Office Tab -->
+            <!-- ============== TAB 4: M365 Apps/Office ============== -->
             <TabItem Header="M365 Apps/Office" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="250"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Install Office -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                         <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallOfficeInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Check to install Microsoft Office as part of the FFU." />
+                        <Image x:Name="imgInstallOfficeInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Check to install Microsoft Office as part of the FFU."/>
                     </StackPanel>
+
+                    <!-- Office Path -->
+                    <StackPanel x:Name="OfficePathStackPanel"
+                                Grid.Row="1" Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="0,5">
+                        <TextBlock Text="Office Path:"/>
+                        <Image x:Name="imgOfficePathInfo"
+                               Width="16" Height="16"
+                               Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Path to the Microsoft Office installation."/>
+                    </StackPanel>
+                    <Grid x:Name="OfficePathGrid"
+                          Grid.Row="1" Grid.Column="1"
+                          Margin="5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="txtOfficePath"
+                                 Grid.Column="0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"/>
+                        <Button x:Name="btnBrowseOfficePath"
+                                Grid.Column="1"
+                                Content="Browse..."
+                                Width="80"
+                                VerticalAlignment="Center"
+                                ToolTip="Browse for Office installation folder."/>
+                    </Grid>
+
+                    <!-- Copy Office Configuration XML -->
+                    <StackPanel x:Name="CopyOfficeConfigXMLStackPanel"
+                                Grid.Row="2" Grid.Column="0"
+                                Orientation="Horizontal"
+                                Margin="0,5">
+                        <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" Margin="0,0,5,0"/>
+                        <Image x:Name="imgCopyOfficeConfigXMLInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Check to copy the Office Configuration XML."/>
+                    </StackPanel>
+
+                    <!-- OfficeConfigurationXMLFile -->
+                    <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel"
+                                Grid.Row="3" Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="0,5"
+                                Visibility="Collapsed">
+                        <TextBlock Text="Office Configuration XML File:"/>
+                        <Image x:Name="imgOfficeConfigXMLFileInfo"
+                               Width="16" Height="16"
+                               Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Select the Office Configuration XML file to copy."/>
+                    </StackPanel>
+                    <Grid x:Name="OfficeConfigurationXMLFileGrid"
+                          Grid.Row="3" Grid.Column="1"
+                          Margin="5"
+                          Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="txtOfficeConfigXMLFilePath"
+                                 Grid.Column="0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"/>
+                        <Button x:Name="btnBrowseOfficeConfigXMLFile"
+                                Grid.Column="1"
+                                Content="Browse..."
+                                Width="80"
+                                Margin="5,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Browse for an Office Configuration XML file."/>
+                    </Grid>
                 </Grid>
             </TabItem>
 
+            <!-- ============== TAB 5: DRIVERS ============== -->
             <TabItem Header="Drivers" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/> <!-- Row 0: Install Drivers -->
-                        <RowDefinition Height="Auto"/> <!-- Row 1: Copy Drivers -->
-                        <RowDefinition Height="Auto"/> <!-- Row 2: Download Drivers -->
-                        <RowDefinition Height="Auto"/> <!-- Row 3: Make/Model -->
-                        <RowDefinition Height="Auto"/> <!-- Row 4: Drivers Folder -->
-                        <RowDefinition Height="Auto"/> <!-- Row 5: Copy PE Drivers -->
-                        <RowDefinition Height="Auto"/> <!-- Row 6: PE Drivers Folder -->
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="250"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Install Drivers -->
                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgInstallDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Uses dism to service the drivers directly to the FFU. Recommended if making a FFU for a single model type." />
+                        <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers to FFU" Margin="0,0,5,0"/>
+                        <Image x:Name="imgInstallDriversInfo"
+                               Width="16" Height="16"
+                               Cursor="Arrow"
+                               ToolTip="Use DISM to service drivers directly into the FFU."/>
                     </StackPanel>
 
                     <!-- Copy Drivers -->
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgCopyDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
-                               Focusable="True" 
-                               ToolTip="Copy the drivers folder to the Drivers folder on the USB deploy partition. This is recommended if you have multiple models and you're using a single FFU. When deploying the FFU you'll be prompted to select which drivers you want to use." />
+                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers to USB drive" Margin="0,0,5,0"/>
+                        <Image x:Name="imgCopyDriversInfo"
+                               Width="16" Height="16"
+                               Cursor="Arrow"
+                               ToolTip="Copy the drivers folder to the USB deploy partition."/>
                     </StackPanel>
 
                     <!-- Download Drivers -->
                     <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgDownloadDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Check to download drivers automatically." />
+                        <Image x:Name="imgDownloadDriversInfo"
+                               Width="16" Height="16"
+                               Cursor="Arrow"
+                               ToolTip="Check to download drivers automatically."/>
                     </StackPanel>
 
-                    <!-- Make & Model Section -->
-                    <StackPanel Grid.Row="3" Grid.ColumnSpan="2" x:Name="spMakeModelSection" Visibility="Collapsed" Margin="0">
+                    <!-- Make/Model -->
+                    <StackPanel x:Name="spMakeModelSection"
+                                Grid.Row="3"
+                                Grid.ColumnSpan="2"
+                                Visibility="Collapsed"
+                                Margin="0">
                         <Grid Margin="0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="250"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            
+
                             <!-- Make -->
                             <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                                <TextBlock x:Name="txtMakeLabel" Text="Make:" VerticalAlignment="Center" />
-                                <Image x:Name="imgMakeInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
-                                       ToolTip="Select the device manufacturer." />
+                                <TextBlock x:Name="txtMakeLabel" Text="Make: " VerticalAlignment="Center"/>
+                                <Image x:Name="imgMakeInfo"
+                                       Width="16" Height="16" Margin="5,0,0,0"
+                                       Cursor="Arrow"
+                                       ToolTip="Select the device manufacturer."/>
                             </StackPanel>
-                            <ComboBox x:Name="cmbMake" Grid.Row="0" Grid.Column="1" Margin="5" 
-                                      VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                            
+                            <ComboBox x:Name="cmbMake"
+                                      Grid.Row="0" Grid.Column="1"
+                                      Margin="5"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Stretch"/>
+
                             <!-- Model -->
                             <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                                <TextBlock x:Name="txtModelLabel" Text="Model:" VerticalAlignment="Center"/>
-                                <Image x:Name="imgModelInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
-                                       ToolTip="Enter the device model." />
+                                <TextBlock x:Name="txtModelLabel" Text="Model: " VerticalAlignment="Center"/>
+                                <Image x:Name="imgModelInfo"
+                                       Width="16" Height="16" Margin="5,0,0,0"
+                                       Cursor="Arrow"
+                                       ToolTip="Enter the device model."/>
                             </StackPanel>
-                            <TextBox x:Name="cmbModel" Grid.Row="1" Grid.Column="1" Margin="5" 
-                                     VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                            <TextBox x:Name="cmbModel"
+                                     Grid.Row="1" Grid.Column="1"
+                                     Margin="5"
+                                     VerticalAlignment="Center"
+                                     HorizontalAlignment="Stretch"/>
                         </Grid>
                     </StackPanel>
 
                     <!-- Drivers Folder -->
                     <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <TextBlock Text="Drivers Folder:" VerticalAlignment="Center"/>
-                        <Image x:Name="imgDriversFolderInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Specify the path to the Drivers folder." />
+                        <Image x:Name="imgDriversFolderInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Path to the Drivers folder."/>
                     </StackPanel>
                     <Grid Grid.Row="4" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                        <Button x:Name="btnBrowseDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for Drivers folder."/>
+                        <TextBox x:Name="txtDriversFolder"
+                                 Grid.Column="0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"/>
+                        <Button x:Name="btnBrowseDriversFolder"
+                                Grid.Column="1"
+                                Content="Browse..."
+                                Width="80"
+                                Margin="5,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Browse for Drivers folder."/>
                     </Grid>
 
-                    <!-- Copy PE Drivers moved to Row 5 -->
+                    <!-- Copy PE Drivers -->
                     <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0"/>
-                        <Image x:Name="imgCopyPEDriversInfo" Source="$infoImagePath" Width="16" Height="16" Cursor="Arrow"
-                               Focusable="True" ToolTip="Check to copy local PE Drivers folder to the build." />
+                        <Image x:Name="imgCopyPEDriversInfo"
+                               Width="16" Height="16"
+                               Cursor="Arrow"
+                               ToolTip="Copy local PE Drivers folder to the build."/>
                     </StackPanel>
 
-                    <!-- PE Drivers Folder moved to Row 6 -->
+                    <!-- PE Drivers Folder -->
                     <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="5">
                         <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center"/>
-                        <Image x:Name="imgPEDriversFolderInfo" Source="$infoImagePath" Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow" 
-                               Focusable="True" 
-                               ToolTip="Specify the path to the PE Drivers folder." />
+                        <Image x:Name="imgPEDriversFolderInfo"
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               Cursor="Arrow"
+                               ToolTip="Path to the PE Drivers folder."/>
                     </StackPanel>
                     <Grid Grid.Row="6" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtPEDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" />
-                        <Button x:Name="btnBrowsePEDrivers" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="Browse for PE Drivers folder."/>
+                        <TextBox x:Name="txtPEDriversFolder"
+                                 Grid.Column="0"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Stretch"/>
+                        <Button x:Name="btnBrowsePEDrivers"
+                                Grid.Column="1"
+                                Content="Browse..."
+                                Width="80"
+                                Margin="5,0,0,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Browse for PE Drivers folder."/>
                     </Grid>
                 </Grid>
             </TabItem>
         </TabControl>
-        
+
         <!-- Progress Bar -->
-        <ProgressBar x:Name="progressBar" Height="20" Margin="0,10,0,0" Grid.Row="1" Visibility="Collapsed" 
-        />
-        
+        <ProgressBar x:Name="progressBar"
+                     Height="20"
+                     Margin="0,10,0,0"
+                     Grid.Row="1"
+                     Visibility="Collapsed"/>
+
         <!-- Status Text -->
-        <TextBlock x:Name="txtStatus" Grid.Row="2" Text="" Margin="0,5,0,0" 
-        />
-        
-        <!-- Run Button Row -->
-        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,20">
-            <!-- New Build Config File Button -->
-            <Button x:Name="btnBuildConfig" Content="Build Config File" Width="150" 
-                    VerticalAlignment="Bottom" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
-            
-            <!-- Existing Build FFU Button -->
-            <Button x:Name="btnRun" Content="Build FFU" Width="120" 
-                    VerticalAlignment="Bottom" FontSize="14" Padding="10,5"/>
+        <TextBlock x:Name="txtStatus"
+                   Grid.Row="2"
+                   Margin="0,5,0,0"/>
+
+        <!-- Buttons (Build Config File / Build FFU) -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,0,20,20">
+            <Button x:Name="btnBuildConfig"
+                    Content="Build Config File"
+                    Width="150"
+                    Margin="0,0,10,0"
+                    FontSize="14"
+                    Padding="10,5"/>
+            <Button x:Name="btnRun"
+                    Content="Build FFU"
+                    Width="120"
+                    FontSize="14"
+                    Padding="10,5"/>
         </StackPanel>
     </Grid>
 </Window>
