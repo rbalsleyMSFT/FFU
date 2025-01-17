@@ -8,7 +8,7 @@ param()
 $FFUDevelopmentPath = $PSScriptRoot
 $infoImagePath      = Join-Path $PSScriptRoot "info.png"
 $AppsPath           = Join-Path $FFUDevelopmentPath "Apps"
-$OfficePath         = Join-Path $AppsPath         "Office"
+$OfficePath         = Join-Path $AppsPath "Office"
 
 # Some default values
 $defaultISOPath         = ""
@@ -20,6 +20,37 @@ $defaultMediaType        = "consumer"
 $defaultOptionalFeatures = ""
 $defaultProductKey       = ""
 
+# Large list from the ValidateSet in BuildFFUVM.ps1 ($OptionalFeatures parameter)
+$allowedFeatures = @(
+    "AppServerClient","Client-DeviceLockdown","Client-EmbeddedBootExp","Client-EmbeddedLogon",
+    "Client-EmbeddedShellLauncher","Client-KeyboardFilter","Client-ProjFS","Client-UnifiedWriteFilter",
+    "Containers","Containers-DisposableClientVM","Containers-HNS","Containers-SDN","DataCenterBridging",
+    "DirectoryServices-ADAM-Client","DirectPlay","HostGuardian","HypervisorPlatform","IIS-ApplicationDevelopment",
+    "IIS-ApplicationInit","IIS-ASP","IIS-ASPNET","IIS-ASPNET45","IIS-BasicAuthentication","IIS-CertProvider",
+    "IIS-CGI","IIS-ClientCertificateMappingAuthentication","IIS-CommonHttpFeatures","IIS-CustomLogging",
+    "IIS-DefaultDocument","IIS-DirectoryBrowsing","IIS-DigestAuthentication","IIS-ESP","IIS-FTPServer",
+    "IIS-FTPExtensibility","IIS-FTPSvc","IIS-HealthAndDiagnostics","IIS-HostableWebCore","IIS-HttpCompressionDynamic",
+    "IIS-HttpCompressionStatic","IIS-HttpErrors","IIS-HttpLogging","IIS-HttpRedirect","IIS-HttpTracing",
+    "IIS-IPSecurity","IIS-IIS6ManagementCompatibility","IIS-IISCertificateMappingAuthentication",
+    "IIS-ISAPIExtensions","IIS-ISAPIFilter","IIS-LoggingLibraries","IIS-ManagementConsole","IIS-ManagementService",
+    "IIS-ManagementScriptingTools","IIS-Metabase","IIS-NetFxExtensibility","IIS-NetFxExtensibility45",
+    "IIS-ODBCLogging","IIS-Performance","IIS-RequestFiltering","IIS-RequestMonitor","IIS-Security","IIS-ServerSideIncludes",
+    "IIS-StaticContent","IIS-URLAuthorization","IIS-WebDAV","IIS-WebServer","IIS-WebServerManagementTools",
+    "IIS-WebServerRole","IIS-WebSockets","LegacyComponents","MediaPlayback","Microsoft-Hyper-V","Microsoft-Hyper-V-All",
+    "Microsoft-Hyper-V-Hypervisor","Microsoft-Hyper-V-Management-Clients","Microsoft-Hyper-V-Management-PowerShell",
+    "Microsoft-Hyper-V-Services","Microsoft-Windows-Subsystem-Linux","MSMQ-ADIntegration","MSMQ-Container","MSMQ-DCOMProxy",
+    "MSMQ-HTTP","MSMQ-Multicast","MSMQ-Server","MSMQ-Triggers","MultiPoint-Connector","MultiPoint-Connector-Services",
+    "MultiPoint-Tools","NetFx3","NetFx4-AdvSrvs","NetFx4Extended-ASPNET45","NFS-Administration","Printing-Foundation-Features",
+    "Printing-Foundation-InternetPrinting-Client","Printing-Foundation-LPDPrintService","Printing-Foundation-LPRPortMonitor",
+    "Printing-PrintToPDFServices-Features","Printing-XPSServices-Features","SearchEngine-Client-Package",
+    "ServicesForNFS-ClientOnly","SimpleTCP","SMB1Protocol","SMB1Protocol-Client","SMB1Protocol-Deprecation",
+    "SMB1Protocol-Server","SmbDirect","TFTP","TelnetClient","TIFFIFilter","VirtualMachinePlatform","WAS-ConfigurationAPI",
+    "WAS-NetFxEnvironment","WAS-ProcessModel","WAS-WindowsActivationService","WCF-HTTP-Activation","WCF-HTTP-Activation45",
+    "WCF-MSMQ-Activation45","WCF-NonHTTP-Activation","WCF-Pipe-Activation45","WCF-Services45","WCF-TCP-Activation45",
+    "WCF-TCP-PortSharing45","Windows-Defender-ApplicationGuard","Windows-Defender-Default-Definitions","Windows-Identity-Foundation",
+    "WindowsMediaPlayer","WorkFolders-Client"
+)
+
 $skuList = @(
     'Home','Home N','Home Single Language','Education','Education N','Pro',
     'Pro N','Pro Education','Pro Education N','Pro for Workstations',
@@ -27,7 +58,6 @@ $skuList = @(
     'Standard (Desktop Experience)','Datacenter','Datacenter (Desktop Experience)'
 )
 
-# Info icons
 $imageNames = @(
     "imgFFUNameInfo",
     "imgISOPathInfo",
@@ -50,7 +80,7 @@ $imageNames = @(
     "imgCopyPEDriversInfo"
 )
 
-# Full list of Windows releases (for when ISO path is non-blank)
+# Full list of Windows releases (if ISO path != blank)
 $allWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows 10";          Value = 10    },
     [PSCustomObject]@{ Display = "Windows 11";          Value = 11    },
@@ -59,13 +89,14 @@ $allWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows Server 2022"; Value = 2022  },
     [PSCustomObject]@{ Display = "Windows Server 2025"; Value = 2025  }
 )
-# Subset for MCT (Media Creation Tool) only
+
+# Subset for MCT (if ISO path is blank)
 $mctWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows 10"; Value = 10 },
     [PSCustomObject]@{ Display = "Windows 11"; Value = 11 }
 )
 
-# Windows version sets for each release (for "Version" combobox)
+# Windows version sets
 $windowsVersionMap = @{
     10    = @("22H2")
     11    = @("22H2","23H2","24H2")
@@ -189,37 +220,30 @@ function Get-UIConfig {
     return $config
 }
 
-# This function updates the Windows Release list:
-#  - If ISO path is blank => only show Windows 10, Windows 11
-#  - If ISO path is not blank => show all releases
 function UpdateWindowsReleaseList {
     param([string]$isoPath)
 
     if (-not $script:cmbWindowsRelease) { return }
 
-    # Remember old item
     $oldItem = $script:cmbWindowsRelease.SelectedItem
-
-    # Clear
     $script:cmbWindowsRelease.Items.Clear()
 
-    # IMPORTANT: Set these paths so the ComboBox shows 'Display' text
-    $script:cmbWindowsRelease.DisplayMemberPath  = 'Display'
-    $script:cmbWindowsRelease.SelectedValuePath  = 'Value'
+    $script:cmbWindowsRelease.DisplayMemberPath = 'Display'
+    $script:cmbWindowsRelease.SelectedValuePath = 'Value'
 
-    # If blank => only MCT
     if ([string]::IsNullOrEmpty($isoPath)) {
+        # Only MCT
         foreach ($rel in $mctWindowsReleases) {
             $script:cmbWindowsRelease.Items.Add($rel) | Out-Null
         }
     }
     else {
+        # Full list
         foreach ($rel in $allWindowsReleases) {
             $script:cmbWindowsRelease.Items.Add($rel) | Out-Null
         }
     }
 
-    # Attempt to re-select old item (based on Value)
     if ($oldItem) {
         $reSelect = $script:cmbWindowsRelease.Items | Where-Object { $_.Value -eq $oldItem.Value }
         if ($reSelect) {
@@ -252,6 +276,7 @@ function UpdateWindowsVersionCombo {
     $validVersions = $windowsVersionMap[$selectedRelease]
 
     if ([string]::IsNullOrEmpty($isoPath)) {
+        # MCT usage => locked & pick default
         switch ($selectedRelease) {
             10   { $default = "22H2" }
             11   { $default = "24H2" }
@@ -266,10 +291,19 @@ function UpdateWindowsVersionCombo {
         $combo.IsEnabled = $false
     }
     else {
+        # ISO => user can choose
         foreach ($v in $validVersions) {
             [void]$combo.Items.Add($v)
         }
-        $combo.SelectedIndex = 0
+
+        # If Windows 11 => default to 24H2 if available
+        if ($selectedRelease -eq 11 -and $validVersions -contains "24H2") {
+            $combo.SelectedItem = "24H2"
+        }
+        else {
+            $combo.SelectedIndex = 0
+        }
+
         $combo.IsEnabled = $true
     }
 }
@@ -277,10 +311,8 @@ function UpdateWindowsVersionCombo {
 $script:RefreshWindowsUI = {
     param([string]$isoPath)
 
-    # Refresh releases
     UpdateWindowsReleaseList -isoPath $isoPath
 
-    # Then refresh version
     $selItem = $script:cmbWindowsRelease.SelectedItem
     if ($selItem -and $selItem.Value -is [int]) {
         $selectedRelease = [int]$selItem.Value
@@ -311,32 +343,89 @@ foreach ($imgName in $imageNames) {
     Set-ImageSource -window $window -imageName $imgName -sourcePath $infoImagePath
 }
 
+# We'll store dynamic checkboxes for each optional feature
+$script:featureCheckBoxes = @{}
+
 function UpdateOptionalFeaturesString {
-    if ($script:chkTelnetClient -and $script:chkNetFx3 -and $script:chkDirectPlay -and $script:chkSMB1Protocol -and $script:txtOptionalFeatures) {
-        $f = @()
-        if ($script:chkTelnetClient.IsChecked) { $f += "TelnetClient" }
-        if ($script:chkNetFx3.IsChecked)       { $f += "NetFx3" }
-        if ($script:chkDirectPlay.IsChecked)   { $f += "DirectPlay" }
-        if ($script:chkSMB1Protocol.IsChecked) { $f += "SMB1Protocol" }
-        $script:txtOptionalFeatures.Text = $f -join ";"
+    # Collect all features that are checked
+    $checkedFeatures = @()
+    foreach ($entry in $script:featureCheckBoxes.GetEnumerator()) {
+        if ($entry.Value.IsChecked) {
+            $checkedFeatures += $entry.Key
+        }
     }
+    $script:txtOptionalFeatures.Text = $checkedFeatures -join ";"
+}
+
+# Create the dynamic multi-column grid of feature checkboxes
+function BuildFeaturesGrid {
+    param (
+        [System.Windows.FrameworkElement]$parent
+    )
+    $parent.Children.Clear()
+
+    $sortedFeatures = $allowedFeatures | Sort-Object
+
+    # Now 10 features per column
+    $rows = 10
+    $columns = [math]::Ceiling($sortedFeatures.Count / $rows)
+
+    $featuresGrid = New-Object System.Windows.Controls.Grid
+    $featuresGrid.Margin = "0,5,0,5"
+    $featuresGrid.ShowGridLines = $false
+
+    # Define rows
+    for ($r = 0; $r -lt $rows; $r++) {
+        $rowDef = New-Object System.Windows.Controls.RowDefinition
+        $rowDef.Height = 'Auto'
+        $featuresGrid.RowDefinitions.Add($rowDef) | Out-Null
+    }
+    # Define columns
+    for ($c = 0; $c -lt $columns; $c++) {
+        $colDef = New-Object System.Windows.Controls.ColumnDefinition
+        $colDef.Width = 'Auto'
+        $featuresGrid.ColumnDefinitions.Add($colDef) | Out-Null
+    }
+
+    for ($i = 0; $i -lt $sortedFeatures.Count; $i++) {
+        $featureName = $sortedFeatures[$i]
+        $colIndex = [int]([math]::Floor($i / $rows))
+        $rowIndex = $i % $rows
+
+        $chk = New-Object System.Windows.Controls.CheckBox
+        $chk.Content = $featureName
+        $chk.Margin = '5,2,15,2'
+        $chk.Add_Checked({
+            UpdateOptionalFeaturesString
+        })
+        $chk.Add_Unchecked({
+            UpdateOptionalFeaturesString
+        })
+
+        $script:featureCheckBoxes[$featureName] = $chk
+
+        [System.Windows.Controls.Grid]::SetRow($chk, $rowIndex)
+        [System.Windows.Controls.Grid]::SetColumn($chk, $colIndex)
+        $featuresGrid.Children.Add($chk) | Out-Null
+    }
+
+    $parent.Children.Add($featuresGrid) | Out-Null
 }
 
 # Window Loaded
 $window.Add_Loaded({
-    # Windows Release
     $script:cmbWindowsRelease = $window.FindName('cmbWindowsRelease')
     $script:cmbWindowsVersion = $window.FindName('cmbWindowsVersion')
     $script:txtISOPath        = $window.FindName('txtISOPath')
 
     & $script:RefreshWindowsUI($defaultISOPath)
 
-    # Event: ISO path changed
+    # ISO path changed
     $script:txtISOPath.Add_TextChanged({
         & $script:RefreshWindowsUI($script:txtISOPath.Text)
     })
 
-    # Event: Windows release changed
+    # Windows release changed
     $script:cmbWindowsRelease.Add_SelectionChanged({
         $selItem = $script:cmbWindowsRelease.SelectedItem
         if ($selItem -and $selItem.Value) {
@@ -416,7 +505,12 @@ $window.Add_Loaded({
     $script:cmbWindowsArch.SelectedItem = $defaultWindowsArch
 
     $script:cmbWindowsLang = $window.FindName('cmbWindowsLang')
-    $allowedLangs = @('ar-sa','bg-bg','cs-cz','da-dk','de-de','el-gr','en-gb','en-us','es-es','es-mx','et-ee','fi-fi','fr-ca','fr-fr','he-il','hr-hr','hu-hu','it-it','ja-jp','ko-kr','lt-lt','lv-lv','nb-no','nl-nl','pl-pl','pt-br','pt-pt','ro-ro','ru-ru','sk-sk','sl-si','sr-latn-rs','sv-se','th-th','tr-tr','uk-ua','zh-cn','zh-tw')
+    $allowedLangs = @(
+        'ar-sa','bg-bg','cs-cz','da-dk','de-de','el-gr','en-gb','en-us','es-es','es-mx','et-ee',
+        'fi-fi','fr-ca','fr-fr','he-il','hr-hr','hu-hu','it-it','ja-jp','ko-kr','lt-lt','lv-lv',
+        'nb-no','nl-nl','pl-pl','pt-br','pt-pt','ro-ro','ru-ru','sk-sk','sl-si','sr-latn-rs',
+        'sv-se','th-th','tr-tr','uk-ua','zh-cn','zh-tw'
+    )
     foreach ($lang in $allowedLangs) {
         [void]$script:cmbWindowsLang.Items.Add($lang)
     }
@@ -435,8 +529,9 @@ $window.Add_Loaded({
     }
     $script:cmbMediaType.SelectedItem = $defaultMediaType
 
-    $window.FindName('txtOptionalFeatures').Text = $defaultOptionalFeatures
-    $window.FindName('txtProductKey').Text       = $defaultProductKey
+    $script:txtOptionalFeatures = $window.FindName('txtOptionalFeatures')
+    $script:txtOptionalFeatures.Text = $defaultOptionalFeatures
+    $window.FindName('txtProductKey').Text = $defaultProductKey
 
     # Drivers tab
     $script:chkDownloadDrivers   = $window.FindName('chkDownloadDrivers')
@@ -516,21 +611,11 @@ $window.Add_Loaded({
         $script:OfficeConfigurationXMLFileGrid.Visibility       = 'Collapsed'
     })
 
-    # Optional Features
-    $script:chkTelnetClient      = $window.FindName('chkTelnetClient')
-    $script:chkNetFx3            = $window.FindName('chkNetFx3')
-    $script:chkDirectPlay        = $window.FindName('chkDirectPlay')
-    $script:chkSMB1Protocol      = $window.FindName('chkSMB1Protocol')
-    $script:txtOptionalFeatures  = $window.FindName('txtOptionalFeatures')
-
-    $script:chkTelnetClient.Add_Checked({ UpdateOptionalFeaturesString })
-    $script:chkTelnetClient.Add_Unchecked({ UpdateOptionalFeaturesString })
-    $script:chkNetFx3.Add_Checked({ UpdateOptionalFeaturesString })
-    $script:chkNetFx3.Add_Unchecked({ UpdateOptionalFeaturesString })
-    $script:chkDirectPlay.Add_Checked({ UpdateOptionalFeaturesString })
-    $script:chkDirectPlay.Add_Unchecked({ UpdateOptionalFeaturesString })
-    $script:chkSMB1Protocol.Add_Checked({ UpdateOptionalFeaturesString })
-    $script:chkSMB1Protocol.Add_Unchecked({ UpdateOptionalFeaturesString })
+    # Build the dynamic multi-column checkboxes inside the Expander content
+    $script:featuresPanel = $window.FindName('stackFeaturesContainer')
+    if ($script:featuresPanel) {
+        BuildFeaturesGrid -parent $script:featuresPanel
+    }
 })
 
 # Button: Build FFU
@@ -549,7 +634,6 @@ $btnRun.Add_Click({
         $txtStatus.Text = "Executing BuildFFUVM script with config file..."
         & "$PSScriptRoot\BuildFFUVM.ps1" -ConfigFile $configFilePath -Verbose
 
-        # If Office config XML needed
         if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {
             Copy-Item -Path $config.OfficeConfigXMLFile -Destination $config.OfficePath -Force
             $txtStatus.Text = "Office Configuration XML file copied successfully."

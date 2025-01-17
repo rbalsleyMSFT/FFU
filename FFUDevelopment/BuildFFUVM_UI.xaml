@@ -27,7 +27,7 @@
                     Padding="10"
                     Grid.Row="0">
 
-            <!-- ================= TAB 1: BASIC ================= -->
+            <!-- ============== TAB 1: BASIC ============== -->
             <TabItem Header="Basic" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -121,24 +121,29 @@
 
             <!-- ============== TAB 2: WINDOWS SETTINGS ============== -->
             <TabItem Header="Windows Settings" Padding="20">
+                <!-- 
+                   Single 2-col grid, now with 9 row definitions:
+                     rows 0..7 for the ISO path, release, version, arch, lang, sku, media type, product key
+                     row 8 for the Optional Features Expander
+                 -->
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/> <!-- row0: ISO Path -->
+                        <RowDefinition Height="Auto"/> <!-- row1: Windows Release -->
+                        <RowDefinition Height="Auto"/> <!-- row2: Windows Version -->
+                        <RowDefinition Height="Auto"/> <!-- row3: Windows Arch -->
+                        <RowDefinition Height="Auto"/> <!-- row4: Windows Lang -->
+                        <RowDefinition Height="Auto"/> <!-- row5: Windows SKU -->
+                        <RowDefinition Height="Auto"/> <!-- row6: Media Type -->
+                        <RowDefinition Height="Auto"/> <!-- row7: Product Key -->
+                        <RowDefinition Height="*"    /> <!-- row8: Expander -->
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="200"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- ISO Path -->
+                    <!-- (0) ISO Path -->
                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Windows ISO Path:"/>
                         <Image x:Name="imgISOPathInfo"
@@ -164,7 +169,7 @@
                                 ToolTip="Browse for a Windows ISO file."/>
                     </Grid>
 
-                    <!-- Windows Release -->
+                    <!-- (1) Windows Release -->
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Windows Release:"/>
                     </StackPanel>
@@ -174,7 +179,7 @@
                               VerticalAlignment="Center"
                               HorizontalAlignment="Stretch" />
 
-                    <!-- Windows Version (Now a ComboBox) -->
+                    <!-- (2) Windows Version -->
                     <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Windows Version:"/>
                     </StackPanel>
@@ -187,7 +192,7 @@
                               IsEnabled="False"
                               ToolTip="Select the Windows Version." />
 
-                    <!-- Windows Architecture -->
+                    <!-- (3) Windows Arch -->
                     <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Windows Architecture:"/>
                     </StackPanel>
@@ -198,7 +203,7 @@
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"/>
 
-                    <!-- Windows Language -->
+                    <!-- (4) Windows Lang -->
                     <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Windows Language:"/>
                     </StackPanel>
@@ -209,7 +214,7 @@
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"/>
 
-                    <!-- Windows SKU -->
+                    <!-- (5) Windows SKU -->
                     <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Windows SKU:"/>
                         <Image x:Name="imgWindowsSKUInfo"
@@ -223,7 +228,7 @@
                               VerticalAlignment="Center"
                               HorizontalAlignment="Stretch"/>
 
-                    <!-- Media Type -->
+                    <!-- (6) Media Type -->
                     <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Media Type:"/>
                     </StackPanel>
@@ -234,7 +239,7 @@
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"/>
 
-                    <!-- Product Key -->
+                    <!-- (7) Product Key -->
                     <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="Product Key:"/>
                     </StackPanel>
@@ -244,27 +249,33 @@
                              VerticalAlignment="Center"
                              HorizontalAlignment="Stretch"/>
 
-                    <!-- Optional Features Expander -->
+                    <!-- (8) Optional Features Expander, arrow on right, text on left -->
                     <Expander x:Name="expOptionalFeatures"
-                              Grid.Row="8"
-                              Grid.ColumnSpan="2"
-                              Margin="5,5,0,0"
-                              Header="Optional Features"
+                              Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2"
+                              FlowDirection="RightToLeft"
                               IsExpanded="False"
-                              ExpandDirection="Down">
-                        <StackPanel Margin="15,5">
-                            <TextBlock Text="Select the optional features you'd like to enable:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                            <CheckBox x:Name="chkTelnetClient"  Content="TelnetClient"  Margin="0,2"/>
-                            <CheckBox x:Name="chkNetFx3"        Content="NetFx3"        Margin="0,2"/>
-                            <CheckBox x:Name="chkDirectPlay"    Content="DirectPlay"    Margin="0,2"/>
-                            <CheckBox x:Name="chkSMB1Protocol"  Content="SMB1Protocol"  Margin="0,2"/>
-
-                            <TextBlock Text="Selected features (semicolon-separated):" Margin="0,10,0,5"/>
-                            <TextBox x:Name="txtOptionalFeatures"
-                                     IsReadOnly="True"
-                                     Margin="0,0,0,10"
-                                     ToolTip="Semicolon-delimited list of optional features"/>
-                        </StackPanel>
+                              ExpandDirection="Down"
+                              Margin="5,0,0,0">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal" FlowDirection="LeftToRight">
+                                <TextBlock Text="Optional Features" />
+                            </StackPanel>
+                        </Expander.Header>
+                        
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                      FlowDirection="LeftToRight"
+                                      Margin="0,5,0,0">
+                            <StackPanel x:Name="stackFeaturesContainer" Margin="15,5">
+                                <TextBlock Text="Selected features (semicolon):"
+                                           Margin="0,10,0,5"
+                                           FontStyle="Italic"/>
+                                <TextBox x:Name="txtOptionalFeatures"
+                                         IsReadOnly="True"
+                                         Width="350"
+                                         Margin="0,0,0,10"
+                                         ToolTip="Semicolon-delimited list of optional features"/>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Expander>
                 </Grid>
             </TabItem>
