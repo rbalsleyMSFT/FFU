@@ -1,14 +1,72 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="FFU Builder UI"
-        Height="600" Width="900">
+        Height="600"
+        Width="900">
 
-    <!-- Define ToolTip Style to offset from mouse pointer -->
+    <!-- 
+      ─────────────────────────────────────────────────────────────────
+       1) Window.Resources:
+          A minimal Expander style with no highlight/hover states 
+          and arrow text toggling (▼ to ▲).
+      ─────────────────────────────────────────────────────────────────
+    -->
     <Window.Resources>
-        <Style TargetType="ToolTip">
-            <Setter Property="Placement" Value="Mouse"/>
-            <Setter Property="HorizontalOffset" Value="10"/>
-            <Setter Property="VerticalOffset" Value="-30"/>
+        <Style x:Key="MinimalExpanderNoHighlightStyle" TargetType="Expander">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <StackPanel>
+
+                            <!-- Header Toggle -->
+                            <ToggleButton x:Name="HeaderToggle"
+                                          IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Padding="0"
+                                          HorizontalAlignment="Left"
+                                          HorizontalContentAlignment="Left"
+                                          VerticalContentAlignment="Center">
+                                <ToggleButton.Style>
+                                    <Style TargetType="ToggleButton">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ToggleButton">
+                                                    <ContentPresenter/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ToggleButton.Style>
+
+                                <!-- Text + Arrow side by side -->
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Optional Features"
+                                               Margin="0,0,6,0"
+                                               VerticalAlignment="Center"/>
+                                    <!-- Default arrow = “▼” -->
+                                    <TextBlock x:Name="ArrowText"
+                                               Text="&#9660;"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </ToggleButton>
+
+                            <!-- Expanded content -->
+                            <ContentPresenter x:Name="ExpandSite"
+                                              Visibility="Collapsed"
+                                              Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <!-- Trigger: Show content, swap arrow to “▲” when expanded -->
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="ArrowText" Property="Text" Value="&#9650;"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
@@ -20,6 +78,9 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <!-- ============================= 
+             Main TabControl with 5 tabs
+        ============================= -->
         <TabControl TabStripPlacement="Left"
                     VerticalAlignment="Stretch"
                     HorizontalAlignment="Stretch"
@@ -27,7 +88,7 @@
                     Padding="10"
                     Grid.Row="0">
 
-            <!-- ============== TAB 1: BASIC ============== -->
+            <!-- TAB 1: Basic -->
             <TabItem Header="Basic" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -46,8 +107,9 @@
                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="FFU Name:"/>
                         <Image x:Name="imgFFUNameInfo"
-                               Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
-                               ToolTip="Enter a unique name for the FFU. Example: {WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}" />
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               ToolTip="Enter a unique name for the FFU. Example: {WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
+                               Cursor="Arrow"/>
                     </StackPanel>
                     <TextBox x:Name="txtFFUName"
                              Grid.Row="0" Grid.Column="1"
@@ -59,8 +121,9 @@
                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="FFU Development Path:"/>
                         <Image x:Name="imgFFUDevPathInfo"
-                               Width="16" Height="16" Margin="5,0,0,0" Cursor="Arrow"
-                               ToolTip="Defaults to the location the script is run from." />
+                               Width="16" Height="16" Margin="5,0,0,0"
+                               ToolTip="Defaults to the location the script is run from."
+                               Cursor="Arrow"/>
                     </StackPanel>
                     <Grid Grid.Row="1" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
@@ -85,8 +148,8 @@
                         <TextBlock Text="VM Switch Name:"/>
                         <Image x:Name="imgVMSwitchNameInfo"
                                Width="16" Height="16" Margin="5,0,0,0"
-                               Cursor="Arrow"
-                               ToolTip="Name of the Hyper-V virtual switch." />
+                               ToolTip="Name of the Hyper-V virtual switch."
+                               Cursor="Arrow"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbVMSwitchName"
                               Grid.Row="2" Grid.Column="1"
@@ -107,9 +170,10 @@
                     <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                         <TextBlock Text="VM Host IP Address:"/>
                         <Image x:Name="imgVMHostIPAddressInfo"
-                               Width="16" Height="16" Margin="5,0,0,0"
-                               Cursor="Arrow"
-                               ToolTip="IP address of the Hyper-V host machine." />
+                               Width="16" Height="16"
+                               Margin="5,0,0,0"
+                               ToolTip="IP address of the Hyper-V host machine."
+                               Cursor="Arrow"/>
                     </StackPanel>
                     <TextBox x:Name="txtVMHostIPAddress"
                              Grid.Row="4" Grid.Column="1"
@@ -119,24 +183,19 @@
                 </Grid>
             </TabItem>
 
-            <!-- ============== TAB 2: WINDOWS SETTINGS ============== -->
+            <!-- TAB 2: Windows Settings -->
             <TabItem Header="Windows Settings" Padding="20">
-                <!-- 
-                   Single 2-col grid, now with 9 row definitions:
-                     rows 0..7 for the ISO path, release, version, arch, lang, sku, media type, product key
-                     row 8 for the Optional Features Expander
-                 -->
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/> <!-- row0: ISO Path -->
-                        <RowDefinition Height="Auto"/> <!-- row1: Windows Release -->
-                        <RowDefinition Height="Auto"/> <!-- row2: Windows Version -->
-                        <RowDefinition Height="Auto"/> <!-- row3: Windows Arch -->
-                        <RowDefinition Height="Auto"/> <!-- row4: Windows Lang -->
-                        <RowDefinition Height="Auto"/> <!-- row5: Windows SKU -->
-                        <RowDefinition Height="Auto"/> <!-- row6: Media Type -->
-                        <RowDefinition Height="Auto"/> <!-- row7: Product Key -->
-                        <RowDefinition Height="*"    /> <!-- row8: Expander -->
+                        <RowDefinition Height="Auto"/>  <!-- row 0: ISO -->
+                        <RowDefinition Height="Auto"/>  <!-- row 1: Release -->
+                        <RowDefinition Height="Auto"/>  <!-- row 2: Version -->
+                        <RowDefinition Height="Auto"/>  <!-- row 3: Arch -->
+                        <RowDefinition Height="Auto"/>  <!-- row 4: Lang -->
+                        <RowDefinition Height="Auto"/>  <!-- row 5: SKU -->
+                        <RowDefinition Height="Auto"/>  <!-- row 6: Media Type -->
+                        <RowDefinition Height="Auto"/>  <!-- row 7: Product Key -->
+                        <RowDefinition Height="*"   />   <!-- row 8: Expander -->
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="200"/>
@@ -144,12 +203,12 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- (0) ISO Path -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows ISO Path:"/>
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Windows ISO Path:" VerticalAlignment="Center"/>
                         <Image x:Name="imgISOPathInfo"
                                Width="16" Height="16" Margin="5,0,0,0"
-                               Cursor="Arrow"
-                               ToolTip="Specify the full path to the Windows ISO file." />
+                               ToolTip="Specify the full path to the Windows ISO file."
+                               Cursor="Arrow"/>
                     </StackPanel>
                     <Grid Grid.Row="0" Grid.Column="1" Margin="5">
                         <Grid.ColumnDefinitions>
@@ -170,100 +229,106 @@
                     </Grid>
 
                     <!-- (1) Windows Release -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows Release:"/>
+                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Windows Release:" VerticalAlignment="Center"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbWindowsRelease"
-                              Grid.Row="1" Grid.Column="1"
+                              Grid.Row="1"
+                              Grid.Column="1"
                               Margin="5"
                               VerticalAlignment="Center"
-                              HorizontalAlignment="Stretch" />
+                              HorizontalAlignment="Stretch"/>
 
                     <!-- (2) Windows Version -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows Version:"/>
+                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Windows Version:" VerticalAlignment="Center"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbWindowsVersion"
-                              Grid.Row="2" Grid.Column="1"
+                              Grid.Row="2"
+                              Grid.Column="1"
                               Margin="5"
                               Width="120"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"
-                              IsEnabled="False"
-                              ToolTip="Select the Windows Version." />
+                              IsEnabled="False"/>
 
                     <!-- (3) Windows Arch -->
-                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows Architecture:"/>
+                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Windows Architecture:" VerticalAlignment="Center"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbWindowsArch"
-                              Grid.Row="3" Grid.Column="1"
+                              Grid.Row="3"
+                              Grid.Column="1"
                               Margin="5"
                               Width="120"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"/>
 
                     <!-- (4) Windows Lang -->
-                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows Language:"/>
+                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Windows Language:" VerticalAlignment="Center"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbWindowsLang"
-                              Grid.Row="4" Grid.Column="1"
+                              Grid.Row="4"
+                              Grid.Column="1"
                               Margin="5"
                               Width="120"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"/>
 
                     <!-- (5) Windows SKU -->
-                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Windows SKU:"/>
+                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Windows SKU:" VerticalAlignment="Center"/>
                         <Image x:Name="imgWindowsSKUInfo"
-                               Width="16" Height="16" Margin="5,0,0,0"
-                               Cursor="Arrow"
-                               ToolTip="Select the edition of Windows you want to install." />
+                               Width="16"
+                               Height="16"
+                               Margin="5,0,0,0"
+                               ToolTip="Select the edition of Windows you want to install."
+                               Cursor="Arrow"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbWindowsSKU"
-                              Grid.Row="5" Grid.Column="1"
+                              Grid.Row="5"
+                              Grid.Column="1"
                               Margin="5"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Stretch"/>
 
                     <!-- (6) Media Type -->
-                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Media Type:"/>
+                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Media Type:" VerticalAlignment="Center"/>
                     </StackPanel>
                     <ComboBox x:Name="cmbMediaType"
-                              Grid.Row="6" Grid.Column="1"
+                              Grid.Row="6"
+                              Grid.Column="1"
                               Margin="5"
                               Width="120"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Left"/>
 
                     <!-- (7) Product Key -->
-                    <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Product Key:"/>
+                    <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="Product Key:" VerticalAlignment="Center"/>
                     </StackPanel>
                     <TextBox x:Name="txtProductKey"
-                             Grid.Row="7" Grid.Column="1"
+                             Grid.Row="7"
+                             Grid.Column="1"
                              Margin="5"
                              VerticalAlignment="Center"
                              HorizontalAlignment="Stretch"/>
 
-                    <!-- (8) Optional Features Expander, arrow on right, text on left -->
+                    <!-- (8) Expander with top margin so it has spacing from "Product Key" above -->
                     <Expander x:Name="expOptionalFeatures"
-                              Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2"
-                              FlowDirection="LeftToRight"
+                              Style="{StaticResource MinimalExpanderNoHighlightStyle}"
+                              Grid.Row="8"
+                              Grid.Column="0"
+                              Grid.ColumnSpan="2"
                               IsExpanded="False"
-                              ExpandDirection="Down"
-                              Margin="5,0,0,0">
-                        <Expander.Header>
-                            <StackPanel Orientation="Horizontal" FlowDirection="LeftToRight">
-                                <TextBlock Text="Optional Features" />
-                            </StackPanel>
-                        </Expander.Header>
-                        
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                                      FlowDirection="LeftToRight"
+                              Margin="0,5,0,0" 
+                              ExpandDirection="Down">
+
+                        <!-- Optional Features content -->
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto"
                                       Margin="0,5,0,0">
                             <StackPanel x:Name="stackFeaturesContainer" Margin="15,5">
                                 <TextBlock Text="Selected features (semicolon):"
@@ -280,7 +345,7 @@
                 </Grid>
             </TabItem>
 
-            <!-- ============== TAB 3: APPLICATIONS ============== -->
+            <!-- TAB 3: Applications -->
             <TabItem Header="Applications" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -294,14 +359,15 @@
                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                         <CheckBox x:Name="chkInstallApps" Content="Install Apps" Margin="0,0,5,0"/>
                         <Image x:Name="imgInstallAppsInfo"
-                               Width="16" Height="16"
+                               Width="16"
+                               Height="16"
                                Cursor="Arrow"
-                               ToolTip="Check to include additional applications in the FFU." />
+                               ToolTip="Check to include additional applications in the FFU."/>
                     </StackPanel>
                 </Grid>
             </TabItem>
 
-            <!-- ============== TAB 4: M365 Apps/Office ============== -->
+            <!-- TAB 4: M365 Apps/Office -->
             <TabItem Header="M365 Apps/Office" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -326,7 +392,8 @@
 
                     <!-- Office Path -->
                     <StackPanel x:Name="OfficePathStackPanel"
-                                Grid.Row="1" Grid.Column="0"
+                                Grid.Row="1"
+                                Grid.Column="0"
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
                                 Margin="0,5">
@@ -338,7 +405,8 @@
                                ToolTip="Path to the Microsoft Office installation."/>
                     </StackPanel>
                     <Grid x:Name="OfficePathGrid"
-                          Grid.Row="1" Grid.Column="1"
+                          Grid.Row="1"
+                          Grid.Column="1"
                           Margin="5">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -356,21 +424,23 @@
                                 ToolTip="Browse for Office installation folder."/>
                     </Grid>
 
-                    <!-- Copy Office Configuration XML -->
+                    <!-- Copy Office Config XML -->
                     <StackPanel x:Name="CopyOfficeConfigXMLStackPanel"
                                 Grid.Row="2" Grid.Column="0"
                                 Orientation="Horizontal"
                                 Margin="0,5">
                         <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" Margin="0,0,5,0"/>
                         <Image x:Name="imgCopyOfficeConfigXMLInfo"
-                               Width="16" Height="16" Margin="5,0,0,0"
+                               Width="16" Height="16"
+                               Margin="5,0,0,0"
                                Cursor="Arrow"
                                ToolTip="Check to copy the Office Configuration XML."/>
                     </StackPanel>
 
                     <!-- OfficeConfigurationXMLFile -->
                     <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel"
-                                Grid.Row="3" Grid.Column="0"
+                                Grid.Row="3"
+                                Grid.Column="0"
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center"
                                 Margin="0,5"
@@ -383,7 +453,8 @@
                                ToolTip="Select the Office Configuration XML file to copy."/>
                     </StackPanel>
                     <Grid x:Name="OfficeConfigurationXMLFileGrid"
-                          Grid.Row="3" Grid.Column="1"
+                          Grid.Row="3"
+                          Grid.Column="1"
                           Margin="5"
                           Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
@@ -405,7 +476,7 @@
                 </Grid>
             </TabItem>
 
-            <!-- ============== TAB 5: DRIVERS ============== -->
+            <!-- TAB 5: DRIVERS -->
             <TabItem Header="Drivers" Padding="20">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -474,7 +545,8 @@
                                        ToolTip="Select the device manufacturer."/>
                             </StackPanel>
                             <ComboBox x:Name="cmbMake"
-                                      Grid.Row="0" Grid.Column="1"
+                                      Grid.Row="0"
+                                      Grid.Column="1"
                                       Margin="5"
                                       VerticalAlignment="Center"
                                       HorizontalAlignment="Stretch"/>
@@ -488,7 +560,8 @@
                                        ToolTip="Enter the device model."/>
                             </StackPanel>
                             <TextBox x:Name="cmbModel"
-                                     Grid.Row="1" Grid.Column="1"
+                                     Grid.Row="1"
+                                     Grid.Column="1"
                                      Margin="5"
                                      VerticalAlignment="Center"
                                      HorizontalAlignment="Stretch"/>
