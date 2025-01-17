@@ -252,7 +252,7 @@
                     <!-- (8) Optional Features Expander, arrow on right, text on left -->
                     <Expander x:Name="expOptionalFeatures"
                               Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2"
-                              FlowDirection="RightToLeft"
+                              FlowDirection="LeftToRight"
                               IsExpanded="False"
                               ExpandDirection="Down"
                               Margin="5,0,0,0">
