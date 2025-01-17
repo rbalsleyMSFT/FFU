@@ -384,12 +384,12 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         }
 
         # If this is the Headers parameter, convert PSCustomObject to hashtable
-        if ($key -eq 'Headers' -and $value -is [System.Management.Automation.PSCustomObject]) {
-            $headers = [hashtable]::new()
+        if ((($key -eq 'Headers') -or ($key -eq 'AppsScriptVariables')) -and ($value -is [System.Management.Automation.PSCustomObject])) {
+            $hashtableValue = [hashtable]::new()
             foreach ($prop in $value.psobject.Properties) {
-                $headers[$prop.Name] = $prop.Value
+                $hashtableValue[$prop.Name] = $prop.Value
             }
-            $value = $headers
+            $value = $hashtableValue
         }
 
         # Check if this key matches a parameter in the script
@@ -3135,36 +3135,34 @@ function Get-ShortenedWindowsSKU {
     )
         $shortenedWindowsSKU = switch ($WindowsSKU) {
             'Core' { 'Home' }
-            'CoreN' { 'Home_N' }
-            'CoreSingleLanguage' { 'Home_SL' }
-            'Education' { 'Edu' }
-            'EducationN' { 'Edu_N' }
-            'Professional' { 'Pro' }
-            'ProfessionalN' { 'Pro_N' }
-            'ProfessionalEducation' { 'Pro_Edu' }
-            'ProfessionalEducationN' { 'Pro_Edu_N' }
-            'ProfessionalWorkstation' { 'Pro_WKS' }
-            'ProfessionalWorkstationN' { 'Pro_WKS_N' }
-            'Enterprise' { 'Ent' }
-            'EnterpriseN' { 'Ent_N' }
-            'ServerStandard' { 'Srv_Std' }
-            'ServerDatacenter' { 'Srv_Dtc' }
             'Home' { 'Home' }
+            'CoreN' { 'Home_N' }
             'Home N' { 'Home_N' }
+            'CoreSingleLanguage' { 'Home_SL' }
             'Home Single Language' { 'Home_SL' }
             'Education' { 'Edu' }
+            'EducationN' { 'Edu_N' }
             'Education N' { 'Edu_N' }
             'Professional' { 'Pro' }
+            'Pro' { 'Pro' }
+            'ProfessionalN' { 'Pro_N' }
             'Pro N' { 'Pro_N' }
+            'ProfessionalEducation' { 'Pro_Edu' }
             'Pro Education' { 'Pro_Edu' }
+            'ProfessionalEducationN' { 'Pro_Edu_N' }
             'Pro Education N' { 'Pro_Edu_N' }
+            'ProfessionalWorkstation' { 'Pro_WKS' }
             'Pro for Workstations' { 'Pro_WKS' }
+            'ProfessionalWorkstationN' { 'Pro_WKS_N' }
             'Pro N for Workstations' { 'Pro_WKS_N' }
             'Enterprise' { 'Ent' }
+            'EnterpriseN' { 'Ent_N' }
             'Enterprise N' { 'Ent_N' }
+            'ServerStandard' { 'Srv_Std' }
             'Standard' { 'Srv_Std' }
-            'Standard (Desktop Experience)' { 'Srv_Std_DE' }
+            'ServerDatacenter' { 'Srv_Dtc' }
             'Datacenter' { 'Srv_Dtc' }
+            'Standard (Desktop Experience)' { 'Srv_Std_DE' }
             'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }  
         }
     return $shortenedWindowsSKU
