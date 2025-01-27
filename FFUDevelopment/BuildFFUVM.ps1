@@ -2200,9 +2200,6 @@ function Get-WinGetApp {
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
     WriteLog "Downloading $WinGetAppName to $appFolderPath"
 
-
-    $wingetpackage = Find-WinGetPackage -id $WinGetAppId -verbose
-
     WriteLog "WinGet command: Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $arch -Source $Source"
     $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $arch -Source $Source
     if ($wingetDownloadResult.status -eq 'NoApplicableInstallers') {
@@ -2218,8 +2215,6 @@ function Get-WinGetApp {
             Exit 1
         }
     }
-
-
 
     }
 
