@@ -2041,6 +2041,8 @@ function Add-Win32SilentInstallCommand {
         Remove-Item -Path $AppFolderPath -Recurse -Force
         return $false
     }
+    foreach($installers in $installerPath)
+    {
     $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop
     $yamlContent = Get-Content -Path $yamlFile -Raw
     $silentInstallSwitch = [regex]::Match($yamlContent, 'Silent:\s*(.+)').Groups[1].Value.Replace("'", "").Trim()
@@ -2049,7 +2051,7 @@ function Add-Win32SilentInstallCommand {
         Remove-Item -Path $appFolderPath -Recurse -Force
         return $false
     }
-    $installer = Split-Path -Path $installerPath -Leaf
+    $installer = Split-Path -Path $installers -Leaf    #   $installerPath -Leaf
     if ($installerPath.Extension -eq ".exe") {
         $silentInstallCommand = "`"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
     } 
@@ -2058,9 +2060,19 @@ function Add-Win32SilentInstallCommand {
     }
     $cmdFile = "$AppsPath\InstallAppsandSysprep.cmd"
     $cmdContent = Get-Content -Path $cmdFile
-    $UpdatedcmdContent = $CmdContent -replace '^(REM Winget Win32 Apps)', ("REM Winget Win32 Apps`r`nREM Win32 $($AppName)`r`n$($silentInstallCommand.Trim())")
-    WriteLog "Writing silent install command for $appName to InstallAppsandSysprep.cmd"
-    Set-Content -Path $cmdFile -Value $UpdatedcmdContent
+
+    if ($cmdContent -notcontains $silentInstallCommand) {
+        $UpdatedcmdContent = $CmdContent -replace '^(REM Winget Win32 Apps)', ("REM Winget Win32 Apps`r`nREM Win32 $($AppName)`r`n$($silentInstallCommand.Trim())")
+        WriteLog "Writing silent install command for $appName to InstallAppsandSysprep.cmd"
+        $UpdatedcmdContent | Set-Content -Path $cmdFile
+    } else {
+        WriteLog "Silent install command already exists for $appName, skipping write."
+    }
+
+    #$UpdatedcmdContent = $CmdContent -replace '^(REM Winget Win32 Apps)', ("REM Winget Win32 Apps`r`nREM Win32 $($AppName)`r`n$($silentInstallCommand.Trim())")
+    #WriteLog "Writing silent install command for $appName to InstallAppsandSysprep.cmd"
+    #Set-Content -Path $cmdFile -Value $UpdatedcmdContent
+}
 }
 
 function Set-InstallStoreAppsFlag {
@@ -2141,8 +2153,37 @@ function Set-InstallStoreAppsFlag {
 function Get-WinGetApp {
     param (
         [string]$WinGetAppName,
-        [string]$WinGetAppId
+        [string]$WinGetAppId,
+        [string]$WingetArch
     )
+
+    #If no Archictecture is defined or it is incorrectly defined, then set to default value $WindowsArch
+    if (-not $WingetArch) {
+        WriteLog "Architecture not defined in App list json, setting to Default $WindowsArch"
+        $WingetArch = $WindowsArch
+    }
+    elseif ($WingetArch -ne 'x86' -and $WingetArch -ne 'both') {
+        WriteLog "Architecture '$WingetArch' is not valid, setting to Default $WindowsArch"
+        $WingetArch = $WindowsArch
+    }
+ 
+    # Initialize $arch array based on the value of $WingetArch
+    if ($WingetArch -eq 'both') {
+        # If $WingetArch is 'both', use both 'x86' and 'x64'
+        $archs = @('x86', 'x64')
+    } elseif ($WingetArch -eq 'x86' -or $WingetArch -eq 'x64') {
+        # If $WingetArch is already 'x86' or 'x64', use that value
+        $archs = @($WingetArch)
+    } else {
+        # Handle unexpected values, and set a default architecture
+        WriteLog "Invalid architecture value: $WingetArch. Setting to default $WindowsArch"
+        $WingetArch = $WindowsArch
+        $archs = @($WingetArch)
+    }
+
+    foreach ($arch in $archs) 
+    {
+
     $Source = 'winget'
     $wingetSearchResult = Find-WinGetPackage -id $WinGetAppId -MatchOption Equals -Source $Source
     if (-not $wingetSearchResult) {
@@ -2159,8 +2200,11 @@ function Get-WinGetApp {
     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
     WriteLog "Downloading $WinGetAppName to $appFolderPath"
 
-    WriteLog "WinGet command: Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source"
-    $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source
+
+    $wingetpackage = Find-WinGetPackage -id $WinGetAppId -verbose
+
+    WriteLog "WinGet command: Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $arch -Source $Source"
+    $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $arch -Source $Source
     if ($wingetDownloadResult.status -eq 'NoApplicableInstallers') {
         # If no applicable installer is found, try downloading without specifying architecture
         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
@@ -2174,6 +2218,12 @@ function Get-WinGetApp {
             Exit 1
         }
     }
+
+
+
+    }
+
+
     WriteLog "$WinGetAppName downloaded to $appFolderPath"
     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
     $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
@@ -2396,7 +2446,7 @@ function Get-Apps {
         }
         foreach ($wingetApp in $wingetApps) {
             try {
-                Get-WinGetApp -WinGetAppName $wingetApp.Name -WinGetAppId $wingetApp.Id
+                Get-WinGetApp -WinGetAppName $wingetApp.Name -WinGetAppId $wingetApp.Id -WingetArch $wingetApp.Architecture
             }
             catch {
                 WriteLog "Error occurred while processing $wingetApp : $_"
