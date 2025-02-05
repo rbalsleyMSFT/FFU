@@ -5095,7 +5095,7 @@ If ($BuildUSBDrive) {
     }
     catch {
         Write-Host 'Building USB deployment drive failed'
-        Writelog \"Building USB deployment drive failed with error $_\"
+        Writelog "Building USB deployment drive failed with error $_"
         throw $_
     }
 }
