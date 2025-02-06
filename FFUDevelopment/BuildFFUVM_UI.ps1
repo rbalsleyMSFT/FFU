@@ -16,7 +16,7 @@ $defaultWindowsRelease   = 11   # numeric
 $defaultWindowsArch      = "x64"
 $defaultWindowsLang      = "en-us"
 $defaultWindowsSKU       = "Pro"
-$defaultMediaType        = "consumer"
+$defaultMediaType        = "Consumer"  # updated value
 $defaultOptionalFeatures = ""
 $defaultProductKey       = ""
 
@@ -494,7 +494,7 @@ $window.Add_Loaded({
     foreach ($sku in $skuList) { [void]$script:cmbWindowsSKU.Items.Add($sku) }
     $script:cmbWindowsSKU.SelectedItem = $defaultWindowsSKU
     $script:cmbMediaType = $window.FindName('cmbMediaType')
-    foreach ($mt in 'consumer','business') { [void]$script:cmbMediaType.Items.Add($mt) }
+    foreach ($mt in "Consumer","Business") { [void]$script:cmbMediaType.Items.Add($mt) }  # updated options
     $script:cmbMediaType.SelectedItem = $defaultMediaType
     $script:txtOptionalFeatures = $window.FindName('txtOptionalFeatures')
     $script:txtOptionalFeatures.Text = $defaultOptionalFeatures
@@ -594,6 +594,32 @@ $window.Add_Loaded({
             $window.FindName('chkInstallApps').IsEnabled = $true
         }
     }
+    # Add event handlers for Updates tab checkboxes to update Install Apps state
+    $window.FindName('chkUpdateLatestDefender').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateLatestDefender').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateEdge').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateEdge').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateOneDrive').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateOneDrive').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateLatestMSRT').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    $window.FindName('chkUpdateLatestMSRT').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
+    # Add interplay between Latest CU and Preview CU checkboxes
+    $script:chkLatestCU = $window.FindName('chkUpdateLatestCU')
+    $script:chkPreviewCU = $window.FindName('chkUpdatePreviewCU')
+    
+    $script:chkLatestCU.Add_Checked({
+        $script:chkPreviewCU.IsEnabled = $false
+    })
+    $script:chkLatestCU.Add_Unchecked({
+        $script:chkPreviewCU.IsEnabled = $true
+    })
+    
+    $script:chkPreviewCU.Add_Checked({
+        $script:chkLatestCU.IsEnabled = $false
+    })
+    $script:chkPreviewCU.Add_Unchecked({
+        $script:chkLatestCU.IsEnabled = $true
+    })
 })
 
 # Button: Build FFU
