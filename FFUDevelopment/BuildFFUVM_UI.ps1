@@ -6,7 +6,6 @@ param()
 # SECTION 1: Variables & Constants
 # --------------------------------------------------------------------------
 $FFUDevelopmentPath = $PSScriptRoot
-$infoImagePath      = Join-Path $PSScriptRoot "info.png"
 $AppsPath           = Join-Path $FFUDevelopmentPath "Apps"
 $OfficePath         = Join-Path $AppsPath "Office"
 
@@ -57,28 +56,6 @@ $skuList = @(
     'Pro N','Pro Education','Pro Education N','Pro for Workstations',
     'Pro N for Workstations','Enterprise','Enterprise N','Standard',
     'Standard (Desktop Experience)','Datacenter','Datacenter (Desktop Experience)'
-)
-
-$imageNames = @(
-    "imgFFUNameInfo",
-    "imgISOPathInfo",
-    "imgWindowsSKUInfo",
-    "imgVMSwitchNameInfo",
-    "imgVMHostIPAddressInfo",
-    "imgInstallOfficeInfo",
-    "imgInstallAppsInfo",
-    "imgInstallDriversInfo",
-    "imgCopyDriversInfo",
-    "imgFFUDevPathInfo",
-    "imgOfficePathInfo",
-    "imgCopyOfficeConfigXMLInfo",
-    "imgOfficeConfigXMLFileInfo",
-    "imgMakeInfo",
-    "imgModelInfo",
-    "imgDownloadDriversInfo",
-    "imgDriversFolderInfo",
-    "imgPEDriversFolderInfo",
-    "imgCopyPEDriversInfo"
 )
 
 # Full list of Windows releases (if ISO path != blank)
@@ -337,9 +314,6 @@ $xamlString = Get-Content $xamlPath -Raw
 $reader = New-Object System.IO.StringReader($xamlString)
 $xmlReader = [System.Xml.XmlReader]::Create($reader)
 $window = [Windows.Markup.XamlReader]::Load($xmlReader)
-
-# Assign images
-foreach ($imgName in $imageNames) { Set-ImageSource -window $window -imageName $imgName -sourcePath $infoImagePath }
 
 # Dynamic checkboxes for optional features in Windows Settings tab
 $script:featureCheckBoxes = @{}
