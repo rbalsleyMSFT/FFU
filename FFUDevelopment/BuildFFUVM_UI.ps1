@@ -18,6 +18,7 @@ $defaultWindowsSKU       = "Pro"
 $defaultMediaType        = "Consumer"  # updated value
 $defaultOptionalFeatures = ""
 $defaultProductKey       = ""
+$defaultFFUPrefix        = "_FFU"     # <-- new default for VM Name Prefix
 
 # Large list from the ValidateSet in BuildFFUVM.ps1 ($OptionalFeatures parameter)
 $allowedFeatures = @(
@@ -138,6 +139,9 @@ function Get-UIConfig {
     $logicalSectorObj = $window.FindName('cmbLogicalSectorSize').SelectedItem
     $logicalSectorSize = [int]$logicalSectorObj.Content
 
+    # <-- NEW: retrieve FFUPrefix from the new textbox (VM Name Prefix)
+    $ffuPrefix = $window.FindName('txtVMNamePrefix').Text
+
     # --- Windows Settings tab ---
     $wrItem = $window.FindName('cmbWindowsRelease').SelectedItem
     $windowsRelease = if ($wrItem -and $wrItem.Value) { [int]$wrItem.Value } else { 10 }
@@ -198,6 +202,7 @@ function Get-UIConfig {
         EnablePromptExternalHardDiskMedia = $promptExt
         FFUCaptureLocation         = $ffuCaptureLocation
         FFUDevelopmentPath         = $ffuDevPath
+        ISOPath                    = $isoPath      # <-- NEW: Add Windows ISO Path to config
         MediaType                  = $mediaType
         Make                       = $make
         Model                      = $model
@@ -225,6 +230,7 @@ function Get-UIConfig {
         WindowsRelease             = $windowsRelease
         WindowsSKU                 = $windowsSKU
         WindowsVersion             = $windowsVersion
+        FFUPrefix                  = $ffuPrefix    # <-- new option for VM Name Prefix
     }
 
     # Sort the configuration hashtable alphabetically by key
@@ -412,6 +418,8 @@ $window.Add_Loaded({
     $window.FindName('txtUsername').Text = "ffu_user"
     # Set VM Location default to $FFUDevelopmentPath\VM
     $window.FindName('txtVMLocation').Text = (Join-Path $FFUDevelopmentPath "VM")
+    # <-- NEW: Set the default for the new VM Name Prefix textbox on the Hyper-V Settings tab
+    $window.FindName('txtVMNamePrefix').Text = $defaultFFUPrefix
     # Hyper-V Settings: Populate defaults (Share Name and Username now on Build, so only populate remaining fields)
     $script:vmSwitchMap = @{}
     $script:allSwitches = Get-VMSwitch -ErrorAction SilentlyContinue
@@ -688,6 +696,8 @@ $btnLoadConfig.Add_Click({
             $window.FindName('txtMemory').Text = $configContent.Memory / 1GB
             $window.FindName('txtProcessors').Text = $configContent.Processors
             $window.FindName('txtVMLocation').Text = $configContent.VMLocation
+            # <-- NEW: Update the VM Name Prefix textbox value during config load
+            $window.FindName('txtVMNamePrefix').Text = $configContent.FFUPrefix
             $window.FindName('cmbLogicalSectorSize').SelectedItem = $configContent.LogicalSectorSizeBytes
             # Windows Settings
             $window.FindName('txtISOPath').Text = $configContent.ISOPath
