@@ -1177,7 +1177,7 @@ function Get-LenovoDrivers {
     }
 
     # Create the folder structure for the Lenovo drivers
-    $driversFolder = "$DriversFolder\$Make"
+     $driversFolder = "$DriversFolder\$model ($machineType)"
     if (-not (Test-Path -Path $DriversFolder)) {
         WriteLog "Creating Drivers folder: $DriversFolder"
         New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
