@@ -3380,7 +3380,7 @@ function New-FFU {
             WriteLog "Most recent .ffu file: $FFUFile"
         }
         else {
-            WriteLog "No .ffu files found in $FFUFolderPath"
+            WriteLog "No .ffu files found in $FFUCaptureLocation"
             throw $_
         }
     }
