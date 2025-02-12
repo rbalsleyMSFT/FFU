@@ -47,8 +47,7 @@ $allowedFeatures = @(
     "SMB1Protocol-Server","SmbDirect","TFTP","TelnetClient","TIFFIFilter","VirtualMachinePlatform","WAS-ConfigurationAPI",
     "WAS-NetFxEnvironment","WAS-ProcessModel","WAS-WindowsActivationService","WCF-HTTP-Activation","WCF-HTTP-Activation45",
     "WCF-MSMQ-Activation45","WCF-MSMQ-Activation","WCF-NonHTTP-Activation","WCF-Pipe-Activation45","WCF-Services45",
-    "WCF-TCP-Activation45","WCF-TCP-PortSharing45","UpdateEdge","UpdateLatestCU","UpdateLatestDefender",
-    "UpdateLatestMSRT","UpdateLatestNet","UpdateOneDrive","UpdatePreviewCU","Windows-Defender-ApplicationGuard",
+    "WCF-TCP-Activation45","WCF-TCP-PortSharing45","Windows-Defender-ApplicationGuard",
     "Windows-Defender-Default-Definitions","Windows-Identity-Foundation","WindowsMediaPlayer","WorkFolders-Client"
 )
 
@@ -86,19 +85,6 @@ $windowsVersionMap = @{
 }
 
 # --------------------------------------------------------------------------
-function Set-ImageSource {
-    param(
-        [System.Windows.Window]$window,
-        [string]$imageName,
-        [string]$sourcePath
-    )
-    $imgControl = $window.FindName($imageName)
-    if ($imgControl) {
-        $uri    = New-Object System.Uri($sourcePath, [System.UriKind]::Absolute)
-        $bitmap = New-Object System.Windows.Media.Imaging.BitmapImage($uri)
-        $imgControl.Source = $bitmap
-    }
-}
 
 function Get-UIConfig {
     # --- Build Tab Values ---
