@@ -168,6 +168,13 @@ When set to $true, will download and install the latest OneDrive for Windows 10/
 .PARAMETER UpdatePreviewCU
 When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false.
 
+.PARAMETER USBDriveList
+A hashtable containing USB drives from win32_diskdrive where:
+- Key: USB drive model name (partial match supported)
+- Value: USB drive serial number (trailing partial match supported due to some serial numbers ending with blank spaces)
+
+Example: @{ "SanDisk Ultra" = "1234567890"; "Kingston DataTraveler" = "0987654321" }
+
 .PARAMETER UserAgent
 User agent string to use when downloading files.
 
@@ -315,6 +322,7 @@ param(
     [string]$OptionalFeatures,
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
+    [hashtable]$USBDriveList,
     [Parameter(Mandatory = $false)]
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
@@ -417,7 +425,7 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         }
 
         # If this is the Headers parameter, convert PSCustomObject to hashtable
-        if ((($key -eq 'Headers') -or ($key -eq 'AppsScriptVariables')) -and ($value -is [System.Management.Automation.PSCustomObject])) {
+        if ((($key -eq 'Headers') -or ($key -eq 'AppsScriptVariables') -or ($key -eq 'USBDriveList')) -and ($value -is [System.Management.Automation.PSCustomObject])) {
             $hashtableValue = [hashtable]::new()
             foreach ($prop in $value.psobject.Properties) {
                 $hashtableValue[$prop.Name] = $prop.Value
@@ -3621,8 +3629,8 @@ Function Get-USBDrive {
     # Log the start of the USB drive check
     WriteLog 'Checking for USB drives'
     
-    # Check if external hard disk media is allowed
-    If ($AllowExternalHardDiskMedia) {
+    # Check if external hard disk media is allowed and user has not specified USB drives
+    If ($AllowExternalHardDiskMedia -and (-not($USBDriveList))) {
         # Get all removable and external hard disk media drives
         [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
         [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
@@ -3726,6 +3734,27 @@ Function Get-USBDrive {
             }
         }
     }
+    elseif ($USBDriveList) {
+        # Log the count of specified USB drives
+        $USBDriveListCount = $USBDriveList.Count
+        WriteLog "Looking for $USBDriveListCount USB drives from USB Drive List"
+        # Get only the specified USB drives based on both model and serial number
+        $USBDrives = @()
+        foreach ($model in $USBDriveList.Keys) {
+            $serialNumber = $USBDriveList[$model]
+            Writelog "Looking for USB drive model $model with serial number $serialNumber"
+            $USBDrive = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Model LIKE '%$model%' AND SerialNumber LIKE '$serialNumber%' AND (MediaType='Removable Media' OR MediaType='External hard disk media')"
+            if ($USBDrive) {
+                WriteLog "Found USB drive model $($USBDrive.model) with serial number $($USBDrive.serialNumber)"
+                $USBDrives += $USBDrive
+            }
+            else {
+                WriteLog "USB drive model $model with serial number $serialNumber not found"
+            }
+        }
+        $USBDrivesCount = $USBDrives.Count
+        WriteLog "Found $USBDrivesCount of $USBDriveListCount USB drives from USB Drive List"
+    } 
     else {
         # Get only removable media drives
         [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
@@ -3735,14 +3764,227 @@ Function Get-USBDrive {
     
     # Check if any USB drives were found
     if ($null -eq $USBDrives) {
-        WriteLog "No removable USB drive found. Exiting"
-        Write-Error "No removable USB drive found. Exiting"
+        WriteLog "No USB drive found. Exiting"
+        Write-Error "No USB drive found. Exiting"
         exit 1
     }
     
     # Return the found USB drives and their count
     return $USBDrives, $USBDrivesCount
 }
+# Function New-DeploymentUSB {
+#     param(
+#         [switch]$CopyFFU
+#     )
+#     WriteLog "CopyFFU is set to $CopyFFU"
+#     $BuildUSBPath = $PSScriptRoot
+#     WriteLog "BuildUSBPath is $BuildUSBPath"
+
+#     $SelectedFFUFile = $null
+
+#     # 1. Get FFU File(s)
+#     # Check if the CopyFFU switch is present
+#     if ($CopyFFU.IsPresent) {
+#         # Get all FFU files in the specified directory
+#         $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+#         $FFUCount = $FFUFiles.count
+
+#         # If there is exactly one FFU file, select it
+#         if ($FFUCount -eq 1) {
+#             $SelectedFFUFile = $FFUFiles.FullName
+#         }
+#         # If there are multiple FFU files, prompt the user to select one
+#         elseif ($FFUCount -gt 1) {
+#             WriteLog "Found $FFUCount FFU files"
+#             if($VerbosePreference -ne 'Continue'){
+#                 Write-Host "Found $FFUCount FFU files"
+#             }
+#             $output = @()
+#             # Create a table of FFU files with their index, name, and last modified date
+#             for ($i = 0; $i -lt $FFUCount; $i++) {
+#                 $index = $i + 1
+#                 $name = $FFUFiles[$i].Name
+#                 $modified = $FFUFiles[$i].LastWriteTime
+#                 $Properties = [ordered]@{
+#                     'FFU Number'    = $index
+#                     'FFU Name'      = $name
+#                     'Last Modified' = $modified
+#                 }
+#                 $output += New-Object PSObject -Property $Properties
+#             }
+#             $output | Format-Table -AutoSize -Property 'FFU Number', 'FFU Name', 'Last Modified'
+            
+#             # Loop until a valid FFU file is selected
+#             do {
+#                 $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
+#                 # Check if the input is a valid number or 'A'
+#                 if ($inputChoice -match '^\d+$' -or $inputChoice -eq 'A') {
+#                     if ($inputChoice -eq 'A') {
+#                         # Select all FFU files
+#                         $SelectedFFUFile = $FFUFiles.FullName
+#                         if ($VerbosePreference -ne 'Continue') {
+#                             Write-Host 'Will copy all FFU files'
+#                         }
+#                         WriteLog 'Will copy all FFU Files'
+#                     }
+#                     else {
+#                         # Convert input to integer and validate the selection
+#                         $inputChoice = [int]$inputChoice
+#                         if ($inputChoice -ge 1 -and $inputChoice -le $FFUCount) {
+#                             $selectedIndex = $inputChoice - 1
+#                             $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
+#                             if ($VerbosePreference -ne 'Continue') {
+#                                 Write-Host "$SelectedFFUFile was selected"
+#                             }
+#                             WriteLog "$SelectedFFUFile was selected"
+#                         }
+#                         else {
+#                             # Handle invalid selection
+#                             if ($VerbosePreference -ne 'Continue') {
+#                                 Write-Host "Invalid selection. Please try again."
+#                             }
+#                             WriteLog "Invalid selection. Please try again."
+#                         }
+#                     }
+#                 }
+#                 else {
+#                     # Handle invalid input
+#                     if ($VerbosePreference -ne 'Continue') {
+#                         Write-Host "Invalid selection. Please try again."
+#                     }
+#                     WriteLog "Invalid selection. Please try again."
+#                 }
+#             } while ($null -eq $SelectedFFUFile)
+            
+#         }
+#         else {
+#             # Handle case where no FFU files are found
+#             WriteLog "No FFU files found in the current directory."
+#             Write-Error "No FFU files found in the current directory."
+#             Return
+#         }
+#     }    
+#     # 2. Partition and format USB drives
+#     $counter = 0
+
+#     foreach ($USBDrive in $USBDrives) {
+#         $Counter++
+#         WriteLog "Formatting USB drive $Counter out of $USBDrivesCount"
+#         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
+#         WriteLog "Physical Disk number is $DiskNumber for USB drive $Counter out of $USBDrivesCount"
+
+#         $ScriptBlock = {
+#             param($DiskNumber)
+#             $Disk = Get-Disk -Number $DiskNumber
+#             # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
+#             # Clear-disk has an unusual behavior where it sets external hard disk media as RAW, however removable media is set as MBR.
+#             if ($Disk.PartitionStyle -ne "RAW") {
+#                 $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
+#                 $Disk = Get-Disk -Number $DiskNumber
+#             }
+            
+#             if($Disk.PartitionStyle -eq "RAW") {
+#                 $Disk | Initialize-Disk -PartitionStyle MBR -Confirm:$false
+#             }
+#             elseif($Disk.PartitionStyle -ne "RAW"){
+#                 $Disk | Get-Partition | Remove-Partition -Confirm:$false
+#                 $Disk | Set-Disk -PartitionStyle MBR
+#             }
+#             # Get-Disk $DiskNumber | Get-Partition | Remove-Partition            
+#             $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
+#             $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
+#             Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false
+#             Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false
+#         }
+
+#         WriteLog 'Partitioning USB Drive'
+#         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
+#         WriteLog 'Done'
+
+#         # 3. Copy WinPE files to USB drive boot partition
+
+#         # $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+#         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveLetter IS NOT NULL").Name
+#         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
+#         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
+#         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
+#         Dismount-DiskImage -ImagePath $DeployISO | Out-Null
+
+#         #4. Copy FFU file(s), drivers, PPKG, Autopilot, unattend to USB drive deploy partition
+
+#         if ($CopyFFU.IsPresent) {
+#             if ($null -ne $SelectedFFUFile) {
+#                 # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+#                 $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveLetter IS NOT NULL").Name
+#                 if ($SelectedFFUFile -is [array]) {
+#                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
+#                     foreach ($FFUFile in $SelectedFFUFile) {
+#                         robocopy $(Split-Path $FFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFile -Leaf) /COPYALL /R:5 /W:5 /J
+#                     }
+#                 }
+#                 else {
+#                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
+#                     robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
+#                 }
+#                 #Copy drivers using robocopy due to potential size
+#                 if ($CopyDrivers) {
+#                     WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
+#                     if ($Make){
+#                         robocopy "$DriversFolder\$Make" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+#                     }else{
+#                         robocopy "$DriversFolder" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
+#                     }
+                    
+#                 }
+#                 #Copy Unattend file to the USB drive. 
+#                 if ($CopyUnattend) {
+#                     # WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
+#                     # Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
+#                     $DeployUnattendPath = "$DeployPartitionDriveLetter\unattend"
+#                     WriteLog "Copying unattend file to $DeployUnattendPath"
+#                     New-Item -Path $DeployUnattendPath -ItemType Directory | Out-Null
+#                     if ($WindowsArch -eq 'x64') {
+#                         Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_x64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+#                     }
+#                     if ($WindowsArch -eq 'arm64') {
+#                         Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_arm64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
+#                     }
+#                     #Check for prefixes.txt file and copy it to the USB drive
+#                     if (Test-Path "$FFUDevelopmentPath\unattend\prefixes.txt") {
+#                         WriteLog "Copying prefixes.txt file to $DeployUnattendPath"
+#                         Copy-Item -Path "$FFUDevelopmentPath\unattend\prefixes.txt" -Destination "$DeployUnattendPath\prefixes.txt" -Force | Out-Null
+#                     }
+#                     WriteLog 'Copy completed'
+#                 }  
+#                 #Copy PPKG folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+#                 if ($CopyPPKG) {
+#                     WriteLog "Copying PPKG folder to $DeployPartitionDriveLetter"
+#                     Copy-Item -Path "$FFUDevelopmentPath\PPKG" -Destination $DeployPartitionDriveLetter -Recurse -Force
+#                 }
+#                 #Copy Autopilot folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
+#                 if ($CopyAutopilot) {
+#                     WriteLog "Copying Autopilot folder to $DeployPartitionDriveLetter"
+#                     Copy-Item -Path "$FFUDevelopmentPath\Autopilot" -Destination $DeployPartitionDriveLetter -Recurse -Force
+#                 }
+#             }
+#             else {
+#                 WriteLog "No FFU file selected. Skipping copy."
+#             }
+#         }
+
+#         Set-Volume -FileSystemLabel "TempBoot" -NewFileSystemLabel "Boot"
+#         Set-Volume -FileSystemLabel "TempDeploy" -NewFileSystemLabel "Deploy"
+
+#         if ($USBDrivesCount -gt 1) {
+#             & mountvol $BootPartitionDriveLetter /D
+#             & mountvol $DeployPartitionDriveLetter /D 
+#         }
+
+#         WriteLog "Drive $counter completed"
+#     }
+
+#     WriteLog "USB Drives completed"
+# }
 Function New-DeploymentUSB {
     param(
         [switch]$CopyFFU
@@ -3753,6 +3995,7 @@ Function New-DeploymentUSB {
 
     $SelectedFFUFile = $null
 
+    # 1. Get FFU File(s)
     # Check if the CopyFFU switch is present
     if ($CopyFFU.IsPresent) {
         # Get all FFU files in the specified directory
@@ -3834,11 +4077,14 @@ Function New-DeploymentUSB {
             Return
         }
     }    
+    # 2. Partition and format USB drives
     $counter = 0
 
     foreach ($USBDrive in $USBDrives) {
         $Counter++
         WriteLog "Formatting USB drive $Counter out of $USBDrivesCount"
+        WriteLog "USB Drive Model: $($USBDrive.Model)"
+        WriteLog "USB Drive Serial Number: $($USBDrive.SerialNumber)"
         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
         WriteLog "Physical Disk number is $DiskNumber for USB drive $Counter out of $USBDrivesCount"
 
@@ -3870,12 +4116,16 @@ Function New-DeploymentUSB {
         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
         WriteLog 'Done'
 
+        # 3. Copy WinPE files to USB drive boot partition
+
         # $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveLetter IS NOT NULL").Name
         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
         Dismount-DiskImage -ImagePath $DeployISO | Out-Null
+
+        #4. Copy FFU file(s), drivers, PPKG, Autopilot, unattend to USB drive deploy partition
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
