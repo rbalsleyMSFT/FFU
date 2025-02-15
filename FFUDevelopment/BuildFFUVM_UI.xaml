@@ -190,36 +190,84 @@
                         </Grid>
                         <!-- Row 6: General Build Options Header -->
                         <TextBlock Grid.Row="6" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
+                        
                         <!-- Row 7: General Build Options Checkboxes -->
                         <WrapPanel Grid.Row="7" Margin="0,5">
-                            <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will compact the OS when building the FFU. Default is $true."/>
-                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will optimize the FFU file. Default is $true."/>
-                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM, and the boot order will be changed to automate the capture of the FFU."/>
-                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
+                            <CheckBox x:Name="chkBuildUSBDrive" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
+                            <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
+                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will optimize during FFU build."/>
+                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will create WinPE capture media."/>
+                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will create WinPE deployment media."/>
                         </WrapPanel>
-                        <!-- Row 8: Build USB Drive Header -->
-                        <!-- <TextBlock Grid.Row="8" Text="Build USB Drive" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/> -->
-                        <!-- Row 8: Build USB Drive Options Grid -->
-                        <Grid Grid.Row="8" Margin="0,10,0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <!-- Left Column: USB Drive Options -->
-                            <StackPanel Grid.Column="0" Margin="5">
-                                <TextBlock Text="Build USB Drive" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/> 
-                                <CheckBox x:Name="chkBuildUSBDrive" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
-                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt External Hard Disk Media" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will prompt the user to confirm the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is $true."/>
-                                <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined."/>
+
+                        <!-- Row 8: Build USB Drive Section -->
+                        <Grid Grid.Row="8" Margin="0,10,0,5" x:Name="usbDriveSection">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Header -->
+                            <TextBlock Grid.Row="0" Text="Build USB Drive" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+                            
+                            <!-- External Hard Disk Media Settings -->
+                            <StackPanel Grid.Row="1" Margin="5,0,0,10">
+                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
+                                <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
                             </StackPanel>
-                            <!-- Right Column: USB Drive Modification -->
-                            <StackPanel Grid.Column="1" Margin="5">
-                                <TextBlock Text="USB Drive Modification" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
-                                <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is $false."/>
-                                <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false."/>
-                                <CheckBox x:Name="chkCopyPPKG" Content="Copy PPKG" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false."/>
-                            </StackPanel>
+
+                            <!-- USB Drive Detection -->
+                            <Grid Grid.Row="2" Margin="5">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Button x:Name="btnCheckUSBDrives" Content="Check USB Drives" Grid.Row="0" Grid.Column="0" Margin="5" Padding="10,5"/>
+                                <CheckBox x:Name="chkSelectAllUSBDrives" Content="Select All" Grid.Row="0" Grid.Column="1" Margin="10,5" VerticalAlignment="Center"/>
+                                
+                                <ListView x:Name="lstUSBDrives" Grid.Row="1" Grid.ColumnSpan="2" Height="100" Margin="5">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Selected" Width="70">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <CheckBox IsChecked="{Binding IsSelected}"/>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                            <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
+                                            <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
+                                            <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+
+                                <!-- USB Drive Options -->
+                                <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="5">
+                                    <TextBlock Text="USB Drive Options" FontWeight="Bold" Margin="0,5"/>
+                                    <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot" Margin="5" VerticalAlignment="Center" Tag="Copy Autopilot files to deployment partition."/>
+                                    <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend" Margin="5" VerticalAlignment="Center" Tag="Copy Unattend files to deployment partition."/>
+                                    <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="Copy PPKG files to deployment partition."/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
+
+                        <!-- Row 9: Post-Build Cleanup -->
+                        <StackPanel Grid.Row="9" Margin="0,10,0,5">
+                            <TextBlock Text="Post-Build Cleanup" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+                            <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="5" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
+                            <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
+                            <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
+                            <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="5" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
+                            <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="5" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>
+                        </StackPanel>
                     </Grid>
                 </ScrollViewer>
             </TabItem>
