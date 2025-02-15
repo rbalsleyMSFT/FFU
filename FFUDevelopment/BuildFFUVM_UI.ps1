@@ -113,14 +113,14 @@ function Get-UIConfig {
     $username = $window.FindName('txtUsername').Text
 
     # General Build Options (Build tab WrapPanel)
-    $buildUSB = $window.FindName('chkBuildUSBDrive').IsChecked
+    $buildUSB = $window.FindName('chkBuildUSBDriveEnable').IsChecked
     $compactOS = $window.FindName('chkCompactOS').IsChecked
     $optimize = $window.FindName('chkOptimize').IsChecked
+    $allowVHDXCaching = $window.FindName('chkAllowVHDXCaching').IsChecked
     $createCapture = $window.FindName('chkCreateCaptureMedia').IsChecked
     $createDeployMedia = $window.FindName('chkCreateDeploymentMedia').IsChecked
 
     # Build USB Drive Section (new)
-    $buildUSB_USB = $window.FindName('chkBuildUSBDrive').IsChecked
     $promptExt = $window.FindName('chkPromptExternalHardDiskMedia').IsChecked
     $allowExt = $window.FindName('chkAllowExternalHardDiskMedia').IsChecked
 
@@ -194,7 +194,8 @@ function Get-UIConfig {
     # Build configuration hashtable (unsorted)
     $config = [ordered]@{
         AllowExternalHardDiskMedia = $allowExt
-        BuildUSBDrive              = $buildUSB_USB
+        AllowVHDXCaching = $allowVHDXCaching
+        BuildUSBDrive              = $buildUSB
         CompactOS                  = $compactOS
         CopyAutopilot              = $copyAutopilot
         CopyOfficeConfigXML        = $copyOfficeConfig
@@ -209,7 +210,7 @@ function Get-UIConfig {
         CleanupDrivers             = $window.FindName('chkCleanupDrivers').IsChecked
         Disksize                   = $diskSize
         DownloadDrivers            = $downloadDrivers
-        EnablePromptExternalHardDiskMedia = $promptExt
+        PromptExternalHardDiskMedia = $promptExt
         FFUCaptureLocation         = $ffuCaptureLocation
         FFUDevelopmentPath         = $ffuDevPath
         ISOPath                    = $isoPath      # <-- NEW: Add Windows ISO Path to config
@@ -668,42 +669,54 @@ $window.Add_Loaded({
         $script:chkSelectAllUSBDrives.IsChecked = $allSelected
     })
 
-    # Add handler to show/hide USB drive controls based on Build USB Drive checkbox
-    $script:chkBuildUSBDrive = $window.FindName('chkBuildUSBDrive')
-    $script:usbPanel = ($window.FindName('btnCheckUSBDrives').Parent.Parent)  # Get the outer Grid instead of immediate parent
-    $script:usbPanel.Visibility = if ($script:chkBuildUSBDrive.IsChecked) { 'Visible' } else { 'Collapsed' }
+    # Add handler to show/hide USB drive section based on Build USB Drive checkbox
+    $script:chkBuildUSBDriveEnable = $window.FindName('chkBuildUSBDriveEnable')
+    $script:usbSection = $window.FindName('usbDriveSection')
+    $script:chkSelectSpecificUSBDrives = $window.FindName('chkSelectSpecificUSBDrives')
+    $script:usbSelectionPanel = $window.FindName('usbDriveSelectionPanel')
     
-    $script:chkBuildUSBDrive.Add_Checked({
-        $script:usbPanel.Visibility = 'Visible'
+    # Set initial visibility states
+    $script:usbSection.Visibility = if ($script:chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
+    $script:usbSelectionPanel.Visibility = if ($script:chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
+    
+    $script:chkBuildUSBDriveEnable.Add_Checked({
+        $script:usbSection.Visibility = 'Visible'
+        $script:chkSelectSpecificUSBDrives.IsEnabled = $true
     })
     
-    $script:chkBuildUSBDrive.Add_Unchecked({
+    $script:chkBuildUSBDriveEnable.Add_Unchecked({
+        $script:usbSection.Visibility = 'Collapsed'
+        $script:chkSelectSpecificUSBDrives.IsEnabled = $false
+        $script:chkSelectSpecificUSBDrives.IsChecked = $false
         $script:lstUSBDrives.Items.Clear()
         $script:chkSelectAllUSBDrives.IsChecked = $false
-        $script:usbPanel.Visibility = 'Collapsed'
     })
 
-    # Add commands for keyboard selection
-    $script:lstUSBDrives = $window.FindName('lstUSBDrives')
-    $script:lstUSBDrives.Add_KeyDown({
-        param($sender, $e)
-        if ($e.Key -eq 'Space') {
-            $selectedItem = $script:lstUSBDrives.SelectedItem
-            if ($selectedItem) {
-                $selectedItem.IsSelected = !$selectedItem.IsSelected
-                # Update Select All checkbox state
-                $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
-                $script:chkSelectAllUSBDrives.IsChecked = $allSelected
-            }
-        }
+    # Add handler to show/hide USB drive selection panel based on Select Specific USB Drives checkbox
+    $script:chkSelectSpecificUSBDrives.Add_Checked({
+        $script:usbSelectionPanel.Visibility = 'Visible'
+    })
+    
+    $script:chkSelectSpecificUSBDrives.Add_Unchecked({
+        $script:usbSelectionPanel.Visibility = 'Collapsed'
+        $script:lstUSBDrives.Items.Clear()
+        $script:chkSelectAllUSBDrives.IsChecked = $false
     })
 
-    # Add handler for item selection changed
-    $script:lstUSBDrives.Add_SelectionChanged({
-        param($sender, $e)
-        # Update Select All checkbox state
-        $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
-        $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+    # Set initial state of Select Specific USB Drives checkbox
+    $script:chkSelectSpecificUSBDrives.IsEnabled = $script:chkBuildUSBDriveEnable.IsChecked
+
+    # Add handler for Allow External Hard Disk Media checkbox
+    $script:chkAllowExternalHardDiskMedia = $window.FindName('chkAllowExternalHardDiskMedia')
+    $script:chkPromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia')
+    
+    $script:chkAllowExternalHardDiskMedia.Add_Checked({
+        $script:chkPromptExternalHardDiskMedia.IsEnabled = $true
+    })
+    
+    $script:chkAllowExternalHardDiskMedia.Add_Unchecked({
+        $script:chkPromptExternalHardDiskMedia.IsEnabled = $false
+        $script:chkPromptExternalHardDiskMedia.IsChecked = $false
     })
 })
 
@@ -775,13 +788,20 @@ $btnLoadConfig.Add_Click({
             $window.FindName('txtFFUCaptureLocation').Text = $configContent.FFUCaptureLocation
             $window.FindName('txtShareName').Text = $configContent.ShareName
             $window.FindName('txtUsername').Text = $configContent.Username
-            $window.FindName('chkBuildUSBDrive').IsChecked = $configContent.BuildUSBDrive
+            $window.FindName('chkBuildUSBDriveEnable').IsChecked = $configContent.BuildUSBDrive
             $window.FindName('chkCompactOS').IsChecked = $configContent.CompactOS
             $window.FindName('chkOptimize').IsChecked = $configContent.Optimize
-            $window.FindName('chkPromptExternalHardDiskMedia').IsChecked = $configContent.EnablePromptExternalHardDiskMedia
+            $window.FindName('chkAllowVHDXCaching').IsChecked = $configContent.AllowVHDXCaching
             $window.FindName('chkAllowExternalHardDiskMedia').IsChecked = $configContent.AllowExternalHardDiskMedia
+            $window.FindName('chkPromptExternalHardDiskMedia').IsChecked = $configContent.PromptExternalHardDiskMedia
             $window.FindName('chkCreateCaptureMedia').IsChecked = $configContent.CreateCaptureMedia
             $window.FindName('chkCreateDeploymentMedia').IsChecked = $configContent.CreateDeploymentMedia
+
+            # USB Drive Modification group
+            $window.FindName('chkCopyAutopilot').IsChecked = $configContent.CopyAutopilot
+            $window.FindName('chkCopyUnattend').IsChecked = $configContent.CopyUnattend
+            $window.FindName('chkCopyPPKG').IsChecked = $configContent.CopyPPKG
+
             # Post Build Cleanup group
             $window.FindName('chkCleanupAppsISO').IsChecked = $configContent.CleanupAppsISO
             $window.FindName('chkCleanupCaptureISO').IsChecked = $configContent.CleanupCaptureISO

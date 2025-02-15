@@ -193,71 +193,53 @@
                         
                         <!-- Row 7: General Build Options Checkboxes -->
                         <WrapPanel Grid.Row="7" Margin="0,5">
-                            <CheckBox x:Name="chkBuildUSBDrive" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
+                            <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                             <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
-                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will optimize during FFU build."/>
-                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will create WinPE capture media."/>
-                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will create WinPE deployment media."/>
+                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
+                            <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
+                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
+                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
                         </WrapPanel>
 
                         <!-- Row 8: Build USB Drive Section -->
-                        <Grid Grid.Row="8" Margin="0,10,0,5" x:Name="usbDriveSection">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- Header -->
-                            <TextBlock Grid.Row="0" Text="Build USB Drive" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
-                            
-                            <!-- External Hard Disk Media Settings -->
-                            <StackPanel Grid.Row="1" Margin="5,0,0,10">
-                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
+                        <StackPanel Grid.Row="8" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
+                            <TextBlock Text="Build USB Drive Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                            <StackPanel Margin="5,0,0,10">
                                 <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
+                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="5,5,5,5" IsEnabled="False" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
+                                <CheckBox x:Name="chkSelectSpecificUSBDrives" Content="Select Specific USB Drives" Margin="5" VerticalAlignment="Center" Tag="Enable to select specific USB drives for building"/>
+                            
+                                <!-- USB Drive Selection Section -->
+                                <Grid x:Name="usbDriveSelectionPanel" Margin="5,0,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <!-- Button and Select All row -->
+                                    <DockPanel Grid.Row="0" Margin="0,5" LastChildFill="False">
+                                        <Button x:Name="btnCheckUSBDrives" Content="Check USB drives" DockPanel.Dock="Left" Padding="10,5"/>
+                                        <CheckBox x:Name="chkSelectAllUSBDrives" Content="Select All" DockPanel.Dock="Left" Margin="15,0,0,0" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <!-- ListView row -->
+                                    <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0,5" Height="150">
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="Selected" Width="70">
+                                                    <GridViewColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsSelected}"/>
+                                                        </DataTemplate>
+                                                    </GridViewColumn.CellTemplate>
+                                                </GridViewColumn>
+                                                <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
+                                                <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
+                                                <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                </Grid>
                             </StackPanel>
-
-                            <!-- USB Drive Detection -->
-                            <Grid Grid.Row="2" Margin="5">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <Button x:Name="btnCheckUSBDrives" Content="Check USB Drives" Grid.Row="0" Grid.Column="0" Margin="5" Padding="10,5"/>
-                                <CheckBox x:Name="chkSelectAllUSBDrives" Content="Select All" Grid.Row="0" Grid.Column="1" Margin="10,5" VerticalAlignment="Center"/>
-                                
-                                <ListView x:Name="lstUSBDrives" Grid.Row="1" Grid.ColumnSpan="2" Height="100" Margin="5">
-                                    <ListView.View>
-                                        <GridView>
-                                            <GridViewColumn Header="Selected" Width="70">
-                                                <GridViewColumn.CellTemplate>
-                                                    <DataTemplate>
-                                                        <CheckBox IsChecked="{Binding IsSelected}"/>
-                                                    </DataTemplate>
-                                                </GridViewColumn.CellTemplate>
-                                            </GridViewColumn>
-                                            <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
-                                            <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
-                                            <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
-                                        </GridView>
-                                    </ListView.View>
-                                </ListView>
-
-                                <!-- USB Drive Options -->
-                                <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="5">
-                                    <TextBlock Text="USB Drive Options" FontWeight="Bold" Margin="0,5"/>
-                                    <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot" Margin="5" VerticalAlignment="Center" Tag="Copy Autopilot files to deployment partition."/>
-                                    <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend" Margin="5" VerticalAlignment="Center" Tag="Copy Unattend files to deployment partition."/>
-                                    <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="Copy PPKG files to deployment partition."/>
-                                </StackPanel>
-                            </Grid>
-                        </Grid>
+                        </StackPanel>
 
                         <!-- Row 9: Post-Build Cleanup -->
                         <StackPanel Grid.Row="9" Margin="0,10,0,5">
