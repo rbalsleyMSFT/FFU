@@ -186,13 +186,9 @@ function Get-UIConfig {
     $installApps = $window.FindName('chkInstallApps').IsChecked
 
     # Add USB drive selection to config
-    $selectedUSBDrives = $window.FindName('lstUSBDrives').Items | Where-Object { $_.IsSelected } | ForEach-Object { 
-        @{
-            Model = $_.Model
-            SerialNumber = $_.SerialNumber
-            DeviceID = $_.DeviceID
-            Size = $_.Size
-        }
+    $selectedUSBDrives = @{}
+    $window.FindName('lstUSBDrives').Items | Where-Object { $_.IsSelected } | ForEach-Object { 
+        $selectedUSBDrives[$_.Model] = $_.SerialNumber
     }
 
     # Build configuration hashtable (unsorted)
@@ -851,10 +847,8 @@ $btnLoadConfig.Add_Click({
                 
                 # Then select the drives that match the saved configuration
                 foreach ($item in $script:lstUSBDrives.Items) {
-                    if ($configContent.USBDriveList | Where-Object { 
-                        $_.Model -eq $item.Model -and 
-                        $_.SerialNumber -eq $item.SerialNumber 
-                    }) {
+                    if ($configContent.USBDriveList.ContainsKey($item.Model) -and 
+                        $configContent.USBDriveList[$item.Model] -eq $item.SerialNumber) {
                         $item.IsSelected = $true
                     }
                 }
