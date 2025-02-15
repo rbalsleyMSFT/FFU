@@ -18,11 +18,11 @@ function Get-USBDrives {
         $size = [math]::Round($_.Size / 1GB, 2)
         $serialNumber = if ($_.SerialNumber) { $_.SerialNumber.Trim() } else { "N/A" }
         @{
-            Model = $_.Model
+            IsSelected = $false
+            Model = $_.Model.Trim()
             SerialNumber = $serialNumber
             Size = $size
-            DeviceID = $_.DeviceID
-            IsSelected = $false
+            DriveIndex = $_.Index
         }
     }
 }
@@ -624,14 +624,13 @@ $window.Add_Loaded({
     $script:chkSelectAllUSBDrives = $window.FindName('chkSelectAllUSBDrives')
     
     $script:btnCheckUSBDrives.Add_Click({
-        $usbDrives = Get-USBDrives
         $script:lstUSBDrives.Items.Clear()
+        $usbDrives = Get-USBDrives
         foreach ($drive in $usbDrives) {
-            [void]$script:lstUSBDrives.Items.Add($drive)
+            $script:lstUSBDrives.Items.Add([PSCustomObject]$drive)
         }
-        
-        if ($usbDrives.Count -eq 0) {
-            [System.Windows.MessageBox]::Show("No USB drives found.", "USB Drive Detection", "OK", "Information")
+        if ($script:lstUSBDrives.Items.Count -gt 0) {
+            $script:lstUSBDrives.SelectedIndex = 0
         }
     })
     
