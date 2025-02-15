@@ -9,6 +9,24 @@ $FFUDevelopmentPath = $PSScriptRoot
 $AppsPath           = Join-Path $FFUDevelopmentPath "Apps"
 $OfficePath         = Join-Path $AppsPath "Office"
 
+# Add the new function for USB drive detection
+function Get-USBDrives {
+    Get-WmiObject Win32_DiskDrive | Where-Object { 
+        ($_.MediaType -eq 'Removable Media' -or $_.MediaType -eq 'External hard disk media') -and
+        $_.InterfaceType -eq 'USB'
+    } | ForEach-Object {
+        $size = [math]::Round($_.Size / 1GB, 2)
+        $serialNumber = if ($_.SerialNumber) { $_.SerialNumber.Trim() } else { "N/A" }
+        @{
+            Model = $_.Model
+            SerialNumber = $serialNumber
+            Size = $size
+            DeviceID = $_.DeviceID
+            IsSelected = $false
+        }
+    }
+}
+
 # Some default values
 $defaultISOPath         = ""
 $defaultWindowsRelease   = 11   # numeric
@@ -26,7 +44,7 @@ $allowedFeatures = @(
     "Client-EmbeddedShellLauncher","Client-KeyboardFilter","Client-ProjFS","Client-UnifiedWriteFilter",
     "Containers","Containers-DisposableClientVM","Containers-HNS","Containers-SDN","DataCenterBridging",
     "DirectoryServices-ADAM-Client","DirectPlay","HostGuardian","HypervisorPlatform","IIS-ApplicationDevelopment",
-    "IIS-ApplicationInit","IIS-ASP","IIS-ASPNET","IIS-ASPNET45","IIS-BasicAuthentication","IIS-CertProvider",
+    "IIS-ApplicationInit","IIS-ASP","IIS-ASPNET45","IIS-BasicAuthentication","IIS-CertProvider",
     "IIS-CGI","IIS-ClientCertificateMappingAuthentication","IIS-CommonHttpFeatures","IIS-CustomLogging",
     "IIS-DefaultDocument","IIS-DirectoryBrowsing","IIS-DigestAuthentication","IIS-ESP","IIS-FTPServer",
     "IIS-FTPExtensibility","IIS-FTPSvc","IIS-HealthAndDiagnostics","IIS-HostableWebCore","IIS-HttpCompressionDynamic",
@@ -167,6 +185,16 @@ function Get-UIConfig {
     # --- Applications tab ---
     $installApps = $window.FindName('chkInstallApps').IsChecked
 
+    # Add USB drive selection to config
+    $selectedUSBDrives = $window.FindName('lstUSBDrives').Items | Where-Object { $_.IsSelected } | ForEach-Object { 
+        @{
+            Model = $_.Model
+            SerialNumber = $_.SerialNumber
+            DeviceID = $_.DeviceID
+            Size = $_.Size
+        }
+    }
+
     # Build configuration hashtable (unsorted)
     $config = [ordered]@{
         AllowExternalHardDiskMedia = $allowExt
@@ -217,6 +245,7 @@ function Get-UIConfig {
         WindowsSKU                 = $windowsSKU
         WindowsVersion             = $windowsVersion
         FFUPrefix                  = $ffuPrefix    # <-- new option for VM Name Prefix
+        USBDriveList               = $selectedUSBDrives # Add USB drive selection
     }
 
     # Sort the configuration hashtable alphabetically by key
@@ -588,6 +617,99 @@ $window.Add_Loaded({
     $script:chkPreviewCU.Add_Unchecked({
         $script:chkLatestCU.IsEnabled = $true
     })
+
+    # Add USB Drive Detection handler
+    $script:btnCheckUSBDrives = $window.FindName('btnCheckUSBDrives')
+    $script:lstUSBDrives = $window.FindName('lstUSBDrives')
+    $script:chkSelectAllUSBDrives = $window.FindName('chkSelectAllUSBDrives')
+    
+    $script:btnCheckUSBDrives.Add_Click({
+        $usbDrives = Get-USBDrives
+        $script:lstUSBDrives.Items.Clear()
+        foreach ($drive in $usbDrives) {
+            [void]$script:lstUSBDrives.Items.Add($drive)
+        }
+        
+        if ($usbDrives.Count -eq 0) {
+            [System.Windows.MessageBox]::Show("No USB drives found.", "USB Drive Detection", "OK", "Information")
+        }
+    })
+    
+    # Handle Select All checkbox
+    $script:chkSelectAllUSBDrives.Add_Checked({
+        foreach ($item in $script:lstUSBDrives.Items) {
+            $item.IsSelected = $true
+        }
+        $script:lstUSBDrives.Items.Refresh()
+    })
+
+    $script:chkSelectAllUSBDrives.Add_Unchecked({
+        foreach ($item in $script:lstUSBDrives.Items) {
+            $item.IsSelected = $false
+        }
+        $script:lstUSBDrives.Items.Refresh()
+    })
+
+    # Add keyboard handler
+    $script:lstUSBDrives.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Key -eq 'Space') {
+            $selectedItem = $script:lstUSBDrives.SelectedItem
+            if ($selectedItem) {
+                $selectedItem.IsSelected = !$selectedItem.IsSelected
+                $script:lstUSBDrives.Items.Refresh()
+                # Update Select All checkbox state
+                $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
+                $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+            }
+        }
+    })
+
+    # Add selection change handler
+    $script:lstUSBDrives.Add_SelectionChanged({
+        param($sender, $e)
+        # Update Select All checkbox state
+        $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
+        $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+    })
+
+    # Add handler to show/hide USB drive controls based on Build USB Drive checkbox
+    $script:chkBuildUSBDrive = $window.FindName('chkBuildUSBDrive')
+    $script:usbPanel = ($window.FindName('btnCheckUSBDrives').Parent.Parent)  # Get the outer Grid instead of immediate parent
+    $script:usbPanel.Visibility = if ($script:chkBuildUSBDrive.IsChecked) { 'Visible' } else { 'Collapsed' }
+    
+    $script:chkBuildUSBDrive.Add_Checked({
+        $script:usbPanel.Visibility = 'Visible'
+    })
+    
+    $script:chkBuildUSBDrive.Add_Unchecked({
+        $script:lstUSBDrives.Items.Clear()
+        $script:chkSelectAllUSBDrives.IsChecked = $false
+        $script:usbPanel.Visibility = 'Collapsed'
+    })
+
+    # Add commands for keyboard selection
+    $script:lstUSBDrives = $window.FindName('lstUSBDrives')
+    $script:lstUSBDrives.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Key -eq 'Space') {
+            $selectedItem = $script:lstUSBDrives.SelectedItem
+            if ($selectedItem) {
+                $selectedItem.IsSelected = !$selectedItem.IsSelected
+                # Update Select All checkbox state
+                $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
+                $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+            }
+        }
+    })
+
+    # Add handler for item selection changed
+    $script:lstUSBDrives.Add_SelectionChanged({
+        param($sender, $e)
+        # Update Select All checkbox state
+        $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
+        $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+    })
 })
 
 # Button: Build FFU
@@ -718,6 +840,31 @@ $btnLoadConfig.Add_Click({
             $window.FindName('chkUpdatePreviewCU').IsChecked = $configContent.UpdatePreviewCU
             # Applications tab
             $window.FindName('chkInstallApps').IsChecked = $configContent.InstallApps
+
+            # Update USB Drive selection if present in config
+            if ($configContent.USBDriveList) {
+                # First click the Check USB Drives button to populate the list
+                $script:btnCheckUSBDrives.RaiseEvent(
+                    [System.Windows.RoutedEventArgs]::new(
+                        [System.Windows.Controls.Button]::ClickEvent
+                    )
+                )
+                
+                # Then select the drives that match the saved configuration
+                foreach ($item in $script:lstUSBDrives.Items) {
+                    if ($configContent.USBDriveList | Where-Object { 
+                        $_.Model -eq $item.Model -and 
+                        $_.SerialNumber -eq $item.SerialNumber 
+                    }) {
+                        $item.IsSelected = $true
+                    }
+                }
+                $script:lstUSBDrives.Items.Refresh()
+
+                # Update the Select All checkbox state
+                $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
+                $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+            }
         }
     }
     catch {
