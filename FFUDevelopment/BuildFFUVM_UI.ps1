@@ -27,6 +27,181 @@ function Get-USBDrives {
     }
 }
 
+# --------------------------------------------------------------------------
+# SECTION: Winget Management Functions
+# --------------------------------------------------------------------------
+function Test-WingetCLI {
+    [CmdletBinding()]
+    param()
+    
+    $minVersion = [version]"1.8.1911"
+    
+    # Check Winget CLI
+    $wingetCmd = Get-Command -Name winget -ErrorAction SilentlyContinue
+    if (-not $wingetCmd) {
+        return @{
+            Version = "Not installed"
+            Status = "Not installed - Install from Microsoft Store"
+        }
+    }
+    
+    # Get and check version
+    $wingetVersion = & winget.exe --version
+    if ($wingetVersion -match 'v?(\d+\.\d+.\d+)') {
+        $version = [version]$matches[1]
+        if ($version -lt $minVersion) {
+            return @{
+                Version = $version.ToString()
+                Status = "Update required - Install from Microsoft Store"
+            }
+        }
+        return @{
+            Version = $version.ToString()
+            Status = $version.ToString()
+        }
+    }
+    
+    return @{
+        Version = "Unknown"
+        Status = "Version check failed"
+    }
+}
+
+function Update-WingetVersionFields {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$wingetText,
+        [Parameter(Mandatory)]
+        [string]$moduleText
+    )
+    
+    # Force UI update on the UI thread
+    $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action]{
+        $script:txtWingetVersion.Text = $wingetText
+        $script:txtWingetModuleVersion.Text = $moduleText
+        # Force immediate UI refresh
+        [System.Windows.Forms.Application]::DoEvents()
+    })
+}
+
+function Install-WingetComponents {
+    [CmdletBinding()]
+    param(
+        [string]$currentWingetVersion = "Checking..."
+    )
+
+    $minVersion = [version]"1.8.1911"
+    
+    try {
+        # Check and update PowerShell Module
+        $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue
+        if (-not $module -or $module.Version -lt $minVersion) {
+            Update-WingetVersionFields -wingetText $currentWingetVersion -moduleText "Installing..."
+            
+            # Store and modify PSGallery trust setting temporarily if needed
+            $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
+            if ($PSGalleryTrust -eq 'Untrusted') {
+                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+            }
+
+            # Install/Update the module
+            Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery'
+            
+            # Restore original PSGallery trust setting
+            if ($PSGalleryTrust -eq 'Untrusted') {
+                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
+            }
+            
+            $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction Stop
+        }
+        
+        return $module
+    }
+    catch {
+        Write-Error "Failed to install/update Winget PowerShell module: $_"
+        throw
+    }
+}
+
+# Winget Module Check Function
+function Confirm-WinGetInstallation {
+    param(
+        [System.Windows.Controls.TextBlock]$txtWingetVersion,
+        [System.Windows.Controls.TextBlock]$txtWingetModuleVersion
+    )
+    
+    $minVersion = [version]"1.8.1911"
+    $result = @{
+        Success = $false
+        Message = ""
+        RequiresRestart = $false
+    }
+    
+    # Check if winget executable exists and is accessible
+    if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
+        Update-VersionTextFields -wingetText "Not installed" -moduleText "Not installed"
+        $result.Message = "WinGet not found. Installing..."
+        $result.RequiresRestart = $true
+        return $result
+    }
+
+    # Get winget version
+    $wingetVersion = & winget.exe --version
+    if ($wingetVersion -match 'v?(\d+\.\d+.\d+)') {
+        $currentVersion = [version]$matches[1]
+        Update-VersionTextFields -wingetText $matches[1] -moduleText $txtWingetModuleVersion.Text
+        
+        if ($currentVersion -lt $minVersion) {
+            Update-VersionTextFields -wingetText "Updating..." -moduleText $txtWingetModuleVersion.Text
+            $result.Message = "WinGet version $currentVersion is outdated. Minimum required version is $minVersion"
+            $result.RequiresRestart = $true
+            return $result
+        }
+    }
+
+    # Check if Winget PowerShell module is installed and up to date
+    $wingetModule = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue
+    if ($null -eq $wingetModule) {
+        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText "Installing..."
+        $result.Message = "Microsoft.WinGet.Client module needs to be installed..."
+    }
+    elseif ($wingetModule.Version -lt $minVersion) {
+        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText "Updating..."
+        $result.Message = "Microsoft.WinGet.Client module needs to be updated..."
+    }
+    else {
+        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText $wingetModule.Version.ToString()
+        $result.Success = $true
+        $result.Message = "Winget and its PowerShell module are installed and up to date."
+        return $result
+    }
+    
+    # Install/Update module if needed
+    try {
+        # Check if PSGallery is trusted
+        $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
+        if ($PSGalleryTrust -eq 'Untrusted') {
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+        }
+
+        # Install/Update the module
+        Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery'
+
+        # Restore PSGallery trust setting if it was untrusted
+        if ($PSGalleryTrust -eq 'Untrusted') {
+            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
+        }
+    }
+    catch {
+        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText "Error"
+        throw
+    }
+    
+    $result.RequiresRestart = $true
+    return $result
+}
+
 # Some default values
 $defaultISOPath         = ""
 $defaultWindowsRelease   = 11   # numeric
@@ -184,6 +359,7 @@ function Get-UIConfig {
 
     # --- Applications tab ---
     $installApps = $window.FindName('chkInstallApps').IsChecked
+    $installWingetApps = $window.FindName('chkInstallWingetApps').IsChecked
 
     # Add USB drive selection to config
     $selectedUSBDrives = @{}
@@ -243,6 +419,8 @@ function Get-UIConfig {
         WindowsVersion             = $windowsVersion
         FFUPrefix                  = $ffuPrefix    # <-- new option for VM Name Prefix
         USBDriveList               = $selectedUSBDrives # Add USB drive selection
+        InstallApps                = $installApps
+        InstallWingetApps          = $installWingetApps
     }
 
     # Sort the configuration hashtable alphabetically by key
@@ -403,6 +581,23 @@ $script:UpdateInstallAppsBasedOnUpdates = {
         $window.FindName('chkInstallApps').IsEnabled = $true
     }
 }
+
+# Create data context class for version binding
+$script:versionData = [PSCustomObject]@{
+    WingetVersion = "Not checked"
+    ModuleVersion = "Not checked"
+}
+
+# Add observable property support
+$script:versionData | Add-Member -MemberType ScriptMethod -Name NotifyPropertyChanged -Value {
+    param($PropertyName)
+    if ($this.PropertyChanged) {
+        $this.PropertyChanged.Invoke($this, [System.ComponentModel.PropertyChangedEventArgs]::new($PropertyName))
+    }
+}
+
+$script:versionData | Add-Member -MemberType NoteProperty -Name PropertyChanged -Value $null
+$script:versionData | Add-Member -TypeName "System.ComponentModel.INotifyPropertyChanged"
 
 $window.Add_Loaded({
     $script:cmbWindowsRelease = $window.FindName('cmbWindowsRelease')
@@ -718,6 +913,67 @@ $window.Add_Loaded({
         $script:chkPromptExternalHardDiskMedia.IsEnabled = $false
         $script:chkPromptExternalHardDiskMedia.IsChecked = $false
     })
+
+    # Add Winget panel visibility handler
+    $script:chkInstallApps = $window.FindName('chkInstallApps')
+    $script:chkInstallWingetApps = $window.FindName('chkInstallWingetApps')
+    $script:wingetPanel = $window.FindName('wingetPanel')
+    $script:btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
+    $script:txtWingetVersion = $window.FindName('txtWingetVersion')
+    $script:txtWingetModuleVersion = $window.FindName('txtWingetModuleVersion')
+
+    # Hide Winget Apps checkbox initially if Install Apps is unchecked
+    $script:chkInstallWingetApps.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+    
+    # Show/Hide Winget Apps checkbox based on Install Apps state
+    $script:chkInstallApps.Add_Checked({ 
+        $script:chkInstallWingetApps.Visibility = 'Visible' 
+    })
+    $script:chkInstallApps.Add_Unchecked({ 
+        $script:chkInstallWingetApps.IsChecked = $false
+        $script:chkInstallWingetApps.Visibility = 'Collapsed'
+        $script:wingetPanel.Visibility = 'Collapsed'
+    })
+
+    # Show/Hide Winget panel based on checkbox state
+    $script:chkInstallWingetApps.Add_Checked({ $script:wingetPanel.Visibility = 'Visible' })
+    $script:chkInstallWingetApps.Add_Unchecked({ $script:wingetPanel.Visibility = 'Collapsed' })
+
+    # Handle Winget component check/installation
+    $script:btnCheckWingetModule.Add_Click({
+        $this.IsEnabled = $false
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        
+        # Show initial checking status
+        Update-WingetVersionFields -wingetText "Checking..." -moduleText "Checking..."
+        
+        # Run checks in background to prevent UI freezing
+        $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action]{
+            try {
+                # Check Winget CLI first
+                $cliStatus = Test-WingetCLI
+                
+                # Install/Update PowerShell module if needed
+                $module = Install-WingetComponents -currentWingetVersion $cliStatus.Status
+                
+                # Update UI with final status
+                Update-WingetVersionFields -wingetText $cliStatus.Status -moduleText $module.Version
+            }
+            catch {
+                Update-WingetVersionFields -wingetText "Error" -moduleText "Error"
+                [System.Windows.MessageBox]::Show(
+                    "Error checking winget components: $_",
+                    "Error",
+                    "OK",
+                    "Error"
+                )
+            }
+            finally {
+                $this.IsEnabled = $true
+                $window.Cursor = $null
+            }
+        })
+    })
 })
 
 # Button: Build FFU
@@ -855,6 +1111,7 @@ $btnLoadConfig.Add_Click({
             $window.FindName('chkUpdatePreviewCU').IsChecked = $configContent.UpdatePreviewCU
             # Applications tab
             $window.FindName('chkInstallApps').IsChecked = $configContent.InstallApps
+            $window.FindName('chkInstallWingetApps').IsChecked = $configContent.InstallWingetApps
 
             # Update USB Drive selection if present in config
             if ($configContent.USBDriveList) {
