@@ -265,8 +265,8 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
 						<RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="200"/>
@@ -526,13 +526,79 @@
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <CheckBox x:Name="chkInstallApps" Content="Install Apps" Margin="0,0,5,0" ToolTip="When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created."/>
+
+                    <!-- Regular Applications Section -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                        <CheckBox x:Name="chkInstallApps" 
+                                Content="Install Applications" 
+                                Margin="0,5"
+                                ToolTip="Enable to install regular applications during the build process"/>
+                        
+                        <!-- Winget Applications Section - Indented under Install Applications -->
+                        <CheckBox x:Name="chkInstallWingetApps" 
+                                Content="Install Winget Applications" 
+                                Margin="20,5,0,5"
+                                Visibility="Collapsed"
+                                ToolTip="Enable to install applications using Windows Package Manager (winget)"/>
+                        
+                        <!-- Winget Status Panel -->
+                        <StackPanel x:Name="wingetPanel" 
+                                  Visibility="Collapsed" 
+                                  Margin="40,10,0,0">
+                            
+                            <TextBlock Text="Winget Status" 
+                                     FontWeight="Bold" 
+                                     Margin="0,0,0,5"/>
+                            
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Winget CLI Version Display -->
+                                <TextBlock Text="Winget Version:" 
+                                         Grid.Row="0" 
+                                         Grid.Column="0" 
+                                         VerticalAlignment="Center"
+                                         ToolTip="Current version of the Winget CLI installed on the system"/>
+                                <TextBlock x:Name="txtWingetVersion" 
+                                         Text="Not checked" 
+                                         Grid.Row="0" 
+                                         Grid.Column="1" 
+                                         VerticalAlignment="Center"/>
+
+                                <!-- Winget PowerShell Module Version Display -->
+                                <TextBlock Text="Module Version:" 
+                                         Grid.Row="1" 
+                                         Grid.Column="0" 
+                                         VerticalAlignment="Center"
+                                         ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
+                                <TextBlock x:Name="txtWingetModuleVersion" 
+                                         Text="Not checked" 
+                                         Grid.Row="1" 
+                                         Grid.Column="1" 
+                                         VerticalAlignment="Center"/>
+
+                                <!-- Check/Install Button -->
+                                <Button x:Name="btnCheckWingetModule" 
+                                        Content="Check Winget Status" 
+                                        Grid.Row="2" 
+                                        Grid.Column="0" 
+                                        Grid.ColumnSpan="2"
+                                        Margin="0,10,0,0" 
+                                        Padding="10,5"
+                                        HorizontalAlignment="Left"
+                                        ToolTip="Check installation status and version of Winget CLI and PowerShell module. Will install or update if needed."/>
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </TabItem>
