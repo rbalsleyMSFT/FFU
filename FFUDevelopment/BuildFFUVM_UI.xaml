@@ -533,20 +533,19 @@
                     <StackPanel Grid.Row="0" Margin="0,0,0,10">
                         <CheckBox x:Name="chkInstallApps" 
                                 Content="Install Applications" 
-                                Margin="0,5"
+                                Margin="5"
                                 ToolTip="Enable to install regular applications during the build process"/>
                         
                         <!-- Winget Applications Section - Indented under Install Applications -->
                         <CheckBox x:Name="chkInstallWingetApps" 
                                 Content="Install Winget Applications" 
-                                Margin="20,5,0,5"
-                                Visibility="Collapsed"
+                                Margin="5"
                                 ToolTip="Enable to install applications using Windows Package Manager (winget)"/>
                         
                         <!-- Winget Status Panel -->
                         <StackPanel x:Name="wingetPanel" 
                                   Visibility="Collapsed" 
-                                  Margin="40,10,0,0">
+                                  Margin="25,0,5,5">
                             
                             <TextBlock Text="Winget Status" 
                                      FontWeight="Bold" 
