@@ -598,6 +598,58 @@
                                         ToolTip="Check installation status and version of Winget CLI and PowerShell module. Will install or update if needed."/>
                             </Grid>
                         </StackPanel>
+
+                        <!-- Winget Search Panel -->
+                        <StackPanel x:Name="wingetSearchPanel"
+                                  Visibility="Collapsed"
+                                  Margin="25,10,5,5">
+
+                            <TextBlock Text="Winget Search" 
+                                     FontWeight="Bold" 
+                                     Margin="0,0,0,5"/>
+                            
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="100"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <TextBox x:Name="txtWingetSearch"
+                                         Grid.Column="0"
+                                         Margin="0,0,10,0"
+                                         Height="24"
+                                         VerticalContentAlignment="Center"
+                                         VerticalAlignment="Center"
+                                         ToolTip="Enter an application name to search for"/>
+                                
+                                <Button x:Name="btnWingetSearch"
+                                        Grid.Column="1"
+                                        Content="Search"
+                                        Width="100"
+                                        Height="24"
+                                        ToolTip="Search for applications using Windows Package Manager"/>
+                            </Grid>
+                            
+                            <!-- Results ListView -->
+                            <ListView x:Name="lstWingetResults"
+                                     Height="300"
+                                     Margin="0,0,0,10"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+                            
+                            <!-- Save/Import Buttons -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Button x:Name="btnSaveWingetList"
+                                        Content="Save Applist.json"
+                                        Padding="15,5"
+                                        Margin="0,0,10,0"
+                                        ToolTip="Save selected applications to a JSON file"/>
+                                <Button x:Name="btnImportWingetList"
+                                        Content="Import Applist.json"
+                                        Padding="15,5"
+                                        ToolTip="Import applications from a JSON file"/>
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </TabItem>
