@@ -637,7 +637,7 @@
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
                             
-                            <!-- Save/Import Buttons -->
+                            <!-- Save/Import/Clear Buttons -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                                 <Button x:Name="btnSaveWingetList"
                                         Content="Save Applist.json"
@@ -647,7 +647,12 @@
                                 <Button x:Name="btnImportWingetList"
                                         Content="Import Applist.json"
                                         Padding="15,5"
+                                        Margin="0,0,10,0"
                                         ToolTip="Import applications from a JSON file"/>
+                                <Button x:Name="btnClearWingetList"
+                                        Content="Clear List"
+                                        Padding="15,5"
+                                        ToolTip="Clear all applications from the list"/>
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>
