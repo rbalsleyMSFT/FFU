@@ -942,6 +942,17 @@ $window.Add_Loaded({
                 $script:wingetPanel.Visibility = 'Collapsed'
             })
 
+        # Bring Your Own Applications checkbox should only show if Install Applications is checked
+        $script:chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
+        $script:chkBringYourOwnApps.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:chkInstallApps.Add_Checked({
+            $script:chkBringYourOwnApps.Visibility = 'Visible'
+        })
+        $script:chkInstallApps.Add_Unchecked({
+            $script:chkBringYourOwnApps.IsChecked = $false
+            $script:chkBringYourOwnApps.Visibility = 'Collapsed'
+        })
+
         # Show/Hide Winget panel based on checkbox state
         $script:chkInstallWingetApps.Add_Checked({ 
                 $script:wingetPanel.Visibility = 'Visible'
@@ -1043,7 +1054,6 @@ $window.Add_Loaded({
     
         # Show search panel after successful Winget validation
         $script:btnCheckWingetModule.Add_Click({
-                # ...existing code...
                 try {
                     # Check Winget CLI first
                     $cliStatus = Test-WingetCLI
@@ -1060,7 +1070,13 @@ $window.Add_Loaded({
                     }
                 }
                 catch {
-                    # ...existing error handling code...
+                    Update-WingetVersionFields -wingetText "Error" -moduleText "Error"
+                    [System.Windows.MessageBox]::Show(
+                        "Error checking winget components: $_",
+                        "Error",
+                        "OK",
+                        "Error"
+                    )
                 }
             })
 
