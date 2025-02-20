@@ -602,7 +602,7 @@
                         <!-- Winget Search Panel -->
                         <StackPanel x:Name="wingetSearchPanel"
                                   Visibility="Collapsed"
-                                  Margin="25,10,5,5">
+                                  Margin="25,10,5,20">
 
                             <TextBlock Text="Winget Search" 
                                      FontWeight="Bold" 
@@ -655,6 +655,11 @@
                                         ToolTip="Clear all applications from the list"/>
                             </StackPanel>
                         </StackPanel>
+
+                        <CheckBox x:Name="chkBringYourOwnApps" 
+                                Content="Bring Your Own Applications" 
+                                Margin="5"
+                                ToolTip="Enable to bring your own applications during the build process"/>
                     </StackPanel>
                 </Grid>
             </TabItem>
