@@ -660,6 +660,49 @@
                                 Content="Bring Your Own Applications" 
                                 Margin="5"
                                 ToolTip="Enable to bring your own applications during the build process"/>
+
+                        <!-- Application Information Section -->
+                        <StackPanel x:Name="byoApplicationPanel"
+                                  Visibility="Collapsed" 
+                                  Margin="25,0,5,20">
+                            <TextBlock Text="Application Information" 
+                                     FontWeight="Bold" 
+                                     Margin="0,5,0,10"/>
+                            
+                            <!-- Name -->
+                            <TextBlock Text="Name:" 
+                                     Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtAppName"
+                                   Margin="0,0,0,10"
+                                   ToolTip="Enter the name of the application"/>
+                            
+                            <!-- Command Line -->
+                            <TextBlock Text="Command Line:" 
+                                     Margin="0,0,0,5"/>
+                            <TextBox x:Name="txtAppCommandLine"
+                                   Margin="0,0,0,10"
+                                   ToolTip="Enter the command line to install the application"/>
+                            
+                            <!-- Source -->
+                            <TextBlock Text="Source:" 
+                                     Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="txtAppSource"
+                                       Grid.Column="0"
+                                       VerticalAlignment="Center"
+                                       ToolTip="Enter the source folder path of the application installation files"/>
+                                <Button x:Name="btnBrowseAppSource"
+                                      Grid.Column="1"
+                                      Content="Browse..."
+                                      Width="80"
+                                      Margin="5,0,0,0"
+                                      VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </TabItem>
@@ -776,7 +819,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="txtPEDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers."/>
-                        <Button x:Name="btnBrowsePEDrivers" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                        <Button x:Name="btnBrowsePEDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
                     </Grid>
                 </Grid>
             </TabItem>
