@@ -1390,6 +1390,42 @@ $window.Add_Loaded({
         $script:chkBringYourOwnApps.Add_Unchecked({
                 $script:byoApplicationPanel.Visibility = 'Collapsed'
             })
+
+        # Add event handlers for Save/Load/Clear buttons
+        $script:btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
+        $script:btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
+        $script:btnClearBYOApplications = $window.FindName('btnClearBYOApplications')
+
+        $script:btnSaveBYOApplications.Add_Click({
+            $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
+            $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            $saveDialog.DefaultExt = ".json"
+            $saveDialog.Title = "Save Application List"
+            if ($saveDialog.ShowDialog()) {
+                Save-BYOApplicationList -Path $saveDialog.FileName
+            }
+        })
+
+        $script:btnLoadBYOApplications.Add_Click({
+            $openDialog = New-Object Microsoft.Win32.OpenFileDialog
+            $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            $openDialog.Title = "Import Application List"
+            if ($openDialog.ShowDialog()) {
+                Import-BYOApplicationList -Path $openDialog.FileName
+            }
+        })
+
+        $script:btnClearBYOApplications.Add_Click({
+            $result = [System.Windows.MessageBox]::Show(
+                "Are you sure you want to clear all applications?",
+                "Clear Applications",
+                [System.Windows.MessageBoxButton]::YesNo,
+                [System.Windows.MessageBoxImage]::Question
+            )
+            if ($result -eq [System.Windows.MessageBoxResult]::Yes) {
+                $window.FindName('lstApplications').Items.Clear()
+            }
+        })
     })
 
 # Function to search for Winget apps
@@ -1519,6 +1555,71 @@ function Remove-Application {
     
     # Refresh the ListView
     $listView.Items.Refresh()
+}
+
+# Function to save BYO applications to JSON
+function Save-BYOApplicationList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $listView = $window.FindName('lstApplications')
+    if (-not $listView -or $listView.Items.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("No applications to save.", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        return
+    }
+
+    try {
+        $applications = $listView.Items | Select-Object Priority, Name, CommandLine, Source
+        $applications | ConvertTo-Json | Set-Content -Path $Path -Force
+        [System.Windows.MessageBox]::Show("Applications saved successfully.", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    }
+    catch {
+        [System.Windows.MessageBox]::Show("Failed to save applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
+}
+
+# Function to load BYO applications from JSON
+function Import-BYOApplicationList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        [System.Windows.MessageBox]::Show("Application list file not found.", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        return
+    }
+
+    try {
+        $applications = Get-Content -Path $Path -Raw | ConvertFrom-Json
+        $listView = $window.FindName('lstApplications')
+        $listView.Items.Clear()
+
+        foreach ($app in $applications) {
+            $listView.Items.Add([PSCustomObject]@{
+                Priority = $app.Priority
+                Name = $app.Name
+                CommandLine = $app.CommandLine
+                Source = $app.Source
+            })
+        }
+
+        # Reorder priorities to ensure they are sequential
+        $currentPriority = 1
+        foreach ($item in $listView.Items) {
+            $item.Priority = $currentPriority
+            $currentPriority++
+        }
+
+        [System.Windows.MessageBox]::Show("Applications imported successfully.", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    }
+    catch {
+        [System.Windows.MessageBox]::Show("Failed to import applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
 }
 
 # Button: Build FFU
