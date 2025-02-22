@@ -702,6 +702,36 @@
                                       Margin="5,0,0,0"
                                       VerticalAlignment="Center"/>
                             </Grid>
+
+                            <!-- Add Application Button -->
+                            <Button x:Name="btnAddApplication"
+                                    Content="Add Application"
+                                    Width="120"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,10,0,10"
+                                    Padding="10,5"
+                                    ToolTip="Add the application to the list"/>
+
+                            <!-- Applications ListView -->
+                            <ListView x:Name="lstApplications"
+                                     Height="200"
+                                     Margin="0,0,0,10">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Priority" DisplayMemberBinding="{Binding Priority}" Width="60"/>
+                                        <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="200"/>
+                                        <GridViewColumn Header="Command Line" DisplayMemberBinding="{Binding CommandLine}" Width="300"/>
+                                        <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="250"/>
+                                        <GridViewColumn Header="Action" Width="80">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="Remove" Tag="{Binding Priority}" Width="70"/>
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
                         </StackPanel>
                     </StackPanel>
                 </Grid>
