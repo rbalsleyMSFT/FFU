@@ -1,9 +1,7 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
-        Title="FFU Builder UI"
-        Height="750"
-        Width="980">
+        Title="FFU Builder UI">
     <!-- 
       ─────────────────────────────────────────────────────────────────
        1) Window.Resources:
@@ -78,7 +76,7 @@
 
     <Grid Margin="10">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -99,12 +97,14 @@
                     Grid.Row="0">
             <!-- TAB: Home -->
             <TabItem Header="Home" Padding="20">
-                <Grid Margin="10">
-                    <TextBlock Text="Welcome to FFU Builder" 
-                               FontSize="20" 
-                               HorizontalAlignment="Center" 
-                               VerticalAlignment="Center"/>
-                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
+                        <TextBlock Text="Welcome to FFU Builder" 
+                                FontSize="20" 
+                                HorizontalAlignment="Center" 
+                                VerticalAlignment="Center"/>
+                    </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB: Build -->
@@ -256,274 +256,281 @@
 
             <!-- TAB: Hyper-V Settings -->
             <TabItem Header="Hyper-V Settings" Padding="20">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-						<RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <!-- Row 0: VM Switch Name -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="VM Switch Name" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbVMSwitchName"
-                              Grid.Row="0" Grid.Column="1"
-                              Margin="5"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Stretch"
-							  ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
-                    <!-- Row 1: Custom VM Switch Name -->
-                    <TextBox x:Name="txtCustomVMSwitchName"
-                             Grid.Row="1" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"
-                             Visibility="Collapsed"
-							 ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
-                    <!-- Row 2: VM Host IP Address -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="VM Host IP Address" ToolTip="IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP)."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtVMHostIPAddress"
-                             Grid.Row="2" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"/>
-                    <!-- Row 3: Disk Size (GB) -->
-                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtDiskSize"
-                             Grid.Row="3" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"
-                             Text="30"
-							 ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
-                    <!-- Row 4: Memory (GB) -->
-                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Memory (GB)" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtMemory"
-                             Grid.Row="4" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"
-                             Text="4"
-							 ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
-                    <!-- Row 5: Processors -->
-                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Processors" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtProcessors"
-                             Grid.Row="5" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"
-                             Text="4"
-							 ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
-                    <!-- Row 6: VM Location -->
-                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="VM Location" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtVMLocation"
-                             Grid.Row="6" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"
-                             Text="{x:Static sys:Environment.CurrentDirectory}"
-							 ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
-					<!-- Row 7: VM Name Prefix -->
-                    <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="VM Name Prefix" ToolTip="Prefix for the VM Name. The default is _FFU."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtVMNamePrefix"
-                             Grid.Row="7" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"
-							 ToolTip="Prefix for the VM Name. The default is _FFU."/>
-                    <!-- Row 8: Logical Sector Size -->
-                    <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Logical Sector Size" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbLogicalSectorSize"
-                              Grid.Row="8" Grid.Column="1"
-                              Margin="5"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Left"
-							  ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
-                        <ComboBoxItem Content="512" IsSelected="True"/>
-                        <ComboBoxItem Content="4096"/>
-                    </ComboBox>
-                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="200"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- Row 0: VM Switch Name -->
+                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Switch Name" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbVMSwitchName"
+                                Grid.Row="0" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
+                        <!-- Row 1: Custom VM Switch Name -->
+                        <TextBox x:Name="txtCustomVMSwitchName"
+                                Grid.Row="1" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                Visibility="Collapsed"
+                                ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
+                        <!-- Row 2: VM Host IP Address -->
+                        <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Host IP Address" ToolTip="IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP)."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtVMHostIPAddress"
+                                Grid.Row="2" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"/>
+                        <!-- Row 3: Disk Size (GB) -->
+                        <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtDiskSize"
+                                Grid.Row="3" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                Text="30"
+                                ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
+                        <!-- Row 4: Memory (GB) -->
+                        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="Memory (GB)" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtMemory"
+                                Grid.Row="4" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                Text="4"
+                                ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
+                        <!-- Row 5: Processors -->
+                        <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="Processors" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtProcessors"
+                                Grid.Row="5" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                Text="4"
+                                ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
+                        <!-- Row 6: VM Location -->
+                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Location" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtVMLocation"
+                                Grid.Row="6" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                Text="{x:Static sys:Environment.CurrentDirectory}"
+                                ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
+                        <!-- Row 7: VM Name Prefix -->
+                        <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Name Prefix" ToolTip="Prefix for the VM Name. The default is _FFU."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtVMNamePrefix"
+                                Grid.Row="7" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                ToolTip="Prefix for the VM Name. The default is _FFU."/>
+                        <!-- Row 8: Logical Sector Size -->
+                        <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="Logical Sector Size" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbLogicalSectorSize"
+                                Grid.Row="8" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
+                            <ComboBoxItem Content="512" IsSelected="True"/>
+                            <ComboBoxItem Content="4096"/>
+                        </ComboBox>
+                    </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB: Windows Settings -->
             <TabItem Header="Windows Settings" Padding="20">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="Auto"/>  
-                        <RowDefinition Height="*"   />   
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <!-- (0) ISO Path -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Windows ISO Path" VerticalAlignment="Center" ToolTip="Path to the Windows 10/11 ISO file."/>
-                    </StackPanel>
-                    <Grid Grid.Row="0" Grid.Column="1" Margin="5">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="Auto"/>  
+                            <RowDefinition Height="*"   />   
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="200"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtISOPath"
-                                 Grid.Column="0"
-                                 VerticalAlignment="Center"
-                                 HorizontalAlignment="Stretch"/>
-                        <Button x:Name="btnBrowseISO"
-                                Grid.Column="1"
-                                Content="Browse..."
-                                Width="80"
-                                Margin="5,0,0,0"
-                                VerticalAlignment="Center"/>
+                        <!-- (0) ISO Path -->
+                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Windows ISO Path" VerticalAlignment="Center" ToolTip="Path to the Windows 10/11 ISO file."/>
+                        </StackPanel>
+                        <Grid Grid.Row="0" Grid.Column="1" Margin="5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="txtISOPath"
+                                    Grid.Column="0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Stretch"/>
+                            <Button x:Name="btnBrowseISO"
+                                    Grid.Column="1"
+                                    Content="Browse..."
+                                    Width="80"
+                                    Margin="5,0,0,0"
+                                    VerticalAlignment="Center"/>
+                        </Grid>
+                        <!-- (1) Windows Release -->
+                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Windows Release" VerticalAlignment="Center" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbWindowsRelease"
+                                Grid.Row="1" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
+                        <!-- (2) Windows Version -->
+                        <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Windows Version" VerticalAlignment="Center" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbWindowsVersion"
+                                Grid.Row="2" Grid.Column="1"
+                                Margin="5"
+                                Width="120"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                IsEnabled="False"
+                                ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
+                        <!-- (3) Windows Arch -->
+                        <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Windows Architecture" VerticalAlignment="Center" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbWindowsArch"
+                                Grid.Row="3" Grid.Column="1"
+                                Margin="5"
+                                Width="120"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
+                        <!-- (4) Windows Lang -->
+                        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Windows Language" VerticalAlignment="Center" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbWindowsLang"
+                                Grid.Row="4" Grid.Column="1"
+                                Margin="5"
+                                Width="120"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
+                        <!-- (5) Windows SKU -->
+                        <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Windows SKU" VerticalAlignment="Center" ToolTip="Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbWindowsSKU"
+                                Grid.Row="5" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                ToolTip="Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'."/>
+                        <!-- (6) Media Type -->
+                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Media Type" VerticalAlignment="Center" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbMediaType"
+                                Grid.Row="6" Grid.Column="1"
+                                Margin="5"
+                                Width="120"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
+                        <!-- (7) Product Key -->
+                        <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <TextBlock Text="Product Key" VerticalAlignment="Center" ToolTip="Product key for the Windows edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtProductKey"
+                                Grid.Row="7" Grid.Column="1"
+                                Margin="5"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"/>
+                        <!-- (8) Expander for Optional Features -->
+                        <Expander x:Name="expOptionalFeatures"
+                                Style="{StaticResource MinimalExpanderNoHighlightStyle}"
+                                Grid.Row="8"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="2"
+                                IsExpanded="False"
+                                Margin="0,5,0,0"
+                                ExpandDirection="Down">
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                        VerticalScrollBarVisibility="Auto"
+                                        Margin="0,5,0,0">
+                                <StackPanel x:Name="stackFeaturesContainer" Margin="15,5">
+                                    <TextBlock Text="Selected features (semicolon):"
+                                            Margin="0,10,0,5"
+                                            FontStyle="Italic"/>
+                                    <TextBox x:Name="txtOptionalFeatures"
+                                            IsReadOnly="True"
+                                            Width="350"
+                                            Margin="0,0,0,10"
+                                            ToolTip="Provide a semicolon-separated list of Windows optional features you want to include in the FFU (e.g., netfx3;TFTP)."/>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Expander>
                     </Grid>
-                    <!-- (1) Windows Release -->
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Windows Release" VerticalAlignment="Center" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsRelease"
-                              Grid.Row="1" Grid.Column="1"
-                              Margin="5"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Stretch"
-							  ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
-                    <!-- (2) Windows Version -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Windows Version" VerticalAlignment="Center" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsVersion"
-                              Grid.Row="2" Grid.Column="1"
-                              Margin="5"
-                              Width="120"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Left"
-                              IsEnabled="False"
-							  ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
-                    <!-- (3) Windows Arch -->
-                    <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Windows Architecture" VerticalAlignment="Center" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsArch"
-                              Grid.Row="3" Grid.Column="1"
-                              Margin="5"
-                              Width="120"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Left"
-							  ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
-                    <!-- (4) Windows Lang -->
-                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Windows Language" VerticalAlignment="Center" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsLang"
-                              Grid.Row="4" Grid.Column="1"
-                              Margin="5"
-                              Width="120"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Left"
-							  ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
-                    <!-- (5) Windows SKU -->
-                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Windows SKU" VerticalAlignment="Center" ToolTip="Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbWindowsSKU"
-                              Grid.Row="5" Grid.Column="1"
-                              Margin="5"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Stretch"
-							  ToolTip="Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'."/>
-                    <!-- (6) Media Type -->
-                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Media Type" VerticalAlignment="Center" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
-                    </StackPanel>
-                    <ComboBox x:Name="cmbMediaType"
-                              Grid.Row="6" Grid.Column="1"
-                              Margin="5"
-                              Width="120"
-                              VerticalAlignment="Center"
-                              HorizontalAlignment="Left"
-							  ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
-                    <!-- (7) Product Key -->
-                    <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <TextBlock Text="Product Key" VerticalAlignment="Center" ToolTip="Product key for the Windows edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here."/>
-                    </StackPanel>
-                    <TextBox x:Name="txtProductKey"
-                             Grid.Row="7" Grid.Column="1"
-                             Margin="5"
-                             VerticalAlignment="Center"
-                             HorizontalAlignment="Stretch"/>
-                    <!-- (8) Expander for Optional Features -->
-                    <Expander x:Name="expOptionalFeatures"
-                              Style="{StaticResource MinimalExpanderNoHighlightStyle}"
-                              Grid.Row="8"
-                              Grid.Column="0"
-                              Grid.ColumnSpan="2"
-                              IsExpanded="False"
-                              Margin="0,5,0,0"
-                              ExpandDirection="Down">
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                      VerticalScrollBarVisibility="Auto"
-                                      Margin="0,5,0,0">
-                            <StackPanel x:Name="stackFeaturesContainer" Margin="15,5">
-                                <TextBlock Text="Selected features (semicolon):"
-                                           Margin="0,10,0,5"
-                                           FontStyle="Italic"/>
-                                <TextBox x:Name="txtOptionalFeatures"
-                                         IsReadOnly="True"
-                                         Width="350"
-                                         Margin="0,0,0,10"
-                                         ToolTip="Provide a semicolon-separated list of Windows optional features you want to include in the FFU (e.g., netfx3;TFTP)."/>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Expander>
-                </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB: Updates -->
             <TabItem Header="Updates" Padding="20">
-                <StackPanel Margin="5">
-                    <CheckBox x:Name="chkUpdateLatestCU" Content="Update Latest Cumulative Update" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false."/>
-                    <CheckBox x:Name="chkUpdateLatestNet" Content="Update .NET" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest .NET Framework for Windows 10/11. Default is $false."/>
-                    <CheckBox x:Name="chkUpdateLatestDefender" Content="Update Defender" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false."/>
-                    <CheckBox x:Name="chkUpdateEdge" Content="Update Edge" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false."/>
-                    <CheckBox x:Name="chkUpdateOneDrive" Content="Update OneDrive (Per-Machine)" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per-machine installation instead of per-user. Default is $false."/>
-                    <CheckBox x:Name="chkUpdateLatestMSRT" Content="Update Microsoft Software Removal Tool (MSRT)" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Windows Malicious Software Removal Tool. Default is $false."/>
-                    <CheckBox x:Name="chkUpdatePreviewCU" Content="Update Preview Cumulative Update" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false."/>
-                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5">
+                        <CheckBox x:Name="chkUpdateLatestCU" Content="Update Latest Cumulative Update" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false."/>
+                        <CheckBox x:Name="chkUpdateLatestNet" Content="Update .NET" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest .NET Framework for Windows 10/11. Default is $false."/>
+                        <CheckBox x:Name="chkUpdateLatestDefender" Content="Update Defender" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false."/>
+                        <CheckBox x:Name="chkUpdateEdge" Content="Update Edge" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false."/>
+                        <CheckBox x:Name="chkUpdateOneDrive" Content="Update OneDrive (Per-Machine)" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per-machine installation instead of per-user. Default is $false."/>
+                        <CheckBox x:Name="chkUpdateLatestMSRT" Content="Update Microsoft Software Removal Tool (MSRT)" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Windows Malicious Software Removal Tool. Default is $false."/>
+                        <CheckBox x:Name="chkUpdatePreviewCU" Content="Update Preview Cumulative Update" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false."/>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB: Applications -->
             <TabItem Header="Applications" Padding="20">
-                <Grid Margin="10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -640,12 +647,12 @@
                             <!-- Save/Import/Clear Buttons -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                                 <Button x:Name="btnSaveWingetList"
-                                        Content="Save Applist.json"
+                                        Content="Save AppList.json"
                                         Padding="15,5"
                                         Margin="0,0,10,0"
                                         ToolTip="Save selected applications to a JSON file"/>
                                 <Button x:Name="btnImportWingetList"
-                                        Content="Import Applist.json"
+                                        Content="Import AppList.json"
                                         Padding="15,5"
                                         Margin="0,0,10,0"
                                         ToolTip="Import applications from a JSON file"/>
@@ -725,133 +732,162 @@
                                         <GridViewColumn Header="Action" Width="80">
                                             <GridViewColumn.CellTemplate>
                                                 <DataTemplate>
-                                                    <Button Content="Remove" Tag="{Binding Priority}" Width="70"/>
+                                                    <Grid HorizontalAlignment="Stretch">
+                                                        <Button Content="Remove" 
+                                                                Tag="{Binding Priority}" 
+                                                                Width="70"
+                                                                HorizontalAlignment="Center"
+                                                                ToolTip="Remove this application from the list and reorder priorities"/>
+                                                    </Grid>
                                                 </DataTemplate>
                                             </GridViewColumn.CellTemplate>
                                         </GridViewColumn>
                                     </GridView>
                                 </ListView.View>
                             </ListView>
+
+                            <!-- Save/Import/Clear Buttons -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,10">
+                                <Button x:Name="btnSaveBYOApplications"
+                                        Content="Save UserAppList.json"
+                                        Margin="0,0,10,0"
+                                        Padding="10,5"
+                                        ToolTip="Save application list to JSON file"/>
+                                <Button x:Name="btnLoadBYOApplications"
+                                        Content="Import UserAppList.json"
+                                        Margin="0,0,10,0"
+                                        Padding="10,5"
+                                        ToolTip="Import application list from JSON file"/>
+                                <Button x:Name="btnClearBYOApplications"
+                                        Content="Clear List"
+                                        Padding="10,5"
+                                        ToolTip="Clear all applications from the list"/>
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
-                </Grid>
+                    </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB: M365 Apps/Office -->
             <TabItem Header="M365 Apps/Office" Padding="20">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="250"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,5,0" ToolTip="Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM."/>
-                    </StackPanel>
-                    <StackPanel x:Name="OfficePathStackPanel" Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                        <TextBlock Text="Office Path" ToolTip="Path to the Office installation files."/>
-                    </StackPanel>
-                    <Grid x:Name="OfficePathGrid" Grid.Row="1" Grid.Column="1" Margin="5">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Office installation files."/>
-                        <Button x:Name="btnBrowseOfficePath" Grid.Column="1" Content="Browse..." Width="80" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,5,0" ToolTip="Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM."/>
+                        </StackPanel>
+                        <StackPanel x:Name="OfficePathStackPanel" Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="Office Path" ToolTip="Path to the Office installation files."/>
+                        </StackPanel>
+                        <Grid x:Name="OfficePathGrid" Grid.Row="1" Grid.Column="1" Margin="5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Office installation files."/>
+                            <Button x:Name="btnBrowseOfficePath" Grid.Column="1" Content="Browse..." Width="80" VerticalAlignment="Center"/>
+                        </Grid>
+                        <StackPanel x:Name="CopyOfficeConfigXMLStackPanel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                            <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" Margin="0,0,5,0" ToolTip="Enable to copy the Office configuration XML file to the Office folder."/>
+                        </StackPanel>
+                        <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel" Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
+                            <TextBlock Text="Office Configuration XML File" ToolTip="Specify the path to the Office configuration XML file."/>
+                        </StackPanel>
+                        <Grid x:Name="OfficeConfigurationXMLFileGrid" Grid.Row="3" Grid.Column="1" Margin="5" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="txtOfficeConfigXMLFilePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Specify the path to the Office configuration XML file."/>
+                            <Button x:Name="btnBrowseOfficeConfigXMLFile" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
                     </Grid>
-                    <StackPanel x:Name="CopyOfficeConfigXMLStackPanel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                        <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" Margin="0,0,5,0" ToolTip="Enable to copy the Office configuration XML file to the Office folder."/>
-                    </StackPanel>
-                    <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel" Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
-                        <TextBlock Text="Office Configuration XML File" ToolTip="Specify the path to the Office configuration XML file."/>
-                    </StackPanel>
-                    <Grid x:Name="OfficeConfigurationXMLFileGrid" Grid.Row="3" Grid.Column="1" Margin="5" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtOfficeConfigXMLFilePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Specify the path to the Office configuration XML file."/>
-                        <Button x:Name="btnBrowseOfficeConfigXMLFile" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Grid>
+                </ScrollViewer>
             </TabItem>
 
             <!-- TAB: Drivers -->
             <TabItem Header="Drivers" Padding="20">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="250"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers to FFU" Margin="0,0,5,0" ToolTip="Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU."/>
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers to USB drive" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false."/>
-                    </StackPanel>
-                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0,0,5,0" ToolTip="Download the drivers and put them in the Drivers folder."/>
-                    </StackPanel>
-                    <StackPanel x:Name="spMakeModelSection" Grid.Row="3" Grid.ColumnSpan="2" Visibility="Collapsed" Margin="0">
-                        <Grid Margin="0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="250"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                            <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers to FFU" Margin="0,0,5,0" ToolTip="Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU."/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                            <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers to USB drive" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false."/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                            <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0,0,5,0" ToolTip="Download the drivers and put them in the Drivers folder."/>
+                        </StackPanel>
+                        <StackPanel x:Name="spMakeModelSection" Grid.Row="3" Grid.ColumnSpan="2" Visibility="Collapsed" Margin="0">
+                            <Grid Margin="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="250"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                                    <TextBlock x:Name="txtMakeLabel" Text="Make: " VerticalAlignment="Center" ToolTip="Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'."/>
+                                </StackPanel>
+                                <ComboBox x:Name="cmbMake" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                                <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                                    <TextBlock x:Name="txtModelLabel" Text="Model: " VerticalAlignment="Center" ToolTip="Model of the device to download drivers. This is required if Make is set."/>
+                                </StackPanel>
+                                <TextBox x:Name="cmbModel" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                            </Grid>
+                        </StackPanel>
+                        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                            <TextBlock Text="Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers."/>
+                        </StackPanel>
+                        <Grid Grid.Row="4" Grid.Column="1" Margin="5">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="250"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                                <TextBlock x:Name="txtMakeLabel" Text="Make: " VerticalAlignment="Center" ToolTip="Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'."/>
-                            </StackPanel>
-                            <ComboBox x:Name="cmbMake" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                                <TextBlock x:Name="txtModelLabel" Text="Model: " VerticalAlignment="Center" ToolTip="Model of the device to download drivers. This is required if Make is set."/>
-                            </StackPanel>
-                            <TextBox x:Name="cmbModel" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                            <TextBox x:Name="txtDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers."/>
+                            <Button x:Name="btnBrowseDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
                         </Grid>
-                    </StackPanel>
-                    <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <TextBlock Text="Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers."/>
-                    </StackPanel>
-                    <Grid Grid.Row="4" Grid.Column="1" Margin="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers."/>
-                        <Button x:Name="btnBrowseDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                            <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="5">
+                            <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers."/>
+                        </StackPanel>
+                        <Grid Grid.Row="6" Grid.Column="1" Margin="5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="txtPEDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers."/>
+                            <Button x:Name="btnBrowsePEDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
                     </Grid>
-                    <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
-                    </StackPanel>
-                    <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="5">
-                        <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers."/>
-                    </StackPanel>
-                    <Grid Grid.Row="6" Grid.Column="1" Margin="5">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="txtPEDriversFolder" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers."/>
-                        <Button x:Name="btnBrowsePEDriversFolder" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Grid>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
 
