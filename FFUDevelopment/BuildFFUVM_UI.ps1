@@ -753,6 +753,7 @@ function Invoke-ListViewSort {
         @($unselectedItems | Sort-Object -Property $property)
     }
     else {
+        #DO NOT CHANGE THIS LINE
         @($unselectedItems | Sort-Object -Property $property -Descending)
     }
     
@@ -1342,6 +1343,53 @@ $window.Add_Loaded({
                     $window.FindName('txtPEDriversFolder').Text = $selectedPath
                 }
             })
+
+        # Add button handler for Add Application
+        $script:btnAddApplication = $window.FindName('btnAddApplication')
+        $script:btnAddApplication.Add_Click({
+                $name = $window.FindName('txtAppName').Text
+                $commandLine = $window.FindName('txtAppCommandLine').Text
+                $source = $window.FindName('txtAppSource').Text
+
+                if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($source)) {
+                    [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Source)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+                    return
+                }
+
+                $listView = $window.FindName('lstApplications')
+                
+                # Calculate the next priority number
+                $priority = 1
+                if ($listView.Items.Count -gt 0) {
+                    $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
+                }
+
+                # Create new application object
+                $application = [PSCustomObject]@{
+                    Priority = $priority
+                    Name = $name
+                    CommandLine = $commandLine
+                    Source = $source
+                }
+
+                # Add to ListView
+                $listView.Items.Add($application)
+
+                # Clear the input fields
+                $window.FindName('txtAppName').Text = ""
+                $window.FindName('txtAppCommandLine').Text = ""
+                $window.FindName('txtAppSource').Text = ""
+            })
+
+        # Add visibility handling for BYO Applications panel
+        $script:chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
+        $script:byoApplicationPanel = $window.FindName('byoApplicationPanel')
+        $script:chkBringYourOwnApps.Add_Checked({
+                $script:byoApplicationPanel.Visibility = 'Visible'
+            })
+        $script:chkBringYourOwnApps.Add_Unchecked({
+                $script:byoApplicationPanel.Visibility = 'Collapsed'
+            })
     })
 
 # Function to search for Winget apps
@@ -1450,6 +1498,27 @@ function Import-WingetList {
     catch {
         [System.Windows.MessageBox]::Show("Error importing app list: $_", "Error", "OK", "Error")
     }
+}
+
+# Function to remove application and reorder priorities
+function Remove-Application {
+    param($priority)
+    
+    $listView = $window.FindName('lstApplications')
+    
+    # Remove the item with the specified priority
+    $itemToRemove = $listView.Items | Where-Object { $_.Priority -eq $priority } | Select-Object -First 1
+    $listView.Items.Remove($itemToRemove)
+    
+    # Reorder priorities for remaining items
+    $currentPriority = 1
+    foreach ($item in $listView.Items) {
+        $item.Priority = $currentPriority
+        $currentPriority++
+    }
+    
+    # Refresh the ListView
+    $listView.Items.Refresh()
 }
 
 # Button: Build FFU
@@ -1618,5 +1687,19 @@ $btnLoadConfig.Add_Click({
             [System.Windows.MessageBox]::Show("Error loading config file:`n$_", "Error", "OK", "Error")
         }
     })
+
+# Add handler for Remove button clicks
+$window.Add_SourceInitialized({
+    $listView = $window.FindName('lstApplications')
+    $listView.AddHandler(
+        [System.Windows.Controls.Button]::ClickEvent,
+        [System.Windows.RoutedEventHandler]{
+            param($buttonSender, $eventArgs)
+            if ($eventArgs.OriginalSource -is [System.Windows.Controls.Button] -and $eventArgs.OriginalSource.Content -eq "Remove") {
+                Remove-Application -priority $eventArgs.OriginalSource.Tag
+            }
+        }
+    )
+})
 
 [void]$window.ShowDialog()
