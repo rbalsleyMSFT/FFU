@@ -2,6 +2,9 @@
 [System.STAThread()]
 param()
 
+# Dot-source the common functions shared between the BuildFFUVM and BuildFFUVM_UI scripts
+. "$PSScriptRoot\Common\WingetFunctions.ps1"
+
 # --------------------------------------------------------------------------
 # SECTION: Variables & Constants
 # --------------------------------------------------------------------------
