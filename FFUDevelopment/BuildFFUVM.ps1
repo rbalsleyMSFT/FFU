@@ -2431,22 +2431,26 @@ function Get-KBLink {
     $VerbosePreference = 'SilentlyContinue'
     $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
+
+    # Extract the first KB article ID from the HTML content and store it globally
+    if ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)\s*<') {
+        $kbArticleID = "KB$($matches[2])"
+        $global:LastKBArticleID = $kbArticleID
+        WriteLog "Found KB article ID: $kbArticleID"
+    }
+    else {
+        WriteLog "No KB article ID found in search results."
+        $global:LastKBArticleID = $null
+    }
+
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
-
-    # Write-Verbose -Message "$kbids"
 
     if (-not $kbids) {
         Write-Warning -Message "No results found for $Name"
         return
     }
-
-    # $guids = $results.Links |
-    # Where-Object ID -match '_link' |
-    # Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
-    # ForEach-Object { $_.id.replace('_link', '') } |
-    # Where-Object { $_ -in $kbids }
 
     $guids = $results.Links |
     Where-Object ID -match '_link' |
@@ -4568,8 +4572,27 @@ try {
             WriteLog "Latest SSU saved to $SSUFilePath"
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest CU saved to $KBPath\$KBFilePath"
+        $CUFileName = Save-KB -Name $Name -Path $KBPath
+        # Check if $CUFileName contains the string in $global:LastKBArticleID
+        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+        # and set that as the $CUFileName
+        # This is because checkpoint CUs download indeterministically
+        WriteLog "Checking if $CUFileName contains $global:LastKBArticleID"
+        if ($CUFileName -notmatch $global:LastKBArticleID) {
+            WriteLog "$CUFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+            $CUFileName = $null
+            # Get the file that contains the string in $global:LastKBArticleID
+            $CUFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+            if ($null -ne $CUFileName) {
+                WriteLog "Found $CUFileName"
+            }
+            else {
+                WriteLog "Could not find file that contains $global:LastKBArticleID"
+                throw "Could not find file that contains $global:LastKBArticleID"
+            }
+        }
+        $CUPath = "$KBPath\$CUFileName"
+        WriteLog "Latest CU saved to $CUPath"
     }
 
     #Update Latest Preview Cumlative Update for Client OS only
@@ -4583,8 +4606,27 @@ try {
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest Preview CU saved to $KBPath\$KBFilePath"
+        $CUPFileName = Save-KB -Name $Name -Path $KBPath
+        # Check if $CUPFileName contains the string in $global:LastKBArticleID
+        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+        # and set that as the $CUPFileName
+        # This is because checkpoint CUs download indeterministically
+        WriteLog "Checking if $CUPFileName contains $global:LastKBArticleID"
+        if ($CUPFileName -notmatch $global:LastKBArticleID) {
+            WriteLog "$CUPFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+            $CUPFileName = $null
+            # Get the file that contains the string in $global:LastKBArticleID
+            $CUPFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+            if ($null -ne $CUPFileName) {
+                WriteLog "Found $CUPFileName"
+            }
+            else {
+                WriteLog "Could not find file that contains $global:LastKBArticleID"
+                throw "Could not find file that contains $global:LastKBArticleID"
+            }
+        }
+        $CUPPath = "$KBPath\$CUPFileName"
+        WriteLog "Latest CU saved to $CUPPath"
     }
 
     #Update Latest .NET Framework
@@ -4611,8 +4653,26 @@ try {
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
+        $NETFileName = Save-KB -Name $Name -Path $KBPath
+        # Check if $NETFileName contains the string in $global:LastKBArticleID
+        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+        # and set that as the $NETFileName
+        WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
+        if ($NETFileName -notmatch $global:LastKBArticleID) {
+            WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+            $NETFileName = $null
+            # Get the file that contains the string in $global:LastKBArticleID
+            $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+            if ($null -ne $NETFileName) {
+                WriteLog "Found $NETFileName"
+            }
+            else {
+                WriteLog "Could not find file that contains $global:LastKBArticleID"
+                throw "Could not find file that contains $global:LastKBArticleID"
+            }
+        }
+        $NETPath = "$KBPath\$NETFileName"
+        WriteLog "Latest CU saved to $NETPath"
     }
 
     #Search for cached VHDX and skip VHDX creation if there's a cached version
