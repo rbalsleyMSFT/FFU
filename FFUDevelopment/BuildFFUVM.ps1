@@ -4626,7 +4626,7 @@ try {
             }
         }
         $CUPPath = "$KBPath\$CUPFileName"
-        WriteLog "Latest CU saved to $CUPPath"
+        WriteLog "Latest CU Preview saved to $CUPPath"
     }
 
     #Update Latest .NET Framework
@@ -4672,7 +4672,7 @@ try {
             }
         }
         $NETPath = "$KBPath\$NETFileName"
-        WriteLog "Latest CU saved to $NETPath"
+        WriteLog "Latest .NET Framework saved to $NETPath"
     }
 
     #Search for cached VHDX and skip VHDX creation if there's a cached version
@@ -4792,8 +4792,23 @@ try {
                     WriteLog 'SSU removed'
                     WriteLog "Adding CU to $WindowsPartition"
                 }
-                # Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
-                Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
+                
+                # Break out CU and NET updates to be added separately to abide by Checkpoint Update recommendations
+                if ($UpdateLatestCU) {
+                    WriteLog "Adding $CUPath to $WindowsPartition"
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                    WriteLog "$CUPath added to $WindowsPartition"
+                }
+                if ($UpdatePreviewCU) {
+                    WriteLog "Adding $CUPPath to $WindowsPartition"
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    WriteLog "$CUPPath added to $WindowsPartition"
+                }
+                if ($UpdateLatestNet) {
+                    WriteLog "Adding $NETPath to $WindowsPartition"
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    WriteLog "$NETPath added to $WindowsPartition"
+                }
                 WriteLog "KBs added to $WindowsPartition"
                 if ($AllowVHDXCaching) {
                     $cachedVHDXInfo = [VhdxCacheItem]::new()
