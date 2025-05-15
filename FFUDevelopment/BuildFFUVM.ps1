@@ -229,6 +229,7 @@ param(
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
+    [string]$AppListPath,
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
@@ -359,7 +360,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ExportConfigFile
 )
-$version = '2412.1'
+$version = '2412.3'
 
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
@@ -381,12 +382,12 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         }
 
         # If this is the Headers parameter, convert PSCustomObject to hashtable
-        if ($key -eq 'Headers' -and $value -is [System.Management.Automation.PSCustomObject]) {
-            $headers = [hashtable]::new()
+        if ((($key -eq 'Headers') -or ($key -eq 'AppsScriptVariables')) -and ($value -is [System.Management.Automation.PSCustomObject])) {
+            $hashtableValue = [hashtable]::new()
             foreach ($prop in $value.psobject.Properties) {
-                $headers[$prop.Name] = $prop.Value
+                $hashtableValue[$prop.Name] = $prop.Value
             }
-            $value = $headers
+            $value = $hashtableValue
         }
 
         # Check if this key matches a parameter in the script
@@ -489,6 +490,7 @@ if ($installationType -eq 'Server'){
         2025 { $WindowsVersion = '24H2' }
     }
 }
+if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
 
 if ($WindowsSKU -like "*LTSC") {
     switch ($WindowsRelease) {
@@ -584,7 +586,7 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [string]$ArgumentList,
+        [string[]]$ArgumentList,
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
@@ -1030,7 +1032,9 @@ function Get-HPDrivers {
     $Arch = $WindowsArch -replace "^x", ""
 
     # Construct the URL to download the driver XML cab for the model
-    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersion"
+    # The HPcloud reference site is case sensitve so we must convert the Windowsversion to lower 'h' first
+    $WindowsVersionHP = $WindowsVersion -replace 'H', 'h'
+    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersionHP"
     $DriverCabUrl = "https://hpia.hpcloud.hp.com/ref/$SystemID/$ModelRelease.cab"
     $DriverCabFile = "$DriversFolder\$ModelRelease.cab"
     $DriverXmlFile = "$DriversFolder\$ModelRelease.xml"
@@ -2454,22 +2458,26 @@ function Get-KBLink {
     $VerbosePreference = 'SilentlyContinue'
     $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
+
+    # Extract the first KB article ID from the HTML content and store it globally
+    if ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)\s*<') {
+        $kbArticleID = "KB$($matches[2])"
+        $global:LastKBArticleID = $kbArticleID
+        WriteLog "Found KB article ID: $kbArticleID"
+    }
+    else {
+        WriteLog "No KB article ID found in search results."
+        $global:LastKBArticleID = $null
+    }
+
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
-
-    # Write-Verbose -Message "$kbids"
 
     if (-not $kbids) {
         Write-Warning -Message "No results found for $Name"
         return
     }
-
-    # $guids = $results.Links |
-    # Where-Object ID -match '_link' |
-    # Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
-    # ForEach-Object { $_.id.replace('_link', '') } |
-    # Where-Object { $_ -in $kbids }
 
     $guids = $results.Links |
     Where-Object ID -match '_link' |
@@ -3082,7 +3090,7 @@ function New-PEMedia {
         if ($CopyPEDrivers) {
             WriteLog "Adding drivers to WinPE media"
             try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
             }
             catch {
                 WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -3155,14 +3163,55 @@ function Optimize-FFUCaptureDrive {
         throw $_
     }
 }
+
+function Get-ShortenedWindowsSKU {
+    param (
+        [string]$WindowsSKU
+    )
+        $shortenedWindowsSKU = switch ($WindowsSKU) {
+            'Core' { 'Home' }
+            'Home' { 'Home' }
+            'CoreN' { 'Home_N' }
+            'Home N' { 'Home_N' }
+            'CoreSingleLanguage' { 'Home_SL' }
+            'Home Single Language' { 'Home_SL' }
+            'Education' { 'Edu' }
+            'EducationN' { 'Edu_N' }
+            'Education N' { 'Edu_N' }
+            'Professional' { 'Pro' }
+            'Pro' { 'Pro' }
+            'ProfessionalN' { 'Pro_N' }
+            'Pro N' { 'Pro_N' }
+            'ProfessionalEducation' { 'Pro_Edu' }
+            'Pro Education' { 'Pro_Edu' }
+            'ProfessionalEducationN' { 'Pro_Edu_N' }
+            'Pro Education N' { 'Pro_Edu_N' }
+            'ProfessionalWorkstation' { 'Pro_WKS' }
+            'Pro for Workstations' { 'Pro_WKS' }
+            'ProfessionalWorkstationN' { 'Pro_WKS_N' }
+            'Pro N for Workstations' { 'Pro_WKS_N' }
+            'Enterprise' { 'Ent' }
+            'EnterpriseN' { 'Ent_N' }
+            'Enterprise N' { 'Ent_N' }
+            'ServerStandard' { 'Srv_Std' }
+            'Standard' { 'Srv_Std' }
+            'ServerDatacenter' { 'Srv_Dtc' }
+            'Datacenter' { 'Srv_Dtc' }
+            'Standard (Desktop Experience)' { 'Srv_Std_DE' }
+            'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }  
+        }
+    return $shortenedWindowsSKU
+
+}
 function New-FFUFileName {
+    
     $BuildDate = Get-Date -uformat %b%Y
     # Replace '{WindowsRelease}' with the Windows release (e.g., 10, 11, 2016, 2019, 2022, 2025)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsRelease}', $WindowsRelease
     # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsVersion}', $WindowsVersion
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $SKU
+    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
     # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{BuildDate}', $BuildDate
     # Replace '{yyyy}' with the current year in 4-digit format (e.g., 2023)
@@ -3228,42 +3277,44 @@ function New-FFU {
         }
     }
     elseif (-not $InstallApps -and (-not $AllowVHDXCaching)) {
+        #Get Windows Version Information from the VHDX
+        $winverinfo = Get-WindowsVersionInfo
+        WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
             $FFUFileName = New-FFUFileName
         }
         else{
-            #Get Windows Version Information from the VHDX
-            $winverinfo = Get-WindowsVersionInfo
-            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($winverinfo.SKU)`_$($winverinfo.BuildDate).ffu"
+            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
-        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        WriteLog 'Capturing FFU'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
     elseif (-not $InstallApps -and $AllowVHDXCaching) {
         # Make $FFUFileName based on values in the config.json file
+        WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
             $FFUFileName = New-FFUFileName
-        } else {
+        }
+        else {
             $BuildDate = Get-Date -UFormat %b%Y
             # Get Windows Information to make the FFU file name from the cachedVHDXInfo file
             if ($installationType -eq 'Client') {
-                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($cachedVHDXInfo.WindowsSKU)`_$BuildDate.ffu"
-            } else {
-                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($cachedVHDXInfo.WindowsSKU)`_$BuildDate.ffu"
+                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
+            }
+            else {
+                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
             } 
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Dismount the VHDX
-        
         #Capture the FFU
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($cachedVHDXInfo.WindowsSKU) /Compress:Default" | Out-Null
-        # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default" | Out-Null
+        WriteLog 'Capturing FFU'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null     
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
@@ -3385,8 +3436,8 @@ Function Get-WindowsVersionInfo {
     Invoke-Process reg "load HKLM\FFU $Software" | Out-Null
 
     #Find Windows version values
-    $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
-    WriteLog "Windows SKU: $SKU"
+    # $WindowsSKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
+    # WriteLog "Windows SKU: $WindowsSKU"
     [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
     WriteLog "Windows Build: $CurrentBuild"
     #DisplayVersion does not exist for 1607 builds (RS1 and Server 2016) and Server 2019
@@ -3411,7 +3462,18 @@ Function Get-WindowsVersionInfo {
     }
     WriteLog "Windows SKU Modified to: $SKU"
 
-    if ($SKU -notmatch "Srv") {
+    # $WindowsSKU = switch ($WindowsSKU) {
+    #     Core { 'Home' }
+    #     Professional { 'Pro' }
+    #     ProfessionalEducation { 'Pro_Edu' }
+    #     Enterprise { 'Ent' }
+    #     Education { 'Edu' }
+    #     ProfessionalWorkstation { 'Pro_Wks' }
+	#     ServerStandard { 'Srv_Std' }
+    #     ServerDatacenter { 'Srv_Dtc' }
+    # }
+
+    if ($shortenedWindowsSKU -notmatch "Srv") {
         if ($CurrentBuild -ge 22000) {
             $Name = 'Win11'
         }
@@ -3440,7 +3502,7 @@ Function Get-WindowsVersionInfo {
         DisplayVersion = $DisplayVersion
         BuildDate      = $buildDate
         Name           = $Name
-        SKU            = $SKU
+        # SKU            = $WindowsSKU
     }
 }
 Function Get-USBDrive {
@@ -4275,7 +4337,8 @@ if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
 try {
     $adkPath = Get-ADK
     #Need to use the Deployment and Imaging tools environment to use dism from the Sept 2023 ADK to optimize FFU 
-    $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
+    $DandIEnv = Join-Path $adkPath "Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
+
 }
 catch {
     WriteLog 'ADK not found'
@@ -4293,9 +4356,9 @@ if ($InstallApps) {
             exit
         }
         WriteLog "$AppsPath\InstallAppsandSysprep.cmd found"
-        If (Test-Path -Path "$AppsPath\AppList.json"){
-            WriteLog "$AppsPath\AppList.json found, checking for winget apps to install"
-            Get-Apps -AppList "$AppsPath\AppList.json"
+        If (Test-Path -Path $AppListPath){
+            WriteLog "$AppListPath found, checking for winget apps to install"
+            Get-Apps -AppList "$AppListPath"
         }
         
         if (-not $InstallOffice) {
@@ -4578,8 +4641,27 @@ try {
             WriteLog "Latest SSU saved to $SSUFilePath"
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest CU saved to $KBPath\$KBFilePath"
+        $CUFileName = Save-KB -Name $Name -Path $KBPath
+        # Check if $CUFileName contains the string in $global:LastKBArticleID
+        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+        # and set that as the $CUFileName
+        # This is because checkpoint CUs download indeterministically
+        WriteLog "Checking if $CUFileName contains $global:LastKBArticleID"
+        if ($CUFileName -notmatch $global:LastKBArticleID) {
+            WriteLog "$CUFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+            $CUFileName = $null
+            # Get the file that contains the string in $global:LastKBArticleID
+            $CUFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+            if ($null -ne $CUFileName) {
+                WriteLog "Found $CUFileName"
+            }
+            else {
+                WriteLog "Could not find file that contains $global:LastKBArticleID"
+                throw "Could not find file that contains $global:LastKBArticleID"
+            }
+        }
+        $CUPath = "$KBPath\$CUFileName"
+        WriteLog "Latest CU saved to $CUPath"
     }
 
     #Update Latest Preview Cumlative Update for Client OS only
@@ -4593,8 +4675,27 @@ try {
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest Preview CU saved to $KBPath\$KBFilePath"
+        $CUPFileName = Save-KB -Name $Name -Path $KBPath
+        # Check if $CUPFileName contains the string in $global:LastKBArticleID
+        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+        # and set that as the $CUPFileName
+        # This is because checkpoint CUs download indeterministically
+        WriteLog "Checking if $CUPFileName contains $global:LastKBArticleID"
+        if ($CUPFileName -notmatch $global:LastKBArticleID) {
+            WriteLog "$CUPFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+            $CUPFileName = $null
+            # Get the file that contains the string in $global:LastKBArticleID
+            $CUPFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+            if ($null -ne $CUPFileName) {
+                WriteLog "Found $CUPFileName"
+            }
+            else {
+                WriteLog "Could not find file that contains $global:LastKBArticleID"
+                throw "Could not find file that contains $global:LastKBArticleID"
+            }
+        }
+        $CUPPath = "$KBPath\$CUPFileName"
+        WriteLog "Latest CU saved to $CUPPath"
     }
 
     #Update Latest .NET Framework
@@ -4627,8 +4728,6 @@ try {
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $KBFilePath = Save-KB -Name $Name -Path $KBPath
-        WriteLog "Latest .NET saved to $KBPath\$KBFilePath"
         if ($WindowsRelease -eq 2021) {
             WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
             $Name = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64"""
@@ -4641,6 +4740,26 @@ try {
             $KBFilePath = Save-KB -Name $Name -Path $KBPath
             WriteLog "Latest .NET Framework feature pack saved to $KBPath\$KBFilePath"
         }
+        $NETFileName = Save-KB -Name $Name -Path $KBPath
+        # Check if $NETFileName contains the string in $global:LastKBArticleID
+        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+        # and set that as the $NETFileName
+        WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
+        if ($NETFileName -notmatch $global:LastKBArticleID) {
+            WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+            $NETFileName = $null
+            # Get the file that contains the string in $global:LastKBArticleID
+            $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+            if ($null -ne $NETFileName) {
+                WriteLog "Found $NETFileName"
+            }
+            else {
+                WriteLog "Could not find file that contains $global:LastKBArticleID"
+                throw "Could not find file that contains $global:LastKBArticleID"
+            }
+        }
+        $NETPath = "$KBPath\$NETFileName"
+        WriteLog "Latest CU saved to $NETPath"
     }
 
     #Search for cached VHDX and skip VHDX creation if there's a cached version
@@ -4979,6 +5098,11 @@ try {
         New-FFU $FFUVM.Name
     }
     else {
+        #Shorten Windows SKU for use in FFU file name to remove spaces and long names
+        WriteLog 'Shortening Windows SKU for FFU file name'
+        $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
+        WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
+        #Create FFU file
         New-FFU
     }    
 }

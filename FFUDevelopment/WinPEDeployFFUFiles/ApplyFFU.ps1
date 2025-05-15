@@ -135,7 +135,7 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2412.1'
+$version = '2412.4'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
@@ -222,6 +222,7 @@ if (Test-Path -Path $PPKGFolder){
 $UnattendFolder = $USBDrive + "unattend\"
 $UnattendFilePath = $UnattendFolder + "unattend.xml"
 $UnattendPrefixPath = $UnattendFolder + "prefixes.txt"
+$UnattendComputerNamePath = $UnattendFolder + "SerialComputerNames.csv"
 If (Test-Path -Path $UnattendFilePath){
     $UnattendFile = Get-ChildItem -Path $UnattendFilePath
     If ($UnattendFile){
@@ -232,6 +233,12 @@ If (Test-Path -Path $UnattendPrefixPath){
     $UnattendPrefixFile = Get-ChildItem -Path $UnattendPrefixPath
     If ($UnattendPrefixFile){
         $UnattendPrefix = $true
+    }
+}
+If (Test-Path -Path $UnattendComputerNamePath){
+    $UnattendComputerNameFile = Get-ChildItem -Path $UnattendComputerNamePath
+    If ($UnattendComputerNameFile){
+        $UnattendComputerName = $true
     }
 }
 
@@ -278,7 +285,25 @@ if ($Unattend -and $UnattendPrefix){
     $computername = Set-Computername($computername)
     Writelog "Computer name set to $computername"
 }
-elseif($Unattend){
+elseif($Unattend -and $UnattendComputerName){
+    Writelog 'Unattend file found with SerialComputerNames.csv. Getting name for current computer.'
+    $SerialComputerNames = Import-Csv -Path $UnattendComputerNameFile.FullName -Delimiter ","
+
+    $SerialNumber = (Get-CimInstance -Class Win32_Bios).SerialNumber
+    $SCName = $SerialComputerNames | Where-Object { $_.SerialNumber -eq $SerialNumber }
+
+    If ($SCName) {
+        [string]$computername = $SCName.ComputerName
+        $computername = Set-Computername($computername)
+        Writelog "Computer name set to $computername"
+    } else {
+        Writelog 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
+        [string]$computername = ("FFU-" + (-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 11 | ForEach-Object { [char]$_ })))
+        $computername = Set-Computername($computername)
+        Writelog "Computer name set to $computername"
+    }
+}
+elseif($Unattend) {
     Writelog 'Unattend file found with no prefixes.txt, asking for name'
     [string]$computername = Read-Host 'Enter device name'
     Set-Computername($computername)
