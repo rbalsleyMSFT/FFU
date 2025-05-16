@@ -4706,11 +4706,6 @@ try {
             WriteLog "Creating $KBPath"
             New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
-        $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
-        if (-not (Test-Path -Path $NETPath)) {
-            WriteLog "Creating $NETPath"
-            New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
-        }
         if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
             $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
             WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
@@ -4735,6 +4730,11 @@ try {
         }
         if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
             $Name = "Cumulative update for .net framework windows 10 $WindowsVersion $WindowsArch"
+            $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+            if (-not (Test-Path -Path $NETPath)) {
+                WriteLog "Creating $NETPath"
+                New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
+            }
             $NETFileName = Save-KB -Name $Name -Path $NETPath
             WriteLog "Latest .NET Framework cumulative update saved to $NETPath\$NETFileName"
         }
