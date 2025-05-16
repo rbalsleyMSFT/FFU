@@ -4701,6 +4701,23 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
+        #Check if $KBPath exists, if not, create it
+        if (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"
+            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+        if (-not (Test-Path -Path $NETPath)) {
+            WriteLog "Creating $NETPath"
+            New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
+        }
+        if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+            $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
+            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
+            $SSUFilePath = "$KBPath\$SSUFile"
+            WriteLog "Latest SSU saved to $SSUFilePath"
+        }
         if ($WindowsRelease -in 10, 11) {
             $Name = "Cumulative update for .NET framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
         }
@@ -4718,48 +4735,47 @@ try {
         }
         if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
             $Name = "Cumulative update for .net framework windows 10 $WindowsVersion $WindowsArch"
+            $NETFileName = Save-KB -Name $Name -Path $NETPath
+            WriteLog "Latest .NET Framework cumulative update saved to $NETPath\$NETFileName"
         }
         if ($WindowsRelease -eq 2024) {
             $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch"
         }
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
         if ($WindowsRelease -eq 2021) {
             WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
-            $Name = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64"""
-            $KBFilePath = Save-KB -Name $Name -Path $KBPath
-            WriteLog "Latest .NET Framework feature pack saved to $KBPath\$KBFilePath"
+            $NETFeatureName = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64"""
+            $NETFeaturePackFile = Save-KB -Name $NETFeatureName -Path $NETPath
+            WriteLog "Latest .NET Framework Feature pack saved to $NETPath\$NETFeaturePackFile"
         }
         if ($WindowsRelease -in 2016, 2019) {
             WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
-            $Name = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64"""
-            $KBFilePath = Save-KB -Name $Name -Path $KBPath
-            WriteLog "Latest .NET Framework feature pack saved to $KBPath\$KBFilePath"
+            $NETFeatureName = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64"""
+            $NETFeaturePackFile = Save-KB -Name $NETFeatureName -Path $NETPath
+            WriteLog "Latest .NET Framework Feature pack saved to $NETPath\$NETFeaturePackFile"
         }
-        $NETFileName = Save-KB -Name $Name -Path $KBPath
-        # Check if $NETFileName contains the string in $global:LastKBArticleID
-        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
-        # and set that as the $NETFileName
-        WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
-        if ($NETFileName -notmatch $global:LastKBArticleID) {
-            WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
-            $NETFileName = $null
-            # Get the file that contains the string in $global:LastKBArticleID
-            $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
-            if ($null -ne $NETFileName) {
-                WriteLog "Found $NETFileName"
+        if (-not ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC")) {
+            $NETFileName = Save-KB -Name $Name -Path $KBPath
+            # Check if $NETFileName contains the string in $global:LastKBArticleID
+            # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+            # and set that as the $NETFileName
+            WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
+            if ($NETFileName -notmatch $global:LastKBArticleID) {
+                WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+                $NETFileName = $null
+                # Get the file that contains the string in $global:LastKBArticleID
+                $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+                if ($null -ne $NETFileName) {
+                    WriteLog "Found $NETFileName"
+                }
+                else {
+                    WriteLog "Could not find file that contains $global:LastKBArticleID"
+                    throw "Could not find file that contains $global:LastKBArticleID"
+                }
             }
-            else {
-                WriteLog "Could not find file that contains $global:LastKBArticleID"
-                throw "Could not find file that contains $global:LastKBArticleID"
-            }
+            $NETPath = "$KBPath\$NETFileName"
+            WriteLog "Latest .NET Framework saved to $NETPath"
         }
-        $NETPath = "$KBPath\$NETFileName"
-        WriteLog "Latest .NET Framework saved to $NETPath"
     }
 
     #Search for cached VHDX and skip VHDX creation if there's a cached version
