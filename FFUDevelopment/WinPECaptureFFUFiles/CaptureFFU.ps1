@@ -12,10 +12,10 @@ reg load "HKLM\FFU" $Software
 
 $SKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
 [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
-if ($CurrentBuild -notin 14393, 17763) {
+$InstallationType = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'InstallationType'
+if ($CurrentBuild -notin 14393, 17763 -and $InstallationType -ne "Server") {
     $WindowsVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
 }
-$InstallationType = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'InstallationType'
 $BuildDate = Get-Date -uformat %b%Y
 
 $SKU = switch ($SKU) {

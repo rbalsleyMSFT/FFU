@@ -4731,6 +4731,8 @@ try {
         if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
             $Name = "Cumulative update for .net framework windows 10 $WindowsVersion $WindowsArch"
             $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+            # These LTSC editions include multiple .NET updates, so a separate directory is created and specified to allow DISM 
+            # to install them all, instead of specifying each .NET update individually.
             if (-not (Test-Path -Path $NETPath)) {
                 WriteLog "Creating $NETPath"
                 New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
