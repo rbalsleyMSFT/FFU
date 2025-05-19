@@ -224,14 +224,12 @@ param(
     [Parameter(Mandatory = $false, Position = 0)]
     [ValidateScript({ Test-Path $_ })]
     [string]$ISOPath,
-    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')]
+    [ValidateSet('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Enterprise LTSC', 'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')]
     [string]$WindowsSKU = 'Pro',
     [ValidateScript({ Test-Path $_ })]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
-
     [bool]$InstallApps,
     [string]$AppListPath,
-
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
@@ -285,7 +283,7 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
     [Parameter(Mandatory = $false)]
-    [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
+    [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
     [string]$WindowsVersion = '24h2',
@@ -401,6 +399,26 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     }
 }
 
+$clientSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N')
+$LTSCSKUs = @('Enterprise LTSC', 'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC')
+$ServerSKUs = @('Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')
+$releaseToSKUMapping = @{
+    10   = $clientSKUs
+    11   = $clientSKUs
+    2016 = $LTSCSKUs + $ServerSKUs
+    2019 = $LTSCSKUs + $ServerSKUs
+    2021 = $LTSCSKUs
+    2022 = $ServerSKUs
+    2024 = $LTSCSKUs
+    2025 = $ServerSKUs
+}
+if ($releaseToSKUMapping.ContainsKey($WindowsRelease) -and $WindowsSKU -notin $releaseToSKUMapping[$WindowsRelease]) {
+    throw "Selected SKU is $WindowsSKU. Windows $WindowsRelease requires one of these SKUs: $($releaseToSKUMapping[$WindowsRelease] -join ', ')"
+}
+if ($WindowsRelease -notin 10, 11 -and -not $ISOPath) {
+    throw "Windows $WindowsRelease cannot automatically be downloaded. Please specify your own ISO using the -ISOPath parameter."
+}
+
 #Class definition for vhdx cache
 class VhdxCacheUpdateItem {
     [string]$Name
@@ -462,7 +480,7 @@ if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
 if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
-if (-not $installationType) { $installationType = if ($WindowsRelease.ToString().Length -eq 2) { 'Client' } else { 'Server' } }
+if (-not $installationType) { $installationType = if ($WindowsSKU -like "Standard*" -or $WindowsSKU -like "Datacenter*") { 'Server' } else { 'Client' } }
 if ($installationType -eq 'Server'){
     #Map $WindowsRelease to $WindowsVersion for Windows Server
     switch ($WindowsRelease) {
@@ -473,6 +491,15 @@ if ($installationType -eq 'Server'){
     }
 }
 if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
+
+if ($WindowsSKU -like "*LTSC") {
+    switch ($WindowsRelease) {
+        2016 { $WindowsVersion = '1607' }
+        2019 { $WindowsVersion = '1809' }
+        2021 { $WindowsVersion = '21H2' }
+        2024 { $WindowsVersion = '24H2' }
+    }
+}
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -1813,7 +1840,7 @@ function Get-WindowsESD {
     elseif ($WindowsRelease -eq 11) {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
     } else {
-        throw "Downloading Windows Server is not supported. Please use the -ISOPath parameter to specify the path to the Windows Server ISO file."
+        throw "Downloading Windows $WindowsRelease is not supported. Please use the -ISOPath parameter to specify the path to the Windows $WindowsRelease ISO file."
     }
 
     # Download cab file
@@ -2627,6 +2654,10 @@ function Get-WimIndex {
             'Pro_Edu_N' { 9 }
             'Pro_WKS' { 10 }
             'Pro_WKS_N' { 11 }
+            'Enterprise' { 3 }
+            'Enterprise N' { 4 }
+            'Enterprise LTSC' { 1 }
+            'Enterprise N LTSC' { 2 }
             Default { 6 }
         }
     }
@@ -3416,6 +3447,20 @@ Function Get-WindowsVersionInfo {
     }
     
     $BuildDate = Get-Date -uformat %b%Y
+
+    $SKU = switch ($SKU) {
+        Core { 'Home' }
+        Professional { 'Pro' }
+        ProfessionalEducation { 'Pro_Edu' }
+        Enterprise { 'Ent' }
+        EnterpriseS { 'Ent_LTSC' }
+        IoTEnterpriseS { 'IoT_Ent_LTSC' }
+        Education { 'Edu' }
+        ProfessionalWorkstation { 'Pro_Wks' }
+	    ServerStandard { 'Srv_Std' }
+        ServerDatacenter { 'Srv_Dtc' }
+    }
+    WriteLog "Windows SKU Modified to: $SKU"
 
     # $WindowsSKU = switch ($WindowsSKU) {
     #     Core { 'Home' }
@@ -4407,8 +4452,14 @@ if ($InstallApps) {
         if ($UpdateLatestMSRT) {
             WriteLog "`$UpdateLatestMSRT is set to true."
             if ($WindowsArch -eq 'x64') {
-                if ($installationType -eq 'client') {
+                if ($WindowsRelease -in 10, 11) {
                     $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                }
+                elseif ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows 10""" 
+                }
+                elseif ($WindowsRelease -in 2024 -and $WindowsSKU -like "*LTSC") {
+                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows 11""" 
                 }
                 #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
                 elseif ($installationType -eq 'server' -and $WindowsRelease -eq '24H2') {
@@ -4546,7 +4597,7 @@ try {
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        if ($installationType -eq 'Client') {
+        if ($WindowsRelease -in 10, 11) {
             $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         }
         if ($WindowsRelease -eq 2025) {
@@ -4555,8 +4606,19 @@ try {
         if ($WindowsRelease -eq 2022) {
             $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch"""
         } 
-        if ($WindowsRelease -in 2016, 2019) {
+        if ($WindowsRelease -in 2016, 2019 -and $installationType -eq "Server") {
             $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch"""
+        }
+        if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+            $today = Get-Date
+            $firstDayOfMonth = Get-Date -Year $today.Year -Month $today.Month -Day 1
+            $secondTuesday = $firstDayOfMonth.AddDays(((2 - [int]$firstDayOfMonth.DayOfWeek + 7) % 7) + 7)
+            $updateDate = if ($today -gt $secondTuesday) { $today } else { $today.AddMonths(-1) }
+            # More precise search to prevent Dynamic cumulative update from being chosen.
+            $Name = """$($updateDate.ToString('yyyy-MM')) Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+        }
+        if ($WindowsRelease -eq 2024 -and $WindowsSKU -like "*LTSC") {
+            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch""" 
         }
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
@@ -4566,6 +4628,13 @@ try {
         #Get latest Servicing Stack Update for Windows Server 2016
         if ($WindowsRelease -eq 2016) {
             $SSUName = """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch"""
+            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
+            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
+            $SSUFilePath = "$KBPath\$SSUFile"
+            WriteLog "Latest SSU saved to $SSUFilePath"
+        }
+        if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+            $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
             WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
             $SSUFile = Save-KB -Name $SSUName -Path $KBPath
             $SSUFilePath = "$KBPath\$SSUFile"
@@ -4597,7 +4666,7 @@ try {
 
     #Update Latest Preview Cumlative Update for Client OS only
     #will take Precendence over $UpdateLatestCU if both were set to $true
-    if ($UpdatePreviewCU -and $installationType -eq 'Client') {
+    if ($UpdatePreviewCU -and $installationType -eq 'Client' -and $WindowsSKU -notlike "*LTSC") {
         Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
         $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
         #Check if $KBPath exists, if not, create it
@@ -4632,8 +4701,20 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        if ($installationType -eq 'Client') {
-            $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        #Check if $KBPath exists, if not, create it
+        if (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"
+            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+        if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+            $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
+            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
+            $SSUFilePath = "$KBPath\$SSUFile"
+            WriteLog "Latest SSU saved to $SSUFilePath"
+        }
+        if ($WindowsRelease -in 10, 11) {
+            $Name = "Cumulative update for .NET framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
         }
         if ($WindowsRelease -eq 2025) {
             $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64 -preview"
@@ -4641,38 +4722,62 @@ try {
         if ($WindowsRelease -eq 2022) {
             $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" ""operating system version 21H2 for x64"""
         }
-        if ($WindowsRelease -eq 2019) {
+        if ($WindowsRelease -eq 2019 -and $installationType -eq "Server") {
             $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64"""
         }
-        if ($WindowsRelease -eq 2016) {
+        if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
             $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64"""
         }
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+            $Name = "Cumulative update for .net framework windows 10 $WindowsVersion $WindowsArch"
+            $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+            # These LTSC editions include multiple .NET updates, so a separate directory is created and specified to allow DISM 
+            # to install them all, instead of specifying each .NET update individually.
+            if (-not (Test-Path -Path $NETPath)) {
+                WriteLog "Creating $NETPath"
+                New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
+            }
+            $NETFileName = Save-KB -Name $Name -Path $NETPath
+            WriteLog "Latest .NET Framework cumulative update saved to $NETPath\$NETFileName"
+        }
+        if ($WindowsRelease -eq 2024) {
+            $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch"
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $NETFileName = Save-KB -Name $Name -Path $KBPath
-        # Check if $NETFileName contains the string in $global:LastKBArticleID
-        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
-        # and set that as the $NETFileName
-        WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
-        if ($NETFileName -notmatch $global:LastKBArticleID) {
-            WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
-            $NETFileName = $null
-            # Get the file that contains the string in $global:LastKBArticleID
-            $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
-            if ($null -ne $NETFileName) {
-                WriteLog "Found $NETFileName"
-            }
-            else {
-                WriteLog "Could not find file that contains $global:LastKBArticleID"
-                throw "Could not find file that contains $global:LastKBArticleID"
-            }
+        if ($WindowsRelease -eq 2021) {
+            WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
+            $NETFeatureName = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64"""
+            $NETFeaturePackFile = Save-KB -Name $NETFeatureName -Path $NETPath
+            WriteLog "Latest .NET Framework Feature pack saved to $NETPath\$NETFeaturePackFile"
         }
-        $NETPath = "$KBPath\$NETFileName"
-        WriteLog "Latest .NET Framework saved to $NETPath"
+        if ($WindowsRelease -in 2016, 2019) {
+            WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
+            $NETFeatureName = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64"""
+            $NETFeaturePackFile = Save-KB -Name $NETFeatureName -Path $NETPath
+            WriteLog "Latest .NET Framework Feature pack saved to $NETPath\$NETFeaturePackFile"
+        }
+        if (-not ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC")) {
+            $NETFileName = Save-KB -Name $Name -Path $KBPath
+            # Check if $NETFileName contains the string in $global:LastKBArticleID
+            # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
+            # and set that as the $NETFileName
+            WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
+            if ($NETFileName -notmatch $global:LastKBArticleID) {
+                WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
+                $NETFileName = $null
+                # Get the file that contains the string in $global:LastKBArticleID
+                $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
+                if ($null -ne $NETFileName) {
+                    WriteLog "Found $NETFileName"
+                }
+                else {
+                    WriteLog "Could not find file that contains $global:LastKBArticleID"
+                    throw "Could not find file that contains $global:LastKBArticleID"
+                }
+            }
+            $NETPath = "$KBPath\$NETFileName"
+            WriteLog "Latest .NET Framework saved to $NETPath"
+        }
     }
 
     #Search for cached VHDX and skip VHDX creation if there's a cached version
@@ -4779,7 +4884,7 @@ try {
                 WriteLog "Adding KBs to $WindowsPartition"
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 # If WindowsRelease is 2016, we need to add the SSU first
-                if ($WindowsRelease -eq 2016) {
+                if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
                     WriteLog 'WindowsRelease is 2016, adding SSU first'
                     WriteLog "Adding SSU to $WindowsPartition"
                     # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
@@ -4790,9 +4895,16 @@ try {
                     WriteLog "Removing $SSUFilePath"
                     Remove-Item -Path $SSUFilePath -Force | Out-Null
                     WriteLog 'SSU removed'
-                    WriteLog "Adding CU to $WindowsPartition"
                 }
-                
+                if ($WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like "*LTSC") {
+                    WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
+                    WriteLog "Adding SSU to $WindowsPartition"
+                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    WriteLog "SSU added to $WindowsPartition"
+                    WriteLog "Removing $SSUFilePath"
+                    Remove-Item -Path $SSUFilePath -Force | Out-Null
+                    WriteLog 'SSU removed'
+                }
                 # Break out CU and NET updates to be added separately to abide by Checkpoint Update recommendations
                 if ($UpdateLatestCU) {
                     WriteLog "Adding $CUPath to $WindowsPartition"
@@ -4823,6 +4935,7 @@ try {
                 WriteLog 'Clean Up the WinSxS Folder'
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+                # Repair-WindowsImage -Path $WindowsPartition -StartComponentCleanup -ResetBase | Out-Null
                 WriteLog 'Clean Up the WinSxS Folder completed'
             } catch {
                 Write-Host "Adding KB to VHDX failed with error $_"
