@@ -1,7 +1,6 @@
 #Modify the net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user ddb1f077-3eed-433c-b4d9-7b8cd54ce727
 net use W: \\192.168.1.158\FFUCaptureShare /user:ffu_user ddb1f077-3eed-433c-b4d9-7b8cd54ce727
 #Custom naming placeholder
-
 $AssignDriveLetter = 'x:\AssignDriveLetter.txt'
 Start-Process -FilePath diskpart.exe -ArgumentList "/S $AssignDriveLetter" -Wait -ErrorAction Stop | Out-Null
 #Load Registry Hive
@@ -16,24 +15,35 @@ $InstallationType = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\
 if ($CurrentBuild -notin 14393, 17763 -and $InstallationType -ne "Server") {
     $WindowsVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
 }
+# For Windows 10 LTSB 2016, set WindowsVersion to 2016
+if ($CurrentBuild -eq 14393 -and $InstallationType -eq "Client") {
+    $WindowsVersion = '2016'
+}
+# For Windows 10 LTSC 2019, set WindowsVersion to 2019
+if ($CurrentBuild -eq 17763 -and $InstallationType -eq "Client") {
+    $WindowsVersion = '2019'
+}
+
+
 $BuildDate = Get-Date -uformat %b%Y
 
 $SKU = switch ($SKU) {
     Core { 'Home' }
-    CoreN { 'HomeN' }
-    CoreSingleLanguage { 'HomeSL' }
+    CoreN { 'Home_N' }
+    CoreSingleLanguage { 'Home_SL' }
     Professional { 'Pro' }
-    ProfessionalN { 'ProN' }
+    ProfessionalN { 'Pro_N' }
     ProfessionalEducation { 'Pro_Edu' }
-    ProfessionalEducationN { 'Pro_EduN' }
+    ProfessionalEducationN { 'Pro_Edu_N' }
     Enterprise { 'Ent' }
-    EnterpriseN { 'EntN'}
+    EnterpriseN { 'Ent_N' }
     EnterpriseS { 'Ent_LTSC' }
+    EnterpriseSN { 'Ent_N_LTSC' }
     IoTEnterpriseS { 'IoT_Ent_LTSC' }
     Education { 'Edu' }
-    EducationN { 'EduN' }
+    EducationN { 'Edu_N' }
     ProfessionalWorkstation { 'Pro_Wks' }
-    ProfessionalWorkstationN { 'Pro_WksN' }
+    ProfessionalWorkstationN { 'Pro_Wks_N' }
     ServerStandard { 'Srv_Std' }
     ServerDatacenter { 'Srv_Dtc' }
 }
