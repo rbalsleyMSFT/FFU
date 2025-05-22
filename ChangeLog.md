@@ -1,5 +1,58 @@
 # Change Log
 
+# 2505.1
+
+Highly recommended that you upgrade to this release. Fixes the issue with the May 2025 cumulative update and some SKU naming issues for SKUs other than Pro. 
+
+# Support for Windows LTSB/LTSC
+Thanks to @zehadialam for the code to allow support for LTSB and LTSC. This has been a requested feature from a number of customers and some might be opting for LTSC when Windows 10 support ends in October. We support LTSB 2016, LTSC 2019, 2021, 2024 including the N and IoT variants. Extensive testing has gone into validating CU and .net support. File an issue if you see any weird behavior. 
+
+# Support for automating computer naming via CSV
+Thanks to @JonasKloseBW for PR #150
+- Allows setting the computer name with a predefined list (SerialComputerNames.csv) of serial numbers and matching computer names
+- Defaults to FFU-{Random} if no matching serial number is found in list so FFU deployment can continue without user input
+
+# Fixes
+- Thanks to @JonasKloseBW for PR #129 for adding the -AppListPath parameter
+- Fixed an issue where if AppsScriptVariables was configured in a config file, the hashtable wasn't being created by the script when setting the variable.
+- Fixed a crash where shortening the Windows SKU was creating duplicate shortened names for certain SKUs (EDU mainly, but others too)
+- Fix an issue with checkpoint CUs and May 2025-05B CU. Should future proof new checkpoint CUs in the future.
+
+# Additional Fixes
+BuildFFUVM.ps1
+- Added parameter definitions that were missing:
+  - AppListPath - Path to a JSON file containing a list of applications to install using WinGet. Default is $FFUDevelopmentPath\Apps\AppList.json.
+  - PEDriversFolder - Path to the folder containing drivers to be injected into the WinPE deployment media. Default is $FFUDevelopmentPath\PEDrivers.
+- Added two new parameters:
+  - UpdateLatestMicrocode - This is used for Windows 10/Server. When set to $true, will download and install the latest microcode updates for applicable Windows releases (e.g., Windows Server 2016/2019, Windows 10 LTSC 2016/2019) into the FFU. Default is $false.
+  - UpdateADK - Added for airgapped scenarios where you've manually updated the ADK and don't need it to continually check. When set to $true, the script will check for and install the latest Windows ADK and WinPE add-on if they are not already installed or up-to-date. Default is $true.
+- Reorganized the WindowsSKU validateset to make it easier to read and added in 2016 LTSB releases
+- Changed version to 2505.1
+- Reorganized the releasetoMapping SKUs to make it easier to read
+- Omitted Defender/Edge from reporting KB ID since neither includes it
+- Updated Save-KB with some enhancements from the UI branch which will handle KBs that don't have an architecture defined in their file name that will leverage a new function Get-PEArchitecture that can interrogate the file name and determine the correct architecture
+- Updated Get-ShortenedWindowsSKU with LTSB/LTSC SKUs
+- Updated New-FFUFileName to use $winverinfo.Name for $WindowsRelease for client OSes to which will set $WindowsRelease to using Win10 or Win11. This fixes a bug where you might see 10 or 11 instead of Win10 or Win11 for FFU builds that use only the VHDX (e.g. `-InstallApps $false`. This keeps the naming consistent with FFUs built via VM.
+- Updated Get-WindowsVersionInfo to fix an issue with naming LTSC 2019
+- Added Get-PEArchitecture function
+- Commented out the Windows Security Platform Update code since the URL is dead for the content. This is fixed in the UI branch and will be reintroduced in Dev and Main at a later date when the UI work is complete.
+- Created a new variable `$isLTSC`
+- Modified and reorganized the search strings for the various .net framework components. LTSC introduced some complexity with handling the various .net releases.
+- VHDXCaching will now recurse the KBPath folder when finding downloaded KBs to include in its config file
+
+Sample_default.json
+- Added new/missing parameters
+  - ApplistPath
+  - UpdateADK
+  - UpdateLatestMicrocode
+
+CaptureFFU.ps1
+- `$WindowsVersion` 2016 and 2019 for LTSC releases
+- Changed some SKU spacing to make things more consistent and included Enterprise N LTSC
+
+ApplyFFU.ps1
+- Updated version to 2505.1
+
 # 2412.1
 
 This is a major release with a number of quality-of-life improvements that will reduce the time it takes to create FFUs. I highly recommend you update to this release. 
