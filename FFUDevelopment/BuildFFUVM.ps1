@@ -135,6 +135,12 @@ When set to $true, will prompt the user to confirm the use of media identified a
 .PARAMETER RemoveFFU
 When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false.
 
+.PARAMETER RemoveApps
+When set to $true, will remove the application content in the Apps folder after the FFU has been captured. Default is $true.
+
+.PARAMETER RemoveUpdates
+When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive, and .NET files downloaded. Default is $true.
+
 .PARAMETER ShareName
 Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
 
@@ -270,6 +276,8 @@ param(
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
     [string]$AppListPath,
+    [string]$UserAppListPath,
+
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
@@ -346,16 +354,8 @@ param(
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512,
     [bool]$Optimize = $true,
-    [Parameter(Mandatory = $false)]
-    [ValidateScript({
-            if ($Make) {
-                return $true
-            }
-            if ($_ -and (!(Test-Path -Path '.\Drivers') -or ((Get-ChildItem -Path '.\Drivers' -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB))) {
-                throw 'CopyDrivers is set to $true, but either the Drivers folder is missing or empty'
-            }
-            return $true
-        })]
+    [string]$DriversJsonPath,
+    [bool]$CompressDownloadedDriversToWim = $false,
     [bool]$CopyDrivers,
     [bool]$CopyPEDrivers,
     [bool]$RemoveFFU,
@@ -375,23 +375,25 @@ param(
     [bool]$CleanupCaptureISO = $true,
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true,
+    [bool]$RemoveUpdates = $true,
+    [bool]$RemoveApps = $true,
     [string]$DriversFolder,
     [string]$PEDriversFolder,
     [bool]$CleanupDrivers = $true,
     [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
     #Microsoft sites will intermittently fail on downloads. These headers are to help with that.
     $Headers = @{
-        "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
-        "Accept-Encoding" = "gzip, deflate, br, zstd"
-        "Accept-Language" = "en-US,en;q=0.9"
-        "Priority" = "u=0, i"
-        "Sec-Ch-Ua" = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
-        "Sec-Ch-Ua-Mobile" = "?0"
-        "Sec-Ch-Ua-Platform" = "`"Windows`""
-        "Sec-Fetch-Dest" = "document"
-        "Sec-Fetch-Mode" = "navigate"
-        "Sec-Fetch-Site" = "none"
-        "Sec-Fetch-User" = "?1"
+        "Accept"                    = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+        "Accept-Encoding"           = "gzip, deflate, br, zstd"
+        "Accept-Language"           = "en-US,en;q=0.9"
+        "Priority"                  = "u=0, i"
+        "Sec-Ch-Ua"                 = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
+        "Sec-Ch-Ua-Mobile"          = "?0"
+        "Sec-Ch-Ua-Platform"        = "`"Windows`""
+        "Sec-Fetch-Dest"            = "document"
+        "Sec-Fetch-Mode"            = "navigate"
+        "Sec-Fetch-Site"            = "none"
+        "Sec-Fetch-User"            = "?1"
         "Upgrade-Insecure-Requests" = "1"
     },
     [bool]$AllowExternalHardDiskMedia,
@@ -401,9 +403,26 @@ param(
     [string]$ConfigFile,
     [Parameter(Mandatory = $false)]
     [string]$ExportConfigFile,
-    [bool]$UpdateADK = $true    
+    [string]$orchestrationPath,
+    [bool]$UpdateADK = $true
 )
 $version = '2505.1'
+$version = '2412.3'
+
+# Remove any existing modules to avoid conflicts
+if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFU.Common.Core' -Force
+}
+if (Get-Module -Name 'FFU.Common.Winget' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFU.Common.Winget' -Force
+}
+if (Get-Module -Name 'FFU.Common.Drivers' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFU.Common.Drivers' -Force
+}
+# Import the required modules
+Import-Module "$PSScriptRoot\common\FFU.Common.Core.psm1"
+Import-Module "$PSScriptRoot\common\FFU.Common.Winget.psm1" 
+Import-Module "$PSScriptRoot\common\FFU.Common.Drivers.psm1"
 
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
@@ -416,11 +435,11 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         
         # If $value is empty, skip
         if ($null -eq $value -or 
-        ([string]::IsNullOrEmpty([string]$value)) -or 
-        ($value -is [System.Collections.Hashtable] -and $value.Count -eq 0) -or 
-        ($value -is [System.UInt32] -and $value -eq 0) -or 
-        ($value -is [System.UInt64] -and $value -eq 0) -or 
-        ($value -is [System.Int32] -and $value -eq 0)) {
+            ([string]::IsNullOrEmpty([string]$value)) -or 
+            ($value -is [System.Collections.Hashtable] -and $value.Count -eq 0) -or 
+            ($value -is [System.UInt32] -and $value -eq 0) -or 
+            ($value -is [System.UInt64] -and $value -eq 0) -or 
+            ($value -is [System.Int32] -and $value -eq 0)) {
             continue
         }
 
@@ -529,9 +548,20 @@ else {
 # Set default values for variables that depend on other parameters
 if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps.iso" }
 if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
+if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
+if (-not $UserAppListPath) { $UserAppListPath = "$AppsPath\UserAppList.json" }
+if (-not $OrchestrationPath) { $OrchestrationPath = "$AppsPath\Orchestration" }
+if (-not $wingetWin32jsonFile) { $wingetWin32jsonFile = "$OrchestrationPath\WinGetWin32Apps.json" }
+if (-not $InstallDefenderPath) { $installDefenderPath = "$OrchestrationPath\Update-Defender.ps1" }
+if (-not $InstallMSRTPath) { $installMSRTPath = "$OrchestrationPath\Update-MSRT.ps1" }
+if (-not $InstallODPath) { $installODPath = "$OrchestrationPath\Update-OneDrive.ps1" }
+if (-not $InstallEdgePath) { $installEdgePath = "$OrchestrationPath\Update-Edge.ps1" }
+if (-not $AppsScriptVarsJsonPath) { $AppsScriptVarsJsonPath = "$OrchestrationPath\AppsScriptVariables.json" }
 if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy_$WindowsArch.iso" }
 if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture_$WindowsArch.iso" }
 if (-not $OfficePath) { $OfficePath = "$AppsPath\Office" }
+if (-not $OfficeDownloadXML) { $OfficeDownloadXML = "$OfficePath\DownloadFFU.xml" }
+if (-not $OfficeInstallXML) { $OfficeInstallXML = "DeployFFU.xml" }
 if (-not $rand) { $rand = Get-Random }
 if (-not $VMLocation) { $VMLocation = "$FFUDevelopmentPath\VM" }
 if (-not $VMName) { $VMName = "$FFUPrefix-$rand" }
@@ -573,24 +603,32 @@ if ($WindowsSKU -like "*LTS*") {
     $isLTSC = $true
 }
 
-#FUNCTIONS
-function WriteLog($LogText) { 
-    Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText" -Force -ErrorAction SilentlyContinue
-    Write-Verbose $LogText
-}
+# Set the log path for the common logger
+Set-CommonCoreLogPath -Path $LogFile
+# Set critical paths and configuration as global variables for module access
+# This is done after Set-CommonCoreLogPath so this action itself can be logged.
+# Ensure $AppsPath, $orchestrationPath, and $WindowsArch are fully initialized before this point.
+$global:AppsPath = $AppsPath
+$global:orchestrationPath = $orchestrationPath
+$global:WindowsArch = $WindowsArch
+WriteLog "Global script variables set for module access: AppsPath='$global:AppsPath', orchestrationPath='$global:orchestrationPath', WindowsArch='$global:WindowsArch'"
 
-function Get-Parameters{
+
+
+#FUNCTIONS
+
+function Get-Parameters {
     [CmdletBinding()]
     param (
         [Parameter()]
         $ParamNames
     )
-# Define unwanted parameters
-$excludedParams = 'Debug','ErrorAction','ErrorVariable','InformationAction','InformationVariable','OutBuffer','OutVariable','PipelineVariable','Verbose','WarningAction','WarningVariable'
+    # Define unwanted parameters
+    $excludedParams = 'Debug', 'ErrorAction', 'ErrorVariable', 'InformationAction', 'InformationVariable', 'OutBuffer', 'OutVariable', 'PipelineVariable', 'Verbose', 'WarningAction', 'WarningVariable', 'ProgressAction'
 
-# Filter out the unwanted parameters
-$filteredParamNames = $paramNames | Where-Object { $excludedParams -notcontains $_ }
-return $filteredParamNames
+    # Filter out the unwanted parameters
+    $filteredParamNames = $paramNames | Where-Object { $excludedParams -notcontains $_ }
+    return $filteredParamNames
 }
 
 function LogVariableValues {
@@ -648,70 +686,6 @@ function Get-ChildProcesses($parentId) {
     return $result
 }
 
-function Invoke-Process {
-    [CmdletBinding(SupportsShouldProcess)]
-    param
-    (
-        [Parameter(Mandatory)]
-        [ValidateNotNullOrEmpty()]
-        [string]$FilePath,
-
-        [Parameter()]
-        [ValidateNotNullOrEmpty()]
-        [string[]]$ArgumentList,
-
-        [Parameter()]
-        [ValidateNotNullOrEmpty()]
-        [bool]$Wait = $true
-    )
-
-    $ErrorActionPreference = 'Stop'
-
-    try {
-        $stdOutTempFile = "$env:TEMP\$((New-Guid).Guid)"
-        $stdErrTempFile = "$env:TEMP\$((New-Guid).Guid)"
-
-        $startProcessParams = @{
-            FilePath               = $FilePath
-            ArgumentList           = $ArgumentList
-            RedirectStandardError  = $stdErrTempFile
-            RedirectStandardOutput = $stdOutTempFile
-            Wait                   = $($Wait);
-            PassThru               = $true;
-            NoNewWindow            = $true;
-        }
-        if ($PSCmdlet.ShouldProcess("Process [$($FilePath)]", "Run with args: [$($ArgumentList)]")) {
-            $cmd = Start-Process @startProcessParams
-            $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
-            $cmdError = Get-Content -Path $stdErrTempFile -Raw
-            if ($cmd.ExitCode -ne 0 -and $wait -eq $true) {
-                if ($cmdError) {
-                    throw $cmdError.Trim()
-                }
-                if ($cmdOutput) {
-                    throw $cmdOutput.Trim()
-                }
-            }
-            else {
-                if ([string]::IsNullOrEmpty($cmdOutput) -eq $false) {
-                    WriteLog $cmdOutput
-                }
-            }
-        }
-    }
-    catch {
-        #$PSCmdlet.ThrowTerminatingError($_)
-        WriteLog $_
-        # Write-Host "Script failed - $Logfile for more info"
-        throw $_
-
-    }
-    finally {
-        Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
-    }
-    return $cmd
-}
-
 function Test-Url {
     param (
         [Parameter(Mandatory = $true)]
@@ -740,6 +714,8 @@ function Start-BitsTransferWithRetry {
     )
 
     $attempt = 0
+    $lastError = $null
+
     while ($attempt -lt $Retries) {
         try {
             $OriginalVerbosePreference = $VerbosePreference
@@ -751,13 +727,16 @@ function Start-BitsTransferWithRetry {
             return
         }
         catch {
+            # Capture the error that occurred during the failed download attempt
+            $lastError = $_
             $attempt++
-            WriteLog "Attempt $attempt of $Retries failed to download $Source. Retrying..."
+            WriteLog "Attempt $attempt of $Retries failed to download $Source with error: $($lastError.Exception.Message). Retrying..."
             Start-Sleep -Seconds 5
         }
     }
-    WriteLog "Failed to download $Source after $Retries attempts."
-    return $false
+    
+    WriteLog "Failed to download $Source after $Retries attempts. Error: $($lastError.Exception.Message)"
+    throw $lastError
 }
 
 function Get-MicrosoftDrivers {
@@ -769,7 +748,7 @@ function Get-MicrosoftDrivers {
 
     $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
 
-    # Download the webpage content
+    ### DOWNLOAD DRIVER PAGE CONTENT
     WriteLog "Getting Surface driver information from $url"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
@@ -777,7 +756,7 @@ function Get-MicrosoftDrivers {
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
 
-    # Parse the HTML content using Regex instead of the HTMLFILE COM object
+    ### PARSE THE DRIVER PAGE CONTENT FOR MODELS AND DOWNLOAD LINKS
     WriteLog "Parsing web content for models and download links"
     $html = $webContent.Content
 
@@ -826,7 +805,8 @@ function Get-MicrosoftDrivers {
 
                     if ($linkMatch.Success) {
                         $modelLink = $linkMatch.Groups[1].Value
-                    } else {
+                    }
+                    else {
                         # No link, just text instructions
                         $modelLink = $secondTdContent
                     }
@@ -839,7 +819,7 @@ function Get-MicrosoftDrivers {
 
     WriteLog "Parsing complete"
 
-    # Validate the model
+    ### FIND THE MODEL IN THE LIST OF MODELS
     $selectedModel = $models | Where-Object { $_.Model -eq $Model }
 
     if ($null -eq $selectedModel) {
@@ -863,7 +843,8 @@ function Get-MicrosoftDrivers {
 
             if ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $models.Count) {
                 $selectedModel = $models[$selection - 1]
-            } else {
+            }
+            else {
                 if ($VerbosePreference -ne 'Continue') {
                     Write-Host "Invalid selection. Please try again."
                 }
@@ -876,7 +857,7 @@ function Get-MicrosoftDrivers {
     WriteLog "Model: $Model"
     WriteLog "Download Page: $($selectedModel.Link)"
 
-    # Follow the link to the download page and parse the script tag
+    ### GET THE DOWNLOAD LINK FOR THE SELECTED MODEL
     WriteLog "Getting download page content"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
@@ -905,6 +886,8 @@ function Get-MicrosoftDrivers {
             }
         }
 
+
+        ### CREATE FOLDER STRUCTURE AND DOWNLOAD AND EXTRACT THE FILE
         if ($downloadLink) {
             WriteLog "Download Link for Windows ${WindowsRelease}: $downloadLink"
 
@@ -922,7 +905,7 @@ function Get-MicrosoftDrivers {
                 WriteLog "Complete"
             }
 
-            # Download the file
+            ### DOWNLOAD THE FILE
             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
             WriteLog "Downloading $Model driver file to $filePath"
             Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
@@ -931,30 +914,35 @@ function Get-MicrosoftDrivers {
             # Determine file extension
             $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
 
+            ### EXTRACT THE FILE
             if ($fileExtension -eq ".msi") {
                 # Extract the MSI file using an administrative install
                 WriteLog "Extracting MSI file to $modelPath"
                 $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
                 Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments | Out-Null
                 WriteLog "Extraction complete"
-            } elseif ($fileExtension -eq ".zip") {
+            }
+            elseif ($fileExtension -eq ".zip") {
                 # Extract the ZIP file
                 WriteLog "Extracting ZIP file to $modelPath"
                 $ProgressPreference = 'SilentlyContinue'
                 Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
                 $ProgressPreference = 'Continue'
                 WriteLog "Extraction complete"
-            } else {
+            }
+            else {
                 WriteLog "Unsupported file type: $fileExtension"
             }
             # Remove the downloaded file
             WriteLog "Removing $filePath"
             Remove-Item -Path $filePath -Force
             WriteLog "Complete"
-        } else {
+        }
+        else {
             WriteLog "No download link found for Windows $WindowsRelease."
         }
-    } else {
+    }
+    else {
         WriteLog "Failed to parse the download page for the MSI file."
     }
 }
@@ -1235,7 +1223,7 @@ function Get-LenovoDrivers {
             }
         }
 
-        return ,$products
+        return , $products
     }
     
     # Parse the Lenovo PSREF page for the model
@@ -1244,16 +1232,18 @@ function Get-LenovoDrivers {
         WriteLog "No machine types found for model: $Model"
         WriteLog "Enter a valid model or machine type in the -model parameter"
         exit
-    } elseif ($machineTypes.ProductName.Count -eq 1) {
+    }
+    elseif ($machineTypes.ProductName.Count -eq 1) {
         $machineType = $machineTypes[0].MachineType
         $model = $machineTypes[0].ProductName
-    } else {
-        if ($VerbosePreference -ne 'Continue'){
+    }
+    else {
+        if ($VerbosePreference -ne 'Continue') {
             Write-Output "Multiple machine types found for model: $Model"
         }
         WriteLog "Multiple machine types found for model: $Model"
         for ($i = 0; $i -lt $machineTypes.ProductName.Count; $i++) {
-            if ($VerbosePreference -ne 'Continue'){
+            if ($VerbosePreference -ne 'Continue') {
                 Write-Output "$($i + 1). $($machineTypes[$i].ProductName) ($($machineTypes[$i].MachineType))"
             }
             WriteLog "$($i + 1). $($machineTypes[$i].ProductName) ($($machineTypes[$i].MachineType))"
@@ -1431,7 +1421,8 @@ function Get-DellDrivers {
         $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
         $DellCabFile = "$DriversFolder\CatalogPC.cab"
         $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
-    } else {
+    }
+    else {
         $catalogUrl = "https://downloads.dell.com/catalog/Catalog.cab"
         $DellCabFile = "$DriversFolder\Catalog.cab"
         $DellCatalogXML = "$DriversFolder\Catalog.xml"
@@ -1465,15 +1456,20 @@ function Get-DellDrivers {
 	    	
                 if ($WindowsRelease -le 11) {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
-                } elseif ($WindowsRelease -eq 2016) {
+                }
+                elseif ($WindowsRelease -eq 2016) {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W14") }
-                } elseif ($WindowsRelease -eq 2019) {
+                }
+                elseif ($WindowsRelease -eq 2019) {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W19") }
-                } elseif ($WindowsRelease -eq 2022) {
+                }
+                elseif ($WindowsRelease -eq 2022) {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
-                } elseif ($WindowsRelease -eq 2025) {
+                }
+                elseif ($WindowsRelease -eq 2025) {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W25") }
-                } else {
+                }
+                else {
                     $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
                 }
 		
@@ -1494,32 +1490,32 @@ function Get-DellDrivers {
                         if ($latestDrivers[$category][$namePrefix]) {
                             if ($latestDrivers[$category][$namePrefix].Version -lt $version) {
                                 $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
-                                    Name = $name; 
-                                    DownloadUrl = $downloadUrl; 
+                                    Name           = $name; 
+                                    DownloadUrl    = $downloadUrl; 
                                     DriverFileName = $driverFileName; 
-                                    Version = $version; 
-                                    Category = $category 
+                                    Version        = $version; 
+                                    Category       = $category 
                                 }
                             }
                         }
                         else {
                             $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
-                                Name = $name; 
-                                DownloadUrl = $downloadUrl; 
+                                Name           = $name; 
+                                DownloadUrl    = $downloadUrl; 
                                 DriverFileName = $driverFileName; 
-                                Version = $version; 
-                                Category = $category 
+                                Version        = $version; 
+                                Category       = $category 
                             }
                         }
                     }
                     else {
                         $latestDrivers[$category] = @{}
                         $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
-                            Name = $name; 
-                            DownloadUrl = $downloadUrl; 
+                            Name           = $name; 
+                            DownloadUrl    = $downloadUrl; 
                             DriverFileName = $driverFileName; 
-                            Version = $version; 
-                            Category = $category 
+                            Version        = $version; 
+                            Category       = $category 
                         }
                     }
                 }
@@ -1545,10 +1541,11 @@ function Get-DellDrivers {
             }
 
             WriteLog "Downloading driver: $($driver.DownloadUrl) to $driverFilePath"
-            try{
+            try {
                 Start-BitsTransferWithRetry -Source $driver.DownloadUrl -Destination $driverFilePath
                 WriteLog "Driver downloaded"
-            }catch{
+            }
+            catch {
                 WriteLog "Failed to download driver: $($driver.DownloadUrl) to $driverFilePath"
                 continue
             }
@@ -1579,8 +1576,9 @@ function Get-DellDrivers {
                         # Sleep 1 second to let process finish exiting so its installer can be removed
                         Start-Sleep -Seconds 1
                     }
-                #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
-                } elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
+                    #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
+                }
+                elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
 
                     $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
 
@@ -1597,7 +1595,8 @@ function Get-DellDrivers {
                             continue
                         }
                     }
-                } else {
+                }
+                else {
                     Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
                 }
                 # If $extractFolder is empty, try alternative extraction method
@@ -1634,7 +1633,7 @@ function Get-ADKURL {
 
     # Define specific URL patterns based on ADK options
     $ADKUrlPattern = @{
-        "Windows ADK" = $basePattern + "Windows ADK"
+        "Windows ADK"  = $basePattern + "Windows ADK"
         "WinPE add-on" = $basePattern + "Windows PE add-on for the Windows ADK"
     }[$ADKOption]
 
@@ -1697,13 +1696,13 @@ function Install-ADK {
 
         # Select the installer based on the ADK option specified
         $installer = @{
-            "Windows ADK" = "adksetup.exe"
+            "Windows ADK"  = "adksetup.exe"
             "WinPE add-on" = "adkwinpesetup.exe"
         }[$ADKOption]
 
         # Select the feature based on the ADK option specified
         $feature = @{
-            "Windows ADK" = "OptionId.DeploymentTools"
+            "Windows ADK"  = "OptionId.DeploymentTools"
             "WinPE add-on" = "OptionId.WindowsPreinstallationEnvironment"
         }[$ADKOption]
 
@@ -1979,11 +1978,13 @@ function Get-ODTURL {
 
             if ($ODTURL) {
                 return $ODTURL
-            } else {
+            }
+            else {
                 WriteLog 'Cannot find the ODT download URL in the JSON content'
                 throw 'Cannot find the ODT download URL in the JSON content'
             }
-        } else {
+        }
+        else {
             WriteLog 'Failed to extract JSON content from the ODT webpage'
             throw 'Failed to extract JSON content from the ODT webpage'
         }
@@ -2009,519 +2010,28 @@ function Get-Office {
     Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet" | Out-Null
 
     # Run setup.exe with config.xml and modify xml file to download to $OfficePath
-    $ConfigXml = "$OfficePath\DownloadFFU.xml"
-    $xmlContent = [xml](Get-Content $ConfigXml)
+    $xmlContent = [xml](Get-Content $OfficeDownloadXML)
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
-    $xmlContent.Save($ConfigXml)
+    $xmlContent.Save($OfficeDownloadXML)
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
-    Invoke-Process $OfficePath\setup.exe "/download $ConfigXml" | Out-Null
+    Invoke-Process $OfficePath\setup.exe "/download $OfficeDownloadXML" | Out-Null
 
-    WriteLog "Cleaning up ODT default config files and checking InstallAppsandSysprep.cmd file for proper command line"
+    WriteLog "Cleaning up ODT default config files"
     #Clean up default configuration files
     Remove-Item -Path "$OfficePath\configuration*" -Force
 
-    #Read the contents of the InstallAppsandSysprep.cmd file
-    $content = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        
-    #Update the InstallAppsandSysprep.cmd file with the Office install command
-    $officeCommand = "d:\Office\setup.exe /configure d:\Office\DeployFFU.xml"
-
-    # Check if Office command is not commented out or missing and fix it if it is
-    if ($content[3] -ne $officeCommand) {
-        $content[3] = $officeCommand
-
-        # Write the modified content back to the file
-        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $content
-    }
+    #Create Install-Office.ps1 in $orchestrationpath
+    WriteLog "Creating $orchestrationpath\Install-Office.ps1"   
+    $installOfficePath = Join-Path -Path $orchestrationpath -ChildPath "Install-Office.ps1"
+    # Create the Install-Office.ps1 file
+    $installOfficeCommand = "& d:\Office\setup.exe /configure d:\office\$OfficeInstallXML"
+    Set-Content -Path $installOfficePath -Value $installOfficeCommand -Force
+    WriteLog "Install-Office.ps1 created successfully at $installOfficePath"
 
     #Remove the ODT setup file
     WriteLog "Removing ODT setup file"
     Remove-Item -Path $ODTInstallFile -Force
     WriteLog "ODT setup file removed"
-}
-
-function Install-WinGet {
-    param (
-        [string]$Architecture
-    )
-    $packages = @(
-        @{Name = "VCLibs"; Url = "https://aka.ms/Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"; File = "Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"},
-        @{Name = "UIXaml"; Url = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.$Architecture.appx"; File = "Microsoft.UI.Xaml.2.8.$Architecture.appx"},
-        @{Name = "WinGet"; Url = "https://aka.ms/getwinget"; File = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"}
-    )
-    foreach ($package in $packages) {
-        $destination = Join-Path -Path $env:TEMP -ChildPath $package.File
-        WriteLog "Downloading $($package.Name) from $($package.Url) to $destination"
-        Start-BitsTransferWithRetry -Source $package.Url -Destination $destination
-        WriteLog "Installing $($package.Name)..."
-        # Don't show progress bar for Add-AppxPackage - there's a weird issue where the progress stays on the screen after the apps are installed
-        $ProgressPreference = 'SilentlyContinue'
-        Add-AppxPackage -Path $destination -ErrorAction SilentlyContinue
-        # Set progress preference back to default
-        $ProgressPreference = 'Continue'
-        WriteLog "Removing $($package.Name)..."
-        Remove-Item -Path $destination -Force -ErrorAction SilentlyContinue
-    }
-    WriteLog "WinGet installation complete."
-}
-# function Confirm-WinGetInstallation {
-#     WriteLog 'Checking if WinGet is installed...'
-#     $wingetPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
-#     $minVersion = [version]"1.8.1911"
-#     if (-not (Test-Path -Path $wingetPath -PathType Leaf)) {
-#         WriteLog "WinGet is not installed. Downloading WinGet..."
-#         Install-WinGet -Architecture $WindowsArch
-#     } 
-#     if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
-#         WriteLog "WinGet not found. Downloading WinGet..."
-#         Install-WinGet -Architecture $WindowsArch
-#     }
-#     $wingetVersion = & winget.exe --version
-#     WriteLog "Installed version of WinGet: $wingetVersion"
-#     if ($wingetVersion -match 'v?(\d+\.\d+.\d+)' -and [version]$matches[1] -lt $minVersion) {
-#         WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Downloading the latest version of WinGet..."
-#         Install-WinGet -Architecture $WindowsArch
-#     }
-
-#     # Check if Winget PowerShell module version 1.8.1911 or later is installed
-#     $wingetModule = Get-InstalledModule -Name Microsoft.Winget.Client -ErrorAction SilentlyContinue
-#     if ($wingetModule.Version -lt $minVersion -or -not $wingetModule) {
-#         WriteLog 'Microsoft.Winget.Client module is not installed or is an older version. Installing the latest version...'
-#         #Check if PSGallery is a trusted repository
-#         $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
-#         if($PSGalleryTrust -eq 'Untrusted'){
-#             WriteLog 'Temporarily setting PSGallery as a trusted repository...'
-#             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-#         }
-#         Install-Module -Name Microsoft.Winget.Client -Force -Repository 'PSGallery'
-#         if($PSGalleryTrust -eq 'Untrusted'){
-#             WriteLog 'Setting PSGallery back to untrusted repository...'
-#             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
-#             WriteLog 'Done'
-#         }
-#     }
-# }
-
-function Confirm-WinGetInstallation {
-    WriteLog 'Checking if WinGet is installed...'
-    $minVersion = [version]"1.8.1911"
-    # Check if Winget PowerShell module version 1.8.1911 or later is installed
-    $wingetModule = Get-InstalledModule -Name Microsoft.Winget.Client -ErrorAction SilentlyContinue
-    if ($wingetModule.Version -lt $minVersion -or -not $wingetModule) {
-        WriteLog 'Microsoft.Winget.Client module is not installed or is an older version. Installing the latest version...'
-        #Check if PSGallery is a trusted repository
-        $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
-        if($PSGalleryTrust -eq 'Untrusted'){
-            WriteLog 'Temporarily setting PSGallery as a trusted repository...'
-            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-        }
-        Install-Module -Name Microsoft.Winget.Client -Force -Repository 'PSGallery'
-        if($PSGalleryTrust -eq 'Untrusted'){
-            WriteLog 'Setting PSGallery back to untrusted repository...'
-            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
-            WriteLog 'Done'
-        }
-    }
-    $wingetVersion = Get-WinGetVersion
-    if (-not $wingetVersion) {
-        WriteLog "WinGet is not installed. Installing WinGet..."
-        Install-WinGet -Architecture $WindowsArch
-    }
-    if (($wingetVersion -match 'v?(\d+\.\d+\.\d+)' -and [version]$matches[1] -lt $minVersion)) {
-        WriteLog "The installed version of WinGet $($matches[1]) does not support downloading MSStore apps. Installing the latest version of WinGet..."
-        Install-WinGet -Architecture $WindowsArch
-    }
-}
-
-function Add-Win32SilentInstallCommand {
-    param (
-        [string]$AppFolder,
-        [string]$AppFolderPath
-    )
-    $appName = $AppFolder
-    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction Stop
-    if (-not $installerPath) {
-        WriteLog "No win32 app installers were found. Skipping the inclusion of $AppFolder"
-        Remove-Item -Path $AppFolderPath -Recurse -Force
-        return $false
-    }
-    $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop
-    $yamlContent = Get-Content -Path $yamlFile -Raw
-    $silentInstallSwitch = [regex]::Match($yamlContent, 'Silent:\s*(.+)').Groups[1].Value.Replace("'", "").Trim()
-    if (-not $silentInstallSwitch) {
-        WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
-        Remove-Item -Path $appFolderPath -Recurse -Force
-        return $false
-    }
-    $installer = Split-Path -Path $installerPath -Leaf
-    if ($installerPath.Extension -eq ".exe") {
-        $silentInstallCommand = "`"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
-    } 
-    elseif ($installerPath.Extension -eq ".msi") {
-        $silentInstallCommand = "msiexec /i `"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
-    }
-    $cmdFile = "$AppsPath\InstallAppsandSysprep.cmd"
-    $cmdContent = Get-Content -Path $cmdFile
-    $UpdatedcmdContent = $CmdContent -replace '^(REM Winget Win32 Apps)', ("REM Winget Win32 Apps`r`nREM Win32 $($AppName)`r`n$($silentInstallCommand.Trim())")
-    WriteLog "Writing silent install command for $appName to InstallAppsandSysprep.cmd"
-    Set-Content -Path $cmdFile -Value $UpdatedcmdContent
-}
-
-function Set-InstallStoreAppsFlag {
-    $cmdPath = "$AppsPath\InstallAppsandSysprep.cmd"
-    $cmdContent = Get-Content -Path $cmdPath
-    if ($cmdContent -match 'set "INSTALL_STOREAPPS=false"') {
-        WriteLog "Setting INSTALL_STOREAPPS flag to true in InstallAppsandSysprep.cmd file."
-        $updatedcmdContent = $cmdContent -replace 'set "INSTALL_STOREAPPS=false"', 'set "INSTALL_STOREAPPS=true"'
-        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $updatedcmdContent
-    }
-}
-
-# function Get-WinGetApp {
-#     param (
-#         [string]$WinGetAppName,
-#         [string]$WinGetAppId
-#     )
-#     $wingetSearchResult = & winget.exe search --id "$WinGetAppId" --exact --accept-source-agreements --source winget
-#     if ($wingetSearchResult -contains "No package found matching input criteria.") {
-#         if ($VerbosePreference -ne 'Continue'){
-#             Write-Error "$WinGetAppName not found in WinGet repository. Skipping download."
-#             Write-Error "Check the AppList.json file and make sure the AppID is correct."
-#             Write-Error "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
-#         }
-#         WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
-#         WriteLog "Check the AppList.json file and make sure the AppID is correct."
-#         WriteLog "If OS language is not English, winget download may fail. We hope to have this addressed in a future release."
-#         Exit 1
-#     }
-#     $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
-#     WriteLog "Creating $appFolderPath"
-#     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-#     WriteLog "Downloading $WinGetAppName to $appFolderPath"
-#     $downloadParams = @(
-#         "download", 
-#         "--id", "$WinGetAppId",
-#         "--exact",
-#         "--download-directory", "$appFolderPath",
-#         "--accept-package-agreements",
-#         "--accept-source-agreements",
-#         "--source", "winget",
-#         "--scope", "machine",
-#         "--architecture", "$WindowsArch"
-#     )
-#     WriteLog "winget command: winget.exe $downloadParams"
-#     $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-#     if ($wingetDownloadResult -match "No applicable installer found") {
-#         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-#         $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
-#         $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-#         if ($wingetDownloadResult -match "Installer downloaded") {
-#             WriteLog "Downloaded $WinGetAppName without specifying architecture."
-#         }
-#     }
-#     if ($wingetDownloadResult -notmatch "Installer downloaded") {
-#         WriteLog "No installer found for $WinGetAppName. Skipping download."
-#         Remove-Item -Path $appFolderPath -Recurse -Force
-#     }
-#     WriteLog "$WinGetAppName downloaded to $appFolderPath"
-#     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
-#     $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
-#     if ($uwpExtensions -contains $installerPath.Extension) {
-#         $NewAppPath = "$AppsPath\MSStore\$WinGetAppName"
-#         Writelog "$WinGetAppName is a UWP app. Moving to $NewAppPath"
-#         WriteLog "Creating $NewAppPath"
-#         New-Item -Path "$AppsPath\MSStore\$WinGetAppName" -ItemType Directory -Force | Out-Null
-#         WriteLog "Moving $WinGetAppName to $NewAppPath"
-#         Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$WinGetAppName" -Force
-#         WriteLog "Removing $appFolderPath"
-#         Remove-Item -Path $appFolderPath -Force
-#         WriteLog "$WinGetAppName moved to $NewAppPath"
-#         Set-InstallStoreAppsFlag
-#     }
-#     else {
-#         Add-Win32SilentInstallCommand -AppFolder $WinGetAppName -AppFolderPath $appFolderPath
-#     }
-# }
-function Get-WinGetApp {
-    param (
-        [string]$WinGetAppName,
-        [string]$WinGetAppId
-    )
-    $Source = 'winget'
-    $wingetSearchResult = Find-WinGetPackage -id $WinGetAppId -MatchOption Equals -Source $Source
-    if (-not $wingetSearchResult) {
-        if ($VerbosePreference -ne 'Continue'){
-            Write-Error "$WinGetAppName not found in WinGet repository. Exiting."
-            Write-Error "Check the AppList.json file and make sure the AppID is correct."
-        }
-        WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
-        WriteLog "Check the AppList.json file and make sure the AppID is correct."
-        Exit 1
-    }
-    $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $WinGetAppName
-    WriteLog "Creating $appFolderPath"
-    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-    WriteLog "Downloading $WinGetAppName to $appFolderPath"
-
-    WriteLog "WinGet command: Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source"
-    $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source
-    if ($wingetDownloadResult.status -eq 'NoApplicableInstallers') {
-        # If no applicable installer is found, try downloading without specifying architecture
-        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-        $wingetDownloadResult = Export-WinGetPackage -id $WinGetAppId -DownloadDirectory $appFolderPath -Source $Source
-        if ($wingetDownloadResult.status -eq 'Ok') {
-            WriteLog "Downloaded $WinGetAppName without specifying architecture."
-        }
-        else{
-            WriteLog "No installer found for $WinGetAppName. Exiting."
-            Remove-Item -Path $appFolderPath -Recurse -Force
-            Exit 1
-        }
-    }
-    WriteLog "$WinGetAppName downloaded to $appFolderPath"
-    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
-    $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
-    if ($uwpExtensions -contains $installerPath.Extension) {
-        $NewAppPath = "$AppsPath\MSStore\$WinGetAppName"
-        Writelog "$WinGetAppName is a UWP app. Moving to $NewAppPath"
-        WriteLog "Creating $NewAppPath"
-        New-Item -Path "$AppsPath\MSStore\$WinGetAppName" -ItemType Directory -Force | Out-Null
-        WriteLog "Moving $WinGetAppName to $NewAppPath"
-        Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$WinGetAppName" -Force
-        WriteLog "Removing $appFolderPath"
-        Remove-Item -Path $appFolderPath -Force
-        WriteLog "$WinGetAppName moved to $NewAppPath"
-        Set-InstallStoreAppsFlag
-    }
-    else {
-        Add-Win32SilentInstallCommand -AppFolder $WinGetAppName -AppFolderPath $appFolderPath
-    }
-}
-
-# function Get-StoreApp {
-#     param (
-#         [string]$StoreAppName,
-#         [string]$StoreAppId
-#     )
-#     $wingetSearchResult = & winget.exe search "$StoreAppId" --accept-source-agreements --source msstore
-#     if ($wingetSearchResult -contains "No package found matching input criteria.") {
-#         WriteLog "$StoreAppName not found in WinGet repository. Skipping download."
-#         return
-#     }
-#     WriteLog "Checking if $StoreAppName is a win32 app..."
-#     $appIsWin32 = $StoreAppId.StartsWith("XP")
-#     if ($appIsWin32) {
-#         WriteLog "$StoreAppName is a win32 app. Adding to $AppsPath\win32 folder"
-#         $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreAppName
-#     }
-#     else {
-#         WriteLog "$StoreAppName is not a win32 app."
-#         $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
-#     }
-#     New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-#     WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
-#     $downloadParams = @(
-#         "download", "$StoreAppId",
-#         "--download-directory", "$appFolderPath",
-#         "--accept-package-agreements",
-#         "--accept-source-agreements",
-#         "--source", "msstore",
-#         "--scope", "machine",
-#         "--architecture", "$WindowsArch"
-#     )
-#     WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
-#     WriteLog "Attempting to download $StoreAppName and dependencies for $WindowsArch architecture..."
-#     $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-#     # For some apps, specifying the architecture leads to no results found for the app. In those cases, the command will be run without the architecture parameter.
-#     if ($wingetDownloadResult -match "No applicable installer found") {
-#         WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-#         $downloadParams = $downloadParams | Where-Object { $_ -notmatch "--architecture" -and $_ -notmatch "$WindowsArch" }
-#         $wingetDownloadResult = & winget.exe @downloadParams | Out-String
-#         if ($wingetDownloadResult -match "Microsoft Store package download completed") {
-#             WriteLog "Downloaded $StoreAppName without specifying architecture."
-#         }
-#     }
-#     if ($wingetDownloadResult -notmatch "Installer downloaded|Microsoft Store package download completed") {
-#         WriteLog "Download not supported for $StoreAppName. Skipping download."
-#         Remove-Item -Path $appFolderPath -Recurse -Force
-#         return
-#     }
-#     if ($appIsWin32) {
-#         Add-Win32SilentInstallCommand -AppFolder $StoreAppName -AppFolderPath $appFolderPath
-#     }
-#     Set-InstallStoreAppsFlag
-#     # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
-#     if ($WindowsArch -eq 'ARM64') {
-#         WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
-#         $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
-#         if ($dependencies) {
-#             foreach ($dependency in $dependencies) {
-#                 if ($dependency.Name -notmatch 'ARM64') {
-#                     WriteLog "Removing dependency file $($dependency.FullName)"
-#                     Remove-Item -Path $dependency.FullName -Recurse -Force
-#                 }
-#             }
-#         }
-#     }
-#     WriteLog "$StoreAppName has completed downloading. Identifying the latest version of $StoreAppName."
-#     $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
-#     # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
-#     $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
-#     # Removing all packages that are not the latest version
-#     WriteLog "Latest version of $StoreAppName has been identified as $latestPackage. Removing old versions of $StoreAppName that may have downloaded."
-#     foreach ($package in $packages) {
-#         if ($package.FullName -ne $latestPackage) {
-#             try {
-#                 WriteLog "Removing $($package.FullName)"
-#                 Remove-Item -Path $package.FullName -Force
-#             }
-#             catch {
-#                 WriteLog "Failed to delete: $($package.FullName) - $_"
-#                 throw $_
-#             }
-#         }
-#     }
-# }
-function Get-StoreApp {
-    param (
-        [string]$StoreAppName,
-        [string]$StoreAppId
-    )
-    $Source = 'msstore'
-    $wingetSearchResult = Find-WinGetPackage -id $StoreAppId -MatchOption Equals -Source $Source
-    if (-not $wingetSearchResult) {
-        if ($VerbosePreference -ne 'Continue'){
-            Write-Error "$WinGetAppName not found in WinGet repository. Exiting."
-            Write-Error "Check the AppList.json file and make sure the AppID is correct."
-        }
-        WriteLog "$WinGetAppName not found in WinGet repository. Exiting."
-        WriteLog "Check the AppList.json file and make sure the AppID is correct."
-        Exit 1
-    }
-    WriteLog "Checking if $StoreAppName is a win32 app..."
-    $appIsWin32 = $StoreAppId.StartsWith("XP")
-    if ($appIsWin32) {
-        WriteLog "$StoreAppName is a win32 app. Adding to $AppsPath\win32 folder"
-        $appFolderPath = Join-Path -Path "$AppsPath\win32" -ChildPath $StoreAppName
-    }
-    else {
-        WriteLog "$StoreAppName is not a win32 app."
-        $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $StoreAppName
-    }
-    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-    WriteLog "Downloading $StoreAppName for $WindowsArch architecture..."
-    WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
-    WriteLog "Attempting to download $StoreAppName and dependencies for $WindowsArch architecture..."
-    WriteLog "WinGet command: Export-WinGetPackage -id $StoreAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source"
-    $wingetDownloadResult = Export-WinGetPackage -id $StoreAppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source
-    if ($wingetDownloadResult.status -eq 'NoApplicableInstallerFound') {
-        # If no applicable installer is found, try downloading without specifying architecture
-        WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-        $wingetDownloadResult = Export-WinGetPackage -id $StoreAppId -DownloadDirectory $appFolderPath -Source $Source
-        if ($wingetDownloadResult.status -eq 'Ok') {
-            WriteLog "Downloaded $WinGetAppName without specifying architecture."
-        }
-        else{
-            WriteLog "No installer found for $WinGetAppName. Exiting"
-            Remove-Item -Path $appFolderPath -Recurse -Force
-            Exit 1
-        }
-    }
-    if ($appIsWin32) {
-        Add-Win32SilentInstallCommand -AppFolder $StoreAppName -AppFolderPath $appFolderPath
-    }
-    Set-InstallStoreAppsFlag
-    # If $WindowsArch -eq 'ARM64', remove all dependency files that are not ARM64
-    if ($WindowsArch -eq 'ARM64') {
-        WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
-        $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
-        if ($dependencies) {
-            foreach ($dependency in $dependencies) {
-                if ($dependency.Name -notmatch 'ARM64') {
-                    WriteLog "Removing dependency file $($dependency.FullName)"
-                    Remove-Item -Path $dependency.FullName -Recurse -Force
-                }
-            }
-        }
-    }
-    WriteLog "$StoreAppName has completed downloading. Identifying the latest version of $StoreAppName."
-    $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
-    # WinGet downloads multiple versions of certain store apps. The latest version of the package will be determined based on the date of the file signature.
-    $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
-    # Removing all packages that are not the latest version
-    WriteLog "Latest version of $StoreAppName has been identified as $latestPackage. Removing old versions of $StoreAppName that may have downloaded."
-    foreach ($package in $packages) {
-        if ($package.FullName -ne $latestPackage) {
-            try {
-                WriteLog "Removing $($package.FullName)"
-                Remove-Item -Path $package.FullName -Force
-            }
-            catch {
-                WriteLog "Failed to delete: $($package.FullName) - $_"
-                throw $_
-            }
-        }
-    }
-}
-
-function Get-Apps {
-    param (
-        [string]$AppList
-    )
-    $apps = Get-Content -Path $AppList -Raw | ConvertFrom-Json
-    if (-not $apps) {
-        WriteLog "No apps were specified in AppList.json file."
-        return
-    }
-    $wingetApps = $apps.apps | Where-Object { $_.source -eq "winget" }
-    # List each Winget app in the AppList.json file
-    if ($wingetApps) {
-        WriteLog 'Winget apps to be installed:'
-        foreach ($wingetapp in $wingetApps){
-            WriteLog "$($wingetapp.Name)"
-        }
-    }
-    $StoreApps = $apps.apps | Where-Object { $_.source -eq "msstore" }
-    # List each Store app in the AppList.json file
-    if ($StoreApps) {
-        WriteLog 'Store apps to be installed:'
-        foreach ($StoreApp in $StoreApps){
-            WriteLog "$($StoreApp.Name)"
-        }
-    }
-    Confirm-WinGetInstallation
-    $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
-    $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
-    if ($wingetApps) {
-        if (-not (Test-Path -Path $win32Folder -PathType Container)) {
-            WriteLog "Creating folder for Winget Win32 apps: $win32Folder"
-            New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
-            WriteLog "Folder created successfully."
-        }
-        foreach ($wingetApp in $wingetApps) {
-            try {
-                Get-WinGetApp -WinGetAppName $wingetApp.Name -WinGetAppId $wingetApp.Id
-            }
-            catch {
-                WriteLog "Error occurred while processing $wingetApp : $_"
-                throw $_
-            }
-        }
-    }
-    if ($storeApps) {
-        if (-not (Test-Path -Path $storeAppsFolder -PathType Container)) {
-            New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
-        }
-        foreach ($storeApp in $storeApps) {
-            try {
-                Get-StoreApp -StoreAppName $storeApp.Name -StoreAppId $storeApp.Id
-            }
-            catch {
-                WriteLog "Error occurred while processing $storeApp : $_"
-                throw $_
-            }
-        }
-    }
 }
 
 function Get-KBLink {
@@ -2591,41 +2101,7 @@ function Get-KBLink {
         }
     }  
 }
-function Get-LatestWindowsKB {
-    param (
-        [Parameter(Mandatory)]
-        [ValidateSet(10, 11, 2016, 2019, 2022, 2025)]
-        [int]$WindowsRelease,
-        [Parameter(Mandatory)]
-        [string]$WindowsVersion
-    )
-        
-    # Define the URL of the update history page based on the Windows release
-    if ($WindowsRelease -eq 11) {
-        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information'
-    }
-    elseif ($WindowsRelease -eq 10) {
-        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/release-information'
-    } else {
-        $updateHistoryUrl = 'https://learn.microsoft.com/en-us/windows/release-health/windows-server-release-info'
-    }
-        
-    # Use Invoke-WebRequest to fetch the content of the page
-    $OriginalVerbosePreference = $VerbosePreference
-    $VerbosePreference = 'SilentlyContinue'
-    $response = Invoke-WebRequest -Uri $updateHistoryUrl -Headers $Headers -UserAgent $UserAgent
-    $VerbosePreference = $OriginalVerbosePreference
-        
-    # Use a regular expression to find the KB article number
-    if ($WindowsRelease -le 11) {
-        $kbArticleRegex = "(?:Version $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
-    } else {
-        $kbArticleRegex = "(?:Windows Server $WindowsRelease \(OS build d+\)(?!(KB)).)*?KB\d+"
-    }
-    $kbArticle = [regex]::Match($response.Content, $kbArticleRegex).Value
-        
-    return $kbArticle
-}
+
 
 function Save-KB {
     [CmdletBinding()]
@@ -2700,16 +2176,7 @@ function New-AppsISO {
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
     #Adding Long Path support for AppsPath to prevent issues with oscdimg
     $AppsPath = '\\?\' + $AppsPath
-    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO" | Out-Null
-    
-    #Remove the Office Download and ODT
-    if ($InstallOffice) {
-        $ODTPath = "$AppsPath\Office"
-        $OfficeDownloadPath = "$ODTPath\Office"
-        WriteLog 'Cleaning up Office and ODT download'
-        Remove-Item -Path $OfficeDownloadPath -Recurse -Force
-        Remove-Item -Path "$ODTPath\setup.exe"
-    }    
+    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO" | Out-Null  
 }
 function Get-WimFromISO {
     #Mount ISO, get Wim file
@@ -2729,43 +2196,6 @@ function Get-WimFromISO {
     return $wimPath
 }
 
-
-function Get-WimIndex {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$WindowsSKU
-    )
-    WriteLog "Getting WIM Index for Windows SKU: $WindowsSKU"
-
-    If ($ISOPath) {
-        $wimindex = switch ($WindowsSKU) {
-            'Home' { 1 }
-            'Standard' { 1 }
-            'Home_N' { 2 }
-            'Standard (Desktop Experience)' { 1 }
-            'Home_SL' { 3 }
-            'Datacenter' { 3 }
-            'EDU' { 4 }
-            'Datacenter (Desktop Experience)' { 4 }
-            'EDU_N' { 5 }
-            'Pro' { 6 }
-            'Pro_N' { 7 }
-            'Pro_EDU' { 8 }
-            'Pro_Edu_N' { 9 }
-            'Pro_WKS' { 10 }
-            'Pro_WKS_N' { 11 }
-            'Enterprise' { 3 }
-            'Enterprise N' { 4 }
-            'Enterprise LTSC' { 1 }
-            'Enterprise N LTSC' { 2 }
-            Default { 6 }
-        }
-    }
- 
-    Writelog "WIM Index: $wimindex"
-    return $WimIndex
-}
-
 function Get-Index {
     param(
         [Parameter(Mandatory = $true)]
@@ -2780,16 +2210,17 @@ function Get-Index {
     $imageIndexes = Get-WindowsImage -ImagePath $WindowsImagePath
     
     # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
-    if($ISOPath){
+    if ($ISOPath) {
         if ($WindowsSKU -notmatch "Standard|Datacenter") {
             $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
             $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
-        } else {
+        }
+        else {
             $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
             $WindowsImage = $imageIndex.ImageName.Substring(0, 19)
         }
     }
-    else{
+    else {
         $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
         $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
     }
@@ -3094,21 +2525,25 @@ Function Set-CaptureFFU {
 
     # Return the share path in the format of \\<IPAddress>\<ShareName> /user:<UserName> <password>
     $SharePath = "\\$VMHostIPAddress\$ShareName /user:$UserName $Password"
-    $SharePath = "net use W: " + $SharePath
+    $SharePath = "net use W: " + $SharePath + ' 2>&1'
     
     # Update CaptureFFU.ps1 script
     if (Test-Path -Path $CaptureFFUScriptPath) {
         $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
-        $UpdatedContent = $ScriptContent -replace '(net use).*', ("$SharePath")
-        WriteLog 'Updating share command in CaptureFFU.ps1 script with new share information'
-        $UpdatedContent = $UpdatedContent -replace '^\$CustomFFUNameTemplate \= .*#Custom naming', '#Custom naming placeholder'
+        #Update variables in CaptureFFU.ps1 script ($VMHostIPAddress, $ShareName, $UserName, $Password)
+        WriteLog 'Updating CaptureFFU.ps1 script with new share information'
+        $ScriptContent = $ScriptContent -replace '(\$VMHostIPAddress = ).*', "`$1'$VMHostIPAddress'"
+        $ScriptContent = $ScriptContent -replace '(\$ShareName = ).*', "`$1'$ShareName'"
+        $ScriptContent = $ScriptContent -replace '(\$UserName = ).*', "`$1'$UserName'"
+        $ScriptContent = $ScriptContent -replace '(\$Password = ).*', "`$1'$Password'"
         if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
-            $UpdatedContent = $UpdatedContent -replace '#Custom naming placeholder', ("`$CustomFFUNameTemplate = '$CustomFFUNameTemplate' #Custom naming")
+            $ScriptContent = $ScriptContent -replace '(\$CustomFFUNameTemplate = ).*', "`$1'$CustomFFUNameTemplate'"
             WriteLog 'Updating CaptureFFU.ps1 script with new ffu name template information'
         }
-        Set-Content -Path $CaptureFFUScriptPath -Value $UpdatedContent
+        Set-Content -Path $CaptureFFUScriptPath -Value $ScriptContent
         WriteLog 'Update complete'
-    } else {
+    }
+    else {
         throw "CaptureFFU.ps1 script not found at $CaptureFFUScriptPath"
     }
 }
@@ -3130,13 +2565,15 @@ function New-PEMedia {
     }
 
     WriteLog "Copying WinPE files to $WinPEFFUPath"
-    if($WindowsArch -eq 'x64') {
+    # Use & cmd over invoke-process as Invoke-process has issues with the winpe media folder copying all contents
+    if ($WindowsArch -eq 'x64') {
         & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
+        # Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
     }
-    elseif($WindowsArch -eq 'arm64') {
+    elseif ($WindowsArch -eq 'arm64') {
         & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
+        # Invoke-Process cmd "/c ""$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
     }
-    #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
     WriteLog 'Files copied successfully'
 
     WriteLog 'Mounting WinPE media to add WinPE optional components'
@@ -3158,10 +2595,10 @@ function New-PEMedia {
         "en-us\WinPE-DismCmdlets_en-us.cab"
     )
 
-    if($WindowsArch -eq 'x64'){
+    if ($WindowsArch -eq 'x64') {
         $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\"
     }
-    elseif($WindowsArch -eq 'arm64'){
+    elseif ($WindowsArch -eq 'arm64') {
         $PackagePathBase = "$adkPath`Assessment and Deployment Kit\Windows Preinstallation Environment\arm64\WinPE_OCs\"
     }
     
@@ -3215,19 +2652,19 @@ function New-PEMedia {
     $OSCDIMG = "$OSCDIMGPath\oscdimg.exe"
     WriteLog "Creating WinPE ISO at $WinPEISOFile"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
-    if($WindowsArch -eq 'x64'){
-        if($Capture){
+    if ($WindowsArch -eq 'x64') {
+        if ($Capture) {
             $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
         }
-        if($Deploy){
+        if ($Deploy) {
             $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
         }
     }
-    elseif($WindowsArch -eq 'arm64'){
-        if($Capture){
+    elseif ($WindowsArch -eq 'arm64') {
+        if ($Capture) {
             $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
         }
-        if($Deploy){
+        if ($Deploy) {
             $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
         }
         
@@ -3259,7 +2696,8 @@ function Optimize-FFUCaptureDrive {
         Optimize-VHD -Path $VhdxPath -Mode Full
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VhdxPath
-    } catch {
+    }
+    catch {
         throw $_
     }
 }
@@ -3344,7 +2782,7 @@ function New-FFUFileName {
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{mm}', (Get-Date -UFormat '%M')
     # Replace '{tt}' with the current AM/PM designator (e.g., AM or PM)
     $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{tt}', (Get-Date -UFormat '%p')
-    if($CustomFFUNameTemplate -notlike '*.ffu') {
+    if ($CustomFFUNameTemplate -notlike '*.ffu') {
         $CustomFFUNameTemplate += '.ffu'
     }
     return $CustomFFUNameTemplate
@@ -3399,7 +2837,7 @@ function New-FFU {
         if ($CustomFFUNameTemplate) {
             $FFUFileName = New-FFUFileName
         }
-        else{
+        else {
             $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
         }
         WriteLog "FFU file name: $FFUFileName"
@@ -3436,8 +2874,11 @@ function New-FFU {
     }
 
     #Without this 120 second sleep, we sometimes see an error when mounting the FFU due to a file handle lock. Needed for both driver and optimize steps.
-    WriteLog 'Sleeping 2 minutes to prevent file handle lock'
-    Start-Sleep 120
+    
+    If ($InstallDrivers -or $Optimize) {
+        WriteLog 'Sleeping 2 minutes to prevent file handle lock'
+        Start-Sleep 120
+    }
 
     #Add drivers
     If ($InstallDrivers) {
@@ -3567,31 +3008,6 @@ Function Get-WindowsVersionInfo {
     }
     
     $BuildDate = Get-Date -uformat %b%Y
-
-    # $SKU = switch ($SKU) {
-    #     Core { 'Home' }
-    #     Professional { 'Pro' }
-    #     ProfessionalEducation { 'Pro_Edu' }
-    #     Enterprise { 'Ent' }
-    #     EnterpriseS { 'Ent_LTSC' }
-    #     IoTEnterpriseS { 'IoT_Ent_LTSC' }
-    #     Education { 'Edu' }
-    #     ProfessionalWorkstation { 'Pro_Wks' }
-    #     ServerStandard { 'Srv_Std' }
-    #     ServerDatacenter { 'Srv_Dtc' }
-    # }
-    # WriteLog "Windows SKU Modified to: $SKU"
-
-    # $WindowsSKU = switch ($WindowsSKU) {
-    #     Core { 'Home' }
-    #     Professional { 'Pro' }
-    #     ProfessionalEducation { 'Pro_Edu' }
-    #     Enterprise { 'Ent' }
-    #     Education { 'Edu' }
-    #     ProfessionalWorkstation { 'Pro_Wks' }
-    #     ServerStandard { 'Srv_Std' }
-    #     ServerDatacenter { 'Srv_Dtc' }
-    # }
 
     if ($shortenedWindowsSKU -notmatch "Srv") {
         if ($CurrentBuild -ge 22000) {
@@ -3754,7 +3170,7 @@ Function Get-USBDrive {
         }
         $USBDrivesCount = $USBDrives.Count
         WriteLog "Found $USBDrivesCount of $USBDriveListCount USB drives from USB Drive List"
-    } 
+    }
     else {
         # Get only removable media drives
         [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
@@ -3772,219 +3188,6 @@ Function Get-USBDrive {
     # Return the found USB drives and their count
     return $USBDrives, $USBDrivesCount
 }
-# Function New-DeploymentUSB {
-#     param(
-#         [switch]$CopyFFU
-#     )
-#     WriteLog "CopyFFU is set to $CopyFFU"
-#     $BuildUSBPath = $PSScriptRoot
-#     WriteLog "BuildUSBPath is $BuildUSBPath"
-
-#     $SelectedFFUFile = $null
-
-#     # 1. Get FFU File(s)
-#     # Check if the CopyFFU switch is present
-#     if ($CopyFFU.IsPresent) {
-#         # Get all FFU files in the specified directory
-#         $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
-#         $FFUCount = $FFUFiles.count
-
-#         # If there is exactly one FFU file, select it
-#         if ($FFUCount -eq 1) {
-#             $SelectedFFUFile = $FFUFiles.FullName
-#         }
-#         # If there are multiple FFU files, prompt the user to select one
-#         elseif ($FFUCount -gt 1) {
-#             WriteLog "Found $FFUCount FFU files"
-#             if($VerbosePreference -ne 'Continue'){
-#                 Write-Host "Found $FFUCount FFU files"
-#             }
-#             $output = @()
-#             # Create a table of FFU files with their index, name, and last modified date
-#             for ($i = 0; $i -lt $FFUCount; $i++) {
-#                 $index = $i + 1
-#                 $name = $FFUFiles[$i].Name
-#                 $modified = $FFUFiles[$i].LastWriteTime
-#                 $Properties = [ordered]@{
-#                     'FFU Number'    = $index
-#                     'FFU Name'      = $name
-#                     'Last Modified' = $modified
-#                 }
-#                 $output += New-Object PSObject -Property $Properties
-#             }
-#             $output | Format-Table -AutoSize -Property 'FFU Number', 'FFU Name', 'Last Modified'
-            
-#             # Loop until a valid FFU file is selected
-#             do {
-#                 $inputChoice = Read-Host "Enter the number corresponding to the FFU file you want to copy or 'A' to copy all FFU files"
-#                 # Check if the input is a valid number or 'A'
-#                 if ($inputChoice -match '^\d+$' -or $inputChoice -eq 'A') {
-#                     if ($inputChoice -eq 'A') {
-#                         # Select all FFU files
-#                         $SelectedFFUFile = $FFUFiles.FullName
-#                         if ($VerbosePreference -ne 'Continue') {
-#                             Write-Host 'Will copy all FFU files'
-#                         }
-#                         WriteLog 'Will copy all FFU Files'
-#                     }
-#                     else {
-#                         # Convert input to integer and validate the selection
-#                         $inputChoice = [int]$inputChoice
-#                         if ($inputChoice -ge 1 -and $inputChoice -le $FFUCount) {
-#                             $selectedIndex = $inputChoice - 1
-#                             $SelectedFFUFile = $FFUFiles[$selectedIndex].FullName
-#                             if ($VerbosePreference -ne 'Continue') {
-#                                 Write-Host "$SelectedFFUFile was selected"
-#                             }
-#                             WriteLog "$SelectedFFUFile was selected"
-#                         }
-#                         else {
-#                             # Handle invalid selection
-#                             if ($VerbosePreference -ne 'Continue') {
-#                                 Write-Host "Invalid selection. Please try again."
-#                             }
-#                             WriteLog "Invalid selection. Please try again."
-#                         }
-#                     }
-#                 }
-#                 else {
-#                     # Handle invalid input
-#                     if ($VerbosePreference -ne 'Continue') {
-#                         Write-Host "Invalid selection. Please try again."
-#                     }
-#                     WriteLog "Invalid selection. Please try again."
-#                 }
-#             } while ($null -eq $SelectedFFUFile)
-            
-#         }
-#         else {
-#             # Handle case where no FFU files are found
-#             WriteLog "No FFU files found in the current directory."
-#             Write-Error "No FFU files found in the current directory."
-#             Return
-#         }
-#     }    
-#     # 2. Partition and format USB drives
-#     $counter = 0
-
-#     foreach ($USBDrive in $USBDrives) {
-#         $Counter++
-#         WriteLog "Formatting USB drive $Counter out of $USBDrivesCount"
-#         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
-#         WriteLog "Physical Disk number is $DiskNumber for USB drive $Counter out of $USBDrivesCount"
-
-#         $ScriptBlock = {
-#             param($DiskNumber)
-#             $Disk = Get-Disk -Number $DiskNumber
-#             # Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false
-#             # Clear-disk has an unusual behavior where it sets external hard disk media as RAW, however removable media is set as MBR.
-#             if ($Disk.PartitionStyle -ne "RAW") {
-#                 $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
-#                 $Disk = Get-Disk -Number $DiskNumber
-#             }
-            
-#             if($Disk.PartitionStyle -eq "RAW") {
-#                 $Disk | Initialize-Disk -PartitionStyle MBR -Confirm:$false
-#             }
-#             elseif($Disk.PartitionStyle -ne "RAW"){
-#                 $Disk | Get-Partition | Remove-Partition -Confirm:$false
-#                 $Disk | Set-Disk -PartitionStyle MBR
-#             }
-#             # Get-Disk $DiskNumber | Get-Partition | Remove-Partition            
-#             $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
-#             $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
-#             Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false
-#             Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false
-#         }
-
-#         WriteLog 'Partitioning USB Drive'
-#         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
-#         WriteLog 'Done'
-
-#         # 3. Copy WinPE files to USB drive boot partition
-
-#         # $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
-#         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveLetter IS NOT NULL").Name
-#         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
-#         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
-#         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
-#         Dismount-DiskImage -ImagePath $DeployISO | Out-Null
-
-#         #4. Copy FFU file(s), drivers, PPKG, Autopilot, unattend to USB drive deploy partition
-
-#         if ($CopyFFU.IsPresent) {
-#             if ($null -ne $SelectedFFUFile) {
-#                 # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
-#                 $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveLetter IS NOT NULL").Name
-#                 if ($SelectedFFUFile -is [array]) {
-#                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
-#                     foreach ($FFUFile in $SelectedFFUFile) {
-#                         robocopy $(Split-Path $FFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFile -Leaf) /COPYALL /R:5 /W:5 /J
-#                     }
-#                 }
-#                 else {
-#                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
-#                     robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
-#                 }
-#                 #Copy drivers using robocopy due to potential size
-#                 if ($CopyDrivers) {
-#                     WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
-#                     if ($Make){
-#                         robocopy "$DriversFolder\$Make" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
-#                     }else{
-#                         robocopy "$DriversFolder" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
-#                     }
-                    
-#                 }
-#                 #Copy Unattend file to the USB drive. 
-#                 if ($CopyUnattend) {
-#                     # WriteLog "Copying Unattend folder to $DeployPartitionDriveLetter"
-#                     # Copy-Item -Path "$FFUDevelopmentPath\Unattend" -Destination $DeployPartitionDriveLetter -Recurse -Force
-#                     $DeployUnattendPath = "$DeployPartitionDriveLetter\unattend"
-#                     WriteLog "Copying unattend file to $DeployUnattendPath"
-#                     New-Item -Path $DeployUnattendPath -ItemType Directory | Out-Null
-#                     if ($WindowsArch -eq 'x64') {
-#                         Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_x64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
-#                     }
-#                     if ($WindowsArch -eq 'arm64') {
-#                         Copy-Item -Path "$FFUDevelopmentPath\unattend\unattend_arm64.xml" -Destination "$DeployUnattendPath\Unattend.xml" -Force | Out-Null
-#                     }
-#                     #Check for prefixes.txt file and copy it to the USB drive
-#                     if (Test-Path "$FFUDevelopmentPath\unattend\prefixes.txt") {
-#                         WriteLog "Copying prefixes.txt file to $DeployUnattendPath"
-#                         Copy-Item -Path "$FFUDevelopmentPath\unattend\prefixes.txt" -Destination "$DeployUnattendPath\prefixes.txt" -Force | Out-Null
-#                     }
-#                     WriteLog 'Copy completed'
-#                 }  
-#                 #Copy PPKG folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
-#                 if ($CopyPPKG) {
-#                     WriteLog "Copying PPKG folder to $DeployPartitionDriveLetter"
-#                     Copy-Item -Path "$FFUDevelopmentPath\PPKG" -Destination $DeployPartitionDriveLetter -Recurse -Force
-#                 }
-#                 #Copy Autopilot folder in the FFU folder to the USB drive. Can use copy-item as it's a small folder
-#                 if ($CopyAutopilot) {
-#                     WriteLog "Copying Autopilot folder to $DeployPartitionDriveLetter"
-#                     Copy-Item -Path "$FFUDevelopmentPath\Autopilot" -Destination $DeployPartitionDriveLetter -Recurse -Force
-#                 }
-#             }
-#             else {
-#                 WriteLog "No FFU file selected. Skipping copy."
-#             }
-#         }
-
-#         Set-Volume -FileSystemLabel "TempBoot" -NewFileSystemLabel "Boot"
-#         Set-Volume -FileSystemLabel "TempDeploy" -NewFileSystemLabel "Deploy"
-
-#         if ($USBDrivesCount -gt 1) {
-#             & mountvol $BootPartitionDriveLetter /D
-#             & mountvol $DeployPartitionDriveLetter /D 
-#         }
-
-#         WriteLog "Drive $counter completed"
-#     }
-
-#     WriteLog "USB Drives completed"
-# }
 Function New-DeploymentUSB {
     param(
         [switch]$CopyFFU
@@ -4009,7 +3212,7 @@ Function New-DeploymentUSB {
         # If there are multiple FFU files, prompt the user to select one
         elseif ($FFUCount -gt 1) {
             WriteLog "Found $FFUCount FFU files"
-            if($VerbosePreference -ne 'Continue'){
+            if ($VerbosePreference -ne 'Continue') {
                 Write-Host "Found $FFUCount FFU files"
             }
             $output = @()
@@ -4098,10 +3301,10 @@ Function New-DeploymentUSB {
                 $Disk = Get-Disk -Number $DiskNumber
             }
             
-            if($Disk.PartitionStyle -eq "RAW") {
+            if ($Disk.PartitionStyle -eq "RAW") {
                 $Disk | Initialize-Disk -PartitionStyle MBR -Confirm:$false
             }
-            elseif($Disk.PartitionStyle -ne "RAW"){
+            elseif ($Disk.PartitionStyle -ne "RAW") {
                 $Disk | Get-Partition | Remove-Partition -Confirm:$false
                 $Disk | Set-Disk -PartitionStyle MBR
             }
@@ -4144,9 +3347,10 @@ Function New-DeploymentUSB {
                 #Copy drivers using robocopy due to potential size
                 if ($CopyDrivers) {
                     WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
-                    if ($Make){
+                    if ($Make) {
                         robocopy "$DriversFolder\$Make" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
-                    }else{
+                    }
+                    else {
                         robocopy "$DriversFolder" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
                     }
                     
@@ -4295,45 +3499,21 @@ function Get-FFUEnvironment {
         Remove-FFUUserShare
         WriteLog 'Removal complete'
     }
-    Clear-InstallAppsandSysprep
+    if ($RemoveApps) {
+        WriteLog "Removing Apps in $AppsPath"
+        Remove-Apps
+    }
+    #Remove updates
+    if ($RemoveUpdates) {
+        WriteLog "Removing updates"
+        Remove-Updates
+    }
     #Clean up $KBPath
     If (Test-Path -Path $KBPath) {
         WriteLog "Removing $KBPath"
         Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
-    #Clean up $DefenderPath
-    If (Test-Path -Path $DefenderPath) {
-        WriteLog "Removing $DefenderPath"
-        Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
-    #Clean up $MSRTPath
-    if (Test-Path -Path $MSRTPath) {
-        WriteLog "Removing $MSRTPath"
-        Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
-    #Clean up $OneDrivePath
-    If (Test-Path -Path $OneDrivePath) {
-        WriteLog "Removing $OneDrivePath"
-        Remove-Item -Path $OneDrivePath -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
-    #Clean up $EdgePath
-    If (Test-Path -Path $EdgePath) {
-        WriteLog "Removing $EdgePath"
-        Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
-    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
-        WriteLog "Cleaning up Win32 folder"
-        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
-        WriteLog "Cleaning up MSStore folder"
-        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force -ErrorAction SilentlyContinue
-    }   
     Writelog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
@@ -4344,19 +3524,15 @@ function Remove-FFU {
     Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
     WriteLog "Removal complete"
 }
-function Clear-InstallAppsandSysprep {
-    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-    WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove win32 app install commands"
-    $cmdContent -notmatch "REM Win32*" | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-    $cmdContent -notmatch "D:\\win32*" | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-    $cmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-    WriteLog "Setting MSStore installation condition to false"
-    $cmdContent -replace 'set "INSTALL_STOREAPPS=true"', 'set "INSTALL_STOREAPPS=false"' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+
+Function Remove-Updates {
     if ($UpdateLatestDefender) {
-        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Defender Platform Update"
-        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        $CmdContent -notmatch 'd:\\Defender*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        #Clean up $installDefenderPath
+        WriteLog "Removing $installDefenderPath"
+        If (Test-Path -Path $installDefenderPath) {
+            Remove-Item -Path $installDefenderPath -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
         #Clean up $DefenderPath
         If (Test-Path -Path $DefenderPath) {
             WriteLog "Removing $DefenderPath"
@@ -4365,9 +3541,12 @@ function Clear-InstallAppsandSysprep {
         }
     }
     if ($UpdateLatestMSRT) {
-        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Windows Malicious Software Removal Tool"
-        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        $CmdContent -notmatch 'd:\\MSRT*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        # Clean up Update-MSRT.ps1
+        WriteLog "Removing $installMSRTPath"
+        If (Test-Path -Path $installMSRTPath) {
+            Remove-Item -Path $installMSRTPath -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
         #Clean up $MSRTPath
         If (Test-Path -Path $MSRTPath) {
             WriteLog "Removing $MSRTPath"
@@ -4376,9 +3555,12 @@ function Clear-InstallAppsandSysprep {
         }
     }
     if ($UpdateOneDrive) {
-        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove OneDrive install"
-        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        $CmdContent -notmatch 'd:\\OneDrive*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        # Clean up Update-OneDrive.ps1
+        WriteLog "Removing $installODPath"
+        If (Test-Path -Path $installODPath) {
+            Remove-Item -Path $installODPath -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
         #Clean up $OneDrivePath
         If (Test-Path -Path $OneDrivePath) {
             WriteLog "Removing $OneDrivePath"
@@ -4387,9 +3569,12 @@ function Clear-InstallAppsandSysprep {
         }
     }
     if ($UpdateEdge) {
-        WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to remove Edge install"
-        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        $CmdContent -notmatch 'd:\\Edge*' | Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
+        # Clean up Update-Edge.ps1
+        WriteLog "Removing $installEdgePath"
+        If (Test-Path -Path $installEdgePath) {
+            Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
+            WriteLog 'Removal complete'
+        }
         #Clean up $EdgePath
         If (Test-Path -Path $EdgePath) {
             WriteLog "Removing $EdgePath"
@@ -4397,8 +3582,45 @@ function Clear-InstallAppsandSysprep {
             WriteLog 'Removal complete'
         }
     }
+
 }
-function Export-ConfigFile{
+function Remove-Apps {
+   
+    # Check if the file exists before attempting to clear it
+    if (Test-Path -Path $wingetWin32jsonFile) {
+        WriteLog "Removing $wingetWin32jsonFile"
+        Remove-Item -Path $wingetWin32jsonFile -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+    # Clean up Win32 and MSStore folders
+    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+        WriteLog "Cleaning up Win32 folder"
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    }
+    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+        WriteLog "Cleaning up MSStore folder"
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+    }
+
+    #Remove the Office Download and ODT
+    if ($InstallOffice) {
+        $ODTPath = "$AppsPath\Office"
+        $OfficeDownloadPath = "$ODTPath\Office"
+        WriteLog 'Removing Office and ODT download'
+        Remove-Item -Path $OfficeDownloadPath -Recurse -Force
+        Remove-Item -Path "$ODTPath\setup.exe"
+        Remove-Item -Path "$orchestrationPath\Install-Office.ps1"
+        WriteLog 'Removal complete'
+    }
+
+    #Remove AppsISO
+    if ($CleanupAppsISO) {
+        WriteLog "Removing $AppsISO"
+        Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+}
+function Export-ConfigFile {
     [CmdletBinding()]
     param (
         [Parameter()]
@@ -4426,7 +3648,7 @@ function Get-PEArchitecture {
         [string]$FilePath
     )
     
-    # Read the entire file as bytes.
+    # Read the entire file as bytes.1
     $bytes = [System.IO.File]::ReadAllBytes($FilePath)
     
     # Check for the 'MZ' signature.
@@ -4460,6 +3682,7 @@ function Get-PEArchitecture {
 if (Test-Path -Path $Logfile) {
     Remove-item -Path $LogFile -Force
 }
+
 $startTime = Get-Date
 Write-Host "FFU build process started at" $startTime
 Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
@@ -4469,15 +3692,15 @@ WriteLog 'Begin Logging'
 
 ####### Generate Config File #######
 
-if($ExportConfigFile){
+if ($ExportConfigFile) {
     WriteLog 'Exporting Config File'
     # Get the parameter names from the script and exclude ExportConfigFile
-    $paramNames = $MyInvocation.MyCommand.Parameters.Keys | Where-Object {$_ -ne 'ExportConfigFile'}
-    try{
+    $paramNames = $MyInvocation.MyCommand.Parameters.Keys | Where-Object { $_ -ne 'ExportConfigFile' }
+    try {
         Export-ConfigFile($paramNames)
         WriteLog "Config file exported to $ExportConfigFile"
     }
-    catch{
+    catch {
         WriteLog 'Failed to export config file'
         throw $_
     }
@@ -4490,7 +3713,8 @@ if($ExportConfigFile){
 #and oscdimg fails to create the Apps ISO
 try {
     $LongPathsEnabled = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -ErrorAction Stop
-} catch {
+}
+catch {
     $LongPathsEnabled = $null
 }
 if ($LongPathsEnabled -ne 1) {
@@ -4509,9 +3733,13 @@ if ($InstallDrivers -or $CopyDrivers) {
         WriteLog "Driver folder path $DriversFolder contains spaces. Please remove spaces from the path and try again."
         throw "Driver folder path $DriversFolder contains spaces. Please remove spaces from the path and try again."
     }
-    if ($Make -and $Model){
+    if ($Make -and $Model) {
         WriteLog "Make and Model are set to $Make and $Model, will attempt to download drivers"
-    } else {
+    }
+    elseif ($DriversJsonPath -and (Test-Path -Path $DriversJsonPath)) {
+        WriteLog "Drivers JSON path is set to $DriversJsonPath, will attempt to download drivers"
+    }
+    else {
         if (!(Test-Path -Path $DriversFolder)) {
             WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
             throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
@@ -4519,6 +3747,10 @@ if ($InstallDrivers -or $CopyDrivers) {
         if ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
             WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
             throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
+        }
+        if (!(Test-Path -Path $DriversJsonPath)) {
+            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversJsonPath file is missing"
+            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversJsonPath file is missing"
         }
         WriteLog 'Driver validation complete'
     }   
@@ -4606,7 +3838,7 @@ if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
     throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU. Please set -VMHostIPAddress and try again."
 }
 
-if (($VMHostIPAddress) -and ($VMSwitchName)){
+if (($VMHostIPAddress) -and ($VMSwitchName)) {
     WriteLog "Validating -VMSwitchName $VMSwitchName and -VMHostIPAddress $VMHostIPAddress"
     #Check $VMSwitchName by using Get-VMSwitch
     $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
@@ -4695,24 +3927,142 @@ WriteLog 'Creating dirty.txt file'
 New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
 #Get drivers first since user could be prompted for additional info
-if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
+if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or $CopyDrivers)) {
+    WriteLog "Processing drivers from JSON file: $driversJsonPath"
+    Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
+    # FFU.Common.Drivers.psm1 is imported by FFUUI.Core.psm1
+
+    $driversToProcess = @()
+    $jsonData = Get-Content -Path $driversJsonPath -Raw | ConvertFrom-Json
+
+    foreach ($makeEntry in $jsonData.PSObject.Properties) {
+        $makeName = $makeEntry.Name
+        if ($makeEntry.Value.PSObject.Properties['Models']) {
+            foreach ($modelEntry in $makeEntry.Value.Models) {
+                # Construct the PSCustomObject exactly as the Save-*DriversTask functions expect $DriverItemData
+                $driverItem = [PSCustomObject]@{
+                    Make        = $makeName
+                    Model       = $modelEntry.Name # This is the display name, e.g., "Surface Book 3" or "Lenovo 500w (83LH)"
+                    Link        = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
+                    ProductName = if ($modelEntry.PSObject.Properties['ProductName']) { $modelEntry.ProductName } else { $null } # Specifically for Lenovo
+                    MachineType = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null } # Specifically for Lenovo
+                    # Ensure all properties potentially accessed by any Save-*DriversTask via $DriverItemData are present
+                }
+                $driversToProcess += $driverItem
+            }
+        }
+    }
+
+    if ($driversToProcess.Count -eq 0) {
+        WriteLog "No drivers found to process in $driversJsonPath."
+    }
+    else {
+        WriteLog "Found $($driversToProcess.Count) driver entries to process from $driversJsonPath."
+
+        $dellCatalogXmlPathForJob = $null
+        if ($driversToProcess | Where-Object { $_.Make -eq 'Dell' }) {
+            WriteLog "Dell drivers found in JSON, ensuring Dell Catalog XML is available..."
+            $dellDriversFolderScript = Join-Path -Path $DriversFolder -ChildPath "Dell"
+            $catalogBaseNameScript = if ($WindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+            $dellCabFileScript = Join-Path -Path $dellDriversFolderScript -ChildPath "$($catalogBaseNameScript).cab"
+            $dellCatalogXmlPathForJob = Join-Path -Path $dellDriversFolderScript -ChildPath "$($catalogBaseNameScript).xml"
+            $catalogUrlScript = if ($WindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+            
+            $downloadDellCatalogScript = $true
+            if (Test-Path -Path $dellCatalogXmlPathForJob -PathType Leaf) {
+                if (((Get-Date) - (Get-Item $dellCatalogXmlPathForJob).LastWriteTime).TotalDays -lt 7) {
+                    WriteLog "Using existing Dell Catalog XML (less than 7 days old): $dellCatalogXmlPathForJob"
+                    $downloadDellCatalogScript = $false
+                }
+                else { WriteLog "Existing Dell Catalog XML '$dellCatalogXmlPathForJob' is older than 7 days." }
+            }
+            else { WriteLog "Dell Catalog XML '$dellCatalogXmlPathForJob' not found." }
+
+            if ($downloadDellCatalogScript) {
+                WriteLog "Dell Catalog XML '$dellCatalogXmlPathForJob' needs to be downloaded/updated."
+                try {
+                    if (-not (Test-Path -Path $dellDriversFolderScript -PathType Container)) { New-Item -Path $dellDriversFolderScript -ItemType Directory -Force | Out-Null }
+                    if (Test-Path $dellCabFileScript) { Remove-Item $dellCabFileScript -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $dellCatalogXmlPathForJob) { Remove-Item $dellCatalogXmlPathForJob -Force -ErrorAction SilentlyContinue }
+                    
+                    Start-BitsTransferWithRetry -Source $catalogUrlScript -Destination $dellCabFileScript
+                    Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFileScript"" ""$dellCatalogXmlPathForJob""" | Out-Null
+                    Remove-Item -Path $dellCabFileScript -Force -ErrorAction SilentlyContinue
+                    WriteLog "Dell Catalog XML prepared at $dellCatalogXmlPathForJob"
+                }
+                catch {
+                    WriteLog "Failed to prepare Dell Catalog XML: $($_.Exception.Message). Dell driver downloads may fail."
+                    $dellCatalogXmlPathForJob = $null 
+                }
+            }
+        }
+
+        $taskArguments = @{
+            DriversFolder      = $DriversFolder
+            WindowsRelease     = $WindowsRelease
+            WindowsArch        = $WindowsArch
+            WindowsVersion     = $WindowsVersion 
+            Headers            = $Headers
+            UserAgent          = $UserAgent
+            CompressToWim      = $CompressDownloadedDriversToWim
+            DellCatalogXmlPath = $dellCatalogXmlPathForJob 
+        }
+        
+        WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
+        $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $driversToProcess `
+            -TaskType 'DownloadDriverByMake' `
+            -TaskArguments $taskArguments `
+            -IdentifierProperty 'Model' `
+            -WindowObject $null `
+            -ListViewControl $null `
+            -MainThreadLogPath $LogFile
+
+        # Log results from Invoke-ParallelProcessing
+        if ($null -ne $parallelResults) {
+            foreach ($result in $parallelResults) {
+                if ($null -ne $result) {
+                    # The $result here is the direct output from the Save-*DriversTask
+                    # It should be a PSCustomObject with Identifier/Model, Status, Success
+                    $identifier = if ($result.PSObject.Properties.Name -contains 'Identifier') { $result.Identifier } elseif ($result.PSObject.Properties.Name -contains 'Model') { $result.Model } else { "UnknownItem" }
+                    $status = if ($result.PSObject.Properties.Name -contains 'Status') { $result.Status } else { "UnknownStatus" }
+                    $success = if ($result.PSObject.Properties.Name -contains 'Success') { $result.Success } else { $false }
+                    
+                    $logMessage = "Driver task for '$identifier': Status: $status, Success: $success"
+                    WriteLog $logMessage
+                    if (-not $success) {
+                        Write-Warning $logMessage
+                    }
+                }
+                else {
+                    WriteLog "A parallel driver task processed by Invoke-ParallelProcessing returned a null result."
+                }
+            }
+        }
+        else {
+            WriteLog "Invoke-ParallelProcessing returned null or no results."
+        }
+        WriteLog "Finished processing drivers from $driversJsonPath."
+    }
+}
+# Existing single-model driver download logic
+elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
     try {
-        if ($Make -eq 'HP'){
+        if ($Make -eq 'HP') {
             WriteLog 'Getting HP drivers'
             Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion
             WriteLog 'Getting HP drivers completed successfully'
         }
-        if ($make -eq 'Microsoft'){
+        if ($make -eq 'Microsoft') {
             WriteLog 'Getting Microsoft drivers'
             Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
             WriteLog 'Getting Microsoft drivers completed successfully'
         }
-        if ($make -eq 'Lenovo'){
+        if ($make -eq 'Lenovo') {
             WriteLog 'Getting Lenovo drivers'
             Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
             WriteLog 'Getting Lenovo drivers completed successfully'
         }
-        if ($make -eq 'Dell'){
+        if ($make -eq 'Dell') {
             WriteLog 'Getting Dell drivers'
             #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
             Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
@@ -4723,8 +4073,8 @@ if (($make -and $model) -and ($installdrivers -or $copydrivers)) {
         Writelog "Getting drivers failed with error $_"
         throw $_
     }
-    
 }
+
 
 #Get Windows ADK
 try {
@@ -4740,245 +4090,395 @@ catch {
 
 #Create apps ISO for Office and/or 3rd party apps
 if ($InstallApps) {
-    try {
-        #Make sure InstallAppsandSysprep.cmd file exists
-        WriteLog "InstallApps variable set to true, verifying $AppsPath\InstallAppsandSysprep.cmd exists"
-        if (-not (Test-Path -Path "$AppsPath\InstallAppsandSysprep.cmd")) {
-            Write-Host "$AppsPath\InstallAppsandSysprep.cmd is missing, exiting script"
-            WriteLog "$AppsPath\InstallAppsandSysprep.cmd is missing, exiting script"
-            exit
-        }
-        WriteLog "$AppsPath\InstallAppsandSysprep.cmd found"
-        If (Test-Path -Path $AppListPath){
-            WriteLog "$AppListPath found, checking for winget apps to install"
-            Get-Apps -AppList "$AppListPath"
-        }
-        
-        if (-not $InstallOffice) {
-            #Modify InstallAppsandSysprep.cmd to REM out the office install command
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(d:\\Office\\setup.exe /configure d:\\office\\DeployFFU.xml)', ("REM d:\Office\setup.exe /configure d:\office\DeployFFU.xml")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-        }
-        
-        if ($InstallOffice) {
-            WriteLog 'Downloading M365 Apps/Office'
-            Get-Office
-            WriteLog 'Downloading M365 Apps/Office completed successfully'
-        }
-
-        #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
-        if ($UpdateLatestDefender) {
-            WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Definitions"
-            $Name = "Update for Microsoft Defender Antivirus antimalware platform"
-            #Check if $DefenderPath exists, if not, create it
-            If (-not (Test-Path -Path $DefenderPath)) {
-                WriteLog "Creating $DefenderPath"
-                New-Item -Path $DefenderPath -ItemType Directory -Force | Out-Null
-            }
-            WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $DefenderPath"
-            $KBFilePath = Save-KB -Name $Name -Path $DefenderPath
-            WriteLog "Latest Defender Platform and Definitions saved to $DefenderPath\$KBFilePath"
+    if (Test-Path -Path $AppsISO) {
+        WriteLog "Apps ISO exists at: $AppsISO"
+        WriteLog "Will use existing ISO"
+    }
+    else {
+        try {
+            #Check for and download WinGet applications
+            if (Test-Path -Path $AppListPath) {
+                $appList = Get-Content -Path $AppListPath -Raw | ConvertFrom-Json
+                
+                WriteLog 'Checking for previously downloaded Winget applications'
             
-            #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Defender Update Platform
-            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Platform Update"
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Defender Platform Update)', ("REM Install Defender Platform Update`r`nd:\Defender\$KBFilePath")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            WriteLog "Update complete"
-
-            #Download latest Defender Definitions
-            WriteLog "Downloading latest Defender Definitions"
-            # Defender def updates can be found https://www.microsoft.com/en-us/wdsi/defenderupdates
-            if ($WindowsArch -eq 'x64') {
-                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=x64'
-            }
-            if ($WindowsArch -eq 'ARM64') {
-                $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm64'
-            }
-            try {
-                WriteLog "Defender definitions URL is $DefenderDefURL"
-                Start-BitsTransferWithRetry -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
-                WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
-            }
-            catch {
-                Write-Host "Downloading Defender Definitions Failed"
-                WriteLog "Downloading Defender Definitions Failed with error $_"
-                throw $_
-            }
-
-            #Modify InstallAppsandSysprep.cmd to add in $DefenderPath on the line after REM Install Defender Definitions
-            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Defender Definitions"
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Defender Definitions)', ("REM Install Defender Definitions`r`nd:\Defender\mpam-fe.exe")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            WriteLog "Update complete"
-
-            ###### 5/20/2025 - Security Platform URLs are not available for download, will go back to using the Microsoft Update Catalog in UI build
-            ###### https://support.microsoft.com/en-us/topic/windows-security-update-a6ac7d2e-b1bf-44c0-a028-41720a242da3
-
-            #Download Windows Security Platform Update
-            # WriteLog "Downloading Windows Security Platform Update"
-            # if ($WindowsArch -eq 'x64') {
-            #     $securityPlatformURL = 'https://definitionupdates.microsoft.com/download/DefinitionUpdates/windowssecurity/10.0.27703.1006/x64/securityhealthsetup.exe'
-            # }
-            # if ($WindowsArch -eq 'ARM64') {
-            #     $securityPlatformURL = 'https://definitionupdates.microsoft.com/download/DefinitionUpdates/windowssecurity/10.0.27703.1006/arm64/securityhealthsetup.exe'
-            # }
-            # try {
-            #     WriteLog "Windows Security Platform Update URL is $securityPlatformURL"
-            #     Start-BitsTransferWithRetry -Source $securityPlatformURL -Destination "$DefenderPath\securityhealthsetup.exe"
-            #     WriteLog "Windows Security Platform Update downloaded to $DefenderPath\securityhealthsetup.exe"
-            # }
-            # catch {
-            #     Write-Host "Downloading Windows Security Platform Update Failed"
-            #     WriteLog "Downloading Windows Security Platform Update Failed with error $_"
-            #     throw $_
-            # }
-            # # Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Windows Security Platform Update
-            # WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Security Platform Update"
-            # $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            # $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Security Platform Update)', ("REM Install Windows Security Platform Update`r`nd:\Defender\securityhealthsetup.exe")
-            # Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            # WriteLog "Update complete"
-        }
-        if ($UpdateLatestMSRT) {
-            WriteLog "`$UpdateLatestMSRT is set to true."
-            if ($WindowsArch -eq 'x64') {
-                if ($WindowsRelease -in 10, 11) {
-                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                # Initialize variables
+                $missingApps = @()
+                $existingMSStoreApps = @()
+                $hasExistingApps = $false
+            
+                # Check for WinGetWin32Apps.json
+                $wingetAppsJson = $null
+                if (Test-Path -Path $wingetWin32jsonFile) {
+                    WriteLog "$wingetWin32jsonFile found"
+                    $wingetAppsJson = Get-Content -Path $wingetWin32jsonFile -Raw | ConvertFrom-Json
+                    $hasExistingApps = $true
                 }
-                elseif ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
-                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows 10""" 
+            
+                # Check MSStore folder for existing apps
+                if (Test-Path -Path "$AppsPath\MSStore") {
+                    WriteLog "$AppsPath\MSStore folder found"
+                    
+                    # Get root folder names in MSStore directory
+                    $MSStoreFolder = Get-ChildItem -Path "$AppsPath\MSStore" -Directory
+                    
+                    # Check content size of each folder
+                    foreach ($folder in $MSStoreFolder) {
+                        $folderSize = (Get-ChildItem -Path $folder.FullName -Recurse | Measure-Object -Property Length -Sum).Sum
+                        if ($folderSize -gt 1MB) {
+                            $existingMSStoreApps += $folder.Name
+                            $hasExistingApps = $true
+                        }
+                    }
                 }
-                elseif ($WindowsRelease -in 2024 -and $isLTSC) {
-                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows 11""" 
-                }
-                #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
-                elseif ($installationType -eq 'server' -and $WindowsRelease -eq '24H2') {
-                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server 2019"""
+            
+                # If there are no existing apps, use the original AppList.json directly
+                if (-not $hasExistingApps) {
+                    WriteLog "No existing applications found. Using original AppList.json for all apps."
+                    Get-Apps -AppList $AppListPath
                 }
                 else {
-                    $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server $WindowsRelease""" 
+                    # Compare apps in AppList.json with existing installations
+                    foreach ($app in $appList.apps) {
+                        $appFound = $false
+                        
+                        # Check Win32 apps regardless of source
+                        if ($wingetAppsJson) {
+                            $wingetApp = $wingetAppsJson | Where-Object { $_.Name -eq $app.name }
+                            
+                            if ($wingetApp) {
+                                # Verify content exists in Win32 folder
+                                $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $app.name
+                                if (Test-Path -Path $appFolder) {
+                                    $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum).Sum
+                                    if ($folderSize -gt 1MB) {
+                                        $appFound = $true
+                                        WriteLog "Found existing Win32 app: $($app.name)"
+                                    }
+                                }
+                            }
+                        }
+            
+                        # If not found in Win32, check MSStore folder regardless of source
+                        if (-not $appFound) {
+                            if ($existingMSStoreApps -contains $app.name) {
+                                $appFound = $true
+                                WriteLog "Found existing MSStore app: $($app.name)"
+                            }
+                        }
+            
+                        # If app not found in either location, add to missing apps list
+                        if (-not $appFound) {
+                            $missingApps += $app
+                            WriteLog "App not found, will download: $($app.name)"
+                        }
+                    }
+            
+                    # If missing apps found, create modified AppList.json
+                    if ($missingApps.Count -gt 0) {
+                        $modifiedAppList = @{
+                            apps = $missingApps
+                        }
+                        
+                        $modifiedAppListPath = Join-Path -Path $AppsPath -ChildPath "ModifiedAppList.json"
+                        $modifiedAppList | ConvertTo-Json | Set-Content -Path $modifiedAppListPath
+                        WriteLog "Created ModifiedAppList.json with $($missingApps.Count) apps to download"
+            
+                        # Download missing apps
+                        WriteLog "Downloading missing applications"
+                        Get-Apps -AppList $modifiedAppListPath
+                        
+                        # Cleanup modified app list
+                        Remove-Item -Path $modifiedAppListPath -Force
+                    }
+                    else {
+                        WriteLog "All applications already downloaded, skipping downloads"
+                    }
                 }
             }
-            if ($WindowsArch -eq 'x86') {
-                $Name = """Windows Malicious Software Removal Tool""" + " " + """Windows $WindowsRelease""" 
+            # Check is UserAppList.json exists and output to the user which apps will be installed
+            # It's expected that the user will have already copied the applications and created the UserAppList.json file
+            if (Test-Path -Path $UserAppListPath) {
+                $userAppList = Get-Content -Path $UserAppListPath -Raw | ConvertFrom-Json
+                WriteLog "UserAppList.json found, the following apps will be installed:"
+                foreach ($app in $userAppList) {
+                    WriteLog "$($app.name)"
+                }
             }
-            #Check if $MSRTPath exists, if not, create it
-            if (-not (Test-Path -Path $MSRTPath)) {
-                WriteLog "Creating $MSRTPath"
-                New-Item -Path $MSRTPath -ItemType Directory -Force | Out-Null
-            }
-            WriteLog "Getting Windows Malicious Software Removal Tool URL"
-            $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath
-            WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
-            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Windows Malicious Software Removal Tool"
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Windows Malicious Software Removal Tool)', ("REM Install Windows Malicious Software Removal Tool`r`nd:\MSRT\$MSRTFileName /quiet")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            WriteLog "Update complete"
-        }
-        #Download and Install OneDrive Per Machine
-        if ($UpdateOneDrive) {
-            WriteLog "`$UpdateOneDrive is set to true, checking for latest OneDrive client"
-            #Check if $OneDrivePath exists, if not, create it
-            If (-not (Test-Path -Path $OneDrivePath)) {
-                WriteLog "Creating $OneDrivePath"
-                New-Item -Path $OneDrivePath -ItemType Directory -Force | Out-Null
-            }
-            WriteLog "Downloading latest OneDrive client"
-            if($WindowsArch -eq 'x64')
-            {
-                $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
-            }
-            elseif($WindowsArch -eq 'ARM64')
-            {
-                $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=2271260'
-            }
-            try {
-                Start-BitsTransferWithRetry -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
-                WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
-            }
-            catch {
-                Write-Host "Downloading OneDrive client Failed"
-                WriteLog "Downloading OneDrive client Failed with error $_"
-                throw $_
-            }
-
-            #Modify InstallAppsandSysprep.cmd to add in $OneDrivePath on the line after REM Install Defender Definitions
-            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include OneDrive client"
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install OneDrive Per Machine)', ("REM Install OneDrive Per Machine`r`nd:\OneDrive\OneDriveSetup.exe /allusers /silent")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            WriteLog "Update complete"
-        }
-
-        #Download and Install Edge Stable
-        if ($UpdateEdge) {
-            WriteLog "`$UpdateEdge is set to true, checking for latest Edge Stable $WindowsArch release"
-            $Name = "microsoft edge stable -extended $WindowsArch"
-            #Check if $EdgePath exists, if not, create it
-            If (-not (Test-Path -Path $EdgePath)) {
-                WriteLog "Creating $EdgePath"
-                New-Item -Path $EdgePath -ItemType Directory -Force | Out-Null
-            }
-            WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $EdgePath"
-            $KBFilePath = Save-KB -Name $Name -Path $EdgePath
-            $EdgeCABFilePath = "$EdgePath\$KBFilePath"
-            WriteLog "Latest Edge Stable $WindowsArch release saved to $EdgeCABFilePath"
             
-            #Extract Edge cab file to same folder as $EdgeFilePath
-            $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
-            $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
-            WriteLog "Expanding $EdgeCABFilePath"
-            Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath" | Out-Null
-            WriteLog "Expansion complete"
+            #Install Office
+            if ($InstallOffice) {
+                #Check if Office has already been downloaded, if so, skip download
+                WriteLog 'Checking for M365 Apps/Office download'
+                $officeDataFolder = "$AppsPath\Office\Office\Data"
+                if (Test-Path -Path $officeDataFolder) {
+                    # Check the size of the $officeDataFolder folder
+                    $OfficeSize = (Get-ChildItem -Path $officeDataFolder -Recurse | Measure-Object -Property Length -Sum).Sum
+                    if ($OfficeSize -gt 1MB) {
+                        WriteLog "Found Office download in $officeDataFolder, skipping download"
+                    }
+                    else {
+                        WriteLog 'Downloading M365 Apps/Office'
+                        Get-Office
+                        WriteLog 'Downloading M365 Apps/Office completed successfully'
+                    }
 
-            #Remove Edge CAB file
-            WriteLog "Removing $EdgeCABFilePath"
-            Remove-Item -Path $EdgeCABFilePath -Force
-            WriteLog "Removal complete"
-
-            #Modify InstallAppsandSysprep.cmd to add in $KBFilePath on the line after REM Install Edge Stable
-            WriteLog "Updating $AppsPath\InstallAppsandSysprep.cmd to include Edge Stable $WindowsArch release"
-            $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-            $UpdatedcmdContent = $CmdContent -replace '^(REM Install Edge Stable)', ("REM Install Edge Stable`r`nd:\Edge\$EdgeMSIFileName /quiet /norestart")
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContent
-            WriteLog "Update complete"
-        }
-
-        #Modify InstallAppsandSysprep.cmd to remove old script variables
-        $CmdContent = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
-        $StartIndex = $CmdContent.IndexOf("REM START Batch variables placeholder")
-        $EndIndex = $CmdContent.IndexOf("REM END Batch variables placeholder")
-        if (($StartIndex + 1) -lt $EndIndex) {
-            for ($i = ($StartIndex + 1); $i -lt $EndIndex; $i++) {
-                $CmdContent[$i] = $null
+                }
+                else {
+                    WriteLog 'Downloading M365 Apps/Office'
+                    Get-Office
+                    WriteLog 'Downloading M365 Apps/Office completed successfully'
+                }
+                
             }
-        }
-        Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
 
-        if ($AppsScriptVariables) {
-            #Modify InstallAppsandSysprep.cmd to add the script variables
-            $CmdContent = [System.Collections.ArrayList](Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd")
-            $ScriptIndex = $CmdContent.IndexOf("REM START Batch variables placeholder") + 1
-            foreach ($VariableKey in $AppsScriptVariables.Keys) {
-                $CmdContent.Insert($ScriptIndex, ("set {0}={1}" -f $VariableKey, $AppsScriptVariables[$VariableKey]))
-                $ScriptIndex++
+            #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
+            if ($UpdateLatestDefender) {
+                # Check if Defender has already been downloaded, if so, skip download
+                WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Security updates"
+                if (Test-Path -Path $DefenderPath) {
+                    # Check the size of the $DefenderPath folder
+                    $DefenderSize = (Get-ChildItem -Path $DefenderPath -Recurse | Measure-Object -Property Length -Sum).Sum
+                    if ($DefenderSize -gt 1MB) {
+                        WriteLog "Found Defender download in $DefenderPath, skipping download"
+                        $DefenderDownloaded = $true
+                    }
+                }
+                if (-not $DefenderDownloaded) {
+                    WriteLog "Creating $DefenderPath"
+                    New-Item -Path $DefenderPath -ItemType Directory -Force | Out-Null
+
+                    # Define array of updates to download
+                    $defenderUpdates = @(
+                        @{
+                            Name        = "Update for Microsoft Defender Antivirus antimalware platform"
+                            Description = "Defender Platform"
+                        },
+                        @{
+                            Name        = "Windows Security Platform"
+                            Description = "Windows Security Platform"
+                        }
+                    )
+
+                    # Download each update
+                    foreach ($update in $defenderUpdates) {
+                        WriteLog "Searching for $($update.Name) from Microsoft Update Catalog and saving to $DefenderPath"
+                        $KBFilePath = Save-KB -Name $update.Name -Path $DefenderPath
+                        WriteLog "Latest $($update.Description) saved to $DefenderPath\$KBFilePath"
+                        # Add the KB file path to the installDefenderCommand
+                        $installDefenderCommand += "& d:\Defender\$KBFilePath`r`n"
+                    }
+                
+                    # Download latest Defender Definitions
+                    WriteLog "Downloading latest Defender Definitions"
+                    # Defender def updates can be found https://www.microsoft.com/en-us/wdsi/defenderupdates
+                    if ($WindowsArch -eq 'x64') {
+                        $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=x64'
+                    }
+                    if ($WindowsArch -eq 'ARM64') {
+                        $DefenderDefURL = 'https://go.microsoft.com/fwlink/?LinkID=121721&arch=arm64'
+                    }
+                    try {
+                        WriteLog "Defender definitions URL is $DefenderDefURL"
+                        Start-BitsTransferWithRetry -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
+                        WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
+                        $installDefenderCommand += "& d:\Defender\mpam-fe.exe"
+                    }
+                    catch {
+                        Write-Host "Downloading Defender Definitions Failed"
+                        WriteLog "Downloading Defender Definitions Failed with error $_"
+                        throw $_
+                    }
+
+                    # Create Update-Defender.ps1
+                    WriteLog "Creating $installDefenderPath"
+                    Set-Content -Path $installDefenderPath -Value $installDefenderCommand -Force
+                    if (Test-Path -Path $installDefenderPath) {
+                        WriteLog "$installDefenderPath created successfully"
+                    }
+                    else {
+                        WriteLog "$installDefenderPath failed to create"
+                        throw "$installDefenderPath failed to create"
+                    }
+                }
             }
-            Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $CmdContent
+            # Download latest MSRT
+            if ($UpdateLatestMSRT) {
+                WriteLog "`$UpdateLatestMSRT is set to true, checking for latest Windows Malicious Software Removal Tool"
+                # Check if MSRT has already been downloaded, if so, skip download
+                if (Test-Path -Path $MSRTPath) {
+                    # Check the size of the $MSRTPath folder
+                    $MSRTSize = (Get-ChildItem -Path $MSRTPath -Recurse | Measure-Object -Property Length -Sum).Sum
+                    if ($MSRTSize -gt 1MB) {
+                        WriteLog "Found MSRT download in $MSRTPath, skipping download"
+                        $MSRTDownloaded = $true
+                    }
+                }
+                if (-Not $MSRTDownloaded) {
+                    # Create the search string for MSRT based on Windows architecture and release
+                    if ($WindowsArch -eq 'x64') {
+                        if ($installationType -eq 'client') {
+                            $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                        }
+                        #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
+                        elseif ($installationType -eq 'server' -and $WindowsRelease -eq '24H2') {
+                            $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server 2019"""
+                        }
+                        else {
+                            $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows Server $WindowsRelease""" 
+                        }
+                    }
+                    if ($WindowsArch -eq 'x86') {
+                        $Name = """Windows Malicious Software Removal Tool""" + " " + """Windows $WindowsRelease""" 
+                    }
+                    #Check if $MSRTPath exists, if not, create it
+                    if (-not (Test-Path -Path $MSRTPath)) {
+                        WriteLog "Creating $MSRTPath"
+                        New-Item -Path $MSRTPath -ItemType Directory -Force | Out-Null
+                    }
+
+                    WriteLog "Getting Windows Malicious Software Removal Tool URL"
+                    $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath
+                    WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
+                
+                    # Create Update-MSRT.ps1
+                    $installMSRTPath = Join-Path -Path $orchestrationPath -ChildPath "Update-MSRT.ps1"
+                    WriteLog "Creating $installMSRTPath"
+                    $installMSRTCommand = "& d:\MSRT\$MSRTFileName /quiet"
+                    Set-Content -Path $installMSRTPath -Value $installMSRTCommand -Force
+                    # Validate that the file created successfully
+                    if (Test-Path -Path $installMSRTPath) {
+                        WriteLog "$installMSRTPath created successfully"
+                    }
+                    else {
+                        WriteLog "$installMSRTPath failed to create"
+                        throw "$installMSRTPath failed to create"
+                    }
+                }   
+            }
+
+            #Download and Install OneDrive Per Machine
+            if ($UpdateOneDrive) {
+                WriteLog "`$UpdateOneDrive is set to true, checking for latest OneDrive client"
+                # Check if OneDrive has already been downloaded, if so, skip download
+                if (Test-Path -Path $OneDrivePath) {
+                    # Check the size of the $OneDrivePath folder
+                    $OneDriveSize = (Get-ChildItem -Path $OneDrivePath -Recurse | Measure-Object -Property Length -Sum).Sum
+                    if ($OneDriveSize -gt 1MB) {
+                        WriteLog "Found OneDrive download in $OneDrivePath, skipping download"
+                        $OneDriveDownloaded = $true
+                    }
+                }
+                if (-not $OneDriveDownloaded) {
+                    #Check if $OneDrivePath exists, if not, create it
+                    If (-not (Test-Path -Path $OneDrivePath)) {
+                        WriteLog "Creating $OneDrivePath"
+                        New-Item -Path $OneDrivePath -ItemType Directory -Force | Out-Null
+                    }
+                    WriteLog "Downloading latest OneDrive client"
+                    if ($WindowsArch -eq 'x64') {
+                        $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
+                    }
+                    elseif ($WindowsArch -eq 'ARM64') {
+                        $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=2271260'
+                    }
+                    try {
+                        Start-BitsTransferWithRetry -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
+                        WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
+                    }
+                    catch {
+                        Write-Host "Downloading OneDrive client Failed"
+                        WriteLog "Downloading OneDrive client Failed with error $_"
+                        throw $_
+                    }
+
+                    # Create Update-OneDrive.ps1
+                    $installODPath = Join-Path -Path $orchestrationPath -ChildPath "Update-OneDrive.ps1"
+                    WriteLog "Creating $installODPath"
+                    $installODCommand = "& d:\OneDrive\OneDriveSetup.exe /allusers /silent"
+                    Set-Content -Path $installODPath -Value $installODCommand -Force
+                    # Validate that the file created successfully
+                    if (Test-Path -Path $installODPath) {
+                        WriteLog "$installODPath created successfully"
+                    }
+                    else {
+                        WriteLog "$installODPath failed to create"
+                        throw "$installODPath failed to create"
+                    }
+                }
+               
+            }
+
+            #Download and Install Edge Stable
+            if ($UpdateEdge) {
+                WriteLog "`$UpdateEdge is set to true, checking for latest Edge Stable $WindowsArch release"
+                # Check if Edge has already been downloaded, if so, skip download
+                if (Test-Path -Path $EdgePath) {
+                    # Check the size of the $EdgePath folder
+                    $EdgeSize = (Get-ChildItem -Path $EdgePath -Recurse | Measure-Object -Property Length -Sum).Sum
+                    if ($EdgeSize -gt 1MB) {
+                        WriteLog "Found Edge download in $EdgePath, skipping download"
+                        $EdgeDownloaded = $true
+                    }
+                }
+                if (-not $EdgeDownloaded) {
+                    # Create the search string for Edge based on Windows architecture
+                    $Name = "microsoft edge stable -extended $WindowsArch"
+                    #Check if $EdgePath exists, if not, create it
+                    If (-not (Test-Path -Path $EdgePath)) {
+                        WriteLog "Creating $EdgePath"
+                        New-Item -Path $EdgePath -ItemType Directory -Force | Out-Null
+                    }
+                    WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $EdgePath"
+                    $KBFilePath = Save-KB -Name $Name -Path $EdgePath
+                    $EdgeCABFilePath = "$EdgePath\$KBFilePath"
+                    WriteLog "Latest Edge Stable $WindowsArch release saved to $EdgeCABFilePath"
+                
+                    #Extract Edge cab file to same folder as $EdgeFilePath
+                    $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
+                    $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
+                    WriteLog "Expanding $EdgeCABFilePath"
+                    Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath" | Out-Null
+                    WriteLog "Expansion complete"
+
+                    #Remove Edge CAB file
+                    WriteLog "Removing $EdgeCABFilePath"
+                    Remove-Item -Path $EdgeCABFilePath -Force
+                    WriteLog "Removal complete"
+
+                    # Create Update-Edge.ps1
+                    $installEdgePath = Join-Path -Path $orchestrationPath -ChildPath "Update-Edge.ps1"
+                    WriteLog "Creating $installEdgePath"
+                    $installEdgeCommand = "& d:\Edge\$EdgeMSIFileName /quiet /norestart"
+                    Set-Content -Path $installEdgePath -Value $installEdgeCommand -Force
+                    # Validate that the file created successfully
+                    if (Test-Path -Path $installEdgePath) {
+                        WriteLog "$installEdgePath created successfully"
+                    }
+                    else {
+                        WriteLog "$installEdgePath failed to create"
+                        throw "$installEdgePath failed to create"
+                    }
+                }
+                
+            }
+
+            # Process AppsScriptVariables - Create json file
+            if ($AppsScriptVariables) {
+                $AppsScriptVariables | ConvertTo-Json | Out-File -FilePath $appsScriptVarsJsonPath -Encoding UTF8
+                WriteLog "AppsScriptVariables exported to $appsScriptVarsJsonPath for use during orchestration"
+            }
+        
+            #Create Apps ISO
+            WriteLog "Creating $AppsISO file"
+            New-AppsISO
+            WriteLog "$AppsISO created successfully"
         }
-	
-        #Create Apps ISO
-        WriteLog "Creating $AppsISO file"
-        New-AppsISO
-        WriteLog "$AppsISO created successfully"
-    }
-    catch {
-        Write-Host "Creating Apps ISO Failed"
-        WriteLog "Creating Apps ISO Failed with error $_"
-        throw $_
+        catch {
+            Write-Host "Creating Apps ISO Failed"
+            WriteLog "Creating Apps ISO Failed with error $_"
+            throw $_
+        }
     }
 }
 
@@ -5088,7 +4588,7 @@ try {
             }
         }
         $CUPPath = "$KBPath\$CUPFileName"
-        WriteLog "Latest CU Preview saved to $CUPPath"
+        WriteLog "Latest CU saved to $CUPPath"
     }
 
     #Update Latest .NET Framework
@@ -5260,39 +4760,39 @@ try {
                     $vhdxCacheItem = Get-Content -Path $vhdxJson.FullName -Raw | ConvertFrom-Json
 
                     if ((($vhdxCacheItem.WindowsSKU -ne $WindowsSKU) -or
-                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsSKU) -xor [string]::IsNullOrEmpty($WindowsSKU)))) {
+                            ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsSKU) -xor [string]::IsNullOrEmpty($WindowsSKU)))) {
                         WriteLog 'WindowsSKU mismatch, continuing'
                         continue
                     }
 
                     if ((($vhdxCacheItem.LogicalSectorSizeBytes -ne $LogicalSectorSizeBytes) -or
-                        ([string]::IsNullOrEmpty($vhdxCacheItem.LogicalSectorSizeBytes) -xor [string]::IsNullOrEmpty($LogicalSectorSizeBytes)))) {
+                            ([string]::IsNullOrEmpty($vhdxCacheItem.LogicalSectorSizeBytes) -xor [string]::IsNullOrEmpty($LogicalSectorSizeBytes)))) {
                         WriteLog 'LogicalSectorSizeBytes mismatch, continuing'
                         continue
                     }
 
                     if ((($vhdxCacheItem.WindowsRelease -ne $WindowsRelease) -or
-                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsRelease) -xor [string]::IsNullOrEmpty($WindowsRelease)))) {
+                            ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsRelease) -xor [string]::IsNullOrEmpty($WindowsRelease)))) {
                         WriteLog 'WindowsRelease mismatch, continuing'
                         continue
                     }
 
                     if ((($vhdxCacheItem.WindowsVersion -ne $WindowsVersion) -or
-                        ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsVersion) -xor [string]::IsNullOrEmpty($WindowsVersion)))) {
+                            ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsVersion) -xor [string]::IsNullOrEmpty($WindowsVersion)))) {
                         Writelog 'WindowsVersion mismatch, continuing'
                         continue
                     }
 
                     if ((($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) -or
-                        ([string]::IsNullOrEmpty($vhdxCacheItem.OptionalFeatures) -xor [string]::IsNullOrEmpty($OptionalFeatures)))) {
+                            ([string]::IsNullOrEmpty($vhdxCacheItem.OptionalFeatures) -xor [string]::IsNullOrEmpty($OptionalFeatures)))) {
                         WriteLog 'OptionalFeatures mismatch, continuing'
                         continue
                     }
 
                     if ((Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name).Length -gt 0) {
-                        (Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name)
-                        $downloadedKBs.Name
-                        $vhdxCacheItem.IncludedUpdates.Name
+                        # (Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name)
+                        # $downloadedKBs.Name
+                        # $vhdxCacheItem.IncludedUpdates.Name
                         WriteLog 'IncludedUpdates mismatch, continuing'
                         continue
                     }
@@ -5301,7 +4801,8 @@ try {
                     $cachedVHDXFileFound = $true
                     $cachedVHDXInfo = $vhdxCacheItem
                     break
-                } catch {
+                }
+                catch {
                     WriteLog "Reading $vhdxJson Failed with error $_"
                 }
             }
@@ -5311,7 +4812,8 @@ try {
     if (-Not $cachedVHDXFileFound) {
         if ($ISOPath) {
             $wimPath = Get-WimFromISO
-        } else {
+        }
+        else {
             $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
         }
         #If index not specified by user, try and find based on WindowsSKU
@@ -5399,7 +4901,8 @@ try {
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
                 WriteLog 'Clean Up the WinSxS Folder completed'
-            } catch {
+            }
+            catch {
                 Write-Host "Adding KB to VHDX failed with error $_"
                 WriteLog "Adding KB to VHDX failed with error $_"
                 if ($_.Exception.HResult -eq -2146498525) {
@@ -5431,7 +4934,8 @@ try {
             WriteLog "$wimPath deleted"
         }
     
-    } else {
+    }
+    else {
         #Use cached vhdx file
         WriteLog 'Using cached VHDX file to speed up build proces'
         WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
@@ -5457,7 +4961,7 @@ try {
         #Copy Unattend file so VM Boots into Audit Mode
         WriteLog 'Copying unattend file to boot to audit mode'
         New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory -Force | Out-Null
-        if($WindowsArch -eq 'x64'){
+        if ($WindowsArch -eq 'x64') {
             Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
         }
         else {
@@ -5501,7 +5005,7 @@ try {
         }
     } 
     else {
-        if($InstallApps){
+        if ($InstallApps) {
             Dismount-ScratchVhdx -VhdxPath $VHDXPath
         }
     }
@@ -5623,29 +5127,29 @@ If ($InstallApps) {
         Remove-FFUVM -VMName $VMName
         throw $_
     }
-    #Clean up InstallAppsandSysprep.cmd
-    try {
-        WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
-        Clear-InstallAppsandSysprep
-    }
-    catch {
-        Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
-        Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
-        throw $_
-    }
-    try {
-        if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
-            WriteLog "Cleaning up Win32 folder"
-            Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    #Clean up Apps
+    if ($RemoveApps) {
+        try {
+            WriteLog "Cleaning up $AppsPath"
+            Remove-Apps
         }
-        if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
-            WriteLog "Cleaning up MSStore folder"
-            Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+        catch {
+            Write-Host 'Cleaning up Apps failed'
+            Writelog "Cleaning up Apps failed with error $_"
+            throw $_
         }
     }
-    catch {
-        WriteLog "$_"
-        throw $_
+    #Clean up Updates
+    if ($RemoveUpdates) {
+        try {
+            WriteLog "Cleaning up downloaded update files"
+            Remove-Updates
+        }
+        catch {
+            Write-Host 'Cleaning up downloaded update files failed'
+            Writelog "Cleaning up downloaded update files failed with error $_"
+            throw $_
+        }
     }
 }
 #Clean up VM or VHDX
@@ -5659,30 +5163,7 @@ catch {
     throw $_
 }
 
-# #Clean up InstallAppsandSysprep.cmd
-# try {
-#     WriteLog "Cleaning up $AppsPath\InstallAppsandSysprep.cmd"
-#     Clear-InstallAppsandSysprep
-# }
-# catch {
-#     Write-Host 'Cleaning up InstallAppsandSysprep.cmd failed'
-#     Writelog "Cleaning up InstallAppsandSysprep.cmd failed with error $_"
-#     throw $_
-# }
-# try {
-#     if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
-#         WriteLog "Cleaning up Win32 folder"
-#         Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
-#     }
-#     if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
-#         WriteLog "Cleaning up MSStore folder"
-#         Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
-#     }
-# }
-# catch {
-#     WriteLog "$_"
-#     throw $_
-# }
+
 #Create Deployment Media
 If ($CreateDeploymentMedia) {
     try {
@@ -5769,7 +5250,8 @@ If ($CleanupDrivers) {
             Remove-Item -Path $Driversfolder\* -Force -Recurse
             WriteLog "Removal complete"
         }  
-    } catch {
+    }
+    catch {
         Writelog "Removing $Driversfolder\* failed with error $_"
         throw $_
     }
@@ -5781,7 +5263,8 @@ if ($AllowVHDXCaching) {
             Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
             WriteLog 'Removal complete'
         }
-    } catch {
+    }
+    catch {
         Writelog "Removing $KBPath failed with error $_"
         throw $_
     }
@@ -5796,7 +5279,7 @@ else {
 
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
-if ($VerbosePreference -ne 'Continue'){
+if ($VerbosePreference -ne 'Continue') {
     Write-Host 'Script complete'
 }
 # Record the end time
@@ -5814,7 +5297,7 @@ else {
     $runTimeFormatted = 'Duration: {0:mm} min {0:ss} sec' -f $runTime
 }
 
-if ($VerbosePreference -ne 'Continue'){
+if ($VerbosePreference -ne 'Continue') {
     Write-Host $runTimeFormatted
 }
 WriteLog 'Script complete'

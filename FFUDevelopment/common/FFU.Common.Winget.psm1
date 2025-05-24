@@ -1,3 +1,6 @@
+# Import the common core module for logging
+Import-Module "$PSScriptRoot\FFU.Common.Core.psm1"
+
 function Get-Application {
     [CmdletBinding()]
     param (
@@ -14,10 +17,10 @@ function Get-Application {
     $wingetSearchResult = Find-WinGetPackage -id $AppId -MatchOption Equals -Source $Source
     if (-not $wingetSearchResult) {
         if ($VerbosePreference -ne 'Continue') {
-            Write-Error "$AppName not found in $Source repository. Exiting."
+            Write-Error "$AppName not found in $Source repository."
             Write-Error "Check the AppList.json file and make sure the AppID is correct."
         }
-        WriteLog "$AppName not found in $Source repository. Exiting."
+        WriteLog "$AppName not found in $Source repository."
         WriteLog "Check the AppList.json file and make sure the AppID is correct."
         Exit 1
     }
@@ -26,7 +29,8 @@ function Get-Application {
     $appIsWin32 = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
     if ($Source -eq 'winget' -or $appIsWin32) {
         $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $AppName
-    } else {
+    }
+    else {
         $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $AppName
     }
     
@@ -67,14 +71,12 @@ function Get-Application {
                 Write-Error "ERROR: The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
                 Exit 1
             }
-            
-            # Other download failures
-            WriteLog "ERROR: Download failed for $AppName with status: $($wingetDownloadResult.status)"
-            WriteLog "ERROR: Download failed for $AppName with error code: $($wingetDownloadResult.ExtendedErrorCode)"
-            WriteLog "Exiting"
+        }
+        else {
+            $errormsg = "ERROR: Download failed for $AppName with status: $($wingetDownloadResult.status) $($wingetDownloadResult.ExtendedErrorCode)"
+            WriteLog $errormsg
             Remove-Item -Path $appFolderPath -Recurse -Force
-            Write-Error "ERROR: Download failed for $AppName with status: $($wingetDownloadResult.status)"
-            Write-Error "ERROR: Download failed for $AppName with error code: $($wingetDownloadResult.ExtendedErrorCode)"
+            Write-Error $errormsg
             Exit 1
         }
     }
@@ -88,7 +90,7 @@ function Get-Application {
     if ($uwpExtensions -contains $installerPath.Extension -and $appFolderPath -match 'Win32') {
         # Handle UWP apps
         $NewAppPath = "$AppsPath\MSStore\$AppName"
-        Writelog "$AppName is a UWP app. Moving to $NewAppPath"
+        WriteLog "$AppName is a UWP app. Moving to $NewAppPath"
         WriteLog "Creating $NewAppPath"
         New-Item -Path "$AppsPath\MSStore\$AppName" -ItemType Directory -Force | Out-Null
         WriteLog "Moving $AppName to $NewAppPath"
@@ -97,12 +99,16 @@ function Get-Application {
         Remove-Item -Path $appFolderPath -Force -Recurse
         WriteLog "$AppName moved to $NewAppPath"
         # Set-InstallStoreAppsFlag
+        $result = 0  # Success for UWP app
     }
-
     # If app is in Win32 folder, add the silent install command to the WinGetWin32Apps.json file
-    elseif($appFolderPath -match 'Win32'){
+    elseif ($appFolderPath -match 'Win32') {
         WriteLog "$AppName is a Win32 app. Adding silent install command to $orchestrationpath\WinGetWin32Apps.json"
-        Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath
+        $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath
+    }
+    else {
+        # For any other case, set result to 0 (success)
+        $result = 0
     }
     
     # Handle MSStore specific post-processing
@@ -145,8 +151,9 @@ function Get-Application {
             }
         }
     }
+    
+    return $result
 }
-
 function Get-Apps {
     [CmdletBinding()]
     param (
@@ -181,7 +188,7 @@ function Get-Apps {
     # Create necessary folders
     $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
     $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
-    
+
     # Process WinGet apps
     if ($wingetApps) {
         if (-not (Test-Path -Path $win32Folder -PathType Container)) {
@@ -218,7 +225,30 @@ function Get-Apps {
         }
     }
 }
-
+function Install-WinGet {
+    param (
+        [string]$Architecture
+    )
+    $packages = @(
+        @{Name = "VCLibs"; Url = "https://aka.ms/Microsoft.VCLibs.$Architecture.14.00.Desktop.appx"; File = "Microsoft.VCLibs.$Architecture.14.00.Desktop.appx" },
+        @{Name = "UIXaml"; Url = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.$Architecture.appx"; File = "Microsoft.UI.Xaml.2.8.$Architecture.appx" },
+        @{Name = "WinGet"; Url = "https://aka.ms/getwinget"; File = "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle" }
+    )
+    foreach ($package in $packages) {
+        $destination = Join-Path -Path $env:TEMP -ChildPath $package.File
+        WriteLog "Downloading $($package.Name) from $($package.Url) to $destination"
+        Start-BitsTransferWithRetry -Source $package.Url -Destination $destination
+        WriteLog "Installing $($package.Name)..."
+        # Don't show progress bar for Add-AppxPackage - there's a weird issue where the progress stays on the screen after the apps are installed
+        $ProgressPreference = 'SilentlyContinue'
+        Add-AppxPackage -Path $destination -ErrorAction SilentlyContinue
+        # Set progress preference back to default
+        $ProgressPreference = 'Continue'
+        WriteLog "Removing $($package.Name)..."
+        Remove-Item -Path $destination -Force -ErrorAction SilentlyContinue
+    }
+    WriteLog "WinGet installation complete."
+}
 function Confirm-WinGetInstallation {
     [CmdletBinding()]
     param()
@@ -228,19 +258,20 @@ function Confirm-WinGetInstallation {
     
     # Check WinGet PowerShell module
     $wingetModule = Get-InstalledModule -Name Microsoft.Winget.Client -ErrorAction SilentlyContinue
-    if ($wingetModule.Version -lt $minVersion -or -not $wingetModule) {
+    $wingetModuleVersion = [version]$wingetModule.Version
+    if ($wingetModuleVersion -lt $minVersion -or -not $wingetModule) {
         WriteLog 'Microsoft.Winget.Client module is not installed or is an older version. Installing the latest version...'
         
         # Handle PSGallery trust settings
         $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
-        if($PSGalleryTrust -eq 'Untrusted') {
+        if ($PSGalleryTrust -eq 'Untrusted') {
             WriteLog 'Temporarily setting PSGallery as a trusted repository...'
             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
         }
         
         Install-Module -Name Microsoft.Winget.Client -Force -Repository 'PSGallery'
         
-        if($PSGalleryTrust -eq 'Untrusted') {
+        if ($PSGalleryTrust -eq 'Untrusted') {
             WriteLog 'Setting PSGallery back to untrusted repository...'
             Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
             WriteLog 'Done'
@@ -264,7 +295,6 @@ function Confirm-WinGetInstallation {
         WriteLog "Installed WinGet version: $wingetVersion"
     }
 }
-
 function Add-Win32SilentInstallCommand {
     param (
         [string]$AppFolder,
@@ -275,7 +305,7 @@ function Add-Win32SilentInstallCommand {
     if (-not $installerPath) {
         WriteLog "No win32 app installers were found. Skipping the inclusion of $AppFolder"
         Remove-Item -Path $AppFolderPath -Recurse -Force
-        return $false
+        return 1
     }
     $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop
     $yamlContent = Get-Content -Path $yamlFile -Raw
@@ -283,7 +313,7 @@ function Add-Win32SilentInstallCommand {
     if (-not $silentInstallSwitch) {
         WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
         Remove-Item -Path $appFolderPath -Recurse -Force
-        return $false
+        return 2
     }
     $installer = Split-Path -Path $installerPath -Leaf
     if ($installerPath.Extension -eq ".exe") {
@@ -305,17 +335,18 @@ function Add-Win32SilentInstallCommand {
         if ($appsData.Count -gt 0) {
             $highestPriority = $appsData.Count + 1
         }
-    } else {
+    }
+    else {
         $appsData = @()
         $highestPriority = 1
     }
     
     # Create new app entry
     $newApp = [PSCustomObject]@{
-        Priority = $highestPriority
-        Name = $appName
+        Priority    = $highestPriority
+        Name        = $appName
         CommandLine = $silentInstallCommand
-        Arguments = $silentInstallSwitch
+        Arguments   = $silentInstallSwitch
     }
     
     $appsData += $newApp
@@ -323,5 +354,13 @@ function Add-Win32SilentInstallCommand {
     
     WriteLog "Added $appName to WinGetWin32Apps.json with priority $highestPriority"
     
-    # return $true
+    # Return 0 for success
+    return 0
 }
+
+# --------------------------------------------------------------------------
+# SECTION: Module Export
+# --------------------------------------------------------------------------
+
+# Export functions needed by both BuildFFUVM and the UI Core module
+Export-ModuleMember -Function Get-Application, Get-Apps, Confirm-WinGetInstallation, Add-Win32SilentInstallCommand, Install-Winget

@@ -2,446 +2,468 @@
 [System.STAThread()]
 param()
 
-# Dot-source the common functions shared between the BuildFFUVM and BuildFFUVM_UI scripts
-. "$PSScriptRoot\Common\WingetFunctions.ps1"
+# Check PowerShell Version
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Error "PowerShell 7 or later is required to run this script."
+    exit 1
+}
 
 # --------------------------------------------------------------------------
 # SECTION: Variables & Constants
 # --------------------------------------------------------------------------
-$FFUDevelopmentPath = $PSScriptRoot
-$AppsPath = Join-Path $FFUDevelopmentPath "Apps"
-
-# Add the new function for USB drive detection
-function Get-USBDrives {
-    Get-WmiObject Win32_DiskDrive | Where-Object { 
-        ($_.MediaType -eq 'Removable Media' -or $_.MediaType -eq 'External hard disk media')
-    } | ForEach-Object {
-        $size = [math]::Round($_.Size / 1GB, 2)
-        $serialNumber = if ($_.SerialNumber) { $_.SerialNumber.Trim() } else { "N/A" }
-        @{
-            IsSelected   = $false
-            Model        = $_.Model.Trim()
-            SerialNumber = $serialNumber
-            Size         = $size
-            DriveIndex   = $_.Index
-        }
-    }
+# $FFUDevelopmentPath = $PSScriptRoot
+$FFUDevelopmentPath = 'C:\FFUDevelopment' # hard coded for testing
+$global:LogFile = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
+$AppsPath = "$FFUDevelopmentPath\Apps"
+$AppListJsonPath = "$AppsPath\AppList.json"
+$UserAppListJsonPath = "$AppsPath\UserAppList.json" # Define path for UserAppList.json
+#Microsoft sites will intermittently fail on downloads. These headers are to help with that.
+$Headers = @{
+    "Accept"                    = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+    "Accept-Encoding"           = "gzip, deflate, br, zstd"
+    "Accept-Language"           = "en-US,en;q=0.9"
+    "Priority"                  = "u=0, i"
+    "Sec-Ch-Ua"                 = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
+    "Sec-Ch-Ua-Mobile"          = "?0"
+    "Sec-Ch-Ua-Platform"        = "`"Windows`""
+    "Sec-Fetch-Dest"            = "document"
+    "Sec-Fetch-Mode"            = "navigate"
+    "Sec-Fetch-Site"            = "none"
+    "Sec-Fetch-User"            = "?1"
+    "Upgrade-Insecure-Requests" = "1"
 }
-# --------------------------------------------------------------------------
-# SECTION: Modern folder dialog
-# --------------------------------------------------------------------------
+$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0'
 
-# 1) Define a C# class that uses the correct GUIDs for IFileDialog, IFileOpenDialog, and FileOpenDialog,
-#    while omitting conflicting "GetResults/GetSelectedItems" from IFileDialog.
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class ModernFolderBrowser
-{
-    // Flags for IFileDialog
-    [Flags]
-    private enum FileDialogOptions : uint
-    {
-        OverwritePrompt      = 0x00000002,
-        StrictFileTypes      = 0x00000004,
-        NoChangeDir          = 0x00000008,
-        PickFolders          = 0x00000020,
-        ForceFileSystem      = 0x00000040,
-        AllNonStorageItems   = 0x00000080,
-        NoValidate           = 0x00000100,
-        AllowMultiSelect     = 0x00000200,
-        PathMustExist        = 0x00000800,
-        FileMustExist        = 0x00001000,
-        CreatePrompt         = 0x00002000,
-        ShareAware           = 0x00004000,
-        NoReadOnlyReturn     = 0x00008000,
-        NoTestFileCreate     = 0x00010000,
-        DontAddToRecent      = 0x02000000,
-        ForceShowHidden      = 0x10000000
-    }
-
-    // IFileDialog (GUID from Windows SDK)
-    //  - Omitting GetResults / GetSelectedItems to avoid overshadow.
-    [ComImport]
-    [Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileDialog
-    {
-        [PreserveSig]
-        int Show(IntPtr parent);
-
-        void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
-        void SetFileTypeIndex(uint iFileType);
-        void GetFileTypeIndex(out uint piFileType);
-        void Advise(IntPtr pfde, out uint pdwCookie);
-        void Unadvise(uint dwCookie);
-        void SetOptions(FileDialogOptions fos);
-        void GetOptions(out FileDialogOptions pfos);
-        void SetDefaultFolder(IShellItem psi);
-        void SetFolder(IShellItem psi);
-        void GetFolder(out IShellItem ppsi);
-        void GetCurrentSelection(out IShellItem ppsi);
-        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-        void GetFileName(out IntPtr pszName);
-        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
-        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
-        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
-        void GetResult(out IShellItem ppsi);
-        void AddPlace(IShellItem psi, int fdap);
-        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
-        void Close(int hr);
-        void SetClientGuid(ref Guid guid);
-        void ClearClientData();
-        void SetFilter(IntPtr pFilter);
-
-        // NOTE: We intentionally do NOT define GetResults and GetSelectedItems here,
-        // because they cause overshadow warnings in IFileOpenDialog.
-    }
-
-    // IFileOpenDialog extends IFileDialog by adding 2 new methods with the same name,
-    // which otherwise cause overshadow warnings. We'll define them only here.
-    [ComImport]
-    [Guid("D57C7288-D4AD-4768-BE02-9D969532D960")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileOpenDialog : IFileDialog
-    {
-        // These two come after the parent's vtable:
-        void GetResults(out IntPtr ppenum);
-        void GetSelectedItems(out IntPtr ppsai);
-    }
-
-    // The coclass for creating an IFileOpenDialog
-    [ComImport]
-    [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
-    private class FileOpenDialog
-    {
-    }
-
-    // IShellItem
-    [ComImport]
-    [Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellItem
-    {
-        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
-        void GetParent(out IShellItem ppsi);
-        void GetDisplayName(uint sigdnName, out IntPtr ppszName);
-        void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
-        void Compare(IShellItem psi, uint hint, out int piOrder);
-    }
-
-    private const uint SIGDN_FILESYSPATH = 0x80058000;
-
-    public static string ShowDialog(string title, IntPtr parentHandle)
-    {
-        // Create COM dialog instance
-        IFileOpenDialog dialog = (IFileOpenDialog)(new FileOpenDialog());
-
-        // Get current options
-        FileDialogOptions opts;
-        dialog.GetOptions(out opts);
-
-        // Add flags for picking folders
-        opts |= FileDialogOptions.PickFolders | FileDialogOptions.PathMustExist | FileDialogOptions.ForceFileSystem;
-        dialog.SetOptions(opts);
-
-        // Set title
-        if (!string.IsNullOrEmpty(title))
-        {
-            dialog.SetTitle(title);
-        }
-
-        // Show the dialog
-        int hr = dialog.Show(parentHandle);
-        // 0 = S_OK. 1 or 0x800704C7 often means user canceled. Return null if so.
-        if (hr != 0)
-        {
-            if ((uint)hr == 0x800704C7 || hr == 1)
-            {
-                return null; // Canceled
-            }
-            else
-            {
-                Marshal.ThrowExceptionForHR(hr);
-            }
-        }
-
-        // Retrieve the selection (IShellItem)
-        IShellItem shellItem;
-        dialog.GetResult(out shellItem);
-        if (shellItem == null) return null;
-
-        // Convert to file system path
-        IntPtr pszPath = IntPtr.Zero;
-        shellItem.GetDisplayName(SIGDN_FILESYSPATH, out pszPath);
-        if (pszPath == IntPtr.Zero) return null;
-
-        string folderPath = Marshal.PtrToStringAuto(pszPath);
-        Marshal.FreeCoTaskMem(pszPath);
-
-        return folderPath;
-    }
+# Remove any existing modules to avoid conflicts
+if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFU.Common.Core' -Force
 }
-"@ -Language CSharp
+if (Get-Module -Name 'FFUUI.Core' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFUUI.Core' -Force
+}
+# Import the common core module first for logging
+Import-Module "$PSScriptRoot\common\FFU.Common.Core.psm1" 
+# Import the Core UI Logic Module
+Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
 
-# 2) Define a PowerShell function that invokes our C# wrapper
-function Show-ModernFolderPicker {
-    param(
-        [string]$Title = "Select a folder"
-    )
-    # For a simple test, pass IntPtr.Zero as the parent window handle
-    return [ModernFolderBrowser]::ShowDialog($Title, [IntPtr]::Zero)
+# Set the log path for the common logger (for UI operations)
+Set-CommonCoreLogPath -Path $global:LogFile
+
+# Setting long path support - this prevents issues where some applications have deep directory structures
+# and driver extraction fails due to long paths.
+$script:originalLongPathsValue = $null # Store original value
+try {
+    $script:originalLongPathsValue = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -ErrorAction SilentlyContinue
+}
+catch {
+    # Key or value might not exist, which is fine.
+    WriteLog "Could not read initial LongPathsEnabled value (may not exist)."
 }
 
-# --------------------------------------------------------------------------
-# SECTION: Winget Management Functions
-# --------------------------------------------------------------------------
-function Test-WingetCLI {
-    [CmdletBinding()]
-    param()
-    
-    $minVersion = [version]"1.8.1911"
-    
-    # Check Winget CLI
-    $wingetCmd = Get-Command -Name winget -ErrorAction SilentlyContinue
-    if (-not $wingetCmd) {
-        return @{
-            Version = "Not installed"
-            Status  = "Not installed - Install from Microsoft Store"
-        }
-    }
-    
-    # Get and check version
-    $wingetVersion = & winget.exe --version
-    if ($wingetVersion -match 'v?(\d+\.\d+.\d+)') {
-        $version = [version]$matches[1]
-        if ($version -lt $minVersion) {
-            return @{
-                Version = $version.ToString()
-                Status  = "Update required - Install from Microsoft Store"
-            }
-        }
-        return @{
-            Version = $version.ToString()
-            Status  = $version.ToString()
-        }
-    }
-    
-    return @{
-        Version = "Unknown"
-        Status  = "Version check failed"
-    }
-}
-
-function Update-WingetVersionFields {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$wingetText,
-        [Parameter(Mandatory)]
-        [string]$moduleText
-    )
-    
-    # Force UI update on the UI thread
-    $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
-            $script:txtWingetVersion.Text = $wingetText
-            $script:txtWingetModuleVersion.Text = $moduleText
-            # Force immediate UI refresh
-            [System.Windows.Forms.Application]::DoEvents()
-        })
-}
-
-function Install-WingetComponents {
-    [CmdletBinding()]
-    param(
-        [string]$currentWingetVersion = "Checking..."
-    )
-
-    $minVersion = [version]"1.8.1911"
-    
+# Enable long paths if not already enabled
+if ($script:originalLongPathsValue -ne 1) {
     try {
-        # Check and update PowerShell Module
-        $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue
-        if (-not $module -or $module.Version -lt $minVersion) {
-            Update-WingetVersionFields -wingetText $currentWingetVersion -moduleText "Installing..."
-            
-            # Store and modify PSGallery trust setting temporarily if needed
-            $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
-            if ($PSGalleryTrust -eq 'Untrusted') {
-                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-            }
-
-            # Install/Update the module
-            Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery'
-            
-            # Restore original PSGallery trust setting
-            if ($PSGalleryTrust -eq 'Untrusted') {
-                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
-            }
-            
-            $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction Stop
-        }
-        
-        return $module
+        WriteLog 'LongPathsEnabled is not set to 1. Setting it to 1 for the duration of this script.'
+        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1 -Force
+        WriteLog 'LongPathsEnabled set to 1.'
     }
     catch {
-        Write-Error "Failed to install/update Winget PowerShell module: $_"
-        throw
+        WriteLog "Error setting LongPathsEnabled registry key: $($_.Exception.Message). Long path issues might persist."
+        # Optionally show a warning to the user if this fails?
+        # [System.Windows.MessageBox]::Show("Could not enable long path support. Some operations might fail.", "Warning", "OK", "Warning")
+    }
+}
+else {
+    WriteLog "LongPathsEnabled is already set to 1."
+}
+
+# --------------------------------------------------------------------------
+# SECTION: Driver Download Functions
+# --------------------------------------------------------------------------
+
+# Variable to store the full list of retrieved driver models
+$script:allDriverModels = @()
+
+# Helper function to convert raw driver objects to a standardized format
+function ConvertTo-StandardizedDriverModel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$RawDriverObject,
+        [Parameter(Mandatory = $true)]
+        [string]$Make
+    )
+
+    $modelDisplay = $RawDriverObject.Model # Default
+    $id = $RawDriverObject.Model           # Default
+    $link = $null
+    $productName = $null
+    $machineType = $null
+
+    if ($RawDriverObject.PSObject.Properties['Link']) {
+        $link = $RawDriverObject.Link
+    }
+
+    # Lenovo specific handling
+    if ($Make -eq 'Lenovo') {
+        # RawDriverObject.Model is "ProductName (MachineType)" from Get-LenovoDriversModelList
+        # RawDriverObject.ProductName is "ProductName"
+        # RawDriverObject.MachineType is "MachineType"
+        $modelDisplay = $RawDriverObject.Model # This is already "ProductName (MachineType)"
+        $productName = $RawDriverObject.ProductName
+        $machineType = $RawDriverObject.MachineType
+        $id = $RawDriverObject.MachineType # Use MachineType as a more specific ID for Lenovo backend operations if needed
+    }
+
+    return [PSCustomObject]@{
+        IsSelected     = $false
+        Make           = $Make
+        Model          = $modelDisplay # Primary display string, used as identifier in ListView
+        Link           = $link
+        Id             = $id            # Technical/unique identifier (e.g., MachineType for Lenovo)
+        ProductName    = $productName   # Specific for Lenovo
+        MachineType    = $machineType   # Specific for Lenovo
+        Version        = "" # Placeholder
+        Type           = "" # Placeholder
+        Size           = "" # Placeholder
+        Arch           = "" # Placeholder
+        DownloadStatus = "" # Initial download status
     }
 }
 
-# Winget Module Check Function
-function Confirm-WinGetInstallation {
+# Helper function to get models for a selected Make and standardize them
+function Get-ModelsForMake {
     param(
-        [System.Windows.Controls.TextBlock]$txtWingetVersion,
-        [System.Windows.Controls.TextBlock]$txtWingetModuleVersion
+        [Parameter(Mandatory = $true)]
+        [string]$SelectedMake
     )
-    
-    $minVersion = [version]"1.8.1911"
-    $result = @{
-        Success         = $false
-        Message         = ""
-        RequiresRestart = $false
+
+    $standardizedModels = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $rawModels = @()
+
+    # Get necessary values from UI or script scope
+    $localDriversFolder = $window.FindName('txtDriversFolder').Text
+    $localWindowsRelease = $null
+    if ($null -ne $window.FindName('cmbWindowsRelease').SelectedItem) {
+        $localWindowsRelease = $window.FindName('cmbWindowsRelease').SelectedItem.Value
     }
     
-    # Check if winget executable exists and is accessible
-    if (-not (Get-Command -Name winget -ErrorAction SilentlyContinue)) {
-        Update-VersionTextFields -wingetText "Not installed" -moduleText "Not installed"
-        $result.Message = "WinGet not found. Installing..."
-        $result.RequiresRestart = $true
-        return $result
+    # $Headers and $UserAgent are available from script scope
+
+    if (-not $localWindowsRelease -and ($SelectedMake -eq 'Dell' -or $SelectedMake -eq 'Lenovo')) {
+        [System.Windows.MessageBox]::Show("Please select a Windows Release first for $SelectedMake.", "Missing Information", "OK", "Warning")
+        throw "Windows Release not selected for $SelectedMake."
     }
 
-    # Get winget version
-    $wingetVersion = & winget.exe --version
-    if ($wingetVersion -match 'v?(\d+\.\d+.\d+)') {
-        $currentVersion = [version]$matches[1]
-        Update-VersionTextFields -wingetText $matches[1] -moduleText $txtWingetModuleVersion.Text
-        
-        if ($currentVersion -lt $minVersion) {
-            Update-VersionTextFields -wingetText "Updating..." -moduleText $txtWingetModuleVersion.Text
-            $result.Message = "WinGet version $currentVersion is outdated. Minimum required version is $minVersion"
-            $result.RequiresRestart = $true
-            return $result
+    switch ($SelectedMake) {
+        'Microsoft' {
+            $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent
+        }
+        'Dell' {
+            $rawModels = Get-DellDriversModelList -WindowsRelease $localWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake
+        }
+        'HP' {
+            $rawModels = Get-HPDriversModelList -DriversFolder $localDriversFolder -Make $SelectedMake
+        }
+        'Lenovo' {
+            $modelSearchTerm = [Microsoft.VisualBasic.Interaction]::InputBox("Enter Lenovo Model Name or Machine Type (e.g., T480 or 20L5):", "Lenovo Model Search", "")
+            if ([string]::IsNullOrWhiteSpace($modelSearchTerm)) {
+                # User cancelled or entered nothing
+                return @() 
+            }
+            $script:txtStatus.Text = "Searching Lenovo models for '$modelSearchTerm'..."
+            $rawModels = Get-LenovoDriversModelList -ModelSearchTerm $modelSearchTerm -Headers $Headers -UserAgent $UserAgent
+        }
+        default {
+            [System.Windows.MessageBox]::Show("Selected Make '$SelectedMake' is not supported for automatic model retrieval.", "Unsupported Make", "OK", "Warning")
+            return @()
         }
     }
 
-    # Check if Winget PowerShell module is installed and up to date
-    $wingetModule = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue
-    if ($null -eq $wingetModule) {
-        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText "Installing..."
-        $result.Message = "Microsoft.WinGet.Client module needs to be installed..."
+    if ($null -ne $rawModels) {
+        foreach ($rawModel in $rawModels) {
+            # Filter out Chromebooks for Lenovo before standardization
+            if ($SelectedMake -eq 'Lenovo' -and $rawModel.Model -match 'Chromebook') {
+                WriteLog "Get-ModelsForMake: Skipping Chromebook model: $($rawModel.Model)"
+                continue
+            }
+            $standardizedModels.Add((ConvertTo-StandardizedDriverModel -RawDriverObject $rawModel -Make $SelectedMake))
+        }
     }
-    elseif ($wingetModule.Version -lt $minVersion) {
-        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText "Updating..."
-        $result.Message = "Microsoft.WinGet.Client module needs to be updated..."
+    
+    return $standardizedModels.ToArray()
+}
+
+
+
+# Function to filter the driver model list based on text input
+function Filter-DriverModels {
+    param(
+        [string]$filterText
+    )
+    # Check if UI elements and the full list are available
+    if ($null -eq $script:lstDriverModels -or $null -eq $script:allDriverModels) {
+        WriteLog "Filter-DriverModels: ListView or full model list not available."
+        return
+    }
+
+    WriteLog "Filtering models with text: '$filterText'"
+
+    # Filter the full list based on the Model property (case-insensitive)
+    # Use -match for potentially better performance or stick with -like
+    # Ensure the result is always an array, even if only one item matches
+    $filteredModels = @($script:allDriverModels | Where-Object { $_.Model -like "*$filterText*" })
+
+    # Update the ListView's ItemsSource with the filtered list
+    # Setting ItemsSource directly should work for simple scenarios
+    $script:lstDriverModels.ItemsSource = $filteredModels
+
+    # Explicitly refresh the ListView's view to reflect the changes in the bound source
+    if ($null -ne $script:lstDriverModels.ItemsSource -and $script:lstDriverModels.Items -is [System.ComponentModel.ICollectionView]) {
+        $script:lstDriverModels.Items.Refresh()
+    }
+    elseif ($null -ne $script:lstDriverModels.ItemsSource) {
+        # Fallback refresh if not using ICollectionView (less common for direct ItemsSource binding)
+        $script:lstDriverModels.Items.Refresh()
+    }
+
+
+    WriteLog "Filtered list contains $($filteredModels.Count) models."
+}
+    
+# Function to save selected driver models to a JSON file
+function Save-DriversJson {
+    WriteLog "Save-DriversJson function called."
+    $selectedDrivers = @($script:lstDriverModels.Items | Where-Object { $_.IsSelected })
+    
+    if (-not $selectedDrivers) {
+        [System.Windows.MessageBox]::Show("No drivers selected to save.", "Save Drivers", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        WriteLog "No drivers selected to save."
+        return
+    }
+    
+    $outputJson = @{} # Use a Hashtable for the desired structure
+    
+    $selectedDrivers | Group-Object -Property Make | ForEach-Object {
+        $makeName = $_.Name
+        $modelsForThisMake = @() # Initialize an array to hold model objects
+    
+        foreach ($driverItem in $_.Group) {
+            $modelObject = $null
+            switch ($makeName) {
+                'Microsoft' {
+                    $modelObject = @{
+                        Name = $driverItem.Model # Model is the display name
+                        Link = $driverItem.Link
+                    }
+                }
+                'Dell' {
+                    $modelObject = @{
+                        Name = $driverItem.Model
+                    }
+                }
+                'HP' {
+                    $modelObject = @{
+                        Name = $driverItem.Model
+                    }
+                }
+                'Lenovo' {
+                    $modelObject = @{
+                        Name        = $driverItem.Model       # This is "ProductName (MachineType)"
+                        ProductName = $driverItem.ProductName # This is "ProductName"
+                        MachineType = $driverItem.MachineType # This is "MachineType"
+                    }
+                }
+                default {
+                    WriteLog "Save-DriversJson: Unknown Make '$makeName' encountered for model '$($driverItem.Model)'. Skipping."
+                }
+            }
+            if ($null -ne $modelObject) {
+                $modelsForThisMake += $modelObject
+            }
+        }
+    
+        if ($modelsForThisMake.Count -gt 0) {
+            # Store the array of model objects under a "Models" key
+            $outputJson[$makeName] = @{
+                "Models" = $modelsForThisMake
+            }
+        }
+    }
+    
+    $sfd = New-Object System.Windows.Forms.SaveFileDialog
+    $sfd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+    $sfd.Title = "Save Selected Drivers"
+    $sfd.FileName = "Drivers.json"
+    $sfd.InitialDirectory = $FFUDevelopmentPath 
+    
+    if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        try {
+            $outputJson | ConvertTo-Json -Depth 5 | Set-Content -Path $sfd.FileName -Encoding UTF8
+            [System.Windows.MessageBox]::Show("Selected drivers saved to $($sfd.FileName)", "Save Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            WriteLog "Selected drivers saved to $($sfd.FileName)"
+        }
+        catch {
+            [System.Windows.MessageBox]::Show("Error saving drivers file: $($_.Exception.Message)", "Save Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            WriteLog "Error saving drivers file to $($sfd.FileName): $($_.Exception.Message)"
+        }
     }
     else {
-        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText $wingetModule.Version.ToString()
-        $result.Success = $true
-        $result.Message = "Winget and its PowerShell module are installed and up to date."
-        return $result
+        WriteLog "Save drivers operation cancelled by user."
     }
-    
-    # Install/Update module if needed
-    try {
-        # Check if PSGallery is trusted
-        $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
-        if ($PSGalleryTrust -eq 'Untrusted') {
-            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-        }
-
-        # Install/Update the module
-        Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery'
-
-        # Restore PSGallery trust setting if it was untrusted
-        if ($PSGalleryTrust -eq 'Untrusted') {
-            Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
-        }
-    }
-    catch {
-        Update-VersionTextFields -wingetText $txtWingetVersion.Text -moduleText "Error"
-        throw
-    }
-    
-    $result.RequiresRestart = $true
-    return $result
 }
 
+# Function to import driver models from a JSON file
+function Import-DriversJson {
+    WriteLog "Import-DriversJson function called."
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+    $ofd.Title = "Import Drivers"
+    $ofd.InitialDirectory = $FFUDevelopmentPath 
+
+    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        try {
+            $importedData = Get-Content -Path $ofd.FileName -Raw | ConvertFrom-Json
+            if ($null -eq $importedData -or $importedData -isnot [System.Management.Automation.PSCustomObject]) {
+                [System.Windows.MessageBox]::Show("Invalid JSON file format. Expected a JSON object with Makes as keys.", "Import Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+                WriteLog "Import-DriversJson: Invalid JSON format in $($ofd.FileName). Expected an object."
+                return
+            }
+
+            $newModelsAdded = 0
+            $existingModelsUpdated = 0
+
+            if ($null -eq $script:allDriverModels) {
+                $script:allDriverModels = @()
+            }
+
+            $importedData.PSObject.Properties | ForEach-Object {
+                $makeName = $_.Name
+                $makeData = $_.Value # This is the object containing "Models" array
+
+                # Check if $makeData is null, not a PSCustomObject, or does not have a 'Models' property
+                if ($null -eq $makeData -or $makeData -isnot [System.Management.Automation.PSCustomObject] -or -not ($makeData.PSObject.Properties | Where-Object { $_.Name -eq 'Models' })) {
+                    WriteLog "Import-DriversJson: Skipping Make '$makeName' due to invalid structure or missing 'Models' key."
+                    return # Corresponds to 'continue' in ForEach-Object script block
+                }
+
+                $modelObjectArray = $makeData.Models # This is now an array of objects
+                if ($null -eq $modelObjectArray -or $modelObjectArray -isnot [array]) {
+                    WriteLog "Import-DriversJson: Skipping Make '$makeName' because 'Models' value is not an array."
+                    return
+                }
+
+                foreach ($importedModelObject in $modelObjectArray) {
+                    if ($null -eq $importedModelObject -or -not $importedModelObject.PSObject.Properties['Name']) {
+                        WriteLog "Import-DriversJson: Skipping model for Make '$makeName' due to missing 'Name' property or null object."
+                        continue
+                    }
+                    $importedModelNameFromObject = $importedModelObject.Name
+                    if ([string]::IsNullOrWhiteSpace($importedModelNameFromObject)) {
+                        WriteLog "Import-DriversJson: Skipping empty model name for Make '$makeName'."
+                        continue
+                    }
+
+                    $existingModel = $script:allDriverModels | Where-Object { $_.Make -eq $makeName -and $_.Model -eq $importedModelNameFromObject } | Select-Object -First 1
+
+                    if ($null -ne $existingModel) {
+                        $existingModel.IsSelected = $true
+                        $existingModel.DownloadStatus = "Imported"
+                        
+                        if ($makeName -eq 'Microsoft' -and $importedModelObject.PSObject.Properties['Link']) {
+                            if ($existingModel.Link -ne $importedModelObject.Link) {
+                                $existingModel.Link = $importedModelObject.Link
+                                WriteLog "Import-DriversJson: Updated Link for existing Microsoft model '$($existingModel.Model)'."
+                            }
+                        }
+                        elseif ($makeName -eq 'Lenovo') {
+                            $updateExistingLenovo = $false
+                            if ($importedModelObject.PSObject.Properties['ProductName'] -and $existingModel.PSObject.Properties['ProductName'] -and $existingModel.ProductName -ne $importedModelObject.ProductName) {
+                                $existingModel.ProductName = $importedModelObject.ProductName
+                                $updateExistingLenovo = $true
+                            }
+                            if ($importedModelObject.PSObject.Properties['MachineType'] -and $existingModel.PSObject.Properties['MachineType'] -and $existingModel.MachineType -ne $importedModelObject.MachineType) {
+                                $existingModel.MachineType = $importedModelObject.MachineType
+                                $existingModel.Id = $importedModelObject.MachineType # Update Id as well
+                                $updateExistingLenovo = $true
+                            }
+                            if ($updateExistingLenovo) {
+                                WriteLog "Import-DriversJson: Updated ProductName/MachineType/Id for existing Lenovo model '$($existingModel.Model)'."
+                            }
+                        }
+                        $existingModelsUpdated++
+                        WriteLog "Import-DriversJson: Marked existing model '$($existingModel.Make) - $($existingModel.Model)' as imported."
+                    }
+                    else {
+                        # Model does not exist, create a new one
+                        $importedLink = if ($makeName -eq 'Microsoft' -and $importedModelObject.PSObject.Properties['Link']) { $importedModelObject.Link } else { $null }
+                        $importedId = $importedModelNameFromObject # Default Id
+                        $importedProductName = $null
+                        $importedMachineType = $null
+
+                        if ($makeName -eq 'Lenovo') {
+                            $importedProductName = if ($importedModelObject.PSObject.Properties['ProductName']) { $importedModelObject.ProductName } else { $null }
+                            $importedMachineType = if ($importedModelObject.PSObject.Properties['MachineType']) { $importedModelObject.MachineType } else { $null }
+                            
+                            if ($null -ne $importedMachineType) {
+                                $importedId = $importedMachineType # Override Id for Lenovo
+                            }
+
+                            # Fallback parsing if ProductName/MachineType are missing from JSON but Name has the pattern
+                            if (($null -eq $importedProductName -or $null -eq $importedMachineType) -and $importedModelNameFromObject -match '(.+?)\s*\((.+?)\)$') {
+                                WriteLog "Import-DriversJson: Lenovo model '$importedModelNameFromObject' missing ProductName or MachineType in JSON. Attempting to parse from Name."
+                                if ($null -eq $importedProductName) { $importedProductName = $matches[1].Trim() }
+                                if ($null -eq $importedMachineType) { 
+                                    $importedMachineType = $matches[2].Trim()
+                                    $importedId = $importedMachineType # Update Id if MachineType was parsed here
+                                }
+                            }
+                            
+                            if ($null -eq $importedProductName -or $null -eq $importedMachineType) {
+                                WriteLog "Import-DriversJson: Warning - Lenovo model '$importedModelNameFromObject' is missing ProductName or MachineType after parsing. ID might be based on full name."
+                            }
+                        }
+
+                        $newDriverModel = [PSCustomObject]@{
+                            IsSelected     = $true
+                            Make           = $makeName
+                            Model          = $importedModelNameFromObject # Full display name
+                            Link           = $importedLink
+                            Id             = $importedId
+                            ProductName    = $importedProductName
+                            MachineType    = $importedMachineType
+                            Version        = ""
+                            Type           = ""
+                            Size           = ""
+                            Arch           = ""
+                            DownloadStatus = "Imported"
+                        }
+                        $script:allDriverModels += $newDriverModel
+                        $newModelsAdded++
+                        WriteLog "Import-DriversJson: Added new model '$($newDriverModel.Make) - $($newDriverModel.Model)' from import. ID: $($newDriverModel.Id), Link: $($newDriverModel.Link)"
+                    }
+                }
+            }
+
+            $script:allDriverModels = $script:allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
+            
+            Filter-DriverModels -filterText $script:txtModelFilter.Text
+
+            $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
+            [System.Windows.MessageBox]::Show($message, "Import Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            WriteLog $message
+        }
+        catch {
+            [System.Windows.MessageBox]::Show("Error importing drivers file: $($_.Exception.Message)", "Import Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            WriteLog "Error importing drivers file from $($ofd.FileName): $($_.Exception.Message)"
+        }
+    }
+    else {
+        WriteLog "Import drivers operation cancelled by user."
+    }
+}
+    
 # Some default values
-$defaultISOPath = ""
-$defaultWindowsArch = "x64"
-$defaultWindowsLang = "en-us"
-$defaultWindowsSKU = "Pro"
-$defaultMediaType = "Consumer"  # updated value
-$defaultOptionalFeatures = ""
-$defaultProductKey = ""
-$defaultFFUPrefix = "_FFU"     # <-- new default for VM Name Prefix
-
-# Large list from the ValidateSet in BuildFFUVM.ps1 ($OptionalFeatures parameter)
-$allowedFeatures = @(
-    "AppServerClient", "Client-DeviceLockdown", "Client-EmbeddedBootExp", "Client-EmbeddedLogon",
-    "Client-EmbeddedShellLauncher", "Client-KeyboardFilter", "Client-ProjFS", "Client-UnifiedWriteFilter",
-    "Containers", "Containers-DisposableClientVM", "Containers-HNS", "Containers-SDN", "DataCenterBridging",
-    "DirectoryServices-ADAM-Client", "DirectPlay", "HostGuardian", "HypervisorPlatform", "IIS-ApplicationDevelopment",
-    "IIS-ApplicationInit", "IIS-ASP", "IIS-ASPNET45", "IIS-BasicAuthentication", "IIS-CertProvider",
-    "IIS-CGI", "IIS-ClientCertificateMappingAuthentication", "IIS-CommonHttpFeatures", "IIS-CustomLogging",
-    "IIS-DefaultDocument", "IIS-DirectoryBrowsing", "IIS-DigestAuthentication", "IIS-ESP", "IIS-FTPServer",
-    "IIS-FTPExtensibility", "IIS-FTPSvc", "IIS-HealthAndDiagnostics", "IIS-HostableWebCore", "IIS-HttpCompressionDynamic",
-    "IIS-HttpCompressionStatic", "IIS-HttpErrors", "IIS-HttpLogging", "IIS-HttpRedirect", "IIS-HttpTracing",
-    "IIS-IPSecurity", "IIS-IIS6ManagementCompatibility", "IIS-IISCertificateMappingAuthentication",
-    "IIS-ISAPIExtensions", "IIS-ISAPIFilter", "IIS-LoggingLibraries", "IIS-ManagementConsole", "IIS-ManagementService",
-    "IIS-ManagementScriptingTools", "IIS-Metabase", "IIS-NetFxExtensibility", "IIS-NetFxExtensibility45",
-    "IIS-ODBCLogging", "IIS-Performance", "IIS-RequestFiltering", "IIS-RequestMonitor", "IIS-Security", "IIS-ServerSideIncludes",
-    "IIS-StaticContent", "IIS-URLAuthorization", "IIS-WebDAV", "IIS-WebServer", "IIS-WebServerManagementTools",
-    "IIS-WebServerRole", "IIS-WebSockets", "LegacyComponents", "MediaPlayback", "Microsoft-Hyper-V", "Microsoft-Hyper-V-All",
-    "Microsoft-Hyper-V-Hypervisor", "Microsoft-Hyper-V-Management-Clients", "Microsoft-Hyper-V-Management-PowerShell",
-    "Microsoft-Hyper-V-Services", "Microsoft-Windows-Subsystem-Linux", "MSMQ-ADIntegration", "MSMQ-Container", "MSMQ-DCOMProxy",
-    "MSMQ-HTTP", "MSMQ-Multicast", "MSMQ-Server", "MSMQ-Triggers", "MultiPoint-Connector", "MultiPoint-Connector-Services",
-    "MultiPoint-Tools", "NetFx3", "NetFx4-AdvSrvs", "NetFx4Extended-ASPNET45", "NFS-Administration", "Printing-Foundation-Features",
-    "Printing-Foundation-InternetPrinting-Client", "Printing-Foundation-LPDPrintService", "Printing-Foundation-LPRPortMonitor",
-    "Printing-PrintToPDFServices-Features", "Printing-XPSServices-Features", "SearchEngine-Client-Package",
-    "ServicesForNFS-ClientOnly", "SimpleTCP", "SMB1Protocol", "SMB1Protocol-Client", "SMB1Protocol-Deprecation",
-    "SMB1Protocol-Server", "SmbDirect", "TFTP", "TelnetClient", "TIFFIFilter", "VirtualMachinePlatform", "WAS-ConfigurationAPI",
-    "WAS-NetFxEnvironment", "WAS-ProcessModel", "WAS-WindowsActivationService", "WCF-HTTP-Activation", "WCF-HTTP-Activation45",
-    "WCF-MSMQ-Activation45", "WCF-MSMQ-Activation", "WCF-NonHTTP-Activation", "WCF-Pipe-Activation45", "WCF-Services45",
-    "WCF-TCP-Activation45", "WCF-TCP-PortSharing45", "Windows-Defender-ApplicationGuard",
-    "Windows-Defender-Default-Definitions", "Windows-Identity-Foundation", "WindowsMediaPlayer", "WorkFolders-Client"
-)
-
-$skuList = @(
-    'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro',
-    'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations',
-    'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard',
-    'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'
-)
-
-# Full list of Windows releases (if ISO path != blank)
-$allWindowsReleases = @(
-    [PSCustomObject]@{ Display = "Windows 10"; Value = 10 },
-    [PSCustomObject]@{ Display = "Windows 11"; Value = 11 },
-    [PSCustomObject]@{ Display = "Windows Server 2016"; Value = 2016 },
-    [PSCustomObject]@{ Display = "Windows Server 2019"; Value = 2019 },
-    [PSCustomObject]@{ Display = "Windows Server 2022"; Value = 2022 },
-    [PSCustomObject]@{ Display = "Windows Server 2025"; Value = 2025 }
-)
-
-# Subset for MCT (if ISO path is blank)
-$mctWindowsReleases = @(
-    [PSCustomObject]@{ Display = "Windows 10"; Value = 10 },
-    [PSCustomObject]@{ Display = "Windows 11"; Value = 11 }
-)
-
-# Windows version sets
-$windowsVersionMap = @{
-    10   = @("22H2")
-    11   = @("22H2", "23H2", "24H2")
-    2016 = @("1607")
-    2019 = @("1809")
-    2022 = @("21H2")
-    2025 = @("24H2")
-}
+$defaultFFUPrefix = "_FFU" 
 
 # --------------------------------------------------------------------------
 
@@ -459,6 +481,7 @@ function Get-UIConfig {
         CompactOS                   = $window.FindName('chkCompactOS').IsChecked
         CopyAutopilot               = $window.FindName('chkCopyAutopilot').IsChecked
         CopyDrivers                 = $window.FindName('chkCopyDrivers').IsChecked
+        CompressDriversToWIM        = $window.FindName('chkCompressDriversToWIM').IsChecked # New entry
         CopyOfficeConfigXML         = $window.FindName('chkCopyOfficeConfigXML').IsChecked
         CopyPEDrivers               = $window.FindName('chkCopyPEDrivers').IsChecked
         CopyPPKG                    = $window.FindName('chkCopyPPKG').IsChecked
@@ -481,7 +504,7 @@ function Get-UIConfig {
         Make                        = $window.FindName('cmbMake').SelectedItem
         MediaType                   = $window.FindName('cmbMediaType').SelectedItem
         Memory                      = [int64]$window.FindName('txtMemory').Text * 1GB
-        Model                       = $window.FindName('cmbModel').Text
+        Model                       = $window.FindName('cmbModel').Text # Keep this for BuildFFUVM.ps1 compatibility if needed
         OfficeConfigXMLFile         = $window.FindName('txtOfficeConfigXMLFilePath').Text
         OfficePath                  = $window.FindName('txtOfficePath').Text
         Optimize                    = $window.FindName('chkOptimize').IsChecked
@@ -513,6 +536,8 @@ function Get-UIConfig {
         WindowsRelease              = [int]$window.FindName('cmbWindowsRelease').SelectedItem.Value
         WindowsSKU                  = $window.FindName('cmbWindowsSKU').SelectedItem
         WindowsVersion              = $window.FindName('cmbWindowsVersion').SelectedItem
+        AppsPath                    = $window.FindName('txtApplicationPath').Text
+        AppListPath                 = $window.FindName('txtAppListJsonPath').Text
     }
 
     # Add selected USB drives to the config
@@ -520,72 +545,99 @@ function Get-UIConfig {
         $config.USBDriveList[$_.Model] = $_.SerialNumber
     }
 
+    # Add selected Driver Models to the config (Optional, maybe not needed for BuildFFUVM.ps1)
+    # $config.DriverModelList = @($window.FindName('lstDriverModels').Items | Where-Object { $_.IsSelected })
+
     return $config
 }
 
-function UpdateWindowsReleaseList {
-    param([string]$isoPath)
-    if (-not $script:cmbWindowsRelease) { return }
-    $oldItem = $script:cmbWindowsRelease.SelectedItem
-    $script:cmbWindowsRelease.Items.Clear()
-    $script:cmbWindowsRelease.DisplayMemberPath = 'Display'
-    $script:cmbWindowsRelease.SelectedValuePath = 'Value'
-    if ([string]::IsNullOrEmpty($isoPath)) {
-        foreach ($rel in $mctWindowsReleases) { $script:cmbWindowsRelease.Items.Add($rel) | Out-Null }
-    }
-    else {
-        foreach ($rel in $allWindowsReleases) { $script:cmbWindowsRelease.Items.Add($rel) | Out-Null }
-    }
-    if ($oldItem) {
-        $reSelect = $script:cmbWindowsRelease.Items | Where-Object { $_.Value -eq $oldItem.Value }
-        if ($reSelect) { $script:cmbWindowsRelease.SelectedItem = $reSelect }
-        else { $script:cmbWindowsRelease.SelectedIndex = 0 }
-    }
-    else { $script:cmbWindowsRelease.SelectedIndex = 0 }
+#Remove old log file if found
+if (Test-Path -Path $Logfile) {
+    Remove-item -Path $LogFile -Force
 }
 
-function UpdateWindowsVersionCombo {
+# Function to refresh the Windows Release ComboBox based on ISO path
+function Update-WindowsReleaseCombo {
+    param([string]$isoPath)
+
+    if (-not $script:cmbWindowsRelease) { return } # Ensure combo exists
+
+    $oldSelectedItemValue = $null
+    if ($null -ne $script:cmbWindowsRelease.SelectedItem) {
+        $oldSelectedItemValue = $script:cmbWindowsRelease.SelectedItem.Value
+    }
+
+    # Get the appropriate list of releases from the helper module
+    $availableReleases = Get-AvailableWindowsReleases -IsoPath $isoPath
+
+    # Update the ComboBox ItemsSource
+    $script:cmbWindowsRelease.ItemsSource = $availableReleases
+    $script:cmbWindowsRelease.DisplayMemberPath = 'Display'
+    $script:cmbWindowsRelease.SelectedValuePath = 'Value'
+
+    # Try to re-select the previously selected item, or default
+    $itemToSelect = $availableReleases | Where-Object { $_.Value -eq $oldSelectedItemValue } | Select-Object -First 1
+    if ($null -ne $itemToSelect) {
+        $script:cmbWindowsRelease.SelectedItem = $itemToSelect
+    }
+    elseif ($availableReleases.Count -gt 0) {
+        # Default to Windows 11 if available, otherwise the first item
+        $defaultItem = $availableReleases | Where-Object { $_.Value -eq 11 } | Select-Object -First 1
+        if ($null -eq $defaultItem) {
+            $defaultItem = $availableReleases[0]
+        }
+        $script:cmbWindowsRelease.SelectedItem = $defaultItem
+    }
+    else {
+        # No items available (should not happen with current logic)
+        $script:cmbWindowsRelease.SelectedIndex = -1
+    }
+}
+
+# Function to refresh the Windows Version ComboBox based on selected release and ISO path
+function Update-WindowsVersionCombo {
     param(
         [int]$selectedRelease,
         [string]$isoPath
     )
-    $combo = $window.FindName('cmbWindowsVersion')
-    if (-not $combo) { return }
-    $combo.Items.Clear()
-    if (-not $windowsVersionMap.ContainsKey($selectedRelease)) {
-        $combo.IsEnabled = $false
-        return
+
+    $combo = $script:cmbWindowsVersion # Use script-scoped variable
+    if (-not $combo) { return } # Ensure combo exists
+
+    # Get available versions and default from the helper module
+    $versionData = Get-AvailableWindowsVersions -SelectedRelease $selectedRelease -IsoPath $isoPath
+
+    # Update the ComboBox ItemsSource and IsEnabled state
+    $combo.ItemsSource = $versionData.Versions
+    $combo.IsEnabled = $versionData.IsEnabled
+
+    # Set the selected item
+    if ($null -ne $versionData.DefaultVersion -and $versionData.Versions -contains $versionData.DefaultVersion) {
+        $combo.SelectedItem = $versionData.DefaultVersion
     }
-    $validVersions = $windowsVersionMap[$selectedRelease]
-    if ([string]::IsNullOrEmpty($isoPath)) {
-        switch ($selectedRelease) {
-            10 { $default = "22H2" }
-            11 { $default = "24H2" }
-            2016 { $default = "1607" }
-            2019 { $default = "1809" }
-            2022 { $default = "21H2" }
-            2025 { $default = "24H2" }
-            default { $default = $validVersions[0] }
-        }
-        $combo.Items.Add($default) | Out-Null
-        $combo.SelectedIndex = 0
-        $combo.IsEnabled = $false
+    elseif ($versionData.Versions.Count -gt 0) {
+        $combo.SelectedIndex = 0 # Fallback to first item if default isn't valid
     }
     else {
-        foreach ($v in $validVersions) { [void]$combo.Items.Add($v) }
-        if ($selectedRelease -eq 11 -and $validVersions -contains "24H2") { $combo.SelectedItem = "24H2" }
-        else { $combo.SelectedIndex = 0 }
-        $combo.IsEnabled = $true
+        $combo.SelectedIndex = -1 # No items available
     }
 }
 
-$script:RefreshWindowsUI = {
+# Combined function to refresh both Release and Version combos
+$script:RefreshWindowsSettingsCombos = {
     param([string]$isoPath)
-    UpdateWindowsReleaseList -isoPath $isoPath
-    $selItem = $script:cmbWindowsRelease.SelectedItem
-    if ($selItem -and $selItem.Value -is [int]) { $selectedRelease = [int]$selItem.Value }
-    else { $selectedRelease = 10 }
-    UpdateWindowsVersionCombo -selectedRelease $selectedRelease -isoPath $isoPath
+
+    # Update Release combo first
+    Update-WindowsReleaseCombo -isoPath $isoPath
+
+    # Get the newly selected release value
+    $selectedReleaseValue = 11 # Default to 11 if selection is null
+    if ($null -ne $script:cmbWindowsRelease.SelectedItem) {
+        $selectedReleaseValue = $script:cmbWindowsRelease.SelectedItem.Value
+    }
+
+    # Update Version combo based on the selected release
+    Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath
 }
 
 Add-Type -AssemblyName WindowsBase
@@ -614,35 +666,49 @@ function UpdateOptionalFeaturesString {
 }
 function BuildFeaturesGrid {
     param (
-        [System.Windows.FrameworkElement]$parent
+        [Parameter(Mandatory)]
+        [System.Windows.FrameworkElement]$parent,
+        [Parameter(Mandatory)]
+        [array]$allowedFeatures # Pass the list of features explicitly
     )
     $parent.Children.Clear()
+    $script:featureCheckBoxes.Clear() # Clear the tracking hashtable
+
     $sortedFeatures = $allowedFeatures | Sort-Object
-    $rows = 10
+    $rows = 10 # Define number of rows for layout
     $columns = [math]::Ceiling($sortedFeatures.Count / $rows)
+
     $featuresGrid = New-Object System.Windows.Controls.Grid
     $featuresGrid.Margin = "0,5,0,5"
     $featuresGrid.ShowGridLines = $false
+
+    # Define grid rows
     for ($r = 0; $r -lt $rows; $r++) {
         $rowDef = New-Object System.Windows.Controls.RowDefinition
-        $rowDef.Height = 'Auto'
+        $rowDef.Height = [System.Windows.GridLength]::Auto
         $featuresGrid.RowDefinitions.Add($rowDef) | Out-Null
     }
+    # Define grid columns
     for ($c = 0; $c -lt $columns; $c++) {
         $colDef = New-Object System.Windows.Controls.ColumnDefinition
-        $colDef.Width = 'Auto'
+        $colDef.Width = [System.Windows.GridLength]::Auto
         $featuresGrid.ColumnDefinitions.Add($colDef) | Out-Null
     }
+
+    # Populate grid with checkboxes
     for ($i = 0; $i -lt $sortedFeatures.Count; $i++) {
         $featureName = $sortedFeatures[$i]
         $colIndex = [int]([math]::Floor($i / $rows))
         $rowIndex = $i % $rows
+
         $chk = New-Object System.Windows.Controls.CheckBox
         $chk.Content = $featureName
         $chk.Margin = "5"
         $chk.Add_Checked({ UpdateOptionalFeaturesString })
         $chk.Add_Unchecked({ UpdateOptionalFeaturesString })
-        $script:featureCheckBoxes[$featureName] = $chk
+
+        $script:featureCheckBoxes[$featureName] = $chk # Track the checkbox
+
         [System.Windows.Controls.Grid]::SetRow($chk, $rowIndex)
         [System.Windows.Controls.Grid]::SetColumn($chk, $colIndex)
         $featuresGrid.Children.Add($chk) | Out-Null
@@ -674,7 +740,9 @@ $script:UpdateInstallAppsBasedOnUpdates = {
         $window.FindName('chkInstallApps').IsEnabled = $true
     }
 }
-
+# -----------------------------------------------------------------------------
+# SECTION: Winget UI
+# -----------------------------------------------------------------------------
 # Create data context class for version binding
 $script:versionData = [PSCustomObject]@{
     WingetVersion = "Not checked"
@@ -692,6 +760,25 @@ $script:versionData | Add-Member -MemberType ScriptMethod -Name NotifyPropertyCh
 $script:versionData | Add-Member -MemberType NoteProperty -Name PropertyChanged -Value $null
 $script:versionData | Add-Member -TypeName "System.ComponentModel.INotifyPropertyChanged"
 
+function Update-WingetVersionFields {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$wingetText,
+        [Parameter(Mandatory)]
+        [string]$moduleText
+    )
+    
+    # Force UI update on the UI thread
+    $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
+            $script:txtWingetVersion.Text = $wingetText
+            $script:txtWingetModuleVersion.Text = $moduleText
+            # Force immediate UI refresh
+            [System.Windows.Forms.Application]::DoEvents()
+        })
+}
+
+
 # Add a function to create a sortable list view for Winget search results
 function Add-SortableColumn {
     param(
@@ -699,30 +786,70 @@ function Add-SortableColumn {
         [string]$header,
         [string]$binding,
         [int]$width = 'Auto',
-        [bool]$isCheckbox = $false
+        [bool]$isCheckbox = $false, 
+        [System.Windows.HorizontalAlignment]$headerHorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
     )
-    
+
     $column = New-Object System.Windows.Controls.GridViewColumn
+    $commonPadding = New-Object System.Windows.Thickness(5, 2, 5, 2)
+
+    $headerControl = New-Object System.Windows.Controls.GridViewColumnHeader
+    $headerControl.Tag = $binding # Used for sorting
+
     if ($isCheckbox) {
-        $template = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
-        $template.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
-        $column.CellTemplate = New-Object System.Windows.DataTemplate
-        $column.CellTemplate.VisualTree = $template
+        # Cell template for a column of checkboxes
+        $cellTemplate = New-Object System.Windows.DataTemplate
+        $gridFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Grid])
+        
+        $checkBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
+        $checkBoxFactory.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
+        $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+        $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
+                param($eventSourceLocal, $eventArgsLocal) 
+                # Sync logic would be needed here if this column had a header checkbox
+            })
+        $gridFactory.AppendChild($checkBoxFactory)
+        $cellTemplate.VisualTree = $gridFactory
+        $column.CellTemplate = $cellTemplate
+        # $column.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Center # REMOVED
     }
     else {
-        $column.DisplayMemberBinding = New-Object System.Windows.Data.Binding($binding)
+        # For regular text columns
+        $headerControl.HorizontalContentAlignment = $headerHorizontalAlignment 
+        $headerControl.Content = $header 
+
+        $headerTextElementFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+        $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, $header)
+        $headerTextBlockPadding = New-Object System.Windows.Thickness($commonPadding.Left, $commonPadding.Top, $commonPadding.Right, $commonPadding.Bottom)
+        $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $headerTextBlockPadding)
+        $headerTextElementFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+        $headerDataTemplate = New-Object System.Windows.DataTemplate
+        $headerDataTemplate.VisualTree = $headerTextElementFactory
+        $headerControl.ContentTemplate = $headerDataTemplate
+
+        $cellTemplate = New-Object System.Windows.DataTemplate
+        $textBlockFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+        $textBlockFactory.SetBinding([System.Windows.Controls.TextBlock]::TextProperty, (New-Object System.Windows.Data.Binding($binding)))
+        # Adjust left padding to 0 for cell text to align with header text
+        $cellTextBlockPadding = New-Object System.Windows.Thickness(0, $commonPadding.Top, $commonPadding.Right, $commonPadding.Bottom)
+        $textBlockFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $cellTextBlockPadding) 
+        $textBlockFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Left) 
+        $textBlockFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+        $cellTemplate.VisualTree = $textBlockFactory
+        $column.CellTemplate = $cellTemplate
+        # $column.HorizontalContentAlignment = $headerHorizontalAlignment # REMOVED
     }
-    
-    # Create a header with the binding information stored in its Tag
-    $headerTemplate = New-Object System.Windows.Controls.GridViewColumnHeader
-    $headerTemplate.Content = $header
-    $headerTemplate.Tag = $binding
-    $column.Header = $headerTemplate
-    
-    if ($width -ne 'Auto') { 
-        $column.Width = $width 
+
+    $column.Header = $headerControl
+
+    if ($width -ne 'Auto') {
+        $column.Width = $width
     }
-    
+
     $gridView.Columns.Add($column)
 }
 
@@ -746,156 +873,851 @@ function Invoke-ListViewSort {
     }
     $script:lastSortProperty = $property
     
-    # Store selected items
-    $items = @($listView.Items)
-    $selectedItems = @($items | Where-Object { $_.IsSelected })
-    $unselectedItems = @($items | Where-Object { -not $_.IsSelected })
-    
-    # Sort unselected items
-    $sortedUnselected = if ($script:lastSortAscending) {
-        @($unselectedItems | Sort-Object -Property $property)
+    # Get items from ItemsSource or Items collection
+    $currentItemsSource = $listView.ItemsSource
+    $itemsToSort = @()
+    if ($null -ne $currentItemsSource) {
+        $itemsToSort = @($currentItemsSource)
     }
     else {
-        #DO NOT CHANGE THIS LINE
-        @($unselectedItems | Sort-Object -Property $property -Descending)
+        $itemsToSort = @($listView.Items)
+    }
+
+    if ($itemsToSort.Count -eq 0) {
+        return
+    }
+
+    $selectedItems = @($itemsToSort | Where-Object { $_.IsSelected })
+    $unselectedItems = @($itemsToSort | Where-Object { -not $_.IsSelected })
+    
+    # Define the primary sort criterion
+    $primarySortDefinition = @{
+        Expression = {
+            $val = $_.$property
+            if ($null -eq $val) { '' } else { $val }
+        }
+        Ascending  = $script:lastSortAscending
+    }
+
+    $sortCriteria = [System.Collections.Generic.List[hashtable]]::new()
+    $sortCriteria.Add($primarySortDefinition)
+
+    # Determine secondary sort property based on the ListView
+    $secondarySortPropertyName = $null
+    if ($listView.Name -eq 'lstDriverModels') {
+        $secondarySortPropertyName = "Model"
+    }
+    elseif ($listView.Name -eq 'lstWingetResults') {
+        $secondarySortPropertyName = "Name"
+    }
+
+    if ($null -ne $secondarySortPropertyName -and $property -ne $secondarySortPropertyName) {
+        $itemsHaveSecondaryProperty = $false
+        if ($unselectedItems.Count -gt 0) {
+            if ($null -ne $unselectedItems[0].PSObject.Properties[$secondarySortPropertyName]) {
+                $itemsHaveSecondaryProperty = $true
+            }
+        }
+        elseif ($selectedItems.Count -gt 0) {
+            if ($null -ne $selectedItems[0].PSObject.Properties[$secondarySortPropertyName]) {
+                $itemsHaveSecondaryProperty = $true
+            }
+        }
+
+        if ($itemsHaveSecondaryProperty) {
+            # Create a scriptblock for the secondary sort expression dynamically
+            $expressionScriptBlock = [scriptblock]::Create("`$_.$secondarySortPropertyName")
+            
+            $secondarySortDefinition = @{
+                Expression = {
+                    $val = Invoke-Command -ScriptBlock $expressionScriptBlock -ArgumentList $_
+                    if ($null -eq $val) { '' } else { $val }
+                }
+                Ascending  = $true # Secondary sort always ascending
+            }
+            $sortCriteria.Add($secondarySortDefinition)
+        }
     }
     
-    # Clear and repopulate ListView
-    $listView.Items.Clear()
-    
-    # Add selected items first
-    foreach ($item in $selectedItems) {
-        [void]$listView.Items.Add($item)
+    $sortedUnselected = $unselectedItems | Sort-Object -Property $sortCriteria.ToArray()
+    # Ensure $sortedUnselected is not null before attempting to add its range
+    if ($null -eq $sortedUnselected) {
+        $sortedUnselected = @()
     }
     
-    # Add sorted unselected items
-    foreach ($item in $sortedUnselected) {
-        [void]$listView.Items.Add($item)
+    # Combine sorted items: selected items first, then sorted unselected items
+    $newSortedList = [System.Collections.Generic.List[object]]::new()
+    $newSortedList.AddRange($selectedItems)
+    $newSortedList.AddRange($sortedUnselected)
+    
+    # Set the new sorted list as the ItemsSource
+    # Try nulling out ItemsSource first to force a more complete refresh
+    $listView.ItemsSource = $null
+    $listView.ItemsSource = $newSortedList.ToArray()
+}
+
+# Function to update the IsChecked state of a "Select All" header CheckBox
+function Update-SelectAllHeaderCheckBoxState {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView,
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.CheckBox]$HeaderCheckBox
+    )
+
+    if ($null -eq $ListView.ItemsSource -or $ListView.Items.Count -eq 0) {
+        $HeaderCheckBox.IsChecked = $false
+        return
+    }
+
+    $allItems = @($ListView.ItemsSource)
+    $selectedCount = ($allItems | Where-Object { $_.IsSelected }).Count
+
+    if ($selectedCount -eq $allItems.Count) {
+        $HeaderCheckBox.IsChecked = $true
+    }
+    elseif ($selectedCount -eq 0) {
+        $HeaderCheckBox.IsChecked = $false
+    }
+    else {
+        # Indeterminate state
+        $HeaderCheckBox.IsChecked = $null
     }
 }
 
-# Fix event handler parameter names to avoid $eventArgs conflicts
+# Function to update priorities sequentially in a ListView
+function Update-ListViewPriorities {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+    
+    $currentPriority = 1
+    foreach ($item in $ListView.Items) {
+        if ($null -ne $item -and $item.PSObject.Properties['Priority']) {
+            $item.Priority = $currentPriority
+            $currentPriority++
+        }
+    }
+    $ListView.Items.Refresh()
+}
+
+# Function to move selected item to the top
+function Move-ListViewItemTop {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+    
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+    
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -gt 0) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Insert(0, $selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to move selected item up one position
+function Move-ListViewItemUp {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+    
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+    
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -gt 0) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Insert($currentIndex - 1, $selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to move selected item down one position
+function Move-ListViewItemDown {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+    
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+    
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -lt ($ListView.Items.Count - 1)) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Insert($currentIndex + 1, $selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to move selected item to the bottom
+function Move-ListViewItemBottom {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+    
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+    
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -lt ($ListView.Items.Count - 1)) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Add($selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to update the enabled state of the Copy Apps button
+function Update-CopyButtonState {
+    $listView = $window.FindName('lstApplications')
+    $copyButton = $window.FindName('btnCopyBYOApps')
+    if ($listView -and $copyButton) {
+        $hasSource = $false
+        foreach ($item in $listView.Items) {
+            if ($null -ne $item -and $item.PSObject.Properties['Source'] -and -not [string]::IsNullOrWhiteSpace($item.Source)) {
+                $hasSource = $true
+                break
+            }
+        }
+        $copyButton.IsEnabled = $hasSource
+    }
+}
+
+# --------------------------------------------------------------------------
+# SECTION: UI Update Helper Functions (Moved from UI_Helpers.psm1)
+# --------------------------------------------------------------------------
+
+
+# --------------------------------------------------------------------------
+# SECTION: Parallel Processing
+# --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+
 $window.Add_Loaded({
+        # Assign UI elements to script variables
         $script:cmbWindowsRelease = $window.FindName('cmbWindowsRelease')
         $script:cmbWindowsVersion = $window.FindName('cmbWindowsVersion')
         $script:txtISOPath = $window.FindName('txtISOPath')
-        & $script:RefreshWindowsUI($defaultISOPath)
-        $script:txtISOPath.Add_TextChanged({ & $script:RefreshWindowsUI($script:txtISOPath.Text) })
-        $script:cmbWindowsRelease.Add_SelectionChanged({
-                $selItem = $script:cmbWindowsRelease.SelectedItem
-                if ($selItem -and $selItem.Value) { UpdateWindowsVersionCombo -selectedRelease $selItem.Value -isoPath $script:txtISOPath.Text }
-            })
         $script:btnBrowseISO = $window.FindName('btnBrowseISO')
-        $script:btnBrowseISO.Add_Click({
-                $ofd = New-Object System.Windows.Forms.OpenFileDialog
-                $ofd.Filter = "ISO files (*.iso)|*.iso"
-                $ofd.Title = "Select Windows ISO File"
-                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:txtISOPath.Text = $ofd.FileName }
-            })
-        # Home tab (renamed from Basic) displays static welcome text.
-        # Build tab defaults
-        $window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath
-        $window.FindName('txtCustomFFUNameTemplate').Text = "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
-        $window.FindName('txtFFUCaptureLocation').Text = (Join-Path $FFUDevelopmentPath "FFU")
-        $window.FindName('txtShareName').Text = "FFUCaptureShare"
-        $window.FindName('txtUsername').Text = "ffu_user"
-        # Set VM Location default to $FFUDevelopmentPath\VM
-        $window.FindName('txtVMLocation').Text = (Join-Path $FFUDevelopmentPath "VM")
-        # <-- NEW: Set the default for the new VM Name Prefix textbox on the Hyper-V Settings tab
-        $window.FindName('txtVMNamePrefix').Text = $defaultFFUPrefix
-        # Hyper-V Settings: Populate defaults (Share Name and Username now on Build, so only populate remaining fields)
-        $script:vmSwitchMap = @{}
-        $script:allSwitches = Get-VMSwitch -ErrorAction SilentlyContinue
-        $script:cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
-        foreach ($sw in $script:allSwitches) {
-            $script:cmbVMSwitchName.Items.Add($sw.Name) | Out-Null
-            $na = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*($($sw.Name))*" }
-            if ($na) {
-                $netIPs = Get-NetIPAddress -InterfaceIndex $na.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
-                $validIPs = $netIPs | Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.IPAddress }
-                if ($validIPs) { $script:vmSwitchMap[$sw.Name] = ($validIPs | Select-Object -First 1).IPAddress }
-            }
-        }
-        $script:cmbVMSwitchName.Items.Add('Other') | Out-Null
-        if ($script:cmbVMSwitchName.Items.Count -gt 0) {
-            if ($script:allSwitches.Count -gt 0) {
-                $script:cmbVMSwitchName.SelectedIndex = 0
-                $first = $script:cmbVMSwitchName.SelectedItem
-                if ($script:vmSwitchMap.ContainsKey($first)) { $window.FindName('txtVMHostIPAddress').Text = $script:vmSwitchMap[$first] }
-                else { $window.FindName('txtVMHostIPAddress').Text = '' }
-            }
-            else {
-                $script:cmbVMSwitchName.SelectedItem = 'Other'
-                $window.FindName('txtCustomVMSwitchName').Visibility = 'Visible'
-            }
-        }
-        $script:cmbVMSwitchName.Add_SelectionChanged({
-                if ($_.AddedItems -contains 'Other') {
-                    $window.FindName('txtCustomVMSwitchName').Visibility = 'Visible'
-                    $window.FindName('txtVMHostIPAddress').Text = ''
-                }
-                else {
-                    $window.FindName('txtCustomVMSwitchName').Visibility = 'Collapsed'
-                    $sel = $_.AddedItems[0]
-                    if ($script:vmSwitchMap.ContainsKey($sel)) { $window.FindName('txtVMHostIPAddress').Text = $script:vmSwitchMap[$sel] }
-                    else { $window.FindName('txtVMHostIPAddress').Text = '' }
-                }
-            })
-        # Windows Arch, Lang, SKU, etc.
         $script:cmbWindowsArch = $window.FindName('cmbWindowsArch')
-        foreach ($a in 'x86', 'x64', 'arm64') { [void]$script:cmbWindowsArch.Items.Add($a) }
-        $script:cmbWindowsArch.SelectedItem = $defaultWindowsArch
         $script:cmbWindowsLang = $window.FindName('cmbWindowsLang')
-        $allowedLangs = @(
-            'ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee',
-            'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu', 'it-it', 'ja-jp', 'ko-kr', 'lt-lt', 'lv-lv',
-            'nb-no', 'nl-nl', 'pl-pl', 'pt-br', 'pt-pt', 'ro-ro', 'ru-ru', 'sk-sk', 'sl-si', 'sr-latn-rs',
-            'sv-se', 'th-th', 'tr-tr', 'uk-ua', 'zh-cn', 'zh-tw'
-        )
-        foreach ($lang in $allowedLangs) { [void]$script:cmbWindowsLang.Items.Add($lang) }
-        $script:cmbWindowsLang.SelectedItem = $defaultWindowsLang
         $script:cmbWindowsSKU = $window.FindName('cmbWindowsSKU')
-        $script:cmbWindowsSKU.Items.Clear()
-        foreach ($sku in $skuList) { [void]$script:cmbWindowsSKU.Items.Add($sku) }
-        $script:cmbWindowsSKU.SelectedItem = $defaultWindowsSKU
         $script:cmbMediaType = $window.FindName('cmbMediaType')
-        foreach ($mt in "Consumer", "Business") { [void]$script:cmbMediaType.Items.Add($mt) }  # updated options
-        $script:cmbMediaType.SelectedItem = $defaultMediaType
         $script:txtOptionalFeatures = $window.FindName('txtOptionalFeatures')
-        $script:txtOptionalFeatures.Text = $defaultOptionalFeatures
-        $window.FindName('txtProductKey').Text = $defaultProductKey
-        # Drivers tab
+        $script:featuresPanel = $window.FindName('stackFeaturesContainer')
         $script:chkDownloadDrivers = $window.FindName('chkDownloadDrivers')
         $script:cmbMake = $window.FindName('cmbMake')
-        $script:cmbModel = $window.FindName('cmbModel')
-        $script:spMakeModelSection = $window.FindName('spMakeModelSection')
-        $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo')
-        foreach ($m in $makeList) { [void]$script:cmbMake.Items.Add($m) }
-        if ($script:cmbMake.Items.Count -gt 0) { $script:cmbMake.SelectedIndex = 0 }
-        $script:chkDownloadDrivers.Add_Checked({
-                $script:cmbMake.Visibility = 'Visible'
-                $script:cmbModel.Visibility = 'Visible'
-                $script:spMakeModelSection.Visibility = 'Visible'
+        # $script:cmbModel = $window.FindName('cmbModel') # cmbModel TextBox removed from XAML
+        $script:spMakeSection = $window.FindName('spMakeSection') # Updated StackPanel name
+        $script:btnGetModels = $window.FindName('btnGetModels')
+        $script:spModelFilterSection = $window.FindName('spModelFilterSection') # New StackPanel for filter
+        $script:txtModelFilter = $window.FindName('txtModelFilter') # New TextBox for filter
+        $script:lstDriverModels = $window.FindName('lstDriverModels')
+        # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+        $itemStyleDriverModels = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+        $itemStyleDriverModels.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+        $script:lstDriverModels.ItemContainerStyle = $itemStyleDriverModels
+
+        # Driver Models ListView setup
+        $driverModelsGridView = New-Object System.Windows.Controls.GridView
+
+        # Create the "Select All" CheckBox for the header
+        $script:chkSelectAllDriverModels = New-Object System.Windows.Controls.CheckBox
+        $script:chkSelectAllDriverModels.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center # Center the checkbox in the header
+        $script:chkSelectAllDriverModels.Add_Checked({
+                param($sender, $e)
+                if ($null -ne $script:lstDriverModels.ItemsSource) {
+                    foreach ($item in $script:lstDriverModels.ItemsSource) { $item.IsSelected = $true }
+                    $script:lstDriverModels.Items.Refresh()
+                }
             })
-        $script:chkDownloadDrivers.Add_Unchecked({
-                $script:cmbMake.Visibility = 'Collapsed'
-                $script:cmbModel.Visibility = 'Collapsed'
-                $script:spMakeModelSection.Visibility = 'Collapsed'
+        $script:chkSelectAllDriverModels.Add_Unchecked({
+                param($sender, $e)
+                if ($null -ne $script:lstDriverModels.ItemsSource) {
+                    # Check if the uncheck was programmatic (IsChecked is $null) or user-initiated
+                    if ($sender.IsChecked -eq $false) {
+                        # User unselected (not indeterminate)
+                        foreach ($item in $script:lstDriverModels.ItemsSource) { $item.IsSelected = $false }
+                        $script:lstDriverModels.Items.Refresh()
+                    }
+                }
             })
-        # Office interplay
+
+        # Manually create the "Selected" column with the CheckBox header
+        $selectedColumnDriverModels = New-Object System.Windows.Controls.GridViewColumn
+        $selectedColumnDriverModels.Header = $script:chkSelectAllDriverModels
+        $selectedColumnDriverModels.Width = 70 
+        # $selectedColumnDriverModels.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Center # REMOVED: This property doesn't exist on GridViewColumn
+
+        $cellTemplateDriverModels = New-Object System.Windows.DataTemplate
+        
+        # Use a Border to force the CheckBox to center in the cell and stretch with resizing
+        $borderFactoryDriverModels = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $borderFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
+        $borderFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
+        
+        $checkBoxFactoryDriverModels = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
+        $checkBoxFactoryDriverModels.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
+        $checkBoxFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $checkBoxFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        
+        $checkBoxFactoryDriverModels.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
+                param($eventSourceLocal, $eventArgsLocal)
+                Update-SelectAllHeaderCheckBoxState -ListView $script:lstDriverModels -HeaderCheckBox $script:chkSelectAllDriverModels
+            })
+        
+        $borderFactoryDriverModels.AppendChild($checkBoxFactoryDriverModels)
+        $cellTemplateDriverModels.VisualTree = $borderFactoryDriverModels
+        $selectedColumnDriverModels.CellTemplate = $cellTemplateDriverModels
+        $driverModelsGridView.Columns.Add($selectedColumnDriverModels)
+
+        # Add other sortable columns with left-aligned headers
+        Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
+        Add-SortableColumn -gridView $driverModelsGridView -header "Model" -binding "Model" -width 200 -headerHorizontalAlignment Left
+        Add-SortableColumn -gridView $driverModelsGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
+        $script:lstDriverModels.View = $driverModelsGridView
+        $script:lstDriverModels.AddHandler(
+            [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+            [System.Windows.RoutedEventHandler] {
+                param($eventSource, $e)
+                $header = $e.OriginalSource
+                if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                    Invoke-ListViewSort -listView $script:lstDriverModels -property $header.Tag
+                }
+            }
+        )
+        $script:spDriverActionButtons = $window.FindName('spDriverActionButtons')
+        $script:btnSaveDriversJson = $window.FindName('btnSaveDriversJson')
+        $script:btnImportDriversJson = $window.FindName('btnImportDriversJson')
+        $script:btnDownloadSelectedDrivers = $window.FindName('btnDownloadSelectedDrivers')
+        $script:btnClearDriverList = $window.FindName('btnClearDriverList')
+        # New button
         $script:chkInstallOffice = $window.FindName('chkInstallOffice')
         $script:chkInstallApps = $window.FindName('chkInstallApps')
-        $script:installAppsCheckedByOffice = $false
         $script:OfficePathStackPanel = $window.FindName('OfficePathStackPanel')
         $script:OfficePathGrid = $window.FindName('OfficePathGrid')
         $script:CopyOfficeConfigXMLStackPanel = $window.FindName('CopyOfficeConfigXMLStackPanel')
         $script:OfficeConfigurationXMLFileStackPanel = $window.FindName('OfficeConfigurationXMLFileStackPanel')
         $script:OfficeConfigurationXMLFileGrid = $window.FindName('OfficeConfigurationXMLFileGrid')
         $script:chkCopyOfficeConfigXML = $window.FindName('chkCopyOfficeConfigXML')
+        $script:chkLatestCU = $window.FindName('chkUpdateLatestCU')
+        $script:chkPreviewCU = $window.FindName('chkUpdatePreviewCU')
+        $script:btnCheckUSBDrives = $window.FindName('btnCheckUSBDrives')
+        $script:lstUSBDrives = $window.FindName('lstUSBDrives')
+        $script:chkSelectAllUSBDrives = $window.FindName('chkSelectAllUSBDrives')
+        $script:chkBuildUSBDriveEnable = $window.FindName('chkBuildUSBDriveEnable')
+        $script:usbSection = $window.FindName('usbDriveSection')
+        $script:chkSelectSpecificUSBDrives = $window.FindName('chkSelectSpecificUSBDrives')
+        $script:usbSelectionPanel = $window.FindName('usbDriveSelectionPanel')
+        $script:chkAllowExternalHardDiskMedia = $window.FindName('chkAllowExternalHardDiskMedia')
+        $script:chkPromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia')
+        $script:chkInstallWingetApps = $window.FindName('chkInstallWingetApps')
+        $script:wingetPanel = $window.FindName('wingetPanel')
+        $script:btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
+        $script:txtWingetVersion = $window.FindName('txtWingetVersion')
+        $script:txtWingetModuleVersion = $window.FindName('txtWingetModuleVersion')
+        $script:applicationPathPanel = $window.FindName('applicationPathPanel')
+        $script:appListJsonPathPanel = $window.FindName('appListJsonPathPanel')
+        $script:btnBrowseApplicationPath = $window.FindName('btnBrowseApplicationPath')
+        $script:btnBrowseAppListJsonPath = $window.FindName('btnBrowseAppListJsonPath')
+        $script:chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
+        $script:byoApplicationPanel = $window.FindName('byoApplicationPanel')
+        $script:wingetSearchPanel = $window.FindName('wingetSearchPanel')
+        $script:txtWingetSearch = $window.FindName('txtWingetSearch')
+        $script:btnWingetSearch = $window.FindName('btnWingetSearch')
+        $script:lstWingetResults = $window.FindName('lstWingetResults')
+        # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+        $itemStyleWingetResults = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+        $itemStyleWingetResults.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+        $script:lstWingetResults.ItemContainerStyle = $itemStyleWingetResults
+        $script:btnSaveWingetList = $window.FindName('btnSaveWingetList')
+        $script:btnImportWingetList = $window.FindName('btnImportWingetList')
+        $script:btnClearWingetList = $window.FindName('btnClearWingetList')
+        $script:btnDownloadSelected = $window.FindName('btnDownloadSelected')
+        $script:btnBrowseAppSource = $window.FindName('btnBrowseAppSource')
+        $script:btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
+        $script:btnBrowseFFUCaptureLocation = $window.FindName('btnBrowseFFUCaptureLocation')
+        $script:btnBrowseOfficePath = $window.FindName('btnBrowseOfficePath')
+        $script:btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
+        $script:btnBrowsePEDriversFolder = $window.FindName('btnBrowsePEDriversFolder')
+        $script:btnAddApplication = $window.FindName('btnAddApplication')
+        $script:btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
+        $script:btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
+        $script:btnClearBYOApplications = $window.FindName('btnClearBYOApplications')
+        $script:btnCopyBYOApps = $window.FindName('btnCopyBYOApps')
+        $script:lstApplications = $window.FindName('lstApplications')
+        $script:btnMoveTop = $window.FindName('btnMoveTop')
+        $script:btnMoveUp = $window.FindName('btnMoveUp')
+        $script:btnMoveDown = $window.FindName('btnMoveDown')
+        $script:btnMoveBottom = $window.FindName('btnMoveBottom')
+        $script:txtStatus = $window.FindName('txtStatus') # Assign txtStatus control
+        # Assign Progress Bar and Overall Status Text controls to script variables
+        $script:pbOverallProgress = $window.FindName('progressBar') # Use the correct x:Name from XAML
+        $script:txtOverallStatus = $window.FindName('txtStatus')     # Use the correct x:Name from XAML (assuming it's txtStatus)
+        $script:cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
+        $script:txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')
+        $script:txtCustomVMSwitchName = $window.FindName('txtCustomVMSwitchName')
+        # Assign Driver Checkboxes
+        $script:chkInstallDrivers = $window.FindName('chkInstallDrivers')
+        $script:chkCopyDrivers = $window.FindName('chkCopyDrivers')
+        $script:chkCompressDriversToWIM = $window.FindName('chkCompressDriversToWIM')
+
+        # Get Windows Settings defaults and lists from helper module
+        $script:windowsSettingsDefaults = Get-WindowsSettingsDefaults
+        # Get General defaults from helper module
+        $script:generalDefaults = Get-GeneralDefaults -FFUDevelopmentPath $FFUDevelopmentPath
+
+        # Initialize Windows Settings UI using data from helper module
+        & $script:RefreshWindowsSettingsCombos($script:windowsSettingsDefaults.DefaultISOPath) # Use combined refresh function
+        $script:txtISOPath.Add_TextChanged({ & $script:RefreshWindowsSettingsCombos($script:txtISOPath.Text) })
+        $script:cmbWindowsRelease.Add_SelectionChanged({
+                $selectedReleaseValue = 11 # Default if null
+                if ($null -ne $script:cmbWindowsRelease.SelectedItem) {
+                    $selectedReleaseValue = $script:cmbWindowsRelease.SelectedItem.Value
+                }
+                # Only need to update the Version combo when Release changes
+                Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $script:txtISOPath.Text
+            })
+        $script:btnBrowseISO.Add_Click({
+                $ofd = New-Object System.Windows.Forms.OpenFileDialog
+                $ofd.Filter = "ISO files (*.iso)|*.iso"
+                $ofd.Title = "Select Windows ISO File"
+                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:txtISOPath.Text = $ofd.FileName }
+            })
+
+        # Populate static combos from defaults object
+        $script:cmbWindowsArch.ItemsSource = $script:windowsSettingsDefaults.AllowedArchitectures
+        $script:cmbWindowsArch.SelectedItem = $script:windowsSettingsDefaults.DefaultWindowsArch
+
+        $script:cmbWindowsLang.ItemsSource = $script:windowsSettingsDefaults.AllowedLanguages
+        $script:cmbWindowsLang.SelectedItem = $script:windowsSettingsDefaults.DefaultWindowsLang
+
+        $script:cmbWindowsSKU.ItemsSource = $script:windowsSettingsDefaults.SkuList
+        $script:cmbWindowsSKU.SelectedItem = $script:windowsSettingsDefaults.DefaultWindowsSKU
+
+        $script:cmbMediaType.ItemsSource = $script:windowsSettingsDefaults.AllowedMediaTypes
+        $script:cmbMediaType.SelectedItem = $script:windowsSettingsDefaults.DefaultMediaType
+
+        # Set default text values for Windows Settings
+        $script:txtOptionalFeatures.Text = $script:windowsSettingsDefaults.DefaultOptionalFeatures
+        $window.FindName('txtProductKey').Text = $script:windowsSettingsDefaults.DefaultProductKey
+
+        # Build tab defaults from General Defaults
+        $window.FindName('txtFFUDevPath').Text = $FFUDevelopmentPath # Keep this as it's the base path
+        $window.FindName('txtCustomFFUNameTemplate').Text = $script:generalDefaults.CustomFFUNameTemplate
+        $window.FindName('txtFFUCaptureLocation').Text = $script:generalDefaults.FFUCaptureLocation
+        $window.FindName('txtShareName').Text = $script:generalDefaults.ShareName
+        $window.FindName('txtUsername').Text = $script:generalDefaults.Username
+        $window.FindName('chkBuildUSBDriveEnable').IsChecked = $script:generalDefaults.BuildUSBDriveEnable
+        $window.FindName('chkCompactOS').IsChecked = $script:generalDefaults.CompactOS
+        $window.FindName('chkOptimize').IsChecked = $script:generalDefaults.Optimize
+        $window.FindName('chkAllowVHDXCaching').IsChecked = $script:generalDefaults.AllowVHDXCaching
+        $window.FindName('chkCreateCaptureMedia').IsChecked = $script:generalDefaults.CreateCaptureMedia
+        $window.FindName('chkCreateDeploymentMedia').IsChecked = $script:generalDefaults.CreateDeploymentMedia
+        $window.FindName('chkAllowExternalHardDiskMedia').IsChecked = $script:generalDefaults.AllowExternalHardDiskMedia
+        $window.FindName('chkPromptExternalHardDiskMedia').IsChecked = $script:generalDefaults.PromptExternalHardDiskMedia
+        $window.FindName('chkSelectSpecificUSBDrives').IsChecked = $script:generalDefaults.SelectSpecificUSBDrives
+        $window.FindName('chkCopyAutopilot').IsChecked = $script:generalDefaults.CopyAutopilot
+        $window.FindName('chkCopyUnattend').IsChecked = $script:generalDefaults.CopyUnattend
+        $window.FindName('chkCopyPPKG').IsChecked = $script:generalDefaults.CopyPPKG
+        $window.FindName('chkCleanupAppsISO').IsChecked = $script:generalDefaults.CleanupAppsISO
+        $window.FindName('chkCleanupCaptureISO').IsChecked = $script:generalDefaults.CleanupCaptureISO
+        $window.FindName('chkCleanupDeployISO').IsChecked = $script:generalDefaults.CleanupDeployISO
+        $window.FindName('chkCleanupDrivers').IsChecked = $script:generalDefaults.CleanupDrivers
+        $window.FindName('chkRemoveFFU').IsChecked = $script:generalDefaults.RemoveFFU
+
+        # Hyper-V Settings defaults from General Defaults
+        $window.FindName('txtDiskSize').Text = $script:generalDefaults.DiskSizeGB
+        $window.FindName('txtMemory').Text = $script:generalDefaults.MemoryGB
+        $window.FindName('txtProcessors').Text = $script:generalDefaults.Processors
+        $window.FindName('txtVMLocation').Text = $script:generalDefaults.VMLocation
+        $window.FindName('txtVMNamePrefix').Text = $script:generalDefaults.VMNamePrefix
+        $window.FindName('cmbLogicalSectorSize').SelectedItem = ($window.FindName('cmbLogicalSectorSize').Items | Where-Object { $_.Content -eq $script:generalDefaults.LogicalSectorSize.ToString() })
+
+        # Hyper-V Settings: Populate VM Switch ComboBox (Keep existing logic)
+        $vmSwitchData = Get-VMSwitchData
+        $script:vmSwitchMap = $vmSwitchData.SwitchMap
+        $script:cmbVMSwitchName.Items.Clear()
+        foreach ($switchName in $vmSwitchData.SwitchNames) {
+            $script:cmbVMSwitchName.Items.Add($switchName) | Out-Null
+        }
+        $script:cmbVMSwitchName.Items.Add('Other') | Out-Null
+        if ($script:cmbVMSwitchName.Items.Count -gt 1) {
+            $script:cmbVMSwitchName.SelectedIndex = 0
+            $firstSwitch = $script:cmbVMSwitchName.SelectedItem
+            if ($script:vmSwitchMap.ContainsKey($firstSwitch)) {
+                $script:txtVMHostIPAddress.Text = $script:vmSwitchMap[$firstSwitch]
+            }
+            else {
+                $script:txtVMHostIPAddress.Text = $script:generalDefaults.VMHostIPAddress # Use default if IP not found
+            }
+            $script:txtCustomVMSwitchName.Visibility = 'Collapsed'
+        }
+        else {
+            $script:cmbVMSwitchName.SelectedItem = 'Other'
+            $script:txtCustomVMSwitchName.Visibility = 'Visible'
+            $script:txtVMHostIPAddress.Text = $script:generalDefaults.VMHostIPAddress # Use default
+        }
+        $script:cmbVMSwitchName.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $selectedItem = $eventSource.SelectedItem
+                if ($selectedItem -eq 'Other') {
+                    $script:txtCustomVMSwitchName.Visibility = 'Visible'
+                    $script:txtVMHostIPAddress.Text = '' # Clear IP for custom
+                }
+                else {
+                    $script:txtCustomVMSwitchName.Visibility = 'Collapsed'
+                    if ($script:vmSwitchMap.ContainsKey($selectedItem)) {
+                        $script:txtVMHostIPAddress.Text = $script:vmSwitchMap[$selectedItem]
+                    }
+                    else {
+                        $script:txtVMHostIPAddress.Text = '' # Clear IP if not found in map
+                    }
+                }
+            })
+
+        # Updates tab defaults from General Defaults
+        $window.FindName('chkUpdateLatestCU').IsChecked = $script:generalDefaults.UpdateLatestCU
+        $window.FindName('chkUpdateLatestNet').IsChecked = $script:generalDefaults.UpdateLatestNet
+        $window.FindName('chkUpdateLatestDefender').IsChecked = $script:generalDefaults.UpdateLatestDefender
+        $window.FindName('chkUpdateEdge').IsChecked = $script:generalDefaults.UpdateEdge
+        $window.FindName('chkUpdateOneDrive').IsChecked = $script:generalDefaults.UpdateOneDrive
+        $window.FindName('chkUpdateLatestMSRT').IsChecked = $script:generalDefaults.UpdateLatestMSRT
+        $window.FindName('chkUpdatePreviewCU').IsChecked = $script:generalDefaults.UpdatePreviewCU
+
+        # Applications tab defaults from General Defaults
+        $window.FindName('chkInstallApps').IsChecked = $script:generalDefaults.InstallApps
+        $window.FindName('txtApplicationPath').Text = $script:generalDefaults.ApplicationPath
+        $window.FindName('txtAppListJsonPath').Text = $script:generalDefaults.AppListJsonPath
+        $window.FindName('chkInstallWingetApps').IsChecked = $script:generalDefaults.InstallWingetApps
+        $window.FindName('chkBringYourOwnApps').IsChecked = $script:generalDefaults.BringYourOwnApps
+
+        # M365 Apps/Office tab defaults from General Defaults
+        $window.FindName('chkInstallOffice').IsChecked = $script:generalDefaults.InstallOffice
+        $window.FindName('txtOfficePath').Text = $script:generalDefaults.OfficePath
+        $window.FindName('chkCopyOfficeConfigXML').IsChecked = $script:generalDefaults.CopyOfficeConfigXML
+        $window.FindName('txtOfficeConfigXMLFilePath').Text = $script:generalDefaults.OfficeConfigXMLFilePath
+
+        # Drivers tab defaults from General Defaults
+        $window.FindName('txtDriversFolder').Text = $script:generalDefaults.DriversFolder
+        $window.FindName('txtPEDriversFolder').Text = $script:generalDefaults.PEDriversFolder
+        $window.FindName('chkDownloadDrivers').IsChecked = $script:generalDefaults.DownloadDrivers
+        $window.FindName('chkInstallDrivers').IsChecked = $script:generalDefaults.InstallDrivers
+        $window.FindName('chkCopyDrivers').IsChecked = $script:generalDefaults.CopyDrivers
+        $window.FindName('chkCopyPEDrivers').IsChecked = $script:generalDefaults.CopyPEDrivers
+
+        # Drivers tab UI logic (Keep existing logic)
+        $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo') # Added Lenovo
+        foreach ($m in $makeList) { [void]$script:cmbMake.Items.Add($m) }
+        if ($script:cmbMake.Items.Count -gt 0) { $script:cmbMake.SelectedIndex = 0 }
+        $script:chkDownloadDrivers.Add_Checked({
+                $script:cmbMake.Visibility = 'Visible'
+                $script:btnGetModels.Visibility = 'Visible'
+                $script:spMakeSection.Visibility = 'Visible'
+                # Make the model filter, list, and action buttons visible immediately
+                # This allows users to import a Drivers.json without first clicking "Get Models"
+                $script:spModelFilterSection.Visibility = 'Visible'
+                $script:lstDriverModels.Visibility = 'Visible'
+                $script:spDriverActionButtons.Visibility = 'Visible'
+            })
+        $script:chkDownloadDrivers.Add_Unchecked({
+                $script:cmbMake.Visibility = 'Collapsed'
+                $script:btnGetModels.Visibility = 'Collapsed'
+                $script:spMakeSection.Visibility = 'Collapsed'
+                $script:spModelFilterSection.Visibility = 'Collapsed'
+                $script:lstDriverModels.Visibility = 'Collapsed'
+                $script:spDriverActionButtons.Visibility = 'Collapsed'
+                $script:lstDriverModels.ItemsSource = $null
+                $script:allDriverModels = @()
+                $script:txtModelFilter.Text = ""
+            })
+        $script:spMakeSection.Visibility = if ($script:chkDownloadDrivers.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:btnGetModels.Visibility = if ($script:chkDownloadDrivers.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:spModelFilterSection.Visibility = 'Collapsed'
+        $script:lstDriverModels.Visibility = 'Collapsed'
+        $script:spDriverActionButtons.Visibility = 'Collapsed'
+        $script:btnGetModels.Add_Click({
+                $selectedMake = $script:cmbMake.SelectedItem
+                $script:txtStatus.Text = "Getting models for $selectedMake..."
+                $window.Cursor = [System.Windows.Input.Cursors]::Wait
+                $this.IsEnabled = $false # Disable the button
+
+                try {
+                    # Get previously selected models from the master list ($script:allDriverModels)
+                    # This ensures all selected items are captured, regardless of any active filter.
+                    $previouslySelectedModels = @($script:allDriverModels | Where-Object { $_.IsSelected })
+                    
+                    # Get newly fetched models for the current make (already standardized)
+                    $newlyFetchedStandardizedModels = Get-ModelsForMake -SelectedMake $selectedMake
+                    
+                    $combinedModelsList = [System.Collections.Generic.List[PSCustomObject]]::new()
+                    $modelIdentifiersInCombinedList = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+                    # Add previously selected models first to preserve their selection state and order (if any)
+                    foreach ($item in $previouslySelectedModels) {
+                        $combinedModelsList.Add($item)
+                        # Use a composite key of Make and Model for uniqueness tracking
+                        $modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)") | Out-Null
+                    }
+
+                    # Add newly fetched models if they are not already in the combined list (based on Make::Model identifier)
+                    $addedNewCount = 0
+                    foreach ($item in $newlyFetchedStandardizedModels) {
+                        if (-not $modelIdentifiersInCombinedList.Contains("$($item.Make)::$($item.Model)")) {
+                            $combinedModelsList.Add($item)
+                            # Add to HashSet to prevent duplicates if the new list itself has them (though Get-ModelsForMake should try to avoid this)
+                            $modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)") | Out-Null
+                            $addedNewCount++
+                        }
+                    }
+                    
+                    $script:allDriverModels = $combinedModelsList.ToArray() | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model # Sort by selection status, then Make, then Model
+                    $script:lstDriverModels.ItemsSource = $script:allDriverModels
+                    $script:txtModelFilter.Text = "" # Clear any existing filter
+
+                    if ($script:allDriverModels.Count -gt 0) {
+                        $script:spModelFilterSection.Visibility = 'Visible'
+                        $script:lstDriverModels.Visibility = 'Visible'
+                        $script:spDriverActionButtons.Visibility = 'Visible'
+                        $statusText = "Displaying $($script:allDriverModels.Count) models."
+                        if ($newlyFetchedStandardizedModels.Count -gt 0 -and $addedNewCount -eq 0 -and $previouslySelectedModels.Count -gt 0) {
+                            # This case means new models were fetched, but all were already present in the selected list.
+                            $statusText = "Fetched $($newlyFetchedStandardizedModels.Count) models for $selectedMake; all were already in the selected list. Displaying $($script:allDriverModels.Count) total selected models."
+                        }
+                        elseif ($addedNewCount -gt 0) {
+                            $statusText = "Added $addedNewCount new models for $selectedMake. Displaying $($script:allDriverModels.Count) total models."
+                        }
+                        elseif ($newlyFetchedStandardizedModels.Count -eq 0 -and $selectedMake -eq 'Lenovo' ) {
+                            # Handled Lenovo specific no new models found message inside Get-ModelsForMake or if user cancelled prompt
+                            $statusText = if ($previouslySelectedModels.Count -gt 0) { "No new models found for $selectedMake. Displaying $($previouslySelectedModels.Count) previously selected models." } else { "No models found for $selectedMake." }
+                        }
+                        elseif ($newlyFetchedStandardizedModels.Count -eq 0) {
+                            $statusText = "No new models found for $selectedMake. Displaying $($script:allDriverModels.Count) previously selected models."
+                        }
+                        $script:txtStatus.Text = $statusText
+                    }
+                    else {
+                        $script:spModelFilterSection.Visibility = 'Collapsed'
+                        $script:lstDriverModels.Visibility = 'Collapsed'
+                        $script:spDriverActionButtons.Visibility = 'Collapsed'
+                        $script:txtStatus.Text = "No models to display for $selectedMake."
+                    }
+                } # End Try
+                catch {
+                    $script:txtStatus.Text = "Error getting models: $($_.Exception.Message)"
+                    [System.Windows.MessageBox]::Show("Error getting models: $($_.Exception.Message)", "Error", "OK", "Error")
+                    # Minimal UI reset on error, keep previously selected if any
+                    if ($null -eq $script:allDriverModels -or $script:allDriverModels.Count -eq 0) {
+                        $script:spModelFilterSection.Visibility = 'Collapsed'
+                        $script:lstDriverModels.Visibility = 'Collapsed'
+                        $script:spDriverActionButtons.Visibility = 'Collapsed'
+                        $script:lstDriverModels.ItemsSource = $null
+                        $script:txtModelFilter.Text = ""
+                    }
+                } # End Catch
+                finally {
+                    $window.Cursor = $null
+                    $this.IsEnabled = $true # Re-enable the button
+                } # End Finally
+            })
+        $script:txtModelFilter.Add_TextChanged({
+                param($sourceObject, $textChangedEventArgs)
+                Filter-DriverModels -filterText $script:txtModelFilter.Text
+            })
+        $script:btnDownloadSelectedDrivers.Add_Click({
+                param($buttonSender, $clickEventArgs)
+
+                $selectedDrivers = @($script:lstDriverModels.Items | Where-Object { $_.IsSelected })
+                if (-not $selectedDrivers) {
+                    [System.Windows.MessageBox]::Show("No drivers selected to download.", "Download Drivers", "OK", "Information")
+                    return
+                }
+
+                $buttonSender.IsEnabled = $false
+                $script:progressBar = $window.FindName('progressBar') # Ensure progress bar is assigned
+                $script:progressBar.Visibility = 'Visible'
+                $script:progressBar.Value = 0
+                $script:txtStatus.Text = "Preparing driver downloads..."
+
+                # Define common necessary task-specific variables locally
+                $localDriversFolder = $window.FindName('txtDriversFolder').Text
+                $localWindowsRelease = $window.FindName('cmbWindowsRelease').SelectedItem.Value
+                $localWindowsArch = $window.FindName('cmbWindowsArch').SelectedItem
+                $localHeaders = $Headers # Use script-level variable
+                $localUserAgent = $UserAgent # Use script-level variable
+                $compressDrivers = $script:chkCompressDriversToWIM.IsChecked
+
+                # Define common necessary task-specific variables locally
+                # Ensure required selections are made
+                if ($null -eq $window.FindName('cmbWindowsRelease').SelectedItem) {
+                    [System.Windows.MessageBox]::Show("Please select a Windows Release.", "Missing Information", "OK", "Warning")
+                    $buttonSender.IsEnabled = $true
+                    $script:progressBar.Visibility = 'Collapsed'
+                    $script:txtStatus.Text = "Driver download cancelled."
+                    return
+                }
+                if ($null -eq $window.FindName('cmbWindowsArch').SelectedItem) {
+                    [System.Windows.MessageBox]::Show("Please select a Windows Architecture.", "Missing Information", "OK", "Warning")
+                    $buttonSender.IsEnabled = $true
+                    $script:progressBar.Visibility = 'Collapsed'
+                    $script:txtStatus.Text = "Driver download cancelled."
+                    return
+                }
+                if (($selectedDrivers | Where-Object { $_.Make -eq 'HP' }) -and $null -eq $window.FindName('cmbWindowsVersion').SelectedItem) {
+                    [System.Windows.MessageBox]::Show("HP drivers are selected. Please select a Windows Version.", "Missing Information", "OK", "Warning")
+                    $buttonSender.IsEnabled = $true
+                    $script:progressBar.Visibility = 'Collapsed'
+                    $script:txtStatus.Text = "Driver download cancelled."
+                    return
+                }
+            
+                $localDriversFolder = $window.FindName('txtDriversFolder').Text
+                $localWindowsRelease = $window.FindName('cmbWindowsRelease').SelectedItem.Value
+                $localWindowsArch = $window.FindName('cmbWindowsArch').SelectedItem
+                $localWindowsVersion = if ($null -ne $window.FindName('cmbWindowsVersion').SelectedItem) { $window.FindName('cmbWindowsVersion').SelectedItem } else { $null }
+                $localHeaders = $Headers # Use script-level variable
+                $localUserAgent = $UserAgent # Use script-level variable
+                $compressDrivers = $script:chkCompressDriversToWIM.IsChecked
+            
+                # --- Dell Catalog Handling (once, if Dell drivers are selected) ---
+                $dellCatalogXmlPath = $null # This will be the path passed to the background task
+                if ($selectedDrivers | Where-Object { $_.Make -eq 'Dell' }) {
+                    $script:txtStatus.Text = "Checking Dell Catalog..."
+                    WriteLog "Dell drivers selected. Preparing Dell catalog..."
+                    
+                    $dellDriversFolderUi = Join-Path -Path $localDriversFolder -ChildPath "Dell"
+                    $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+                    $dellCabFileUi = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).cab"
+                    # This $dellCatalogXmlPath is the one we ensure exists and is up-to-date for the Save-DellDriversTask
+                    $dellCatalogXmlPath = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).xml" 
+                    $catalogUrl = if ($localWindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+                    
+                    $downloadDellCatalog = $true
+                    if (Test-Path -Path $dellCatalogXmlPath -PathType Leaf) {
+                        if (((Get-Date) - (Get-Item $dellCatalogXmlPath).LastWriteTime).TotalDays -lt 7) {
+                            WriteLog "Using existing Dell Catalog XML (less than 7 days old) for download task: $dellCatalogXmlPath"
+                            $downloadDellCatalog = $false
+                            $script:txtStatus.Text = "Dell Catalog ready."
+                        }
+                        else {
+                            WriteLog "Existing Dell Catalog XML '$dellCatalogXmlPath' is older than 7 days."
+                        }
+                    }
+                    else {
+                        WriteLog "Dell Catalog XML '$dellCatalogXmlPath' not found."
+                    }
+
+                    if ($downloadDellCatalog) {
+                        WriteLog "Dell Catalog XML '$dellCatalogXmlPath' needs to be downloaded/updated for driver download task."
+                        $script:txtStatus.Text = "Downloading Dell Catalog..."
+                        try {
+                            # Ensure Dell drivers folder exists
+                            if (-not (Test-Path -Path $dellDriversFolderUi -PathType Container)) {
+                                WriteLog "Creating Dell drivers folder: $dellDriversFolderUi"
+                                New-Item -Path $dellDriversFolderUi -ItemType Directory -Force | Out-Null
+                            }
+
+                            if (Test-Path $dellCabFileUi) { Remove-Item $dellCabFileUi -Force -ErrorAction SilentlyContinue }
+                            if (Test-Path $dellCatalogXmlPath) { Remove-Item $dellCatalogXmlPath -Force -ErrorAction SilentlyContinue }
+                            
+                            # Using Start-BitsTransferWithRetry and Invoke-Process (available from FFUUI.Core.psm1)
+                            Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFileUi
+                            WriteLog "Dell Catalog CAB downloaded to $dellCabFileUi"
+                            Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFileUi"" ""$dellCatalogXmlPath""" | Out-Null
+                            WriteLog "Dell Catalog XML extracted to $dellCatalogXmlPath"
+                            Remove-Item -Path $dellCabFileUi -Force -ErrorAction SilentlyContinue
+                            WriteLog "Dell Catalog CAB file $dellCabFileUi deleted."
+                            $script:txtStatus.Text = "Dell Catalog ready."
+                        }
+                        catch {
+                            $errMsg = "Failed to download/extract Dell Catalog for driver download task: $($_.Exception.Message)"
+                            WriteLog $errMsg; [System.Windows.MessageBox]::Show($errMsg, "Dell Catalog Error", "OK", "Error")
+                            $dellCatalogXmlPath = $null # Ensure it's null if failed, Save-DellDriversTask will handle this
+                            $script:txtStatus.Text = "Dell Catalog download failed. Dell drivers may not download."
+                        }
+                    }
+                    # If $downloadDellCatalog was false, $dellCatalogXmlPath is already set to the existing valid XML.
+                }
+                # --- End Dell Catalog Handling ---
+            
+                $script:txtStatus.Text = "Processing all selected drivers..."
+                WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
+            
+                $taskArguments = @{
+                    DriversFolder      = $localDriversFolder
+                    WindowsRelease     = $localWindowsRelease
+                    WindowsArch        = $localWindowsArch
+                    WindowsVersion     = $localWindowsVersion # Will be null if not applicable (e.g., not HP)
+                    Headers            = $localHeaders
+                    UserAgent          = $localUserAgent
+                    CompressToWim      = $compressDrivers
+                    DellCatalogXmlPath = $dellCatalogXmlPath  # Will be null if not Dell or if Dell catalog prep failed
+                }
+                
+                Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
+                    -ListViewControl $script:lstDriverModels `
+                    -IdentifierProperty 'Model' `
+                    -StatusProperty 'DownloadStatus' `
+                    -TaskType 'DownloadDriverByMake' `
+                    -TaskArguments $taskArguments `
+                    -CompletedStatusText 'Completed' `
+                    -ErrorStatusPrefix 'Error: ' `
+                    -WindowObject $window `
+                    -MainThreadLogPath $global:LogFile 
+                
+                $overallSuccess = $true
+                # Check if any item has an error status after processing
+                # We iterate over $script:lstDriverModels.Items because their DownloadStatus property was updated by Invoke-ParallelProcessing
+                foreach ($item in ($script:lstDriverModels.Items | Where-Object { $_.IsSelected })) {
+                    # Check only originally selected items
+                    if ($item.DownloadStatus -like 'Error:*') {
+                        $overallSuccess = $false
+                        WriteLog "Error detected for model $($item.Model) (Make: $($item.Make)): $($item.DownloadStatus)"
+                        # No break here, log all errors
+                    }
+                }
+            
+                $script:progressBar.Visibility = 'Collapsed'
+                $buttonSender.IsEnabled = $true
+                if ($overallSuccess) {
+                    $script:txtStatus.Text = "All selected driver downloads processed."
+                    [System.Windows.MessageBox]::Show("All selected driver downloads processed. Check status column for details.", "Download Process Finished", "OK", "Information")
+                }
+                else {
+                    $script:txtStatus.Text = "Driver downloads processed with some errors. Check status column and log."
+                    [System.Windows.MessageBox]::Show("Driver downloads processed, but some errors occurred. Please check the status column for each driver and the log file for details.", "Download Process Finished with Errors", "OK", "Warning")
+                }
+            })
+        $script:btnClearDriverList.Add_Click({
+                $script:lstDriverModels.ItemsSource = $null
+                $script:allDriverModels = @()
+                $script:txtModelFilter.Text = ""
+                $script:txtStatus.Text = "Driver list cleared."
+            })
+        $script:btnSaveDriversJson.Add_Click({ Save-DriversJson })
+        $script:btnImportDriversJson.Add_Click({ Import-DriversJson })
+        
+        # Office interplay (Keep existing logic)
+        $script:installAppsCheckedByOffice = $false
         if ($script:chkInstallOffice.IsChecked) {
             $script:OfficePathStackPanel.Visibility = 'Visible'
             $script:OfficePathGrid.Visibility = 'Visible'
             $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
+            # Show/hide XML file path based on checkbox state
+            $script:OfficeConfigurationXMLFileStackPanel.Visibility = if ($script:chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
+            $script:OfficeConfigurationXMLFileGrid.Visibility = if ($script:chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
         }
         else {
             $script:OfficePathStackPanel.Visibility = 'Collapsed'
@@ -913,13 +1735,19 @@ $window.Add_Loaded({
                 $script:OfficePathStackPanel.Visibility = 'Visible'
                 $script:OfficePathGrid.Visibility = 'Visible'
                 $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
+                # Show/hide XML file path based on checkbox state
+                $script:OfficeConfigurationXMLFileStackPanel.Visibility = if ($script:chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
+                $script:OfficeConfigurationXMLFileGrid.Visibility = if ($script:chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
             })
         $script:chkInstallOffice.Add_Unchecked({
                 if ($script:installAppsCheckedByOffice) {
                     $script:chkInstallApps.IsChecked = $false
                     $script:installAppsCheckedByOffice = $false
                 }
-                $script:chkInstallApps.IsEnabled = $true
+                # Only re-enable InstallApps if not forced by Updates
+                if (-not $script:installAppsForcedByUpdates) {
+                    $script:chkInstallApps.IsEnabled = $true
+                }
                 $script:OfficePathStackPanel.Visibility = 'Collapsed'
                 $script:OfficePathGrid.Visibility = 'Collapsed'
                 $script:CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
@@ -934,13 +1762,13 @@ $window.Add_Loaded({
                 $script:OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
                 $script:OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
             })
-        # Build dynamic multi-column checkboxes for optional features in Windows Settings tab
-        $script:featuresPanel = $window.FindName('stackFeaturesContainer')
-        if ($script:featuresPanel) { BuildFeaturesGrid -parent $script:featuresPanel }
-        # Variables for managing forced Install Apps state due to Updates
+
+        # Build dynamic multi-column checkboxes for optional features (Keep existing logic)
+        if ($script:featuresPanel) { BuildFeaturesGrid -parent $script:featuresPanel -allowedFeatures $script:windowsSettingsDefaults.AllowedFeatures }
+
+        # Updates/InstallApps interplay (Keep existing logic)
         $script:installAppsForcedByUpdates = $false
         $script:prevInstallAppsStateBeforeUpdates = $null
-        # Define the function in script scope to update Install Apps based on Updates tab
         $script:UpdateInstallAppsBasedOnUpdates = {
             $anyUpdateChecked = $window.FindName('chkUpdateLatestDefender').IsChecked -or $window.FindName('chkUpdateEdge').IsChecked -or $window.FindName('chkUpdateOneDrive').IsChecked -or $window.FindName('chkUpdateLatestMSRT').IsChecked
             if ($anyUpdateChecked) {
@@ -957,10 +1785,12 @@ $window.Add_Loaded({
                     $script:installAppsForcedByUpdates = $false
                     $script:prevInstallAppsStateBeforeUpdates = $null
                 }
-                $window.FindName('chkInstallApps').IsEnabled = $true
+                # Only re-enable InstallApps if not forced by Office
+                if (-not $script:chkInstallOffice.IsChecked) {
+                    $window.FindName('chkInstallApps').IsEnabled = $true
+                }
             }
         }
-        # Add event handlers for Updates tab checkboxes to update Install Apps state
         $window.FindName('chkUpdateLatestDefender').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
         $window.FindName('chkUpdateLatestDefender').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
         $window.FindName('chkUpdateEdge').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
@@ -969,29 +1799,19 @@ $window.Add_Loaded({
         $window.FindName('chkUpdateOneDrive').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
         $window.FindName('chkUpdateLatestMSRT').Add_Checked({ & $script:UpdateInstallAppsBasedOnUpdates })
         $window.FindName('chkUpdateLatestMSRT').Add_Unchecked({ & $script:UpdateInstallAppsBasedOnUpdates })
-        # Add interplay between Latest CU and Preview CU checkboxes
-        $script:chkLatestCU = $window.FindName('chkUpdateLatestCU')
-        $script:chkPreviewCU = $window.FindName('chkUpdatePreviewCU')
-    
-        $script:chkLatestCU.Add_Checked({
-                $script:chkPreviewCU.IsEnabled = $false
-            })
-        $script:chkLatestCU.Add_Unchecked({
-                $script:chkPreviewCU.IsEnabled = $true
-            })
-    
-        $script:chkPreviewCU.Add_Checked({
-                $script:chkLatestCU.IsEnabled = $false
-            })
-        $script:chkPreviewCU.Add_Unchecked({
-                $script:chkLatestCU.IsEnabled = $true
-            })
+        # Initial check for Updates/InstallApps state
+        & $script:UpdateInstallAppsBasedOnUpdates
 
-        # Add USB Drive Detection handler
-        $script:btnCheckUSBDrives = $window.FindName('btnCheckUSBDrives')
-        $script:lstUSBDrives = $window.FindName('lstUSBDrives')
-        $script:chkSelectAllUSBDrives = $window.FindName('chkSelectAllUSBDrives')
-    
+        # CU interplay (Keep existing logic)
+        $script:chkLatestCU.Add_Checked({ $script:chkPreviewCU.IsEnabled = $false })
+        $script:chkLatestCU.Add_Unchecked({ $script:chkPreviewCU.IsEnabled = $true })
+        $script:chkPreviewCU.Add_Checked({ $script:chkLatestCU.IsEnabled = $false })
+        $script:chkPreviewCU.Add_Unchecked({ $script:chkLatestCU.IsEnabled = $true })
+        # Set initial state based on defaults
+        $script:chkPreviewCU.IsEnabled = -not $script:chkLatestCU.IsChecked
+        $script:chkLatestCU.IsEnabled = -not $script:chkPreviewCU.IsChecked
+
+        # USB Drive Detection/Selection logic (Keep existing logic)
         $script:btnCheckUSBDrives.Add_Click({
                 $script:lstUSBDrives.Items.Clear()
                 $usbDrives = Get-USBDrives
@@ -1002,23 +1822,14 @@ $window.Add_Loaded({
                     $script:lstUSBDrives.SelectedIndex = 0
                 }
             })
-    
-        # Handle Select All checkbox
         $script:chkSelectAllUSBDrives.Add_Checked({
-                foreach ($item in $script:lstUSBDrives.Items) {
-                    $item.IsSelected = $true
-                }
+                foreach ($item in $script:lstUSBDrives.Items) { $item.IsSelected = $true }
                 $script:lstUSBDrives.Items.Refresh()
             })
-
         $script:chkSelectAllUSBDrives.Add_Unchecked({
-                foreach ($item in $script:lstUSBDrives.Items) {
-                    $item.IsSelected = $false
-                }
+                foreach ($item in $script:lstUSBDrives.Items) { $item.IsSelected = $false }
                 $script:lstUSBDrives.Items.Refresh()
             })
-
-        # Add keyboard handler
         $script:lstUSBDrives.Add_KeyDown({
                 param($eventSource, $keyEvent)
                 if ($keyEvent.Key -eq 'Space') {
@@ -1026,36 +1837,22 @@ $window.Add_Loaded({
                     if ($selectedItem) {
                         $selectedItem.IsSelected = !$selectedItem.IsSelected
                         $script:lstUSBDrives.Items.Refresh()
-                        # Update Select All checkbox state
                         $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
                         $script:chkSelectAllUSBDrives.IsChecked = $allSelected
                     }
                 }
             })
-
-        # Add selection change handler
         $script:lstUSBDrives.Add_SelectionChanged({
                 param($eventSource, $selChangeEvent)
-                # Update Select All checkbox state
                 $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
                 $script:chkSelectAllUSBDrives.IsChecked = $allSelected
             })
-
-        # Add handler to show/hide USB drive section based on Build USB Drive checkbox
-        $script:chkBuildUSBDriveEnable = $window.FindName('chkBuildUSBDriveEnable')
-        $script:usbSection = $window.FindName('usbDriveSection')
-        $script:chkSelectSpecificUSBDrives = $window.FindName('chkSelectSpecificUSBDrives')
-        $script:usbSelectionPanel = $window.FindName('usbDriveSelectionPanel')
-    
-        # Set initial visibility states
         $script:usbSection.Visibility = if ($script:chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:usbSelectionPanel.Visibility = if ($script:chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
-    
         $script:chkBuildUSBDriveEnable.Add_Checked({
                 $script:usbSection.Visibility = 'Visible'
                 $script:chkSelectSpecificUSBDrives.IsEnabled = $true
             })
-    
         $script:chkBuildUSBDriveEnable.Add_Unchecked({
                 $script:usbSection.Visibility = 'Collapsed'
                 $script:chkSelectSpecificUSBDrives.IsEnabled = $false
@@ -1063,170 +1860,179 @@ $window.Add_Loaded({
                 $script:lstUSBDrives.Items.Clear()
                 $script:chkSelectAllUSBDrives.IsChecked = $false
             })
-
-        # Add handler to show/hide USB drive selection panel based on Select Specific USB Drives checkbox
-        $script:chkSelectSpecificUSBDrives.Add_Checked({
-                $script:usbSelectionPanel.Visibility = 'Visible'
-            })
-    
+        $script:chkSelectSpecificUSBDrives.Add_Checked({ $script:usbSelectionPanel.Visibility = 'Visible' })
         $script:chkSelectSpecificUSBDrives.Add_Unchecked({
                 $script:usbSelectionPanel.Visibility = 'Collapsed'
                 $script:lstUSBDrives.Items.Clear()
                 $script:chkSelectAllUSBDrives.IsChecked = $false
             })
-
-        # Set initial state of Select Specific USB Drives checkbox
         $script:chkSelectSpecificUSBDrives.IsEnabled = $script:chkBuildUSBDriveEnable.IsChecked
-
-        # Add handler for Allow External Hard Disk Media checkbox
-        $script:chkAllowExternalHardDiskMedia = $window.FindName('chkAllowExternalHardDiskMedia')
-        $script:chkPromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia')
-    
-        $script:chkAllowExternalHardDiskMedia.Add_Checked({
-                $script:chkPromptExternalHardDiskMedia.IsEnabled = $true
-            })
-    
+        $script:chkAllowExternalHardDiskMedia.Add_Checked({ $script:chkPromptExternalHardDiskMedia.IsEnabled = $true })
         $script:chkAllowExternalHardDiskMedia.Add_Unchecked({
                 $script:chkPromptExternalHardDiskMedia.IsEnabled = $false
                 $script:chkPromptExternalHardDiskMedia.IsChecked = $false
             })
+        # Set initial state based on defaults
+        $script:chkPromptExternalHardDiskMedia.IsEnabled = $script:chkAllowExternalHardDiskMedia.IsChecked
 
-        # Add Winget panel visibility handler
-        $script:chkInstallApps = $window.FindName('chkInstallApps')
-        $script:chkInstallWingetApps = $window.FindName('chkInstallWingetApps')
-        $script:wingetPanel = $window.FindName('wingetPanel')
-        $script:btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
-        $script:txtWingetVersion = $window.FindName('txtWingetVersion')
-        $script:txtWingetModuleVersion = $window.FindName('txtWingetModuleVersion')
-
-        # Hide Winget Apps checkbox initially if Install Apps is unchecked
+        # APPLICATIONS tab UI logic (Keep existing logic)
         $script:chkInstallWingetApps.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:applicationPathPanel.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:appListJsonPathPanel.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:chkBringYourOwnApps.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:byoApplicationPanel.Visibility = if ($script:chkBringYourOwnApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:wingetPanel.Visibility = if ($script:chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $script:wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
     
-        # Show/Hide Winget Apps checkbox based on Install Apps state
-        $script:chkInstallApps.Add_Checked({ 
-                $script:chkInstallWingetApps.Visibility = 'Visible' 
+        $script:chkInstallApps.Add_Checked({
+                $script:chkInstallWingetApps.Visibility = 'Visible'
+                $script:applicationPathPanel.Visibility = 'Visible'
+                $script:appListJsonPathPanel.Visibility = 'Visible'
+                $script:chkBringYourOwnApps.Visibility = 'Visible'
             })
-        $script:chkInstallApps.Add_Unchecked({ 
-                $script:chkInstallWingetApps.IsChecked = $false
+        $script:chkInstallApps.Add_Unchecked({
+                $script:chkInstallWingetApps.IsChecked = $false # Uncheck children when parent is unchecked
+                $script:chkBringYourOwnApps.IsChecked = $false
                 $script:chkInstallWingetApps.Visibility = 'Collapsed'
-                $script:wingetPanel.Visibility = 'Collapsed'
-            })
-
-        # Bring Your Own Applications checkbox should only show if Install Applications is checked
-        $script:chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
-        $script:chkBringYourOwnApps.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:chkInstallApps.Add_Checked({
-            $script:chkBringYourOwnApps.Visibility = 'Visible'
-        })
-        $script:chkInstallApps.Add_Unchecked({
-            $script:chkBringYourOwnApps.IsChecked = $false
-            $script:chkBringYourOwnApps.Visibility = 'Collapsed'
-        })
-
-        # Bring Your Own Applications checkbox should only show if Install Applications is checked
-        $script:chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
-        $script:byoApplicationPanel = $window.FindName('byoApplicationPanel')
-        $script:chkBringYourOwnApps.Visibility = if ($script:chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        
-        # Show/Hide Bring Your Own Applications based on Install Apps state
-        $script:chkInstallApps.Add_Checked({
-            $script:chkBringYourOwnApps.Visibility = 'Visible'
-        })
-        $script:chkInstallApps.Add_Unchecked({
-            $script:chkBringYourOwnApps.IsChecked = $false
-            $script:chkBringYourOwnApps.Visibility = 'Collapsed'
-            $script:byoApplicationPanel.Visibility = 'Collapsed'
-        })
-
-        # Show/Hide Application Information section based on Bring Your Own Applications state
-        $script:chkBringYourOwnApps.Add_Checked({
-            $script:byoApplicationPanel.Visibility = 'Visible'
-        })
-        $script:chkBringYourOwnApps.Add_Unchecked({
-            $script:byoApplicationPanel.Visibility = 'Collapsed'
-            $window.FindName('txtAppName').Text = ''
-            $window.FindName('txtAppCommandLine').Text = ''
-            $window.FindName('txtAppSource').Text = ''
-        })
-
-        # Show/Hide Winget panel based on checkbox state
-        $script:chkInstallWingetApps.Add_Checked({ 
-                $script:wingetPanel.Visibility = 'Visible'
-                # Don't show search panel here - it should only show after validation
-            })
-
-        # Show/Hide Winget panel based on checkbox state
-        $script:chkInstallWingetApps.Add_Checked({ 
-                $script:wingetPanel.Visibility = 'Visible'
-                # Don't show search panel here - it should only show after validation
-            })
-        $script:chkInstallWingetApps.Add_Unchecked({ 
+                $script:applicationPathPanel.Visibility = 'Collapsed'
+                $script:appListJsonPathPanel.Visibility = 'Collapsed'
+                $script:chkBringYourOwnApps.Visibility = 'Collapsed'
                 $script:wingetPanel.Visibility = 'Collapsed'
                 $script:wingetSearchPanel.Visibility = 'Collapsed'
+                $script:byoApplicationPanel.Visibility = 'Collapsed'
             })
-
-        # Handle Winget component check/installation
+        $script:btnBrowseApplicationPath.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select Application Path Folder"
+                if ($selectedPath) { $window.FindName('txtApplicationPath').Text = $selectedPath }
+            })
+        $script:btnBrowseAppListJsonPath.Add_Click({
+                $ofd = New-Object System.Windows.Forms.OpenFileDialog
+                $ofd.Filter = "JSON files (*.json)|*.json"
+                $ofd.Title = "Select AppList.json File"
+                $ofd.CheckFileExists = $false
+                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $window.FindName('txtAppListJsonPath').Text = $ofd.FileName }
+            })
+        $script:chkBringYourOwnApps.Add_Checked({ $script:byoApplicationPanel.Visibility = 'Visible' })
+        $script:chkBringYourOwnApps.Add_Unchecked({
+                $script:byoApplicationPanel.Visibility = 'Collapsed'
+                # Clear fields when hiding
+                $window.FindName('txtAppName').Text = ''
+                $window.FindName('txtAppCommandLine').Text = ''
+                $window.FindName('txtAppArguments').Text = ''
+                $window.FindName('txtAppSource').Text = ''
+            })
+        $script:chkInstallWingetApps.Add_Checked({ $script:wingetPanel.Visibility = 'Visible' })
+        $script:chkInstallWingetApps.Add_Unchecked({
+                $script:wingetPanel.Visibility = 'Collapsed'
+                $script:wingetSearchPanel.Visibility = 'Collapsed' # Hide search when unchecked
+            })
         $script:btnCheckWingetModule.Add_Click({
-                $this.IsEnabled = $false
+                param($buttonSender, $clickEventArgs)
+                $buttonSender.IsEnabled = $false
                 $window.Cursor = [System.Windows.Input.Cursors]::Wait
-        
-                # Show initial checking status
+                # Initial UI update before calling the core function
                 Update-WingetVersionFields -wingetText "Checking..." -moduleText "Checking..."
-        
-                # Run checks in background to prevent UI freezing
-                $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] {
-                        try {
-                            # Check Winget CLI first
-                            $cliStatus = Test-WingetCLI
-                
-                            # Install/Update PowerShell module if needed
-                            $module = Install-WingetComponents -currentWingetVersion $cliStatus.Status
-                
-                            # Update UI with final status
-                            Update-WingetVersionFields -wingetText $cliStatus.Status -moduleText $module.Version
-                
-                            # Show search panel only if versions are valid and checkbox is still checked
-                            if ($cliStatus.Status -match '^\d+\.\d+\.\d+$' -and 
-                                $module.Version -match '^\d+\.\d+\.\d+$' -and 
-                                $script:chkInstallWingetApps.IsChecked) {
-                                $script:wingetSearchPanel.Visibility = 'Visible'
-                            }
-                        }
-                        catch {
-                            Update-WingetVersionFields -wingetText "Error" -moduleText "Error"
-                            [System.Windows.MessageBox]::Show(
-                                "Error checking winget components: $_",
-                                "Error",
-                                "OK",
-                                "Error"
-                            )
-                        }
-                        finally {
-                            $this.IsEnabled = $true
-                            $window.Cursor = $null
-                        }
-                    })
+    
+                $statusResult = $null
+                try {
+                    # Call the Core function to perform checks and potential install/update
+                    # Pass the UI update function as a callback
+                    $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback { 
+                        param($wingetText, $moduleText) 
+                        Update-WingetVersionFields -wingetText $wingetText -moduleText $moduleText 
+                    }
+    
+                    # Display appropriate message based on the result
+                    if ($statusResult.Success -and $statusResult.UpdateAttempted) {
+                        # Update attempted and successful
+                        [System.Windows.MessageBox]::Show("Winget components installed/updated successfully.", "Winget Installation Complete", "OK", "Information")
+                    }
+                    elseif (-not $statusResult.Success) {
+                        # Error occurred
+                        $errorMessage = if (-not [string]::IsNullOrWhiteSpace($statusResult.Message)) { $statusResult.Message } else { "An unknown error occurred during Winget check/install." }
+                        [System.Windows.MessageBox]::Show($errorMessage, "Winget Error", "OK", "Error")
+                    }
+                    # If Winget components were already up-to-date ($statusResult.Success -eq $true -and $statusResult.UpdateAttempted -eq $false), no message box is shown.
+    
+                    # Show search panel only if the final status is successful and checkbox is still checked
+                    if ($statusResult.Success -and $script:chkInstallWingetApps.IsChecked) {
+                        $script:wingetSearchPanel.Visibility = 'Visible'
+                    }
+                    else {
+                        $script:wingetSearchPanel.Visibility = 'Collapsed' # Hide if not successful or unchecked
+                    }
+                }
+                catch {
+                    # Catch errors from the Confirm-WingetInstallationUI call itself (less likely now)
+                    Update-WingetVersionFields -wingetText "Error" -moduleText "Error"
+                    [System.Windows.MessageBox]::Show("Unexpected error checking/installing Winget components: $($_.Exception.Message)", "Error", "OK", "Error")
+                    $script:wingetSearchPanel.Visibility = 'Collapsed' # Ensure search is hidden on error
+                }
+                finally {
+                    $buttonSender.IsEnabled = $true
+                    $window.Cursor = $null
+                }
             })
 
-        # Create Winget Search section (initially hidden)
-        $script:wingetSearchPanel = $window.FindName('wingetSearchPanel')
-        $script:txtWingetSearch = $window.FindName('txtWingetSearch')
-        $script:btnWingetSearch = $window.FindName('btnWingetSearch')
-        $script:lstWingetResults = $window.FindName('lstWingetResults')
-        $script:btnSaveWingetList = $window.FindName('btnSaveWingetList')
-        $script:btnImportWingetList = $window.FindName('btnImportWingetList')
-        $script:btnClearWingetList = $window.FindName('btnClearWingetList')
-    
-        # Initialize ListView with GridView columns
-        $gridView = New-Object System.Windows.Controls.GridView
-        Add-SortableColumn -gridView $gridView -header "Selected" -binding "IsSelected" -width 60 -isCheckbox $true
-        Add-SortableColumn -gridView $gridView -header "Name" -binding "Name" -width 200
-        Add-SortableColumn -gridView $gridView -header "Id" -binding "Id" -width 200
-        Add-SortableColumn -gridView $gridView -header "Version" -binding "Version" -width 100
-        Add-SortableColumn -gridView $gridView -header "Source" -binding "Source" -width 100
-        $script:lstWingetResults.View = $gridView
+        # Winget Search ListView setup
+        $wingetGridView = New-Object System.Windows.Controls.GridView # Use a different variable name to avoid conflict
 
-        # Add column header click handler for sorting
+        # Create the "Select All" CheckBox for the header
+        $script:chkSelectAllWingetResults = New-Object System.Windows.Controls.CheckBox
+        $script:chkSelectAllWingetResults.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
+        $script:chkSelectAllWingetResults.Add_Checked({
+                param($sender, $e)
+                if ($null -ne $script:lstWingetResults.ItemsSource) {
+                    foreach ($item in $script:lstWingetResults.ItemsSource) { $item.IsSelected = $true }
+                    $script:lstWingetResults.Items.Refresh()
+                }
+            })
+        $script:chkSelectAllWingetResults.Add_Unchecked({
+                param($sender, $e)
+                if ($null -ne $script:lstWingetResults.ItemsSource) {
+                    if ($sender.IsChecked -eq $false) {
+                        # User unselected
+                        foreach ($item in $script:lstWingetResults.ItemsSource) { $item.IsSelected = $false }
+                        $script:lstWingetResults.Items.Refresh()
+                    }
+                }
+            })
+
+        # Manually create the "Selected" column
+        $selectedColumnWinget = New-Object System.Windows.Controls.GridViewColumn
+        $selectedColumnWinget.Header = $script:chkSelectAllWingetResults
+        $selectedColumnWinget.Width = 60 
+        # $selectedColumnWinget.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Center # REMOVED: This property doesn't exist on GridViewColumn
+
+        $cellTemplateWinget = New-Object System.Windows.DataTemplate
+        
+        # Use a Border to force the CheckBox to center in the cell and stretch with resizing
+        $borderFactoryWinget = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+        $borderFactoryWinget.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
+        $borderFactoryWinget.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
+        
+        $checkBoxFactoryWinget = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
+        $checkBoxFactoryWinget.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
+        $checkBoxFactoryWinget.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+        $checkBoxFactoryWinget.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+        
+        $checkBoxFactoryWinget.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
+                param($eventSourceLocal, $eventArgsLocal)
+                Update-SelectAllHeaderCheckBoxState -ListView $script:lstWingetResults -HeaderCheckBox $script:chkSelectAllWingetResults
+            })
+        
+        $borderFactoryWinget.AppendChild($checkBoxFactoryWinget)
+        $cellTemplateWinget.VisualTree = $borderFactoryWinget
+        $selectedColumnWinget.CellTemplate = $cellTemplateWinget
+        $wingetGridView.Columns.Add($selectedColumnWinget)
+
+        # Add other sortable columns with left-aligned headers
+        Add-SortableColumn -gridView $wingetGridView -header "Name" -binding "Name" -width 200 -headerHorizontalAlignment Left
+        Add-SortableColumn -gridView $wingetGridView -header "Id" -binding "Id" -width 200 -headerHorizontalAlignment Left
+        Add-SortableColumn -gridView $wingetGridView -header "Version" -binding "Version" -width 100 -headerHorizontalAlignment Left
+        Add-SortableColumn -gridView $wingetGridView -header "Source" -binding "Source" -width 100 -headerHorizontalAlignment Left
+        Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
+        $script:lstWingetResults.View = $wingetGridView # Assign the new GridView instance
         $script:lstWingetResults.AddHandler(
             [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
             [System.Windows.RoutedEventHandler] {
@@ -1237,198 +2043,244 @@ $window.Add_Loaded({
                 }
             }
         )
-
-        # Hide search panel initially
-        $script:wingetSearchPanel.Visibility = 'Collapsed'
-    
-        # Add search functionality
-        $script:btnWingetSearch.Add_Click({
-                Search-WingetApps
-            })
-    
+        $script:btnWingetSearch.Add_Click({ Search-WingetApps })
         $script:txtWingetSearch.Add_KeyDown({
                 param($eventSrc, $keyEvent)
-                if ($keyEvent.Key -eq 'Return') {
-                    Search-WingetApps
-                    $keyEvent.Handled = $true
-                }
+                if ($keyEvent.Key -eq 'Return') { Search-WingetApps; $keyEvent.Handled = $true }
             })
-    
-        # Show search panel after successful Winget validation
-        $script:btnCheckWingetModule.Add_Click({
-                try {
-                    # Check Winget CLI first
-                    $cliStatus = Test-WingetCLI
-            
-                    # Install/Update PowerShell module if needed
-                    $module = Install-WingetComponents -currentWingetVersion $cliStatus.Status
-            
-                    # Update UI with final status
-                    Update-WingetVersionFields -wingetText $cliStatus.Status -moduleText $module.Version
-            
-                    # Show search panel if versions are valid
-                    if ($cliStatus.Status -match '^\d+\.\d+\.\d+$' -and $module.Version -match '^\d+\.\d+\.\d+$') {
-                        $script:wingetSearchPanel.Visibility = 'Visible'
-                    }
-                }
-                catch {
-                    Update-WingetVersionFields -wingetText "Error" -moduleText "Error"
-                    [System.Windows.MessageBox]::Show(
-                        "Error checking winget components: $_",
-                        "Error",
-                        "OK",
-                        "Error"
-                    )
-                }
-            })
-
-        # Add handlers for Winget app list buttons
         $script:btnSaveWingetList.Add_Click({ Save-WingetList })
         $script:btnImportWingetList.Add_Click({ Import-WingetList })
-        $script:btnClearWingetList.Add_Click({ 
-                $script:lstWingetResults.Items.Clear()
-                $script:txtWingetSearch.Text = ""  # Clear the Winget search textbox
-                if ($script:txtStatus) {
-                    $script:txtStatus.Text = "Cleared all applications from the list"
-                }
+        $script:btnClearWingetList.Add_Click({
+                $script:lstWingetResults.ItemsSource = @() # Set ItemsSource to an empty array
+                $script:txtWingetSearch.Text = ""
+                if ($script:txtStatus) { $script:txtStatus.Text = "Cleared all applications from the list" }
             })
+        # --------------------------------------------------------------------------
+        # SECTION: Background Task Management (Using ForEach-Object -Parallel)
+        # --------------------------------------------------------------------------
+        # Modules (UI_Helpers, BackgroundTasks) and Scripts (WingetFunctions) are imported/dot-sourced
+        # directly into the main script scope. ForEach-Object -Parallel automatically handles
+        # module/variable availability in the parallel threads.
+        # UI updates are handled by calling helper functions directly on the main UI thread
+        # after the parallel processing completes.
+        # --------------------------------------------------------------------------
 
-        # Add Browse button handler for App Source
-        $script:btnBrowseAppSource = $window.FindName('btnBrowseAppSource')
-        $script:btnBrowseAppSource.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
-                if ($selectedPath) {
-                    $window.FindName('txtAppSource').Text = $selectedPath
-                }
-            })
+        $script:btnDownloadSelected.Add_Click({
+                param($buttonSender, $clickEventArgs)
 
-        # Add Browse button handler for FFU Development Path
-        $script:btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
-        $script:btnBrowseFFUDevPath.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select FFU Development Path"
-                if ($selectedPath) {
-                    $window.FindName('txtFFUDevPath').Text = $selectedPath
-                }
-            })
-
-        # Add Browse button handler for FFU Capture Location
-        $script:btnBrowseFFUCaptureLocation = $window.FindName('btnBrowseFFUCaptureLocation')
-        $script:btnBrowseFFUCaptureLocation.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select FFU Capture Location"
-                if ($selectedPath) {
-                    $window.FindName('txtFFUCaptureLocation').Text = $selectedPath
-                }
-            })
-
-        # Add Browse button handler for Office Path
-        $script:btnBrowseOfficePath = $window.FindName('btnBrowseOfficePath')
-        $script:btnBrowseOfficePath.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select Office Path"
-                if ($selectedPath) {
-                    $window.FindName('txtOfficePath').Text = $selectedPath
-                }
-            })
-
-        # Add Browse button handler for Drivers Folder
-        $script:btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
-        $script:btnBrowseDriversFolder.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select Drivers Folder"
-                if ($selectedPath) {
-                    $window.FindName('txtDriversFolder').Text = $selectedPath
-                }
-            })
-
-        # Add Browse button handler for PE Drivers Folder
-        $script:btnBrowsePEDriversFolder = $window.FindName('btnBrowsePEDriversFolder')
-        $script:btnBrowsePEDriversFolder.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
-                if ($selectedPath) {
-                    $window.FindName('txtPEDriversFolder').Text = $selectedPath
-                }
-            })
-
-        # Add button handler for Add Application
-        $script:btnAddApplication = $window.FindName('btnAddApplication')
-        $script:btnAddApplication.Add_Click({
-                $name = $window.FindName('txtAppName').Text
-                $commandLine = $window.FindName('txtAppCommandLine').Text
-                $source = $window.FindName('txtAppSource').Text
-
-                if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($source)) {
-                    [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Source)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+                $selectedApps = $script:lstWingetResults.Items | Where-Object { $_.IsSelected }
+                if (-not $selectedApps) {
+                    [System.Windows.MessageBox]::Show("No applications selected to download.", "Download Winget Apps", "OK", "Information")
                     return
                 }
 
+                $buttonSender.IsEnabled = $false
+                $script:progressBar = $window.FindName('progressBar') # Ensure progress bar is assigned
+                $script:progressBar.Visibility = 'Visible'
+                $script:progressBar.Value = 0
+                $script:txtStatus.Text = "Starting Winget app downloads..."
+
+                # Define necessary task-specific variables locally
+                $localAppsPath = $window.FindName('txtApplicationPath').Text
+                $localAppListJsonPath = $window.FindName('txtAppListJsonPath').Text
+                $localWindowsArch = $window.FindName('cmbWindowsArch').SelectedItem
+                $localOrchestrationPath = Join-Path -Path $window.FindName('txtApplicationPath').Text -ChildPath "Orchestration"
+
+                # Create hashtable for task-specific arguments to pass to Invoke-ParallelProcessing
+                $taskArguments = @{
+                    AppsPath          = $localAppsPath
+                    AppListJsonPath   = $localAppListJsonPath
+                    WindowsArch       = $localWindowsArch
+                    OrchestrationPath = $localOrchestrationPath
+                }
+
+                # Select only necessary properties before passing to Invoke-ParallelProcessing
+                $itemsToProcess = $selectedApps | Select-Object Name, Id, Source, Version # Include Version if needed
+
+                # Invoke the centralized parallel processing function
+                # Pass task type and task-specific arguments
+                Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
+                    -ListViewControl $script:lstWingetResults `
+                    -IdentifierProperty 'Id' `
+                    -StatusProperty 'DownloadStatus' `
+                    -TaskType 'WingetDownload' `
+                    -TaskArguments $taskArguments `
+                    -CompletedStatusText "Completed" `
+                    -ErrorStatusPrefix "Error: " `
+                    -WindowObject $window `
+                    -MainThreadLogPath $global:LogFile
+
+                # Final status update (handled by Invoke-ParallelProcessing)
+                $script:progressBar.Visibility = 'Collapsed'
+                $buttonSender.IsEnabled = $true
+            })
+
+        # BYO Apps UI logic (Keep existing logic)
+        $script:btnBrowseAppSource.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
+                if ($selectedPath) { $window.FindName('txtAppSource').Text = $selectedPath }
+            })
+        $script:btnAddApplication.Add_Click({
+                $name = $window.FindName('txtAppName').Text
+                $commandLine = $window.FindName('txtAppCommandLine').Text
+                $arguments = $window.FindName('txtAppArguments').Text
+                $source = $window.FindName('txtAppSource').Text
+
+                if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($arguments)) {
+                    [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Arguments)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+                    return
+                }
                 $listView = $window.FindName('lstApplications')
-                
-                # Calculate the next priority number
                 $priority = 1
                 if ($listView.Items.Count -gt 0) {
                     $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
                 }
-
-                # Create new application object
-                $application = [PSCustomObject]@{
-                    Priority = $priority
-                    Name = $name
-                    CommandLine = $commandLine
-                    Source = $source
-                }
-
-                # Add to ListView
+                $application = [PSCustomObject]@{ Priority = $priority; Name = $name; CommandLine = $commandLine; Arguments = $arguments; Source = $source; CopyStatus = "" }
                 $listView.Items.Add($application)
-
-                # Clear the input fields
                 $window.FindName('txtAppName').Text = ""
                 $window.FindName('txtAppCommandLine').Text = ""
+                $window.FindName('txtAppArguments').Text = ""
                 $window.FindName('txtAppSource').Text = ""
+                Update-CopyButtonState
             })
-
-        # Add visibility handling for BYO Applications panel
-        $script:chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
-        $script:byoApplicationPanel = $window.FindName('byoApplicationPanel')
-        $script:chkBringYourOwnApps.Add_Checked({
-                $script:byoApplicationPanel.Visibility = 'Visible'
-            })
-        $script:chkBringYourOwnApps.Add_Unchecked({
-                $script:byoApplicationPanel.Visibility = 'Collapsed'
-            })
-
-        # Add event handlers for Save/Load/Clear buttons
-        $script:btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
-        $script:btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
-        $script:btnClearBYOApplications = $window.FindName('btnClearBYOApplications')
-
         $script:btnSaveBYOApplications.Add_Click({
-            $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
-            $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-            $saveDialog.DefaultExt = ".json"
-            $saveDialog.Title = "Save Application List"
-            if ($saveDialog.ShowDialog()) {
-                Save-BYOApplicationList -Path $saveDialog.FileName
-            }
-        })
-
+                $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
+                $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+                $saveDialog.DefaultExt = ".json"
+                $saveDialog.Title = "Save Application List"
+                $initialDir = $window.FindName('txtApplicationPath').Text
+                if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
+                $saveDialog.InitialDirectory = $initialDir
+                $saveDialog.FileName = "UserAppList.json"
+                if ($saveDialog.ShowDialog()) { Save-BYOApplicationList -Path $saveDialog.FileName }
+            })
         $script:btnLoadBYOApplications.Add_Click({
-            $openDialog = New-Object Microsoft.Win32.OpenFileDialog
-            $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-            $openDialog.Title = "Import Application List"
-            if ($openDialog.ShowDialog()) {
-                Import-BYOApplicationList -Path $openDialog.FileName
-            }
-        })
-
+                $openDialog = New-Object Microsoft.Win32.OpenFileDialog
+                $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+                $openDialog.Title = "Import Application List"
+                $initialDir = $window.FindName('txtApplicationPath').Text
+                if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
+                $openDialog.InitialDirectory = $initialDir
+                if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName; Update-CopyButtonState }
+            })
         $script:btnClearBYOApplications.Add_Click({
-            $result = [System.Windows.MessageBox]::Show(
-                "Are you sure you want to clear all applications?",
-                "Clear Applications",
-                [System.Windows.MessageBoxButton]::YesNo,
-                [System.Windows.MessageBoxImage]::Question
-            )
-            if ($result -eq [System.Windows.MessageBoxResult]::Yes) {
-                $window.FindName('lstApplications').Items.Clear()
+                $result = [System.Windows.MessageBox]::Show("Are you sure you want to clear all applications?", "Clear Applications", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $window.FindName('lstApplications').Items.Clear(); Update-CopyButtonState }
+            })
+        $script:btnCopyBYOApps.Add_Click({
+                param($buttonSender, $clickEventArgs)
+
+                $appsToCopy = $script:lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
+                if (-not $appsToCopy) {
+                    [System.Windows.MessageBox]::Show("No applications with a source path specified.", "Copy BYO Apps", "OK", "Information")
+                    return
+                }
+
+                $buttonSender.IsEnabled = $false
+                $script:progressBar = $window.FindName('progressBar') # Ensure progress bar is assigned
+                $script:progressBar.Visibility = 'Visible'
+                $script:progressBar.Value = 0
+                $script:txtStatus.Text = "Starting BYO app copy..."
+
+                # Define necessary task-specific variables locally
+                $localAppsPath = $window.FindName('txtApplicationPath').Text
+
+                # Create hashtable for task-specific arguments
+                $taskArguments = @{
+                    AppsPath = $localAppsPath
+                }
+
+                # Select only necessary properties before passing
+                $itemsToProcess = $appsToCopy | Select-Object Priority, Name, CommandLine, Arguments, Source
+
+                # Invoke the centralized parallel processing function
+                # Pass task type and task-specific arguments
+                Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
+                    -ListViewControl $script:lstApplications `
+                    -IdentifierProperty 'Name' `
+                    -StatusProperty 'CopyStatus' `
+                    -TaskType 'CopyBYO' `
+                    -TaskArguments $taskArguments `
+                    -CompletedStatusText "Copied" `
+                    -ErrorStatusPrefix "Error: " `
+                    -WindowObject $window `
+                    -MainThreadLogPath $global:LogFile
+
+                # Final status update (handled by Invoke-ParallelProcessing)
+                $script:progressBar.Visibility = 'Collapsed'
+                $buttonSender.IsEnabled = $true
+            })
+        $script:btnMoveTop.Add_Click({ Move-ListViewItemTop -ListView $script:lstApplications })
+        $script:btnMoveUp.Add_Click({ Move-ListViewItemUp -ListView $script:lstApplications })
+        $script:btnMoveDown.Add_Click({ Move-ListViewItemDown -ListView $script:lstApplications })
+        $script:btnMoveBottom.Add_Click({ Move-ListViewItemBottom -ListView $script:lstApplications })
+
+        # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column is handled)
+        $byoGridView = $script:lstApplications.View
+        if ($byoGridView -is [System.Windows.Controls.GridView]) {
+            $copyStatusColumnExists = $false
+            foreach ($col in $byoGridView.Columns) { if ($col.Header -eq "Copy Status") { $copyStatusColumnExists = $true; break } }
+            if (-not $copyStatusColumnExists) {
+                $actionColumnIndex = -1
+                for ($i = 0; $i -lt $byoGridView.Columns.Count; $i++) { if ($byoGridView.Columns[$i].Header -eq "Action") { $actionColumnIndex = $i; break } }
+                $copyStatusColumn = New-Object System.Windows.Controls.GridViewColumn
+                $copyStatusColumn.Header = "Copy Status"; $copyStatusColumn.DisplayMemberBinding = New-Object System.Windows.Data.Binding("CopyStatus"); $copyStatusColumn.Width = 150
+                if ($actionColumnIndex -ge 0) { $byoGridView.Columns.Insert($actionColumnIndex, $copyStatusColumn) } else { $byoGridView.Columns.Add($copyStatusColumn) }
             }
-        })
+        }
+        Update-CopyButtonState # Initial check
+
+        # General Browse Button Handlers (Keep existing logic)
+        $script:btnBrowseFFUDevPath.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select FFU Development Path"
+                if ($selectedPath) { $window.FindName('txtFFUDevPath').Text = $selectedPath }
+            })
+        $script:btnBrowseFFUCaptureLocation.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select FFU Capture Location"
+                if ($selectedPath) { $window.FindName('txtFFUCaptureLocation').Text = $selectedPath }
+            })
+        $script:btnBrowseOfficePath.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select Office Path"
+                if ($selectedPath) { $window.FindName('txtOfficePath').Text = $selectedPath }
+            })
+        $script:btnBrowseDriversFolder.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select Drivers Folder"
+                if ($selectedPath) { $window.FindName('txtDriversFolder').Text = $selectedPath }
+            })
+        $script:btnBrowsePEDriversFolder.Add_Click({
+                $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
+                if ($selectedPath) { $window.FindName('txtPEDriversFolder').Text = $selectedPath }
+            })
+
+        # Driver Checkbox Conditional Logic
+        $script:chkInstallDrivers.Add_Checked({
+                $script:chkCopyDrivers.IsEnabled = $false
+                $script:chkCompressDriversToWIM.IsEnabled = $false
+            })
+        $script:chkInstallDrivers.Add_Unchecked({
+                # Only re-enable if the other checkboxes are not checked
+                if (-not $script:chkCopyDrivers.IsChecked) { $script:chkCopyDrivers.IsEnabled = $true }
+                if (-not $script:chkCompressDriversToWIM.IsChecked) { $script:chkCompressDriversToWIM.IsEnabled = $true }
+            })
+        $script:chkCopyDrivers.Add_Checked({
+                $script:chkInstallDrivers.IsEnabled = $false
+            })
+        $script:chkCopyDrivers.Add_Unchecked({
+                # Only re-enable if InstallDrivers is not checked
+                if (-not $script:chkInstallDrivers.IsChecked) { $script:chkInstallDrivers.IsEnabled = $true }
+            })
+        $script:chkCompressDriversToWIM.Add_Checked({
+                $script:chkInstallDrivers.IsEnabled = $false
+            })
+        $script:chkCompressDriversToWIM.Add_Unchecked({
+                # Only re-enable if InstallDrivers is not checked
+                if (-not $script:chkInstallDrivers.IsChecked) { $script:chkInstallDrivers.IsEnabled = $true }
+            })
+        # Set initial state based on defaults (assuming defaults are false)
+        $script:chkInstallDrivers.IsEnabled = $true
+        $script:chkCopyDrivers.IsEnabled = $true
+        $script:chkCompressDriversToWIM.IsEnabled = $true
+
     })
 
 # Function to search for Winget apps
@@ -1436,35 +2288,50 @@ function Search-WingetApps {
     try {
         $searchQuery = $script:txtWingetSearch.Text
         if ([string]::IsNullOrWhiteSpace($searchQuery)) { return }
+
+        # Get current items from the ListView
+        $currentItemsInListView = @()
+        if ($null -ne $script:lstWingetResults.ItemsSource) {
+            $currentItemsInListView = @($script:lstWingetResults.ItemsSource)
+        } 
+        elseif ($script:lstWingetResults.HasItems) {
+            $currentItemsInListView = @($script:lstWingetResults.Items)
+        }
         
-        # Store selected apps
-        $selectedApps = $script:lstWingetResults.Items | Where-Object { $_.IsSelected }
+        # Store selected apps from the current view
+        $selectedAppsFromView = @($currentItemsInListView | Where-Object { $_.IsSelected })
         
         # Search for new apps
-        $results = Find-WingetPackage -Query $searchQuery | ForEach-Object {
+        $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery | ForEach-Object {
             [PSCustomObject]@{
-                IsSelected = $false
-                Name       = $_.Name
-                Id         = $_.Id
-                Version    = $_.Version
-                Source     = $_.Source
+                IsSelected     = $false # New items are not selected by default
+                Name           = $_.Name
+                Id             = $_.Id
+                Version        = $_.Version
+                Source         = $_.Source
+                DownloadStatus = "" 
             }
         }
         
-        # Clear and repopulate list view
-        $script:lstWingetResults.Items.Clear()
-        
-        # Add back selected apps first
-        foreach ($app in $selectedApps) {
-            $script:lstWingetResults.Items.Add($app)
-            # Remove from new results if already selected
-            $results = $results | Where-Object { $_.Id -ne $app.Id }
+        $finalAppList = [System.Collections.Generic.List[object]]::new()
+        $addedAppIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+        # Add previously selected apps first
+        foreach ($app in $selectedAppsFromView) {
+            $finalAppList.Add($app)
+            $addedAppIds.Add($app.Id) | Out-Null
         }
         
-        # Add new search results
-        foreach ($result in $results) {
-            $script:lstWingetResults.Items.Add($result)
+        # Add new search results, avoiding duplicates of already added (selected) apps
+        foreach ($result in $searchedAppResults) {
+            if (-not $addedAppIds.Contains($result.Id)) {
+                $finalAppList.Add($result)
+                $addedAppIds.Add($result.Id) | Out-Null # Track added IDs to prevent duplicates from search results themselves
+            }
         }
+        
+        # Update the ListView's ItemsSource
+        $script:lstWingetResults.ItemsSource = $finalAppList.ToArray()
     }
     catch {
         [System.Windows.MessageBox]::Show("Error searching for apps: $_", "Error", "OK", "Error")
@@ -1515,21 +2382,24 @@ function Import-WingetList {
         $ofd.InitialDirectory = $AppsPath
         
         if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-            $importedApps = Get-Content $ofd.FileName -Raw | ConvertFrom-Json
+            $importedAppsData = Get-Content $ofd.FileName -Raw | ConvertFrom-Json
             
-            # Clear existing items
-            $script:lstWingetResults.Items.Clear()
+            $newAppListForItemsSource = [System.Collections.Generic.List[object]]::new()
             
-            # Add imported apps
-            foreach ($app in $importedApps.apps) {
-                $script:lstWingetResults.Items.Add([PSCustomObject]@{
-                        IsSelected = $true
-                        Name       = $app.name
-                        Id         = $app.id
-                        Version    = ""  # Will be populated when searching
-                        Source     = $app.source
-                    })
+            if ($null -ne $importedAppsData.apps) {
+                foreach ($appInfo in $importedAppsData.apps) {
+                    $newAppListForItemsSource.Add([PSCustomObject]@{
+                            IsSelected     = $true # Imported apps are marked as selected
+                            Name           = $appInfo.name
+                            Id             = $appInfo.id
+                            Version        = ""  # Will be populated when searching or if data exists
+                            Source         = $appInfo.source
+                            DownloadStatus = "" 
+                        })
+                }
             }
+            
+            $script:lstWingetResults.ItemsSource = $newAppListForItemsSource.ToArray()
             
             [System.Windows.MessageBox]::Show("App list imported successfully.", "Success", "OK", "Information")
         }
@@ -1547,17 +2417,13 @@ function Remove-Application {
     
     # Remove the item with the specified priority
     $itemToRemove = $listView.Items | Where-Object { $_.Priority -eq $priority } | Select-Object -First 1
-    $listView.Items.Remove($itemToRemove)
-    
-    # Reorder priorities for remaining items
-    $currentPriority = 1
-    foreach ($item in $listView.Items) {
-        $item.Priority = $currentPriority
-        $currentPriority++
+    if ($itemToRemove) {
+        $listView.Items.Remove($itemToRemove)
+        # Reorder priorities for remaining items
+        Update-ListViewPriorities -ListView $listView
+        # Update the Copy Apps button state
+        Update-CopyButtonState
     }
-    
-    # Refresh the ListView
-    $listView.Items.Refresh()
 }
 
 # Function to save BYO applications to JSON
@@ -1575,9 +2441,11 @@ function Save-BYOApplicationList {
     }
 
     try {
-        $applications = $listView.Items | Select-Object Priority, Name, CommandLine, Source
-        $applications | ConvertTo-Json | Set-Content -Path $Path -Force
-        [System.Windows.MessageBox]::Show("Applications saved successfully.", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        # Ensure items are sorted by current priority before saving
+        # Exclude CopyStatus when saving
+        $applications = $listView.Items | Sort-Object Priority | Select-Object Priority, Name, CommandLine, Arguments, Source 
+        $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Force -Encoding UTF8
+        [System.Windows.MessageBox]::Show("Applications saved successfully to `"$Path`".", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
     catch {
         [System.Windows.MessageBox]::Show("Failed to save applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
@@ -1593,7 +2461,7 @@ function Import-BYOApplicationList {
     )
 
     if (-not (Test-Path $Path)) {
-        [System.Windows.MessageBox]::Show("Application list file not found.", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        [System.Windows.MessageBox]::Show("Application list file not found at `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         return
     }
 
@@ -1602,23 +2470,27 @@ function Import-BYOApplicationList {
         $listView = $window.FindName('lstApplications')
         $listView.Items.Clear()
 
-        foreach ($app in $applications) {
-            $listView.Items.Add([PSCustomObject]@{
-                Priority = $app.Priority
-                Name = $app.Name
+        # Add items and sort by priority from the file
+        $sortedApps = $applications | Sort-Object Priority
+        foreach ($app in $sortedApps) {
+            # Ensure all properties exist, add CopyStatus
+            $appObject = [PSCustomObject]@{
+                Priority    = $app.Priority # Keep original priority for now
+                Name        = $app.Name
                 CommandLine = $app.CommandLine
-                Source = $app.Source
-            })
+                Arguments   = if ($app.PSObject.Properties['Arguments']) { $app.Arguments } else { "" } # Handle missing Arguments
+                Source      = $app.Source
+                CopyStatus  = "" # Initialize CopyStatus
+            }
+            $listView.Items.Add($appObject)
         }
 
-        # Reorder priorities to ensure they are sequential
-        $currentPriority = 1
-        foreach ($item in $listView.Items) {
-            $item.Priority = $currentPriority
-            $currentPriority++
-        }
+        # Reorder priorities sequentially after loading
+        Update-ListViewPriorities -ListView $listView
+        # Update the Copy Apps button state
+        Update-CopyButtonState
 
-        [System.Windows.MessageBox]::Show("Applications imported successfully.", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        [System.Windows.MessageBox]::Show("Applications imported successfully from `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
     catch {
         [System.Windows.MessageBox]::Show("Failed to import applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
@@ -1763,6 +2635,10 @@ $btnLoadConfig.Add_Click({
                 $window.FindName('chkInstallWingetApps').IsChecked = $configContent.InstallWingetApps
                 $window.FindName('chkBringYourOwnApps').IsChecked = $configContent.BringYourOwnApps
 
+                # Load Application Path and AppList.json Path
+                $window.FindName('txtApplicationPath').Text = $configContent.AppsPath
+                $window.FindName('txtAppListJsonPath').Text = $configContent.AppListPath
+
                 # Update USB Drive selection if present in config
                 if ($configContent.USBDriveList) {
                     # First click the Check USB Drives button to populate the list
@@ -1794,16 +2670,41 @@ $btnLoadConfig.Add_Click({
 
 # Add handler for Remove button clicks
 $window.Add_SourceInitialized({
-    $listView = $window.FindName('lstApplications')
-    $listView.AddHandler(
-        [System.Windows.Controls.Button]::ClickEvent,
-        [System.Windows.RoutedEventHandler]{
-            param($buttonSender, $eventArgs)
-            if ($eventArgs.OriginalSource -is [System.Windows.Controls.Button] -and $eventArgs.OriginalSource.Content -eq "Remove") {
-                Remove-Application -priority $eventArgs.OriginalSource.Tag
+        $listView = $window.FindName('lstApplications')
+        $listView.AddHandler(
+            [System.Windows.Controls.Button]::ClickEvent,
+            [System.Windows.RoutedEventHandler] {
+                param($buttonSender, $clickEventArgs)
+                if ($clickEventArgs.OriginalSource -is [System.Windows.Controls.Button] -and $clickEventArgs.OriginalSource.Content -eq "Remove") {
+                    Remove-Application -priority $clickEventArgs.OriginalSource.Tag
+                }
+            }
+        )
+    })
+
+# Register cleanup to reclaim memory and revert LongPathsEnabled setting when the UI window closes
+$window.Add_Closed({
+        # Revert LongPathsEnabled registry setting if it was changed by this script
+        if ($script:originalLongPathsValue -ne 1) {
+            # Only revert if we changed it from something other than 1
+            try {
+                $currentValue = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -ErrorAction SilentlyContinue
+                if ($currentValue -eq 1) {
+                    # Double-check it's still 1 before reverting
+                    $revertValue = if ($null -eq $script:originalLongPathsValue) { 0 } else { $script:originalLongPathsValue } # Revert to original or 0 if it didn't exist
+                    WriteLog "Reverting LongPathsEnabled registry key back to original value ($revertValue)."
+                    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value $revertValue -Force
+                    WriteLog "LongPathsEnabled reverted."
+                }
+            }
+            catch {
+                WriteLog "Error reverting LongPathsEnabled registry key: $($_.Exception.Message)."
             }
         }
-    )
-})
+
+        # Garbage collection
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
+    })
 
 [void]$window.ShowDialog()
