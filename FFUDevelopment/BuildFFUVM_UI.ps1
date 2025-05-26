@@ -473,6 +473,8 @@ function Get-UIConfig {
     $config = [ordered]@{
         AllowExternalHardDiskMedia  = $window.FindName('chkAllowExternalHardDiskMedia').IsChecked
         AllowVHDXCaching            = $window.FindName('chkAllowVHDXCaching').IsChecked
+        AppListPath                 = $window.FindName('txtAppListJsonPath').Text
+        AppsPath                    = $window.FindName('txtApplicationPath').Text
         BuildUSBDrive               = $window.FindName('chkBuildUSBDriveEnable').IsChecked
         CleanupAppsISO              = $window.FindName('chkCleanupAppsISO').IsChecked
         CleanupCaptureISO           = $window.FindName('chkCleanupCaptureISO').IsChecked
@@ -536,8 +538,6 @@ function Get-UIConfig {
         WindowsRelease              = [int]$window.FindName('cmbWindowsRelease').SelectedItem.Value
         WindowsSKU                  = $window.FindName('cmbWindowsSKU').SelectedItem
         WindowsVersion              = $window.FindName('cmbWindowsVersion').SelectedItem
-        AppsPath                    = $window.FindName('txtApplicationPath').Text
-        AppListPath                 = $window.FindName('txtAppListJsonPath').Text
     }
 
     # Add selected USB drives to the config
