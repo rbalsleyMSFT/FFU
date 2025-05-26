@@ -475,54 +475,63 @@ function Get-UIConfig {
         AllowVHDXCaching            = $window.FindName('chkAllowVHDXCaching').IsChecked
         AppListPath                 = $window.FindName('txtAppListJsonPath').Text
         AppsPath                    = $window.FindName('txtApplicationPath').Text
+        AppsScriptVariables         = $null # Parameter from Sample_default.json, no UI control
         BuildUSBDrive               = $window.FindName('chkBuildUSBDriveEnable').IsChecked
         CleanupAppsISO              = $window.FindName('chkCleanupAppsISO').IsChecked
         CleanupCaptureISO           = $window.FindName('chkCleanupCaptureISO').IsChecked
         CleanupDeployISO            = $window.FindName('chkCleanupDeployISO').IsChecked
         CleanupDrivers              = $window.FindName('chkCleanupDrivers').IsChecked
         CompactOS                   = $window.FindName('chkCompactOS').IsChecked
+        CompressDownloadedDriversToWim = $window.FindName('chkCompressDriversToWIM').IsChecked # Renamed from CompressDriversToWIM
         CopyAutopilot               = $window.FindName('chkCopyAutopilot').IsChecked
         CopyDrivers                 = $window.FindName('chkCopyDrivers').IsChecked
-        CompressDriversToWIM        = $window.FindName('chkCompressDriversToWIM').IsChecked # New entry
-        CopyOfficeConfigXML         = $window.FindName('chkCopyOfficeConfigXML').IsChecked
+        CopyOfficeConfigXML         = $window.FindName('chkCopyOfficeConfigXML').IsChecked # UI Only parameter
         CopyPEDrivers               = $window.FindName('chkCopyPEDrivers').IsChecked
         CopyPPKG                    = $window.FindName('chkCopyPPKG').IsChecked
         CopyUnattend                = $window.FindName('chkCopyUnattend').IsChecked
         CreateCaptureMedia          = $window.FindName('chkCreateCaptureMedia').IsChecked
         CreateDeploymentMedia       = $window.FindName('chkCreateDeploymentMedia').IsChecked
         CustomFFUNameTemplate       = $window.FindName('txtCustomFFUNameTemplate').Text
-        DiskSize                    = [int64]$window.FindName('txtDiskSize').Text * 1GB
-        DownloadDrivers             = $window.FindName('chkDownloadDrivers').IsChecked
+        Disksize                    = [int64]$window.FindName('txtDiskSize').Text * 1GB # Renamed from DiskSize
+        DownloadDrivers             = $window.FindName('chkDownloadDrivers').IsChecked # UI Only parameter
         DriversFolder               = $window.FindName('txtDriversFolder').Text
+        DriversJsonPath             = "$($window.FindName('txtDriversFolder').Text)\Drivers.json" # Parameter from Sample_default.json, derived
         FFUCaptureLocation          = $window.FindName('txtFFUCaptureLocation').Text
         FFUDevelopmentPath          = $window.FindName('txtFFUDevPath').Text
         FFUPrefix                   = $window.FindName('txtVMNamePrefix').Text
         InstallApps                 = $window.FindName('chkInstallApps').IsChecked
         InstallDrivers              = $window.FindName('chkInstallDrivers').IsChecked
         InstallOffice               = $window.FindName('chkInstallOffice').IsChecked
-        InstallWingetApps           = $window.FindName('chkInstallWingetApps').IsChecked
+        InstallWingetApps           = $window.FindName('chkInstallWingetApps').IsChecked # UI Only parameter
         ISOPath                     = $window.FindName('txtISOPath').Text
         LogicalSectorSizeBytes      = [int]$window.FindName('cmbLogicalSectorSize').SelectedItem.Content
         Make                        = $window.FindName('cmbMake').SelectedItem
         MediaType                   = $window.FindName('cmbMediaType').SelectedItem
         Memory                      = [int64]$window.FindName('txtMemory').Text * 1GB
-        Model                       = $window.FindName('cmbModel').Text # Keep this for BuildFFUVM.ps1 compatibility if needed
-        OfficeConfigXMLFile         = $window.FindName('txtOfficeConfigXMLFilePath').Text
-        OfficePath                  = $window.FindName('txtOfficePath').Text
+        Model                       = $window.FindName('cmbModel').Text 
+        OfficeConfigXMLFile         = $window.FindName('txtOfficeConfigXMLFilePath').Text # UI Only parameter
+        OfficePath                  = $window.FindName('txtOfficePath').Text # UI Only parameter
         Optimize                    = $window.FindName('chkOptimize').IsChecked
+        OptionalFeatures            = $window.FindName('txtOptionalFeatures').Text # Parameter from Sample_default.json
+        OrchestrationPath           = "$($window.FindName('txtApplicationPath').Text)\Orchestration" # Parameter from Sample_default.json, derived
         PEDriversFolder             = $window.FindName('txtPEDriversFolder').Text
+        Processors                  = [int]$window.FindName('txtProcessors').Text
         ProductKey                  = $window.FindName('txtProductKey').Text
         PromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia').IsChecked
-        Processors                  = [int]$window.FindName('txtProcessors').Text
+        RemoveApps                  = $false # Parameter from Sample_default.json, no UI control
         RemoveFFU                   = $window.FindName('chkRemoveFFU').IsChecked
+        RemoveUpdates               = $false # Parameter from Sample_default.json, no UI control
         ShareName                   = $window.FindName('txtShareName').Text
+        UpdateADK                   = $true # Parameter from Sample_default.json, no UI control
         UpdateEdge                  = $window.FindName('chkUpdateEdge').IsChecked
         UpdateLatestCU              = $window.FindName('chkUpdateLatestCU').IsChecked
         UpdateLatestDefender        = $window.FindName('chkUpdateLatestDefender').IsChecked
+        UpdateLatestMicrocode       = $false # Parameter from Sample_default.json, no UI control
         UpdateLatestMSRT            = $window.FindName('chkUpdateLatestMSRT').IsChecked
         UpdateLatestNet             = $window.FindName('chkUpdateLatestNet').IsChecked
         UpdateOneDrive              = $window.FindName('chkUpdateOneDrive').IsChecked
         UpdatePreviewCU             = $window.FindName('chkUpdatePreviewCU').IsChecked
+        UserAppListPath             = "$($window.FindName('txtApplicationPath').Text)\UserAppList.json" # Parameter from Sample_default.json, derived
         USBDriveList                = @{}
         Username                    = $window.FindName('txtUsername').Text
         VMHostIPAddress             = $window.FindName('txtVMHostIPAddress').Text
@@ -544,10 +553,7 @@ function Get-UIConfig {
     $window.FindName('lstUSBDrives').Items | Where-Object { $_.IsSelected } | ForEach-Object {
         $config.USBDriveList[$_.Model] = $_.SerialNumber
     }
-
-    # Add selected Driver Models to the config (Optional, maybe not needed for BuildFFUVM.ps1)
-    # $config.DriverModelList = @($window.FindName('lstDriverModels').Items | Where-Object { $_.IsSelected })
-
+    
     return $config
 }
 
