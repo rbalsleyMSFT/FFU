@@ -407,7 +407,6 @@ param(
     [bool]$UpdateADK = $true
 )
 $version = '2505.1'
-$version = '2412.3'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
