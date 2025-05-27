@@ -2743,6 +2743,31 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'txtProductKey' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'ProductKey' -WindowInstance $window
                 Set-UIValue -ControlName 'txtOptionalFeatures' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OptionalFeatures' -WindowInstance $window # This will update the text box; checkboxes need separate logic if desired for load.
 
+                # Update Optional Features checkboxes based on the loaded text
+                $loadedFeaturesString = $window.FindName('txtOptionalFeatures').Text
+                if (-not [string]::IsNullOrWhiteSpace($loadedFeaturesString)) {
+                    $loadedFeaturesArray = $loadedFeaturesString.Split(';')
+                    WriteLog "LoadConfig: Updating Optional Features checkboxes. Loaded features: $($loadedFeaturesArray -join ', ')"
+                    foreach ($featureEntry in $script:featureCheckBoxes.GetEnumerator()) {
+                        $featureName = $featureEntry.Key
+                        $featureCheckbox = $featureEntry.Value
+                        if ($loadedFeaturesArray -contains $featureName) {
+                            $featureCheckbox.IsChecked = $true
+                            WriteLog "LoadConfig: Checked checkbox for feature '$featureName'."
+                        }
+                        else {
+                            $featureCheckbox.IsChecked = $false
+                        }
+                    }
+                }
+                else {
+                    # If no optional features are loaded, uncheck all
+                    WriteLog "LoadConfig: No optional features string loaded. Unchecking all feature checkboxes."
+                    foreach ($featureEntry in $script:featureCheckBoxes.GetEnumerator()) {
+                        $featureEntry.Value.IsChecked = $false
+                    }
+                }
+
                 # M365 Apps/Office tab
                 Set-UIValue -ControlName 'chkInstallOffice' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallOffice' -WindowInstance $window
                 Set-UIValue -ControlName 'txtOfficePath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OfficePath' -WindowInstance $window # Assuming OfficePath is in config
