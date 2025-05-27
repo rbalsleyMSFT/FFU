@@ -77,6 +77,116 @@ else {
     WriteLog "LongPathsEnabled is already set to 1."
 }
 
+# ----------------------------------------------------------------------------
+# SECTION: LOAD UI
+# ----------------------------------------------------------------------------
+
+# Helper function to safely set UI properties from config and log the process
+function Set-UIValue {
+    param(
+        [string]$ControlName,
+        [string]$PropertyName,
+        [object]$ConfigObject,
+        [string]$ConfigKey,
+        [scriptblock]$TransformValue = $null, # Optional scriptblock to transform the value from config
+        [object]$WindowInstance # Pass the $window object
+    )
+
+    $control = $WindowInstance.FindName($ControlName)
+    if ($null -eq $control) {
+        WriteLog "LoadConfig Error: Control '$ControlName' not found in the window."
+        return
+    }
+
+    # Robust check for property existence.
+    $keyExists = $false
+    if ($ConfigObject -is [System.Management.Automation.PSCustomObject] -and $null -ne $ConfigObject.PSObject.Properties) {
+        # Use the Match() method, which returns a collection of matching properties.
+        # If the count is greater than 0, the key exists.
+        try {
+            if (($ConfigObject.PSObject.Properties.Match($ConfigKey)).Count -gt 0) {
+                $keyExists = $true
+            }
+        }
+        catch {
+            WriteLog "ERROR: Exception while trying to Match key '$ConfigKey' on ConfigObject.PSObject.Properties. Error: $($_.Exception.Message)"
+            # $keyExists remains false
+        }
+    }
+
+    if (-not $keyExists) {
+        WriteLog "LoadConfig Info: Key '$ConfigKey' not found in configuration object. Skipping '$ControlName.$PropertyName'."
+        return
+    }
+
+    $valueFromConfig = $ConfigObject.$ConfigKey
+    WriteLog "LoadConfig: Preparing to set '$ControlName.$PropertyName'. Config key: '$ConfigKey', Raw value: '$valueFromConfig'."
+
+    $finalValue = $valueFromConfig
+    if ($null -ne $TransformValue) {
+        try {
+            $finalValue = Invoke-Command -ScriptBlock $TransformValue -ArgumentList $valueFromConfig
+            WriteLog "LoadConfig: Transformed value for '$ControlName.$PropertyName' (from key '$ConfigKey') is: '$finalValue'."
+        }
+        catch {
+            WriteLog "LoadConfig Error: Failed to transform value for '$ControlName.$PropertyName' from key '$ConfigKey'. Error: $($_.Exception.Message)"
+            return
+        }
+    }
+    
+    try {
+        # Handle ComboBox SelectedItem specifically
+        if ($control -is [System.Windows.Controls.ComboBox] -and $PropertyName -eq 'SelectedItem') {
+            $itemToSelect = $null
+            # Iterate through the Items collection of the ComboBox
+            foreach ($item in $control.Items) {
+                $itemValue = $null
+                if ($item -is [System.Windows.Controls.ComboBoxItem]) {
+                    $itemValue = $item.Content
+                } elseif ($item -is [pscustomobject] -and $item.PSObject.Properties['Value']) {
+                    $itemValue = $item.Value
+                } elseif ($item -is [pscustomobject] -and $item.PSObject.Properties['Display']) { # Assuming 'Display' might be used if 'Value' isn't
+                    $itemValue = $item.Display
+                } else {
+                    $itemValue = $item # For simple string items or direct object comparison
+                }
+
+                # Compare, ensuring types are compatible or converting $finalValue if necessary
+                if (($null -ne $itemValue -and $itemValue.ToString() -eq $finalValue.ToString()) -or ($item -eq $finalValue)) {
+                    $itemToSelect = $item
+                    break
+                }
+            }
+
+            if ($null -ne $itemToSelect) {
+                $control.SelectedItem = $itemToSelect
+                WriteLog "LoadConfig: Successfully set '$ControlName.SelectedItem' by finding matching item for value '$finalValue'."
+            } elseif ($control.IsEditable -and ($finalValue -is [string] -or $finalValue -is [int] -or $finalValue -is [long])) {
+                $control.Text = $finalValue.ToString()
+                WriteLog "LoadConfig: Set '$ControlName.Text' to '$($finalValue.ToString())' as SelectedItem match failed (editable ComboBox)."
+            } else {
+                $itemsString = ""
+                try {
+                    # Safer way to get item strings
+                    $itemStrings = @()
+                    foreach ($cbItem in $control.Items) {
+                        if ($null -ne $cbItem) { $itemStrings += $cbItem.ToString() } else { $itemStrings += "[NULL_ITEM]" }
+                    }
+                    $itemsString = $itemStrings -join "; "
+                } catch { $itemsString = "Error retrieving item strings." }
+                WriteLog "LoadConfig Warning: Could not find or set item matching value '$finalValue' for '$ControlName.SelectedItem'. Current items: [$itemsString]"
+            }
+        } else {
+            # For other properties or controls
+            $control.$PropertyName = $finalValue
+            WriteLog "LoadConfig: Successfully set '$ControlName.$PropertyName' to '$finalValue'."
+        }
+    }
+    catch {
+        WriteLog "LoadConfig Error: Failed to set '$ControlName.$PropertyName' to '$finalValue'. Error: $($_.Exception.Message)"
+    }
+}
+
 # --------------------------------------------------------------------------
 # SECTION: Driver Download Functions
 # --------------------------------------------------------------------------
@@ -508,8 +618,19 @@ function Get-UIConfig {
         Make                        = $window.FindName('cmbMake').SelectedItem
         MediaType                   = $window.FindName('cmbMediaType').SelectedItem
         Memory                      = [int64]$window.FindName('txtMemory').Text * 1GB
-        Model                       = $window.FindName('cmbModel').Text 
-        OfficeConfigXMLFile         = $window.FindName('txtOfficeConfigXMLFilePath').Text # UI Only parameter
+        Model                       = if ($window.FindName('chkDownloadDrivers').IsChecked) {
+                                        $selectedModels = $script:lstDriverModels.Items | Where-Object { $_.IsSelected }
+                                        if ($selectedModels.Count -ge 1) { # If one or more models are selected
+                                            $selectedModels[0].Model # Use the 'Model' property (display name) of the first selected one
+                                        }
+                                        else {
+                                            $null # No model selected in the list
+                                        }
+                                    }
+                                    else {
+                                        $null # Not downloading drivers via UI selection
+                                    }
+        OfficeConfigXMLFile         = $window.FindName('txtOfficeConfigXMLFilePath').Text # UI Only
         OfficePath                  = $window.FindName('txtOfficePath').Text # UI Only parameter
         Optimize                    = $window.FindName('chkOptimize').IsChecked
         OptionalFeatures            = $window.FindName('txtOptionalFeatures').Text # Parameter from Sample_default.json
@@ -2564,89 +2685,115 @@ $btnLoadConfig.Add_Click({
             $ofd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
             $ofd.Title = "Load Configuration File"
             if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                WriteLog "Loading configuration from: $($ofd.FileName)"
                 $configContent = Get-Content -Path $ofd.FileName -Raw | ConvertFrom-Json
+                
+                if ($null -eq $configContent) {
+                    WriteLog "LoadConfig Error: configContent is null after parsing $($ofd.FileName). File might be empty or malformed."
+                    [System.Windows.MessageBox]::Show("Failed to parse the configuration file. It might be empty or not valid JSON.", "Load Error", "OK", "Error")
+                    return
+                }
+                WriteLog "LoadConfig: Successfully parsed config file. Top-level keys: $($configContent.PSObject.Properties.Name -join ', ')"
+
                 # Update Build tab values
-                $window.FindName('txtFFUDevPath').Text = $configContent.FFUDevelopmentPath
-                $window.FindName('txtCustomFFUNameTemplate').Text = $configContent.CustomFFUNameTemplate
-                $window.FindName('txtFFUCaptureLocation').Text = $configContent.FFUCaptureLocation
-                $window.FindName('txtShareName').Text = $configContent.ShareName
-                $window.FindName('txtUsername').Text = $configContent.Username
-                $window.FindName('chkBuildUSBDriveEnable').IsChecked = $configContent.BuildUSBDrive
-                $window.FindName('chkCompactOS').IsChecked = $configContent.CompactOS
-                $window.FindName('chkOptimize').IsChecked = $configContent.Optimize
-                $window.FindName('chkAllowVHDXCaching').IsChecked = $configContent.AllowVHDXCaching
-                $window.FindName('chkAllowExternalHardDiskMedia').IsChecked = $configContent.AllowExternalHardDiskMedia
-                $window.FindName('chkPromptExternalHardDiskMedia').IsChecked = $configContent.PromptExternalHardDiskMedia
-                $window.FindName('chkCreateCaptureMedia').IsChecked = $configContent.CreateCaptureMedia
-                $window.FindName('chkCreateDeploymentMedia').IsChecked = $configContent.CreateDeploymentMedia
+                Set-UIValue -ControlName 'txtFFUDevPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'FFUDevelopmentPath' -WindowInstance $window
+                Set-UIValue -ControlName 'txtCustomFFUNameTemplate' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'CustomFFUNameTemplate' -WindowInstance $window
+                Set-UIValue -ControlName 'txtFFUCaptureLocation' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'FFUCaptureLocation' -WindowInstance $window
+                Set-UIValue -ControlName 'txtShareName' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'ShareName' -WindowInstance $window
+                Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'Username' -WindowInstance $window
+                Set-UIValue -ControlName 'chkBuildUSBDriveEnable' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'BuildUSBDrive' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCompactOS' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CompactOS' -WindowInstance $window
+                Set-UIValue -ControlName 'chkOptimize' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'Optimize' -WindowInstance $window
+                Set-UIValue -ControlName 'chkAllowVHDXCaching' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'AllowVHDXCaching' -WindowInstance $window
+                Set-UIValue -ControlName 'chkAllowExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'AllowExternalHardDiskMedia' -WindowInstance $window
+                Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'PromptExternalHardDiskMedia' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CreateCaptureMedia' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CreateDeploymentMedia' -WindowInstance $window
 
-                # USB Drive Modification group
-                $window.FindName('chkCopyAutopilot').IsChecked = $configContent.CopyAutopilot
-                $window.FindName('chkCopyUnattend').IsChecked = $configContent.CopyUnattend
-                $window.FindName('chkCopyPPKG').IsChecked = $configContent.CopyPPKG
-
-                # Post Build Cleanup group
-                $window.FindName('chkCleanupAppsISO').IsChecked = $configContent.CleanupAppsISO
-                $window.FindName('chkCleanupCaptureISO').IsChecked = $configContent.CleanupCaptureISO
-                $window.FindName('chkCleanupDeployISO').IsChecked = $configContent.CleanupDeployISO
-                $window.FindName('chkCleanupDrivers').IsChecked = $configContent.CleanupDrivers
-                $window.FindName('chkRemoveFFU').IsChecked = $configContent.RemoveFFU
-                # USB Drive Modification group (now in Build USB Drive section)
-                $window.FindName('chkCopyAutopilot').IsChecked = $configContent.CopyAutopilot
-                $window.FindName('chkCopyUnattend').IsChecked = $configContent.CopyUnattend
-                $window.FindName('chkCopyPPKG').IsChecked = $configContent.CopyPPKG
+                # USB Drive Modification group (Build Tab)
+                Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyAutopilot' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyUnattend' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyPPKG' -WindowInstance $window
+                
+                # Post Build Cleanup group (Build Tab)
+                Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupAppsISO' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCleanupCaptureISO' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupCaptureISO' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCleanupDeployISO' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupDeployISO' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCleanupDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupDrivers' -WindowInstance $window
+                Set-UIValue -ControlName 'chkRemoveFFU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveFFU' -WindowInstance $window
+                
                 # Hyper-V Settings
-                $window.FindName('cmbVMSwitchName').SelectedItem = $configContent.VMSwitchName
-                $window.FindName('txtVMHostIPAddress').Text = $configContent.VMHostIPAddress
-                $window.FindName('txtDiskSize').Text = $configContent.Disksize / 1GB
-                $window.FindName('txtMemory').Text = $configContent.Memory / 1GB
-                $window.FindName('txtProcessors').Text = $configContent.Processors
-                $window.FindName('txtVMLocation').Text = $configContent.VMLocation
-                # <-- NEW: Update the VM Name Prefix textbox value during config load
-                $window.FindName('txtVMNamePrefix').Text = $configContent.FFUPrefix
-                $window.FindName('cmbLogicalSectorSize').SelectedItem = $configContent.LogicalSectorSizeBytes
+                Set-UIValue -ControlName 'cmbVMSwitchName' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'VMSwitchName' -WindowInstance $window
+                Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'VMHostIPAddress' -WindowInstance $window
+                Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -WindowInstance $window
+                Set-UIValue -ControlName 'txtMemory' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'Memory' -TransformValue { param($val) $val / 1GB } -WindowInstance $window
+                Set-UIValue -ControlName 'txtProcessors' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'Processors' -WindowInstance $window
+                Set-UIValue -ControlName 'txtVMLocation' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'VMLocation' -WindowInstance $window
+                Set-UIValue -ControlName 'txtVMNamePrefix' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'FFUPrefix' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbLogicalSectorSize' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'LogicalSectorSizeBytes' -TransformValue { param($val) $val.ToString() } -WindowInstance $window
+                
                 # Windows Settings
-                $window.FindName('txtISOPath').Text = $configContent.ISOPath
-                $window.FindName('cmbWindowsRelease').SelectedItem = ($script:allWindowsReleases | Where-Object { $_.Value -eq $configContent.WindowsRelease })
-                $window.FindName('cmbWindowsVersion').SelectedItem = $configContent.WindowsVersion
-                $window.FindName('cmbWindowsArch').SelectedItem = $configContent.WindowsArch
-                $window.FindName('cmbWindowsLang').SelectedItem = $configContent.WindowsLang
-                $window.FindName('cmbWindowsSKU').SelectedItem = $configContent.WindowsSKU
-                $window.FindName('cmbMediaType').SelectedItem = $configContent.MediaType
-                $window.FindName('txtProductKey').Text = $configContent.ProductKey
-                # M365 Apps/Office tab
-                $window.FindName('chkInstallOffice').IsChecked = $configContent.InstallOffice
-                $window.FindName('txtOfficePath').Text = $configContent.OfficePath
-                $window.FindName('chkCopyOfficeConfigXML').IsChecked = $configContent.CopyOfficeConfigXML
-                $window.FindName('txtOfficeConfigXMLFilePath').Text = $configContent.OfficeConfigXMLFile
-                # Drivers tab
-                $window.FindName('chkInstallDrivers').IsChecked = $configContent.InstallDrivers
-                $window.FindName('chkDownloadDrivers').IsChecked = $configContent.DownloadDrivers
-                $window.FindName('chkCopyDrivers').IsChecked = $configContent.CopyDrivers
-                $window.FindName('cmbMake').SelectedItem = $configContent.Make
-                $window.FindName('cmbModel').Text = $configContent.Model
-                $window.FindName('txtDriversFolder').Text = $configContent.DriversFolder
-                $window.FindName('txtPEDriversFolder').Text = $configContent.PEDriversFolder
-                $window.FindName('chkCopyPEDrivers').IsChecked = $configContent.CopyPEDrivers
-                # Updates tab
-                $window.FindName('chkUpdateLatestCU').IsChecked = $configContent.UpdateLatestCU
-                $window.FindName('chkUpdateLatestNet').IsChecked = $configContent.UpdateLatestNet
-                $window.FindName('chkUpdateLatestDefender').IsChecked = $configContent.UpdateLatestDefender
-                $window.FindName('chkUpdateEdge').IsChecked = $configContent.UpdateEdge
-                $window.FindName('chkUpdateOneDrive').IsChecked = $configContent.UpdateOneDrive
-                $window.FindName('chkUpdateLatestMSRT').IsChecked = $configContent.UpdateLatestMSRT
-                $window.FindName('chkUpdatePreviewCU').IsChecked = $configContent.UpdatePreviewCU
-                # Applications tab
-                $window.FindName('chkInstallApps').IsChecked = $configContent.InstallApps
-                $window.FindName('chkInstallWingetApps').IsChecked = $configContent.InstallWingetApps
-                $window.FindName('chkBringYourOwnApps').IsChecked = $configContent.BringYourOwnApps
+                Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'ISOPath' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbWindowsRelease' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'WindowsRelease' -WindowInstance $window # Helper will try to match by Value
+                Set-UIValue -ControlName 'cmbWindowsVersion' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'WindowsVersion' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbWindowsArch' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'WindowsArch' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbWindowsLang' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'WindowsLang' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbWindowsSKU' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'WindowsSKU' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbMediaType' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'MediaType' -WindowInstance $window
+                Set-UIValue -ControlName 'txtProductKey' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'ProductKey' -WindowInstance $window
+                Set-UIValue -ControlName 'txtOptionalFeatures' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OptionalFeatures' -WindowInstance $window # This will update the text box; checkboxes need separate logic if desired for load.
 
-                # Load Application Path and AppList.json Path
-                $window.FindName('txtApplicationPath').Text = $configContent.AppsPath
-                $window.FindName('txtAppListJsonPath').Text = $configContent.AppListPath
+                # M365 Apps/Office tab
+                Set-UIValue -ControlName 'chkInstallOffice' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallOffice' -WindowInstance $window
+                Set-UIValue -ControlName 'txtOfficePath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OfficePath' -WindowInstance $window # Assuming OfficePath is in config
+                Set-UIValue -ControlName 'chkCopyOfficeConfigXML' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyOfficeConfigXML' -WindowInstance $window # Assuming CopyOfficeConfigXML is in config
+                Set-UIValue -ControlName 'txtOfficeConfigXMLFilePath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OfficeConfigXMLFile' -WindowInstance $window # Assuming OfficeConfigXMLFile is in config
+                
+                # Drivers tab
+                Set-UIValue -ControlName 'chkInstallDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallDrivers' -WindowInstance $window
+                Set-UIValue -ControlName 'chkDownloadDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'DownloadDrivers' -WindowInstance $window # Assuming DownloadDrivers is in config
+                Set-UIValue -ControlName 'chkCopyDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyDrivers' -WindowInstance $window
+                Set-UIValue -ControlName 'cmbMake' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'Make' -WindowInstance $window
+                # The 'Model' from the config is not directly set to a single UI control.
+                # If 'Make' is set, the user would typically click 'Get Models' and select from lstDriverModels.
+                # For now, we skip trying to set a non-existent 'cmbModel'.
+                # WriteLog "LoadConfig Info: 'Model' key ('$($configContent.Model)') from config is not directly mapped to a single UI input. Set 'Make' and use 'Get Models'."
+                Set-UIValue -ControlName 'txtDriversFolder' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'DriversFolder' -WindowInstance $window
+                Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'PEDriversFolder' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyPEDrivers' -WindowInstance $window
+                Set-UIValue -ControlName 'chkCompressDriversToWIM' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CompressDownloadedDriversToWim' -WindowInstance $window
+
+
+                # Updates tab
+                Set-UIValue -ControlName 'chkUpdateLatestCU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestCU' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateLatestNet' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestNet' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateLatestDefender' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestDefender' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateEdge' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateEdge' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateOneDrive' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateOneDrive' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateLatestMSRT' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestMSRT' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdatePreviewCU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdatePreviewCU' -WindowInstance $window
+                
+                # Applications tab
+                Set-UIValue -ControlName 'chkInstallApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallApps' -WindowInstance $window
+                Set-UIValue -ControlName 'chkInstallWingetApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallWingetApps' -WindowInstance $window # Assuming InstallWingetApps is in config
+                Set-UIValue -ControlName 'chkBringYourOwnApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'BringYourOwnApps' -WindowInstance $window # Assuming BringYourOwnApps is in config
+                Set-UIValue -ControlName 'txtApplicationPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'AppsPath' -WindowInstance $window
+                Set-UIValue -ControlName 'txtAppListJsonPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'AppListPath' -WindowInstance $window
 
                 # Update USB Drive selection if present in config
-                if ($configContent.USBDriveList) {
+                $usbDriveListKeyExists = $false
+                if ($configContent -is [System.Management.Automation.PSCustomObject] -and $null -ne $configContent.PSObject.Properties) {
+                    try {
+                        if (($configContent.PSObject.Properties.Match('USBDriveList')).Count -gt 0) {
+                            $usbDriveListKeyExists = $true
+                        }
+                    } catch {
+                        WriteLog "ERROR: Exception while trying to Match key 'USBDriveList' on configContent.PSObject.Properties. Error: $($_.Exception.Message)"
+                    }
+                }
+
+                if ($usbDriveListKeyExists -and $null -ne $configContent.USBDriveList) {
+                    WriteLog "LoadConfig: Processing USBDriveList from config."
                     # First click the Check USB Drives button to populate the list
                     $script:btnCheckUSBDrives.RaiseEvent(
                         [System.Windows.RoutedEventArgs]::new(
@@ -2656,21 +2803,45 @@ $btnLoadConfig.Add_Click({
                 
                     # Then select the drives that match the saved configuration
                     foreach ($item in $script:lstUSBDrives.Items) {
-                        if ($configContent.USBDriveList.ContainsKey($item.Model) -and 
-                            $configContent.USBDriveList[$item.Model] -eq $item.SerialNumber) {
+                        $propertyName = $item.Model
+                        $propertyExists = $false
+                        $propertyValue = $null
+
+                        # Ensure USBDriveList is a PSCustomObject before trying to access its properties dynamically
+                        if ($null -ne $configContent.USBDriveList -and $configContent.USBDriveList -is [System.Management.Automation.PSCustomObject]) {
+                            # Check if the property exists on the USBDriveList object
+                            if ($configContent.USBDriveList.PSObject.Properties.Match($propertyName).Count -gt 0) {
+                                $propertyExists = $true
+                                # Access the value dynamically
+                                $propertyValue = $configContent.USBDriveList.$($propertyName)
+                            }
+                        }
+
+                        if ($propertyExists -and ($propertyValue -eq $item.SerialNumber)) {
+                            WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with Serial '$($item.SerialNumber)'."
                             $item.IsSelected = $true
+                        } else {
+                            if (-not $propertyExists -and ($null -ne $configContent.USBDriveList)) {
+                                WriteLog "LoadConfig: Property '$($propertyName)' not found on USBDriveList for item Model '$($item.Model)'."
+                            }
+                            $item.IsSelected = $false # Ensure others are deselected if not in config or value mismatch
                         }
                     }
                     $script:lstUSBDrives.Items.Refresh()
 
                     # Update the Select All checkbox state
-                    $allSelected = -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
+                    $allSelected = $script:lstUSBDrives.Items.Count -gt 0 -and -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
                     $script:chkSelectAllUSBDrives.IsChecked = $allSelected
+                    WriteLog "LoadConfig: USBDriveList processing complete."
+                } else {
+                    WriteLog "LoadConfig Info: Key 'USBDriveList' not found or is null in configuration file. Skipping USB drive selection."
                 }
+                WriteLog "LoadConfig: Configuration loading process finished."
             }
         }
         catch {
-            [System.Windows.MessageBox]::Show("Error loading config file:`n$_", "Error", "OK", "Error")
+            WriteLog "LoadConfig FATAL Error: $($_.Exception.ToString())" # Log full exception details
+            [System.Windows.MessageBox]::Show("Error loading config file:`n$($_.Exception.Message)", "Error", "OK", "Error")
         }
     })
 
