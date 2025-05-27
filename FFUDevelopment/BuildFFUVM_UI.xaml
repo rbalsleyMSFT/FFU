@@ -763,7 +763,7 @@
         <TextBlock x:Name="txtStatus" Grid.Row="2" Margin="0,5,0,0"/>
         <!-- Buttons (Build Config File / Load Config File / Build FFU) -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,20">
-            <Button x:Name="btnBuildConfig" Content="Build Config File" Width="150" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
+            <Button x:Name="btnBuildConfig" Content="Save Config File" Width="150" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
             <Button x:Name="btnLoadConfig" Content="Load Config File" Width="150" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
             <Button x:Name="btnRun" Content="Build FFU" Width="120" FontSize="14" Padding="10,5"/>
         </StackPanel>
