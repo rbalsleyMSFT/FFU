@@ -2836,6 +2836,30 @@ $btnLoadConfig.Add_Click({
                 } else {
                     WriteLog "LoadConfig Info: Key 'USBDriveList' not found or is null in configuration file. Skipping USB drive selection."
                 }
+
+                # If BuildUSBDrive is enabled and USBDriveList was present and not empty in the config,
+                # ensure "Select Specific USB Drives" is checked to show the list.
+                $shouldAutoCheckSpecificDrives = $false
+                if ($window.FindName('chkBuildUSBDriveEnable').IsChecked -and $usbDriveListKeyExists -and ($null -ne $configContent.USBDriveList)) {
+                    if ($configContent.USBDriveList -is [System.Management.Automation.PSCustomObject]) {
+                        if ($configContent.USBDriveList.PSObject.Properties.Count -gt 0) {
+                            $shouldAutoCheckSpecificDrives = $true
+                        }
+                    }
+                    elseif ($configContent.USBDriveList -is [hashtable]) { # Fallback for older configs
+                        if ($configContent.USBDriveList.Keys.Count -gt 0) {
+                            $shouldAutoCheckSpecificDrives = $true
+                        }
+                    }
+                }
+
+                if ($shouldAutoCheckSpecificDrives) {
+                    WriteLog "LoadConfig: Auto-checking 'Select Specific USB Drives' due to pre-selected USB drives in config."
+                    $window.FindName('chkSelectSpecificUSBDrives').IsChecked = $true
+                }
+                else {
+                    WriteLog "LoadConfig: Condition to auto-check 'Select Specific USB Drives' was NOT met."
+                }
                 WriteLog "LoadConfig: Configuration loading process finished."
             }
         }
