@@ -1089,6 +1089,227 @@ function Invoke-ListViewSort {
     $listView.ItemsSource = $newSortedList.ToArray()
 }
 
+# Function to add a selectable GridViewColumn with a "Select All" header CheckBox
+function Add-SelectableGridViewColumn {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView,
+        [Parameter(Mandatory)]
+        [string]$HeaderCheckBoxScriptVariableName,
+        [Parameter(Mandatory)]
+        [double]$ColumnWidth,
+        [string]$IsSelectedPropertyName = "IsSelected"
+    )
+
+    # Ensure the ListView has a GridView
+    if ($null -eq $ListView.View -or -not ($ListView.View -is [System.Windows.Controls.GridView])) {
+        WriteLog "Add-SelectableGridViewColumn: ListView '$($ListView.Name)' does not have a GridView or View is null. Cannot add column."
+        # Optionally, create a new GridView if one doesn't exist, though XAML usually defines it.
+        # $ListView.View = New-Object System.Windows.Controls.GridView
+        return
+    }
+    $gridView = $ListView.View
+
+    # Create the "Select All" CheckBox for the header
+    $headerCheckBox = New-Object System.Windows.Controls.CheckBox
+    $headerCheckBox.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
+    # Store an object containing the IsSelectedPropertyName and the ListView's Name in the Tag
+    $headerTagObject = [PSCustomObject]@{
+        PropertyName = $IsSelectedPropertyName
+        ListViewName = $ListView.Name
+    }
+    $headerCheckBox.Tag = $headerTagObject
+    # Removed debug WriteLog for storing tag data
+
+    $headerCheckBox.Add_Checked({
+            param($senderCheckBoxLocal, $eventArgsCheckedLocal)
+
+            $tagData = $senderCheckBoxLocal.Tag
+            if ($null -eq $tagData -or -not $tagData.PSObject.Properties['PropertyName'] -or -not $tagData.PSObject.Properties['ListViewName']) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - Tag data on header checkbox is missing, null, or malformed. Aborting HeaderChecked event."
+                return
+            }
+
+            $localPropertyName = $tagData.PropertyName
+            $localListViewName = $tagData.ListViewName
+            # Removed debug WriteLog for HeaderChecked event fired
+
+            if ([string]::IsNullOrEmpty($localPropertyName)) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - PropertyName from Tag is null or empty in HeaderChecked event for ListView '$localListViewName'. Aborting."
+                return
+            }
+            if ([string]::IsNullOrEmpty($localListViewName)) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListViewName from Tag is null or empty in HeaderChecked event. Aborting."
+                return
+            }
+
+            $actualListView = $window.FindName($localListViewName)
+            if ($null -eq $actualListView) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderChecked event. Aborting."
+                return
+            }
+            # Removed debug WriteLog for successfully finding ListView in HeaderChecked
+
+            $collectionToUpdate = $null
+            if ($null -ne $actualListView.ItemsSource) {
+                $collectionToUpdate = $actualListView.ItemsSource
+            }
+            elseif ($actualListView.HasItems) {
+                $collectionToUpdate = $actualListView.Items
+            }
+
+            if ($null -ne $collectionToUpdate) {
+                foreach ($item in $collectionToUpdate) {
+                    try {
+                        $item.($localPropertyName) = $true
+                    }
+                    catch {
+                        WriteLog "Error setting '$localPropertyName' to true for item in $($actualListView.Name): $($_.Exception.Message)"
+                    }
+                }
+                $actualListView.Items.Refresh()
+                WriteLog "Header checkbox for $($actualListView.Name) checked. All items' '$localPropertyName' set to true."
+            }
+        })
+    $headerCheckBox.Add_Unchecked({
+            param($senderCheckBoxLocal, $eventArgsUncheckedLocal)
+
+            $tagData = $senderCheckBoxLocal.Tag
+            if ($null -eq $tagData -or -not $tagData.PSObject.Properties['PropertyName'] -or -not $tagData.PSObject.Properties['ListViewName']) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - Tag data on header checkbox is missing, null, or malformed. Aborting HeaderUnchecked event."
+                return
+            }
+
+            $localPropertyName = $tagData.PropertyName
+            $localListViewName = $tagData.ListViewName
+            # Removed debug WriteLog for HeaderUnchecked event fired
+
+            if ([string]::IsNullOrEmpty($localPropertyName)) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - PropertyName from Tag is null or empty in HeaderUnchecked event for ListView '$localListViewName'. Aborting."
+                return
+            }
+            if ([string]::IsNullOrEmpty($localListViewName)) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListViewName from Tag is null or empty in HeaderUnchecked event. Aborting."
+                return
+            }
+            
+            $actualListView = $window.FindName($localListViewName)
+            if ($null -eq $actualListView) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderUnchecked event. Aborting."
+                return
+            }
+            # Removed debug WriteLog for successfully finding ListView in HeaderUnchecked
+
+            # Only proceed if the uncheck was initiated by the user (IsChecked is explicitly false)
+            if ($senderCheckBoxLocal.IsChecked -eq $false) {
+                $collectionToUpdate = $null
+                if ($null -ne $actualListView.ItemsSource) {
+                    $collectionToUpdate = $actualListView.ItemsSource
+                }
+                elseif ($actualListView.HasItems) {
+                    $collectionToUpdate = $actualListView.Items
+                }
+
+                if ($null -ne $collectionToUpdate) {
+                    foreach ($item in $collectionToUpdate) {
+                        try {
+                            $item.($localPropertyName) = $false
+                        }
+                        catch {
+                            WriteLog "Error setting '$localPropertyName' to false for item in $($actualListView.Name): $($_.Exception.Message)"
+                        }
+                    }
+                    $actualListView.Items.Refresh()
+                    WriteLog "Header checkbox for $($actualListView.Name) unchecked by user. All items' '$localPropertyName' set to false."
+                }
+            }
+        })
+
+    # Store the header checkbox in a script-scoped variable
+    Set-Variable -Name $HeaderCheckBoxScriptVariableName -Value $headerCheckBox -Scope Script -Force
+    WriteLog "Add-SelectableGridViewColumn: Stored header checkbox in script variable '$HeaderCheckBoxScriptVariableName'."
+
+    # Create the GridViewColumn
+    $selectableColumn = New-Object System.Windows.Controls.GridViewColumn
+    $selectableColumn.Header = $headerCheckBox
+    $selectableColumn.Width = $ColumnWidth
+
+    # Create the CellTemplate for item CheckBoxes
+    $cellTemplate = New-Object System.Windows.DataTemplate
+    
+    # Use a Border to ensure CheckBox centers and stretches
+    $borderFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
+    $borderFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
+    $borderFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
+    
+    $checkBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
+    $checkBoxFactory.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding($IsSelectedPropertyName)))
+    $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+    $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+    
+    # Create an object to store both the header checkbox name and the ListView name
+    $tagObject = [PSCustomObject]@{
+        HeaderCheckboxName = $HeaderCheckBoxScriptVariableName
+        ListViewName       = $ListView.Name # Store the name of the ListView
+    }
+    # Store this object in the Tag of each item checkbox
+    $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::TagProperty, $tagObject)
+
+    # Add handler to update the header checkbox state when an item checkbox is clicked
+    $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
+            param($eventSourceLocal, $eventArgsLocal)
+            
+            $itemCheckBox = $eventSourceLocal -as [System.Windows.Controls.CheckBox]
+            if ($null -eq $itemCheckBox) {
+                WriteLog "Add-SelectableGridViewColumn: CRITICAL - Event source in item checkbox click handler is not a CheckBox."
+                return
+            }
+
+            $tagData = $itemCheckBox.Tag
+            if ($null -eq $tagData -or -not $tagData.PSObject.Properties['HeaderCheckboxName'] -or -not $tagData.PSObject.Properties['ListViewName']) {
+                WriteLog "Add-SelectableGridViewColumn: Error - Tag data on itemCheckBox is missing or malformed."
+                return
+            }
+            
+            $headerCheckboxNameFromTag = $tagData.HeaderCheckboxName
+            $listViewNameFromTag = $tagData.ListViewName
+
+            WriteLog "Add-SelectableGridViewColumn: Item Click. ListView: '$listViewNameFromTag', HeaderChkName: '$headerCheckboxNameFromTag'"
+
+            if ([string]::IsNullOrEmpty($headerCheckboxNameFromTag)) {
+                WriteLog "Add-SelectableGridViewColumn: Error - Header checkbox name from Tag is null or empty for ListView '$listViewNameFromTag'."
+                return 
+            }
+            if ([string]::IsNullOrEmpty($listViewNameFromTag)) {
+                WriteLog "Add-SelectableGridViewColumn: Error - ListView name from Tag is null or empty."
+                return
+            }
+
+            # Retrieve the actual ListView control using its name stored in the Tag
+            $targetListView = $window.FindName($listViewNameFromTag)
+            if ($null -eq $targetListView) {
+                WriteLog "Add-SelectableGridViewColumn: Error - Could not find ListView control named '$listViewNameFromTag'."
+                return
+            }
+
+            $headerChk = Get-Variable -Name $headerCheckboxNameFromTag -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $targetListView -HeaderCheckBox $headerChk
+            } else {
+                WriteLog "Add-SelectableGridViewColumn: Error - Could not retrieve script variable for header checkbox named '$headerCheckboxNameFromTag' for ListView '$listViewNameFromTag'."
+            }
+        })
+    
+    $borderFactory.AppendChild($checkBoxFactory)
+    $cellTemplate.VisualTree = $borderFactory
+    $selectableColumn.CellTemplate = $cellTemplate
+
+    # Insert the new column at the beginning of the GridView
+    $gridView.Columns.Insert(0, $selectableColumn)
+    WriteLog "Add-SelectableGridViewColumn: Successfully added selectable column to '$($ListView.Name)'."
+}
+
 # Function to update the IsChecked state of a "Select All" header CheckBox
 function Update-SelectAllHeaderCheckBoxState {
     param(
@@ -1098,15 +1319,27 @@ function Update-SelectAllHeaderCheckBoxState {
         [System.Windows.Controls.CheckBox]$HeaderCheckBox
     )
 
-    if ($null -eq $ListView.ItemsSource -or $ListView.Items.Count -eq 0) {
+    $collectionToInspect = $null
+    if ($null -ne $ListView.ItemsSource) {
+        $collectionToInspect = @($ListView.ItemsSource)
+    }
+    elseif ($ListView.HasItems) { # Check if Items collection has items and ItemsSource is null
+        $collectionToInspect = @($ListView.Items)
+    }
+
+    # If no items to inspect (either ItemsSource was null and Items was empty, or ItemsSource was empty)
+    if ($null -eq $collectionToInspect -or $collectionToInspect.Count -eq 0) {
         $HeaderCheckBox.IsChecked = $false
         return
     }
 
-    $allItems = @($ListView.ItemsSource)
-    $selectedCount = ($allItems | Where-Object { $_.IsSelected }).Count
+    $selectedCount = ($collectionToInspect | Where-Object { $_.IsSelected }).Count
+    $totalItemCount = $collectionToInspect.Count # Get the total count from the collection being inspected
 
-    if ($selectedCount -eq $allItems.Count) {
+    if ($totalItemCount -eq 0) { # Handle empty list case specifically
+        $HeaderCheckBox.IsChecked = $false
+    }
+    elseif ($selectedCount -eq $totalItemCount) {
         $HeaderCheckBox.IsChecked = $true
     }
     elseif ($selectedCount -eq 0) {
@@ -1228,11 +1461,6 @@ function Update-CopyButtonState {
 }
 
 # --------------------------------------------------------------------------
-# SECTION: UI Update Helper Functions (Moved from UI_Helpers.psm1)
-# --------------------------------------------------------------------------
-
-
-# --------------------------------------------------------------------------
 # SECTION: Parallel Processing
 # --------------------------------------------------------------------------
 
@@ -1265,62 +1493,15 @@ $window.Add_Loaded({
 
         # Driver Models ListView setup
         $driverModelsGridView = New-Object System.Windows.Controls.GridView
+        $script:lstDriverModels.View = $driverModelsGridView # Assign GridView to ListView first
 
-        # Create the "Select All" CheckBox for the header
-        $script:chkSelectAllDriverModels = New-Object System.Windows.Controls.CheckBox
-        $script:chkSelectAllDriverModels.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center # Center the checkbox in the header
-        $script:chkSelectAllDriverModels.Add_Checked({
-                param($sender, $e)
-                if ($null -ne $script:lstDriverModels.ItemsSource) {
-                    foreach ($item in $script:lstDriverModels.ItemsSource) { $item.IsSelected = $true }
-                    $script:lstDriverModels.Items.Refresh()
-                }
-            })
-        $script:chkSelectAllDriverModels.Add_Unchecked({
-                param($sender, $e)
-                if ($null -ne $script:lstDriverModels.ItemsSource) {
-                    # Check if the uncheck was programmatic (IsChecked is $null) or user-initiated
-                    if ($sender.IsChecked -eq $false) {
-                        # User unselected (not indeterminate)
-                        foreach ($item in $script:lstDriverModels.ItemsSource) { $item.IsSelected = $false }
-                        $script:lstDriverModels.Items.Refresh()
-                    }
-                }
-            })
-
-        # Manually create the "Selected" column with the CheckBox header
-        $selectedColumnDriverModels = New-Object System.Windows.Controls.GridViewColumn
-        $selectedColumnDriverModels.Header = $script:chkSelectAllDriverModels
-        $selectedColumnDriverModels.Width = 70 
-        # $selectedColumnDriverModels.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Center # REMOVED: This property doesn't exist on GridViewColumn
-
-        $cellTemplateDriverModels = New-Object System.Windows.DataTemplate
-        
-        # Use a Border to force the CheckBox to center in the cell and stretch with resizing
-        $borderFactoryDriverModels = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $borderFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
-        $borderFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
-        
-        $checkBoxFactoryDriverModels = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
-        $checkBoxFactoryDriverModels.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
-        $checkBoxFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $checkBoxFactoryDriverModels.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        
-        $checkBoxFactoryDriverModels.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
-                param($eventSourceLocal, $eventArgsLocal)
-                Update-SelectAllHeaderCheckBoxState -ListView $script:lstDriverModels -HeaderCheckBox $script:chkSelectAllDriverModels
-            })
-        
-        $borderFactoryDriverModels.AppendChild($checkBoxFactoryDriverModels)
-        $cellTemplateDriverModels.VisualTree = $borderFactoryDriverModels
-        $selectedColumnDriverModels.CellTemplate = $cellTemplateDriverModels
-        $driverModelsGridView.Columns.Add($selectedColumnDriverModels)
+        # Add the selectable column using the new function
+        Add-SelectableGridViewColumn -ListView $script:lstDriverModels -HeaderCheckBoxScriptVariableName "chkSelectAllDriverModels" -ColumnWidth 70
 
         # Add other sortable columns with left-aligned headers
         Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
         Add-SortableColumn -gridView $driverModelsGridView -header "Model" -binding "Model" -width 200 -headerHorizontalAlignment Left
         Add-SortableColumn -gridView $driverModelsGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
-        $script:lstDriverModels.View = $driverModelsGridView
         $script:lstDriverModels.AddHandler(
             [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
             [System.Windows.RoutedEventHandler] {
@@ -1414,7 +1595,20 @@ $window.Add_Loaded({
         $script:txtAppsScriptValue = $window.FindName('txtAppsScriptValue')
         $script:btnAddAppsScriptVariable = $window.FindName('btnAddAppsScriptVariable')
         $script:lstAppsScriptVariables = $window.FindName('lstAppsScriptVariables')
-        $script:btnRemoveAppsScriptVariable = $window.FindName('btnRemoveAppsScriptVariable')
+        # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+        $itemStyleAppsScriptVars = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+        $itemStyleAppsScriptVars.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+        $script:lstAppsScriptVariables.ItemContainerStyle = $itemStyleAppsScriptVars
+
+        # The GridView for lstAppsScriptVariables is defined in XAML. We need to get it and add the column.
+        if ($script:lstAppsScriptVariables.View -is [System.Windows.Controls.GridView]) {
+            Add-SelectableGridViewColumn -ListView $script:lstAppsScriptVariables -HeaderCheckBoxScriptVariableName "chkSelectAllAppsScriptVariables" -ColumnWidth 60
+        }
+        else {
+            WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added."
+        }
+
+        $script:btnRemoveSelectedAppsScriptVariables = $window.FindName('btnRemoveSelectedAppsScriptVariables') # Updated variable name
         $script:btnClearAppsScriptVariables = $window.FindName('btnClearAppsScriptVariables')
 
         # Get Windows Settings defaults and lists from helper module
@@ -2124,56 +2318,11 @@ $script:chkInstallApps.Add_Unchecked({
             })
 
         # Winget Search ListView setup
-        $wingetGridView = New-Object System.Windows.Controls.GridView # Use a different variable name to avoid conflict
+        $wingetGridView = New-Object System.Windows.Controls.GridView 
+        $script:lstWingetResults.View = $wingetGridView # Assign GridView to ListView first
 
-        # Create the "Select All" CheckBox for the header
-        $script:chkSelectAllWingetResults = New-Object System.Windows.Controls.CheckBox
-        $script:chkSelectAllWingetResults.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
-        $script:chkSelectAllWingetResults.Add_Checked({
-                param($sender, $e)
-                if ($null -ne $script:lstWingetResults.ItemsSource) {
-                    foreach ($item in $script:lstWingetResults.ItemsSource) { $item.IsSelected = $true }
-                    $script:lstWingetResults.Items.Refresh()
-                }
-            })
-        $script:chkSelectAllWingetResults.Add_Unchecked({
-                param($sender, $e)
-                if ($null -ne $script:lstWingetResults.ItemsSource) {
-                    if ($sender.IsChecked -eq $false) {
-                        # User unselected
-                        foreach ($item in $script:lstWingetResults.ItemsSource) { $item.IsSelected = $false }
-                        $script:lstWingetResults.Items.Refresh()
-                    }
-                }
-            })
-
-        # Manually create the "Selected" column
-        $selectedColumnWinget = New-Object System.Windows.Controls.GridViewColumn
-        $selectedColumnWinget.Header = $script:chkSelectAllWingetResults
-        $selectedColumnWinget.Width = 60 
-        # $selectedColumnWinget.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Center # REMOVED: This property doesn't exist on GridViewColumn
-
-        $cellTemplateWinget = New-Object System.Windows.DataTemplate
-        
-        # Use a Border to force the CheckBox to center in the cell and stretch with resizing
-        $borderFactoryWinget = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-        $borderFactoryWinget.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
-        $borderFactoryWinget.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
-        
-        $checkBoxFactoryWinget = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
-        $checkBoxFactoryWinget.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
-        $checkBoxFactoryWinget.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $checkBoxFactoryWinget.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-        
-        $checkBoxFactoryWinget.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
-                param($eventSourceLocal, $eventArgsLocal)
-                Update-SelectAllHeaderCheckBoxState -ListView $script:lstWingetResults -HeaderCheckBox $script:chkSelectAllWingetResults
-            })
-        
-        $borderFactoryWinget.AppendChild($checkBoxFactoryWinget)
-        $cellTemplateWinget.VisualTree = $borderFactoryWinget
-        $selectedColumnWinget.CellTemplate = $cellTemplateWinget
-        $wingetGridView.Columns.Add($selectedColumnWinget)
+        # Add the selectable column using the new function
+        Add-SelectableGridViewColumn -ListView $script:lstWingetResults -HeaderCheckBoxScriptVariableName "chkSelectAllWingetResults" -ColumnWidth 60
 
         # Add other sortable columns with left-aligned headers
         Add-SortableColumn -gridView $wingetGridView -header "Name" -binding "Name" -width 200 -headerHorizontalAlignment Left
@@ -2181,7 +2330,6 @@ $script:chkInstallApps.Add_Unchecked({
         Add-SortableColumn -gridView $wingetGridView -header "Version" -binding "Version" -width 100 -headerHorizontalAlignment Left
         Add-SortableColumn -gridView $wingetGridView -header "Source" -binding "Source" -width 100 -headerHorizontalAlignment Left
         Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
-        $script:lstWingetResults.View = $wingetGridView # Assign the new GridView instance
         $script:lstWingetResults.AddHandler(
             [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
             [System.Windows.RoutedEventHandler] {
@@ -2454,20 +2602,31 @@ $script:chkInstallApps.Add_Unchecked({
             }
 
             $newItem = [PSCustomObject]@{
-                Key   = $key
-                Value = $value
+                IsSelected = $false # Add IsSelected property
+                Key        = $key
+                Value      = $value
             }
             $script:lstAppsScriptVariables.Items.Add($newItem)
             $script:txtAppsScriptKey.Clear()
             $script:txtAppsScriptValue.Clear()
         })
 
-        $script:btnRemoveAppsScriptVariable.Add_Click({
-            if ($script:lstAppsScriptVariables.SelectedItem) {
-                $script:lstAppsScriptVariables.Items.Remove($script:lstAppsScriptVariables.SelectedItem)
+        $script:btnRemoveSelectedAppsScriptVariables.Add_Click({
+            $itemsToRemove = @($script:lstAppsScriptVariables.Items | Where-Object { $_.IsSelected })
+            if ($itemsToRemove.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
+                return
             }
-            else {
-                [System.Windows.MessageBox]::Show("Please select an Apps Script Variable to remove.", "Selection Error", "OK", "Warning")
+
+            # Remove selected items directly from the Items collection
+            foreach ($itemToRemove in $itemsToRemove) { # $itemsToRemove is defined above this block
+                $script:lstAppsScriptVariables.Items.Remove($itemToRemove)
+            }
+
+
+            # Update the header checkbox state
+            if ($null -ne $script:chkSelectAllAppsScriptVariables) { # Check if variable exists
+                 Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
             }
         })
 
@@ -2907,7 +3066,7 @@ $btnLoadConfig.Add_Click({
                     $loadedVars = $configContent.AppsScriptVariables
                     $hasVars = $false
                     foreach ($prop in $loadedVars.PSObject.Properties) {
-                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ Key = $prop.Name; Value = $prop.Value })
+                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ IsSelected = $false; Key = $prop.Name; Value = $prop.Value })
                         $hasVars = $true
                     }
                     if ($hasVars) {
@@ -2925,7 +3084,7 @@ $btnLoadConfig.Add_Click({
                     $loadedVars = $configContent.AppsScriptVariables
                     $hasVars = $false
                     foreach ($keyName in $loadedVars.Keys) {
-                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ Key = $keyName; Value = $loadedVars[$keyName] })
+                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ IsSelected = $false; Key = $keyName; Value = $loadedVars[$keyName] })
                         $hasVars = $true
                     }
                     if ($hasVars) {

@@ -609,7 +609,7 @@
 
                                 <!-- Action Buttons for ListView -->
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                                    <Button x:Name="btnRemoveAppsScriptVariable" Content="Remove Selected" Margin="0,0,10,0" Padding="10,5" ToolTip="Remove the selected variable from the list"/>
+                                    <Button x:Name="btnRemoveSelectedAppsScriptVariables" Content="Remove Selected" Margin="0,0,10,0" Padding="10,5" ToolTip="Remove the selected variable(s) from the list"/>
                                     <Button x:Name="btnClearAppsScriptVariables" Content="Clear All" Padding="10,5" ToolTip="Clear all variables from the list"/>
                                 </StackPanel>
                             </StackPanel>
