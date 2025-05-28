@@ -580,7 +580,48 @@
                                     <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
                                     <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="10,5" ToolTip="Clear all applications from the list"/>
                                 </StackPanel>
+                                                        </StackPanel>
+
+                            <!-- AppsScriptVariables Section -->
+                            <CheckBox x:Name="chkDefineAppsScriptVariables" Content="Define Apps Script Variables" Margin="5" ToolTip="Enable to define key-value pairs for Apps Script Variables"/>
+                            <StackPanel x:Name="appsScriptVariablesPanel" Visibility="Collapsed" Margin="25,0,5,20">
+                                <TextBlock Text="Apps Script Variables" FontWeight="Bold" Margin="0,5,0,10"/>
+                                <!-- Input Grid -->
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Key:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                    <TextBox x:Name="txtAppsScriptKey" Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" ToolTip="Enter the variable key"/>
+                                    <TextBlock Text="Value:" Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                    <TextBox x:Name="txtAppsScriptValue" Grid.Row="0" Grid.Column="3" Margin="0,0,10,0" ToolTip="Enter the variable value"/>
+                                    <Button x:Name="btnAddAppsScriptVariable" Grid.Row="0" Grid.Column="4" Content="Add Variable" Width="100" ToolTip="Add the key-value pair to the list"/>
+                                </Grid>
+
+                                <!-- ListView for AppsScriptVariables -->
+                                <ListView x:Name="lstAppsScriptVariables" Height="150" Margin="0,0,0,10">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="200"/>
+                                            <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="300"/>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+
+                                <!-- Action Buttons for ListView -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                    <Button x:Name="btnRemoveAppsScriptVariable" Content="Remove Selected" Margin="0,0,10,0" Padding="10,5" ToolTip="Remove the selected variable from the list"/>
+                                    <Button x:Name="btnClearAppsScriptVariables" Content="Clear All" Padding="10,5" ToolTip="Clear all variables from the list"/>
+                                </StackPanel>
                             </StackPanel>
+                            <!-- End AppsScriptVariables Section -->
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>

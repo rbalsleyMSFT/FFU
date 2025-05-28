@@ -585,7 +585,13 @@ function Get-UIConfig {
         AllowVHDXCaching            = $window.FindName('chkAllowVHDXCaching').IsChecked
         AppListPath                 = $window.FindName('txtAppListJsonPath').Text
         AppsPath                    = $window.FindName('txtApplicationPath').Text
-        AppsScriptVariables         = $null # Parameter from Sample_default.json, no UI control
+        AppsScriptVariables         = if ($window.FindName('chkDefineAppsScriptVariables').IsChecked) {
+                                        $vars = @{}
+                                        foreach ($item in $window.FindName('lstAppsScriptVariables').Items) {
+                                            $vars[$item.Key] = $item.Value
+                                        }
+                                        if ($vars.Count -gt 0) { $vars } else { $null }
+                                      } else { $null }
         BuildUSBDrive               = $window.FindName('chkBuildUSBDriveEnable').IsChecked
         CleanupAppsISO              = $window.FindName('chkCleanupAppsISO').IsChecked
         CleanupCaptureISO           = $window.FindName('chkCleanupCaptureISO').IsChecked
@@ -1401,6 +1407,16 @@ $window.Add_Loaded({
         $script:chkCopyDrivers = $window.FindName('chkCopyDrivers')
         $script:chkCompressDriversToWIM = $window.FindName('chkCompressDriversToWIM')
 
+        # AppsScriptVariables Controls
+        $script:chkDefineAppsScriptVariables = $window.FindName('chkDefineAppsScriptVariables')
+        $script:appsScriptVariablesPanel = $window.FindName('appsScriptVariablesPanel')
+        $script:txtAppsScriptKey = $window.FindName('txtAppsScriptKey')
+        $script:txtAppsScriptValue = $window.FindName('txtAppsScriptValue')
+        $script:btnAddAppsScriptVariable = $window.FindName('btnAddAppsScriptVariable')
+        $script:lstAppsScriptVariables = $window.FindName('lstAppsScriptVariables')
+        $script:btnRemoveAppsScriptVariable = $window.FindName('btnRemoveAppsScriptVariable')
+        $script:btnClearAppsScriptVariables = $window.FindName('btnClearAppsScriptVariables')
+
         # Get Windows Settings defaults and lists from helper module
         $script:windowsSettingsDefaults = Get-WindowsSettingsDefaults
         # Get General defaults from helper module
@@ -2016,8 +2032,10 @@ $window.Add_Loaded({
                 $script:applicationPathPanel.Visibility = 'Visible'
                 $script:appListJsonPathPanel.Visibility = 'Visible'
                 $script:chkBringYourOwnApps.Visibility = 'Visible'
+                # New logic for AppsScriptVariables
+                $script:chkDefineAppsScriptVariables.Visibility = 'Visible'
             })
-        $script:chkInstallApps.Add_Unchecked({
+$script:chkInstallApps.Add_Unchecked({
                 $script:chkInstallWingetApps.IsChecked = $false # Uncheck children when parent is unchecked
                 $script:chkBringYourOwnApps.IsChecked = $false
                 $script:chkInstallWingetApps.Visibility = 'Collapsed'
@@ -2027,6 +2045,10 @@ $window.Add_Loaded({
                 $script:wingetPanel.Visibility = 'Collapsed'
                 $script:wingetSearchPanel.Visibility = 'Collapsed'
                 $script:byoApplicationPanel.Visibility = 'Collapsed'
+                # New logic for AppsScriptVariables
+                $script:chkDefineAppsScriptVariables.IsChecked = $false # Also uncheck it
+                $script:chkDefineAppsScriptVariables.Visibility = 'Collapsed'
+                $script:appsScriptVariablesPanel.Visibility = 'Collapsed' # Ensure panel is hidden
             })
         $script:btnBrowseApplicationPath.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Application Path Folder"
@@ -2407,6 +2429,66 @@ $window.Add_Loaded({
         $script:chkInstallDrivers.IsEnabled = $true
         $script:chkCopyDrivers.IsEnabled = $true
         $script:chkCompressDriversToWIM.IsEnabled = $true
+
+        # AppsScriptVariables Event Handlers
+        $script:chkDefineAppsScriptVariables.Add_Checked({
+            $script:appsScriptVariablesPanel.Visibility = 'Visible'
+        })
+        $script:chkDefineAppsScriptVariables.Add_Unchecked({
+            $script:appsScriptVariablesPanel.Visibility = 'Collapsed'
+        })
+
+        $script:btnAddAppsScriptVariable.Add_Click({
+            $key = $script:txtAppsScriptKey.Text.Trim()
+            $value = $script:txtAppsScriptValue.Text.Trim()
+
+            if ([string]::IsNullOrWhiteSpace($key)) {
+                [System.Windows.MessageBox]::Show("Apps Script Variable Key cannot be empty.", "Input Error", "OK", "Warning")
+                return
+            }
+            # Check for duplicate keys
+            $existingKey = $script:lstAppsScriptVariables.Items | Where-Object { $_.Key -eq $key }
+            if ($existingKey) {
+                [System.Windows.MessageBox]::Show("An Apps Script Variable with the key '$key' already exists.", "Duplicate Key", "OK", "Warning")
+                return
+            }
+
+            $newItem = [PSCustomObject]@{
+                Key   = $key
+                Value = $value
+            }
+            $script:lstAppsScriptVariables.Items.Add($newItem)
+            $script:txtAppsScriptKey.Clear()
+            $script:txtAppsScriptValue.Clear()
+        })
+
+        $script:btnRemoveAppsScriptVariable.Add_Click({
+            if ($script:lstAppsScriptVariables.SelectedItem) {
+                $script:lstAppsScriptVariables.Items.Remove($script:lstAppsScriptVariables.SelectedItem)
+            }
+            else {
+                [System.Windows.MessageBox]::Show("Please select an Apps Script Variable to remove.", "Selection Error", "OK", "Warning")
+            }
+        })
+
+        $script:btnClearAppsScriptVariables.Add_Click({
+            $script:lstAppsScriptVariables.Items.Clear()
+        })
+
+        # Initial state for chkDefineAppsScriptVariables based on chkInstallApps
+        if ($script:chkInstallApps.IsChecked) {
+            $script:chkDefineAppsScriptVariables.Visibility = 'Visible'
+        }
+        else {
+            $script:chkDefineAppsScriptVariables.Visibility = 'Collapsed'
+        }
+        # Initial state for appsScriptVariablesPanel based on chkDefineAppsScriptVariables
+        if ($script:chkDefineAppsScriptVariables.IsChecked) {
+            $script:appsScriptVariablesPanel.Visibility = 'Visible'
+        }
+        else {
+            $script:appsScriptVariablesPanel.Visibility = 'Collapsed'
+        }
 
     })
 
@@ -2804,6 +2886,62 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'chkBringYourOwnApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'BringYourOwnApps' -WindowInstance $window # Assuming BringYourOwnApps is in config
                 Set-UIValue -ControlName 'txtApplicationPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'AppsPath' -WindowInstance $window
                 Set-UIValue -ControlName 'txtAppListJsonPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'AppListPath' -WindowInstance $window
+
+                # Handle AppsScriptVariables
+                $appsScriptVarsKeyExists = $false
+                if ($configContent -is [System.Management.Automation.PSCustomObject] -and $null -ne $configContent.PSObject.Properties) {
+                    try {
+                        if (($configContent.PSObject.Properties.Match('AppsScriptVariables')).Count -gt 0) {
+                            $appsScriptVarsKeyExists = $true
+                        }
+                    } catch { WriteLog "ERROR: Exception while trying to Match key 'AppsScriptVariables'. Error: $($_.Exception.Message)" }
+                }
+
+                $lstAppsScriptVars = $window.FindName('lstAppsScriptVariables')
+                $chkDefineAppsScriptVars = $window.FindName('chkDefineAppsScriptVariables')
+                $appsScriptVarsPanel = $window.FindName('appsScriptVariablesPanel')
+                $lstAppsScriptVars.Items.Clear()
+
+                if ($appsScriptVarsKeyExists -and $null -ne $configContent.AppsScriptVariables -and $configContent.AppsScriptVariables -is [System.Management.Automation.PSCustomObject]) {
+                    WriteLog "LoadConfig: Processing AppsScriptVariables from config."
+                    $loadedVars = $configContent.AppsScriptVariables
+                    $hasVars = $false
+                    foreach ($prop in $loadedVars.PSObject.Properties) {
+                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ Key = $prop.Name; Value = $prop.Value })
+                        $hasVars = $true
+                    }
+                    if ($hasVars) {
+                        $chkDefineAppsScriptVars.IsChecked = $true
+                        $appsScriptVarsPanel.Visibility = 'Visible'
+                        WriteLog "LoadConfig: Loaded AppsScriptVariables and checked 'Define Apps Script Variables'."
+                    } else {
+                        $chkDefineAppsScriptVars.IsChecked = $false
+                        $appsScriptVarsPanel.Visibility = 'Collapsed'
+                        WriteLog "LoadConfig: AppsScriptVariables key was present but empty. Unchecked 'Define Apps Script Variables'."
+                    }
+                } elseif ($appsScriptVarsKeyExists -and $null -ne $configContent.AppsScriptVariables -and $configContent.AppsScriptVariables -is [hashtable]) {
+                    # Handle if it's already a hashtable (e.g., from older config or direct creation)
+                    WriteLog "LoadConfig: Processing AppsScriptVariables (Hashtable) from config."
+                    $loadedVars = $configContent.AppsScriptVariables
+                    $hasVars = $false
+                    foreach ($keyName in $loadedVars.Keys) {
+                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ Key = $keyName; Value = $loadedVars[$keyName] })
+                        $hasVars = $true
+                    }
+                    if ($hasVars) {
+                        $chkDefineAppsScriptVars.IsChecked = $true
+                        $appsScriptVarsPanel.Visibility = 'Visible'
+                        WriteLog "LoadConfig: Loaded AppsScriptVariables (Hashtable) and checked 'Define Apps Script Variables'."
+                    } else {
+                        $chkDefineAppsScriptVars.IsChecked = $false
+                        $appsScriptVarsPanel.Visibility = 'Collapsed'
+                        WriteLog "LoadConfig: AppsScriptVariables (Hashtable) key was present but empty. Unchecked 'Define Apps Script Variables'."
+                    }
+                } else {
+                    $chkDefineAppsScriptVars.IsChecked = $false
+                    $appsScriptVarsPanel.Visibility = 'Collapsed'
+                    WriteLog "LoadConfig Info: Key 'AppsScriptVariables' not found, is null, or not a PSCustomObject/Hashtable. Unchecked 'Define Apps Script Variables'."
+                }
 
                 # Update USB Drive selection if present in config
                 $usbDriveListKeyExists = $false
