@@ -38,8 +38,8 @@ else {
 
 # Example of how to use the AppsScriptVariables hashtable to control script execution
 
-# Example: Check if a variable named 'foo' is set to string 'true' and run a script accordingly
-# if ($AppsScriptVariables['foo'] -eq 'true') {
+# Example: Check if a variable named 'foo' is set to string 'bar' and run a script accordingly
+# if ($AppsScriptVariables['foo'] -eq 'bar') {
 #     Write-Host "Foo would have installed"
 # }
 # else {
@@ -47,11 +47,11 @@ else {
 # }
 
 # Example: Check if a variable named 'foo' is set to boolean $true and run a script accordingly
-# if ($AppsScriptVariables['foo'] -eq $true) {
-#     Write-Host "Foo would have been installed"
+# if ($AppsScriptVariables[Teams] -eq $true) {
+#     Write-Host "Teams would have been installed"
 # }
 # else {
-#     Write-Host "Foo would not have installed"
+#     Write-Host "Teams would not have been installed"
 # }
 
 # Your code below here

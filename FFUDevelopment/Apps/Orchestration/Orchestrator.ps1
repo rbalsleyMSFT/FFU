@@ -37,7 +37,6 @@ $scriptList = @(
     "Update-Edge.ps1",
     "Install-Win32Apps.ps1",
     "Install-StoreApps.ps1",
-    "Invoke-AppsScript.ps1",
     "Install-UserApps.ps1"    
 )
 # Check if each script exists and run it if it does 
@@ -46,7 +45,7 @@ foreach ($script in $scriptList) {
     if (Test-Path -Path $scriptFile) {
         Write-Host "`n" # Add a newline for spacing
         Write-Host "---------------------------------------------------" -ForegroundColor Yellow
-        Write-Host " Running script: $script" -ForegroundColor Yellow
+        Write-Host " Running script: $script                           " -ForegroundColor Yellow
         Write-Host "---------------------------------------------------" -ForegroundColor Yellow
         # Run script and wait for it to finish
         # pause
@@ -54,12 +53,25 @@ foreach ($script in $scriptList) {
     }
 }
 
+# Invoke-AppsScript.ps1 if it exists and AppsScriptVariables.json is present
+$appsScriptFile = Join-Path -Path $scriptPath -ChildPath "Invoke-AppsScript.ps1"
+$appsScriptVarsJsonPath = Join-Path -Path $PSScriptRoot -ChildPath "AppsScriptVariables.json"
+if ((Test-Path -Path $appsScriptFile) -and (Test-Path -Path $appsScriptVarsJsonPath)) {
+    Write-Host "`n" # Add a newline for spacing
+    Write-Host "---------------------------------------------------" -ForegroundColor Yellow
+    Write-Host " Running script: Invoke-AppsScript.ps1             " -ForegroundColor Yellow
+    Write-Host "---------------------------------------------------" -ForegroundColor Yellow
+
+    Write-Host "Using AppsScriptVariables from JSON file: $appsScriptVarsJsonPath"
+    & $appsScriptFile
+}
+
 # Run-DiskCleanup.ps1 must run before Run-Sysprep.ps1
 $diskCleanupScript = Join-Path -Path $scriptPath -ChildPath "Run-DiskCleanup.ps1"
 if (Test-Path -Path $diskCleanupScript) {
     Write-Host "`n" # Add a newline for spacing
     Write-Host "---------------------------------------------------" -ForegroundColor Yellow
-    Write-Host " Running script: Run-DiskCleanup.ps1" -ForegroundColor Yellow
+    Write-Host " Running script: Run-DiskCleanup.ps1               " -ForegroundColor Yellow
     Write-Host "---------------------------------------------------" -ForegroundColor Yellow
     # Run script and wait for it to finish
     & $diskCleanupScript
@@ -73,7 +85,7 @@ $sysprepScript = Join-Path -Path $scriptPath -ChildPath "Run-Sysprep.ps1"
 if (Test-Path -Path $sysprepScript) {
     Write-Host "`n" # Add a newline for spacing
     Write-Host "---------------------------------------------------" -ForegroundColor Yellow
-    Write-Host " Running script: Run-Sysprep.ps1" -ForegroundColor Yellow
+    Write-Host " Running script: Run-Sysprep.ps1                   " -ForegroundColor Yellow
     Write-Host "---------------------------------------------------" -ForegroundColor Yellow
     # Run script and wait for it to finish
     & $sysprepScript
