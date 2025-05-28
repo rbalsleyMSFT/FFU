@@ -586,24 +586,16 @@
                             <CheckBox x:Name="chkDefineAppsScriptVariables" Content="Define Apps Script Variables" Margin="5" ToolTip="Enable to define key-value pairs for Apps Script Variables"/>
                             <StackPanel x:Name="appsScriptVariablesPanel" Visibility="Collapsed" Margin="25,0,5,20">
                                 <TextBlock Text="Apps Script Variables" FontWeight="Bold" Margin="0,5,0,10"/>
-                                <!-- Input Grid -->
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="Key:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBox x:Name="txtAppsScriptKey" Grid.Row="0" Grid.Column="1" Margin="0,0,10,0" ToolTip="Enter the variable key"/>
-                                    <TextBlock Text="Value:" Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                    <TextBox x:Name="txtAppsScriptValue" Grid.Row="0" Grid.Column="3" Margin="0,0,10,0" ToolTip="Enter the variable value"/>
-                                    <Button x:Name="btnAddAppsScriptVariable" Grid.Row="0" Grid.Column="4" Content="Add Variable" Width="100" ToolTip="Add the key-value pair to the list"/>
-                                </Grid>
+                                <!-- Key Input -->
+                                <TextBlock Text="Key:" Margin="0,0,0,5"/>
+                                <TextBox x:Name="txtAppsScriptKey" Margin="0,0,0,10" ToolTip="Enter the variable key"/>
+
+                                <!-- Value Input -->
+                                <TextBlock Text="Value:" Margin="0,0,0,5"/>
+                                <TextBox x:Name="txtAppsScriptValue" Margin="0,0,0,10" ToolTip="Enter the variable value"/>
+                                
+                                <!-- Add Variable Button -->
+                                <Button x:Name="btnAddAppsScriptVariable" Content="Add Variable" Width="120" HorizontalAlignment="Left" Margin="0,10,0,10" Padding="10,5" ToolTip="Add the key-value pair to the list"/>
 
                                 <!-- ListView for AppsScriptVariables -->
                                 <ListView x:Name="lstAppsScriptVariables" Height="150" Margin="0,0,0,10">
