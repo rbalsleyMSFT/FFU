@@ -49,6 +49,9 @@ Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
 # Set the log path for the common logger (for UI operations)
 Set-CommonCoreLogPath -Path $global:LogFile
 
+# Script-scoped list for Apps Script Variables data
+$script:appsScriptVariablesDataList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
 # Setting long path support - this prevents issues where some applications have deep directory structures
 # and driver extraction fails due to long paths.
 $script:originalLongPathsValue = $null # Store original value
@@ -587,7 +590,7 @@ function Get-UIConfig {
         AppsPath                    = $window.FindName('txtApplicationPath').Text
         AppsScriptVariables         = if ($window.FindName('chkDefineAppsScriptVariables').IsChecked) {
                                         $vars = @{}
-                                        foreach ($item in $window.FindName('lstAppsScriptVariables').Items) {
+                                        foreach ($item in $script:appsScriptVariablesDataList) {
                                             $vars[$item.Key] = $item.Value
                                         }
                                         if ($vars.Count -gt 0) { $vars } else { $null }
@@ -1042,6 +1045,17 @@ function Invoke-ListViewSort {
     }
     elseif ($listView.Name -eq 'lstWingetResults') {
         $secondarySortPropertyName = "Name"
+    }
+    elseif ($listView.Name -eq 'lstAppsScriptVariables') {
+        if ($property -eq "Key") {
+            $secondarySortPropertyName = "Value"
+        }
+        elseif ($property -eq "Value") {
+            $secondarySortPropertyName = "Key"
+        }
+        else { # Default secondary sort for IsSelected or other properties
+            $secondarySortPropertyName = "Key"
+        }
     }
 
     if ($null -ne $secondarySortPropertyName -and $property -ne $secondarySortPropertyName) {
@@ -1595,6 +1609,9 @@ $window.Add_Loaded({
         $script:txtAppsScriptValue = $window.FindName('txtAppsScriptValue')
         $script:btnAddAppsScriptVariable = $window.FindName('btnAddAppsScriptVariable')
         $script:lstAppsScriptVariables = $window.FindName('lstAppsScriptVariables')
+        # Bind ItemsSource to the data list
+        $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
+        
         # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
         $itemStyleAppsScriptVars = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
         $itemStyleAppsScriptVars.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
@@ -1603,9 +1620,44 @@ $window.Add_Loaded({
         # The GridView for lstAppsScriptVariables is defined in XAML. We need to get it and add the column.
         if ($script:lstAppsScriptVariables.View -is [System.Windows.Controls.GridView]) {
             Add-SelectableGridViewColumn -ListView $script:lstAppsScriptVariables -HeaderCheckBoxScriptVariableName "chkSelectAllAppsScriptVariables" -ColumnWidth 60
+            
+            # Make Key and Value columns sortable
+            $appsScriptVarsGridView = $script:lstAppsScriptVariables.View
+            
+            # Key Column (should be at index 1 after selectable column is inserted at 0)
+            if ($appsScriptVarsGridView.Columns.Count -gt 1) {
+                $keyColumn = $appsScriptVarsGridView.Columns[1]
+                $keyHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+                $keyHeader.Content = "Key"
+                $keyHeader.Tag = "Key" # Property to sort by
+                $keyHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+                $keyColumn.Header = $keyHeader
+            }
+
+            # Value Column (should be at index 2)
+            if ($appsScriptVarsGridView.Columns.Count -gt 2) {
+                $valueColumn = $appsScriptVarsGridView.Columns[2]
+                $valueHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+                $valueHeader.Content = "Value"
+                $valueHeader.Tag = "Value" # Property to sort by
+                $valueHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+                $valueColumn.Header = $valueHeader
+            }
+
+            # Add Click event handler for sorting
+            $script:lstAppsScriptVariables.AddHandler(
+                [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+                [System.Windows.RoutedEventHandler] {
+                    param($eventSource, $e)
+                    $header = $e.OriginalSource
+                    if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                        Invoke-ListViewSort -listView $script:lstAppsScriptVariables -property $header.Tag
+                    }
+                }
+            )
         }
         else {
-            WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added."
+            WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
         }
 
         $script:btnRemoveSelectedAppsScriptVariables = $window.FindName('btnRemoveSelectedAppsScriptVariables') # Updated variable name
@@ -2606,23 +2658,27 @@ $script:chkInstallApps.Add_Unchecked({
                 Key        = $key
                 Value      = $value
             }
-            $script:lstAppsScriptVariables.Items.Add($newItem)
+            $script:appsScriptVariablesDataList.Add($newItem)
+            $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
             $script:txtAppsScriptKey.Clear()
             $script:txtAppsScriptValue.Clear()
+            # Update the header checkbox state
+            if ($null -ne $script:chkSelectAllAppsScriptVariables) {
+                 Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+            }
         })
 
         $script:btnRemoveSelectedAppsScriptVariables.Add_Click({
-            $itemsToRemove = @($script:lstAppsScriptVariables.Items | Where-Object { $_.IsSelected })
+            $itemsToRemove = @($script:appsScriptVariablesDataList | Where-Object { $_.IsSelected })
             if ($itemsToRemove.Count -eq 0) {
                 [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
                 return
             }
 
-            # Remove selected items directly from the Items collection
-            foreach ($itemToRemove in $itemsToRemove) { # $itemsToRemove is defined above this block
-                $script:lstAppsScriptVariables.Items.Remove($itemToRemove)
+            foreach ($itemToRemove in $itemsToRemove) {
+                $script:appsScriptVariablesDataList.Remove($itemToRemove)
             }
-
+            $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
 
             # Update the header checkbox state
             if ($null -ne $script:chkSelectAllAppsScriptVariables) { # Check if variable exists
@@ -2631,7 +2687,12 @@ $script:chkInstallApps.Add_Unchecked({
         })
 
         $script:btnClearAppsScriptVariables.Add_Click({
-            $script:lstAppsScriptVariables.Items.Clear()
+            $script:appsScriptVariablesDataList.Clear()
+            $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
+            # Update the header checkbox state
+            if ($null -ne $script:chkSelectAllAppsScriptVariables) {
+                 Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+            }
         })
 
         # Initial state for chkDefineAppsScriptVariables based on chkInstallApps
@@ -3059,14 +3120,14 @@ $btnLoadConfig.Add_Click({
                 $lstAppsScriptVars = $window.FindName('lstAppsScriptVariables')
                 $chkDefineAppsScriptVars = $window.FindName('chkDefineAppsScriptVariables')
                 $appsScriptVarsPanel = $window.FindName('appsScriptVariablesPanel')
-                $lstAppsScriptVars.Items.Clear()
+                $script:appsScriptVariablesDataList.Clear() # Clear the backing data list
 
                 if ($appsScriptVarsKeyExists -and $null -ne $configContent.AppsScriptVariables -and $configContent.AppsScriptVariables -is [System.Management.Automation.PSCustomObject]) {
                     WriteLog "LoadConfig: Processing AppsScriptVariables from config."
                     $loadedVars = $configContent.AppsScriptVariables
                     $hasVars = $false
                     foreach ($prop in $loadedVars.PSObject.Properties) {
-                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ IsSelected = $false; Key = $prop.Name; Value = $prop.Value })
+                        $script:appsScriptVariablesDataList.Add([PSCustomObject]@{ IsSelected = $false; Key = $prop.Name; Value = $prop.Value })
                         $hasVars = $true
                     }
                     if ($hasVars) {
@@ -3084,7 +3145,7 @@ $btnLoadConfig.Add_Click({
                     $loadedVars = $configContent.AppsScriptVariables
                     $hasVars = $false
                     foreach ($keyName in $loadedVars.Keys) {
-                        $lstAppsScriptVars.Items.Add([PSCustomObject]@{ IsSelected = $false; Key = $keyName; Value = $loadedVars[$keyName] })
+                        $script:appsScriptVariablesDataList.Add([PSCustomObject]@{ IsSelected = $false; Key = $keyName; Value = $loadedVars[$keyName] })
                         $hasVars = $true
                     }
                     if ($hasVars) {
@@ -3100,6 +3161,12 @@ $btnLoadConfig.Add_Click({
                     $chkDefineAppsScriptVars.IsChecked = $false
                     $appsScriptVarsPanel.Visibility = 'Collapsed'
                     WriteLog "LoadConfig Info: Key 'AppsScriptVariables' not found, is null, or not a PSCustomObject/Hashtable. Unchecked 'Define Apps Script Variables'."
+                }
+                # Update the ListView's ItemsSource after populating the data list
+                $lstAppsScriptVars.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
+                # Update the header checkbox state
+                if ($null -ne $script:chkSelectAllAppsScriptVariables) {
+                     Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
                 }
 
                 # Update USB Drive selection if present in config
