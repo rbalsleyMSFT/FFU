@@ -614,7 +614,7 @@ function Get-UIConfig {
         Disksize                    = [int64]$window.FindName('txtDiskSize').Text * 1GB # Renamed from DiskSize
         DownloadDrivers             = $window.FindName('chkDownloadDrivers').IsChecked # UI Only parameter
         DriversFolder               = $window.FindName('txtDriversFolder').Text
-        DriversJsonPath             = "$($window.FindName('txtDriversFolder').Text)\Drivers.json" # Parameter from Sample_default.json, derived
+        DriversJsonPath             = $script:txtDriversJsonPath.Text # Read from the new TextBox
         FFUCaptureLocation          = $window.FindName('txtFFUCaptureLocation').Text
         FFUDevelopmentPath          = $window.FindName('txtFFUDevPath').Text
         FFUPrefix                   = $window.FindName('txtVMNamePrefix').Text
@@ -1810,6 +1810,9 @@ $window.Add_Loaded({
         # Drivers tab defaults from General Defaults
         $window.FindName('txtDriversFolder').Text = $script:generalDefaults.DriversFolder
         $window.FindName('txtPEDriversFolder').Text = $script:generalDefaults.PEDriversFolder
+        $script:txtDriversJsonPath = $window.FindName('txtDriversJsonPath') # Assign new TextBox
+        $script:txtDriversJsonPath.Text = $script:generalDefaults.DriversJsonPath # Set default text
+        $script:btnBrowseDriversJsonPath = $window.FindName('btnBrowseDriversJsonPath') # Assign new Button
         $window.FindName('chkDownloadDrivers').IsChecked = $script:generalDefaults.DownloadDrivers
         $window.FindName('chkInstallDrivers').IsChecked = $script:generalDefaults.InstallDrivers
         $window.FindName('chkCopyDrivers').IsChecked = $script:generalDefaults.CopyDrivers
@@ -2608,6 +2611,36 @@ $script:chkInstallApps.Add_Unchecked({
                 $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
                 if ($selectedPath) { $window.FindName('txtPEDriversFolder').Text = $selectedPath }
             })
+        $script:btnBrowseDriversJsonPath.Add_Click({
+                $sfd = New-Object System.Windows.Forms.SaveFileDialog
+                $sfd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+                $sfd.Title = "Select or Create Drivers.json File"
+                $sfd.FileName = "Drivers.json"
+                $sfd.CheckFileExists = $false # Allow creating a new file or selecting existing
+
+                # Set initial directory based on current TextBox value or DriversFolder default
+                $currentDriversJsonPath = $script:txtDriversJsonPath.Text
+                $initialDirectory = $null
+                if (-not [string]::IsNullOrWhiteSpace($currentDriversJsonPath) -and (Split-Path -Path $currentDriversJsonPath -IsValid)) {
+                    $initialDirectory = Split-Path -Path $currentDriversJsonPath -Parent
+                    if (-not (Test-Path -Path $initialDirectory -PathType Container)) {
+                        # If parent of current path doesn't exist, fall back
+                        $initialDirectory = $script:generalDefaults.DriversFolder
+                    }
+                }
+                else {
+                    $initialDirectory = $script:generalDefaults.DriversFolder
+                }
+                # Ensure the fallback directory exists, otherwise use FFUDevelopmentPath
+                if (-not (Test-Path -Path $initialDirectory -PathType Container)) {
+                    $initialDirectory = $window.FindName('txtFFUDevPath').Text # Fallback to FFU Dev Path
+                }
+                $sfd.InitialDirectory = $initialDirectory
+
+                if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                    $script:txtDriversJsonPath.Text = $sfd.FileName
+                }
+            })
 
         # Driver Checkbox Conditional Logic
         $script:chkInstallDrivers.Add_Checked({
@@ -3098,6 +3131,7 @@ $btnLoadConfig.Add_Click({
                 # WriteLog "LoadConfig Info: 'Model' key ('$($configContent.Model)') from config is not directly mapped to a single UI input. Set 'Make' and use 'Get Models'."
                 Set-UIValue -ControlName 'txtDriversFolder' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'DriversFolder' -WindowInstance $window
                 Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'PEDriversFolder' -WindowInstance $window
+                Set-UIValue -ControlName 'txtDriversJsonPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'DriversJsonPath' -WindowInstance $window # Load DriversJsonPath
                 Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyPEDrivers' -WindowInstance $window
                 Set-UIValue -ControlName 'chkCompressDriversToWIM' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CompressDownloadedDriversToWim' -WindowInstance $window
 

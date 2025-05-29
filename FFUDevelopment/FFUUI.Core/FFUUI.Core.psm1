@@ -325,6 +325,7 @@ function Get-GeneralDefaults {
         # Drivers Tab Defaults
         DriversFolder               = $driversPath
         PEDriversFolder             = $peDriversPath
+        DriversJsonPath             = Join-Path -Path $driversPath -ChildPath "Drivers.json"
         DownloadDrivers             = $false
         InstallDrivers              = $false
         CopyDrivers                 = $false
