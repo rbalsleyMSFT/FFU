@@ -177,6 +177,7 @@
                         <WrapPanel Grid.Row="7" Margin="0,5">
                             <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                             <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
+                            <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="5" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
                             <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
                             <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
                             <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>

@@ -652,7 +652,7 @@ function Get-UIConfig {
         RemoveFFU                   = $window.FindName('chkRemoveFFU').IsChecked
         RemoveUpdates               = $window.FindName('chkRemoveUpdates').IsChecked
         ShareName                   = $window.FindName('txtShareName').Text
-        UpdateADK                   = $true # Parameter from Sample_default.json, no UI control
+        UpdateADK                   = $script:chkUpdateADK.IsChecked
         UpdateEdge                  = $window.FindName('chkUpdateEdge').IsChecked
         UpdateLatestCU              = $window.FindName('chkUpdateLatestCU').IsChecked
         UpdateLatestDefender        = $window.FindName('chkUpdateLatestDefender').IsChecked
@@ -1713,6 +1713,8 @@ $window.Add_Loaded({
         $window.FindName('txtUsername').Text = $script:generalDefaults.Username
         $window.FindName('chkBuildUSBDriveEnable').IsChecked = $script:generalDefaults.BuildUSBDriveEnable
         $window.FindName('chkCompactOS').IsChecked = $script:generalDefaults.CompactOS
+        $script:chkUpdateADK = $window.FindName('chkUpdateADK') # Assign chkUpdateADK
+        $script:chkUpdateADK.IsChecked = $script:generalDefaults.UpdateADK # Set default for chkUpdateADK
         $window.FindName('chkOptimize').IsChecked = $script:generalDefaults.Optimize
         $window.FindName('chkAllowVHDXCaching').IsChecked = $script:generalDefaults.AllowVHDXCaching
         $window.FindName('chkCreateCaptureMedia').IsChecked = $script:generalDefaults.CreateCaptureMedia
@@ -3009,6 +3011,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'Username' -WindowInstance $window
                 Set-UIValue -ControlName 'chkBuildUSBDriveEnable' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'BuildUSBDrive' -WindowInstance $window
                 Set-UIValue -ControlName 'chkCompactOS' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CompactOS' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateADK' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateADK' -WindowInstance $window # Added for UpdateADK
                 Set-UIValue -ControlName 'chkOptimize' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'Optimize' -WindowInstance $window
                 Set-UIValue -ControlName 'chkAllowVHDXCaching' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'AllowVHDXCaching' -WindowInstance $window
                 Set-UIValue -ControlName 'chkAllowExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'AllowExternalHardDiskMedia' -WindowInstance $window

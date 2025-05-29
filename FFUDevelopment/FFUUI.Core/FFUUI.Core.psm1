@@ -328,6 +328,7 @@ function Get-GeneralDefaults {
         InstallDrivers              = $false
         CopyDrivers                 = $false
         CopyPEDrivers               = $false
+        UpdateADK                   = $true # Added for UpdateADK UI control
     }
 }
 
