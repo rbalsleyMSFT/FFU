@@ -309,6 +309,7 @@ function Get-GeneralDefaults {
         UpdateEdge                  = $false
         UpdateOneDrive              = $false
         UpdateLatestMSRT            = $false
+        UpdateLatestMicrocode       = $false # Added for UpdateLatestMicrocode UI control
         UpdatePreviewCU             = $false
         # Applications Tab Defaults
         InstallApps                 = $false

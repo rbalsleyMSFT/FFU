@@ -656,7 +656,7 @@ function Get-UIConfig {
         UpdateEdge                  = $window.FindName('chkUpdateEdge').IsChecked
         UpdateLatestCU              = $window.FindName('chkUpdateLatestCU').IsChecked
         UpdateLatestDefender        = $window.FindName('chkUpdateLatestDefender').IsChecked
-        UpdateLatestMicrocode       = $false # Parameter from Sample_default.json, no UI control
+        UpdateLatestMicrocode       = $script:chkUpdateLatestMicrocode.IsChecked 
         UpdateLatestMSRT            = $window.FindName('chkUpdateLatestMSRT').IsChecked
         UpdateLatestNet             = $window.FindName('chkUpdateLatestNet').IsChecked
         UpdateOneDrive              = $window.FindName('chkUpdateOneDrive').IsChecked
@@ -1603,6 +1603,7 @@ $window.Add_Loaded({
         $script:chkCompressDriversToWIM = $window.FindName('chkCompressDriversToWIM')
         $script:chkRemoveApps = $window.FindName('chkRemoveApps')
         $script:chkRemoveUpdates = $window.FindName('chkRemoveUpdates')
+        $script:chkUpdateLatestMicrocode = $window.FindName('chkUpdateLatestMicrocode') # Added for UpdateLatestMicrocode
 
         # AppsScriptVariables Controls
         $script:chkDefineAppsScriptVariables = $window.FindName('chkDefineAppsScriptVariables')
@@ -1790,6 +1791,7 @@ $window.Add_Loaded({
         $window.FindName('chkUpdateEdge').IsChecked = $script:generalDefaults.UpdateEdge
         $window.FindName('chkUpdateOneDrive').IsChecked = $script:generalDefaults.UpdateOneDrive
         $window.FindName('chkUpdateLatestMSRT').IsChecked = $script:generalDefaults.UpdateLatestMSRT
+        $script:chkUpdateLatestMicrocode.IsChecked = $script:generalDefaults.UpdateLatestMicrocode # Added for UpdateLatestMicrocode
         $window.FindName('chkUpdatePreviewCU').IsChecked = $script:generalDefaults.UpdatePreviewCU
 
         # Applications tab defaults from General Defaults
@@ -3107,6 +3109,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'chkUpdateEdge' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateEdge' -WindowInstance $window
                 Set-UIValue -ControlName 'chkUpdateOneDrive' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateOneDrive' -WindowInstance $window
                 Set-UIValue -ControlName 'chkUpdateLatestMSRT' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestMSRT' -WindowInstance $window
+                Set-UIValue -ControlName 'chkUpdateLatestMicrocode' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestMicrocode' -WindowInstance $window # Added for UpdateLatestMicrocode
                 Set-UIValue -ControlName 'chkUpdatePreviewCU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdatePreviewCU' -WindowInstance $window
                 
                 # Applications tab

@@ -400,6 +400,7 @@
                         <CheckBox x:Name="chkUpdateEdge" Content="Update Edge" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false."/>
                         <CheckBox x:Name="chkUpdateOneDrive" Content="Update OneDrive (Per-Machine)" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per-machine installation instead of per-user. Default is $false."/>
                         <CheckBox x:Name="chkUpdateLatestMSRT" Content="Update Microsoft Software Removal Tool (MSRT)" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Windows Malicious Software Removal Tool. Default is $false."/>
+                        <CheckBox x:Name="chkUpdateLatestMicrocode" Content="Update Latest Microcode (for LTSC/Server 2016/2019)" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will download and install the latest microcode updates for applicable Windows releases (e.g., Windows Server 2016/2019, Windows 10 LTSC 2016/2019) into the FFU."/>
                         <CheckBox x:Name="chkUpdatePreviewCU" Content="Update Preview Cumulative Update" Margin="5" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false."/>
                     </StackPanel>
                 </ScrollViewer>
