@@ -292,7 +292,8 @@ function Get-GeneralDefaults {
         CleanupDeployISO            = $false
         CleanupDrivers              = $false
         RemoveFFU                   = $false
-        RemoveApps                  = $false # New
+        RemoveApps                  = $false 
+        RemoveUpdates               = $false 
         # Hyper-V Settings Defaults
         VMHostIPAddress             = "" # Requires user input
         DiskSizeGB                  = 30

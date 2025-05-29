@@ -650,7 +650,7 @@ function Get-UIConfig {
         PromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia').IsChecked
         RemoveApps                  = $window.FindName('chkRemoveApps').IsChecked
         RemoveFFU                   = $window.FindName('chkRemoveFFU').IsChecked
-        RemoveUpdates               = $false # Parameter from Sample_default.json, no UI control
+        RemoveUpdates               = $window.FindName('chkRemoveUpdates').IsChecked
         ShareName                   = $window.FindName('txtShareName').Text
         UpdateADK                   = $true # Parameter from Sample_default.json, no UI control
         UpdateEdge                  = $window.FindName('chkUpdateEdge').IsChecked
@@ -1602,6 +1602,7 @@ $window.Add_Loaded({
         $script:chkCopyDrivers = $window.FindName('chkCopyDrivers')
         $script:chkCompressDriversToWIM = $window.FindName('chkCompressDriversToWIM')
         $script:chkRemoveApps = $window.FindName('chkRemoveApps')
+        $script:chkRemoveUpdates = $window.FindName('chkRemoveUpdates')
 
         # AppsScriptVariables Controls
         $script:chkDefineAppsScriptVariables = $window.FindName('chkDefineAppsScriptVariables')
@@ -1727,7 +1728,8 @@ $window.Add_Loaded({
         $window.FindName('chkCleanupDeployISO').IsChecked = $script:generalDefaults.CleanupDeployISO
         $window.FindName('chkCleanupDrivers').IsChecked = $script:generalDefaults.CleanupDrivers
         $window.FindName('chkRemoveFFU').IsChecked = $script:generalDefaults.RemoveFFU
-        $script:chkRemoveApps.IsChecked = $script:generalDefaults.RemoveApps # New
+        $script:chkRemoveApps.IsChecked = $script:generalDefaults.RemoveApps
+        $script:chkRemoveUpdates.IsChecked = $script:generalDefaults.RemoveUpdates
 
         # Hyper-V Settings defaults from General Defaults
         $window.FindName('txtDiskSize').Text = $script:generalDefaults.DiskSizeGB
@@ -3025,7 +3027,8 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'chkCleanupDeployISO' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupDeployISO' -WindowInstance $window
                 Set-UIValue -ControlName 'chkCleanupDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupDrivers' -WindowInstance $window
                 Set-UIValue -ControlName 'chkRemoveFFU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveFFU' -WindowInstance $window
-                Set-UIValue -ControlName 'chkRemoveApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveApps' -WindowInstance $window # New
+                Set-UIValue -ControlName 'chkRemoveApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveApps' -WindowInstance $window
+                Set-UIValue -ControlName 'chkRemoveUpdates' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveUpdates' -WindowInstance $window
                 
                 # Hyper-V Settings
                 Set-UIValue -ControlName 'cmbVMSwitchName' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'VMSwitchName' -WindowInstance $window

@@ -236,6 +236,7 @@
                             <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="5" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
                             <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="5" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>
                             <CheckBox x:Name="chkRemoveApps" Content="Remove Apps Folder Content" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will remove the application content in the Apps folder after the FFU has been captured."/>
+                            <CheckBox x:Name="chkRemoveUpdates" Content="Remove Downloaded Update Files" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded CU, .NET, MSRT, Defender, Edge, and OneDrive files after being applied/included."/>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
