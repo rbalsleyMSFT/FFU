@@ -47,12 +47,29 @@ $script:allowedFeatures = @(
 )
 
 $script:skuList = @(
-    'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro',
-    'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations',
-    'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard',
-    'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)',
-    'Enterprise 2016 LTSB', 'Enterprise N 2016 LTSB', 'Enterprise LTSC', 
-    'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC'
+    'Home',
+    'Home N',
+    'Home Single Language',
+    'Education',
+    'Education N',
+    'Pro',
+    'Pro N',
+    'Pro Education',
+    'Pro Education N',
+    'Pro for Workstations',
+    'Pro N for Workstations',
+    'Enterprise',
+    'Enterprise N',
+    'Enterprise 2016 LTSB',
+    'Enterprise N 2016 LTSB',
+    'Enterprise LTSC',
+    'Enterprise N LTSC',
+    'IoT Enterprise LTSC',
+    'IoT Enterprise N LTSC',
+    'Standard',
+    'Standard (Desktop Experience)',
+    'Datacenter',
+    'Datacenter (Desktop Experience)'
 )
 
 $script:allowedLangs = @(
