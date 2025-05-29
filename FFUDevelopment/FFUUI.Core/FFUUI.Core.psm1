@@ -50,7 +50,9 @@ $script:skuList = @(
     'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro',
     'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations',
     'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Standard',
-    'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'
+    'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)',
+    'Enterprise 2016 LTSB', 'Enterprise N 2016 LTSB', 'Enterprise LTSC', 
+    'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC'
 )
 
 $script:allowedLangs = @(
@@ -66,7 +68,9 @@ $script:allWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows Server 2016"; Value = 2016 },
     [PSCustomObject]@{ Display = "Windows Server 2019"; Value = 2019 },
     [PSCustomObject]@{ Display = "Windows Server 2022"; Value = 2022 },
-    [PSCustomObject]@{ Display = "Windows Server 2025"; Value = 2025 }
+    [PSCustomObject]@{ Display = "Windows Server 2025"; Value = 2025 },
+    [PSCustomObject]@{ Display = "Windows 10 LTSC 2021"; Value = 2021 },
+    [PSCustomObject]@{ Display = "Windows 10 LTSC 2024"; Value = 2024 }
 )
 
 $script:mctWindowsReleases = @(
@@ -79,7 +83,9 @@ $script:windowsVersionMap = @{
     11   = @("22H2", "23H2", "24H2")
     2016 = @("1607")
     2019 = @("1809")
+    2021 = @("21H2") # LTSC 2021
     2022 = @("21H2")
+    2024 = @("24H2") # LTSC 2024
     2025 = @("24H2")
 }
 
