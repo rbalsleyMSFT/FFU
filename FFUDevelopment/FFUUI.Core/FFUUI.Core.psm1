@@ -86,6 +86,8 @@ $script:allWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows Server 2019"; Value = 2019 },
     [PSCustomObject]@{ Display = "Windows Server 2022"; Value = 2022 },
     [PSCustomObject]@{ Display = "Windows Server 2025"; Value = 2025 },
+    [PSCustomObject]@{ Display = "Windows 10 LTSB 2016"; Value = 1607 },
+    [PSCustomObject]@{ Display = "Windows 10 LTSC 2019"; Value = 1809 },
     [PSCustomObject]@{ Display = "Windows 10 LTSC 2021"; Value = 2021 },
     [PSCustomObject]@{ Display = "Windows 10 LTSC 2024"; Value = 2024 }
 )
@@ -98,12 +100,14 @@ $script:mctWindowsReleases = @(
 $script:windowsVersionMap = @{
     10   = @("22H2")
     11   = @("22H2", "23H2", "24H2")
-    2016 = @("1607")
-    2019 = @("1809")
+    1607 = @("1607") # Windows 10 LTSB 2016
+    1809 = @("1809") # Windows 10 LTSC 2019
+    2016 = @("1607") # Server 2016
+    2019 = @("1809") # Server 2019
     2021 = @("21H2") # LTSC 2021
-    2022 = @("21H2")
+    2022 = @("21H2") # Server 2022
     2024 = @("24H2") # LTSC 2024
-    2025 = @("24H2")
+    2025 = @("24H2") # Server 2025
 }
 
 # --------------------------------------------------------------------------
