@@ -759,6 +759,48 @@ function Update-WindowsVersionCombo {
     }
 }
 
+# Function to refresh the Windows SKU ComboBox based on selected release
+function Update-WindowsSkuCombo {
+    param(
+        [int]$selectedReleaseValue
+    )
+
+    $skuCombo = $script:cmbWindowsSKU
+    if (-not $skuCombo) {
+        WriteLog "Update-WindowsSkuCombo: SKU ComboBox not found."
+        return
+    }
+
+    $previousSelectedSku = $null
+    if ($null -ne $skuCombo.SelectedItem) {
+        $previousSelectedSku = $skuCombo.SelectedItem
+    }
+
+    WriteLog "Update-WindowsSkuCombo: Updating SKUs for Release Value '$selectedReleaseValue'."
+    $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue
+    
+    $skuCombo.ItemsSource = $availableSkus
+    WriteLog "Update-WindowsSkuCombo: Set ItemsSource with $($availableSkus.Count) SKUs."
+
+    # Attempt to re-select the previous SKU, or "Pro", or the first available
+    if ($null -ne $previousSelectedSku -and $availableSkus -contains $previousSelectedSku) {
+        $skuCombo.SelectedItem = $previousSelectedSku
+        WriteLog "Update-WindowsSkuCombo: Re-selected previous SKU '$previousSelectedSku'."
+    }
+    elseif ($availableSkus -contains "Pro") {
+        $skuCombo.SelectedItem = "Pro"
+        WriteLog "Update-WindowsSkuCombo: Selected default SKU 'Pro'."
+    }
+    elseif ($availableSkus.Count -gt 0) {
+        $skuCombo.SelectedIndex = 0
+        WriteLog "Update-WindowsSkuCombo: Selected first available SKU '$($skuCombo.SelectedItem)'."
+    }
+    else {
+        $skuCombo.SelectedIndex = -1 # No SKUs available
+        WriteLog "Update-WindowsSkuCombo: No SKUs available for Release '$selectedReleaseValue'."
+    }
+}
+
 # Combined function to refresh both Release and Version combos
 $script:RefreshWindowsSettingsCombos = {
     param([string]$isoPath)
@@ -774,6 +816,9 @@ $script:RefreshWindowsSettingsCombos = {
 
     # Update Version combo based on the selected release
     Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath
+
+    # Update SKU combo based on the selected release
+    Update-WindowsSkuCombo -selectedReleaseValue $selectedReleaseValue
 }
 
 Add-Type -AssemblyName WindowsBase
@@ -1681,6 +1726,8 @@ $window.Add_Loaded({
                 }
                 # Only need to update the Version combo when Release changes
                 Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $script:txtISOPath.Text
+                # Also update the SKU combo
+                Update-WindowsSkuCombo -selectedReleaseValue $selectedReleaseValue
             })
         $script:btnBrowseISO.Add_Click({
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
@@ -1696,8 +1743,8 @@ $window.Add_Loaded({
         $script:cmbWindowsLang.ItemsSource = $script:windowsSettingsDefaults.AllowedLanguages
         $script:cmbWindowsLang.SelectedItem = $script:windowsSettingsDefaults.DefaultWindowsLang
 
-        $script:cmbWindowsSKU.ItemsSource = $script:windowsSettingsDefaults.SkuList
-        $script:cmbWindowsSKU.SelectedItem = $script:windowsSettingsDefaults.DefaultWindowsSKU
+        # $script:cmbWindowsSKU.ItemsSource is now populated by Update-WindowsSkuCombo called from RefreshWindowsSettingsCombos
+        $script:cmbWindowsSKU.SelectedItem = $script:windowsSettingsDefaults.DefaultWindowsSKU # Attempt to set default
 
         $script:cmbMediaType.ItemsSource = $script:windowsSettingsDefaults.AllowedMediaTypes
         $script:cmbMediaType.SelectedItem = $script:windowsSettingsDefaults.DefaultMediaType

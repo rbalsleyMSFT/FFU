@@ -110,6 +110,61 @@ $script:windowsVersionMap = @{
     2025 = @("24H2") # Server 2025
 }
 
+# SKU Groups
+$script:clientSKUs = @(
+    'Home',
+    'Home N',
+    'Home Single Language',
+    'Education',
+    'Education N',
+    'Pro',
+    'Pro N',
+    'Pro Education',
+    'Pro Education N',
+    'Pro for Workstations',
+    'Pro N for Workstations',
+    'Enterprise',
+    'Enterprise N'
+)
+
+$script:serverSKUs = @(
+    'Standard',
+    'Standard (Desktop Experience)',
+    'Datacenter',
+    'Datacenter (Desktop Experience)'
+)
+
+$script:ltsc2016SKUs = @(
+    'Enterprise 2016 LTSB',
+    'Enterprise N 2016 LTSB'
+)
+
+$script:ltscGenericSKUs = @( # For LTSC 2019, 2021, 2024
+    'Enterprise LTSC',
+    'Enterprise N LTSC'
+)
+
+$script:iotLtscSKUs = @(
+    'IoT Enterprise LTSC',
+    'IoT Enterprise N LTSC'
+    # Note: IoT SKUs are often specialized and might have different edition IDs.
+    # This list is a general representation. Actual ISOs might be needed for specific IoT LTSC editions.
+)
+
+# Map Windows Release Values to their corresponding SKU lists
+$script:windowsReleaseSkuMap = @{
+    10   = $script:clientSKUs # Windows 10 Client
+    11   = $script:clientSKUs # Windows 11 Client
+    2016 = $script:serverSKUs # Windows Server 2016
+    2019 = $script:serverSKUs # Windows Server 2019
+    2022 = $script:serverSKUs # Windows Server 2022
+    2025 = $script:serverSKUs # Windows Server 2025
+    1607 = $script:ltsc2016SKUs # Windows 10 LTSB 2016
+    1809 = $script:ltscGenericSKUs + $script:iotLtscSKUs # Windows 10 LTSC 2019
+    2021 = $script:ltscGenericSKUs + $script:iotLtscSKUs # Windows 10 LTSC 2021
+    2024 = $script:ltscGenericSKUs + $script:iotLtscSKUs # Windows 10 LTSC 2024
+}
+
 # --------------------------------------------------------------------------
 # SECTION: Logging Function (Moved from UI_Helpers)
 # --------------------------------------------------------------------------
@@ -204,7 +259,7 @@ function Get-WindowsSettingsDefaults {
         DefaultOptionalFeatures = ""
         DefaultProductKey       = ""
         AllowedFeatures         = $script:allowedFeatures # Return the list
-        SkuList                 = $script:skuList
+        # SkuList will now be populated dynamically based on Windows Release
         AllowedLanguages        = $script:allowedLangs
         AllowedArchitectures    = @('x86', 'x64', 'arm64')
         AllowedMediaTypes       = @('Consumer', 'Business')
@@ -277,6 +332,28 @@ function Get-AvailableWindowsVersions {
     }
 
     return $result
+}
+
+# Function to get available SKUs for a given Windows Release value
+function Get-AvailableSkusForRelease {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$SelectedReleaseValue
+    )
+
+    WriteLog "Get-AvailableSkusForRelease: Getting SKUs for Release Value '$SelectedReleaseValue'."
+
+    if ($script:windowsReleaseSkuMap.ContainsKey($SelectedReleaseValue)) {
+        $availableSkus = $script:windowsReleaseSkuMap[$SelectedReleaseValue]
+        WriteLog "Get-AvailableSkusForRelease: Found $($availableSkus.Count) SKUs for Release '$SelectedReleaseValue'."
+        return $availableSkus
+    }
+    else {
+        WriteLog "Get-AvailableSkusForRelease: Warning - Release Value '$SelectedReleaseValue' not found in SKU map. Returning default client SKUs."
+        # Fallback to a default list (e.g., client SKUs) or an empty list
+        return $script:clientSKUs
+    }
 }
 
 # Function to return general default settings for various UI elements (Moved from UI_Helpers)
@@ -3639,4 +3716,5 @@ Invoke-ProgressUpdate,
 Invoke-ParallelProcessing,
 Update-ListViewItemStatus,
 Update-OverallProgress,
-Compress-DriverFolderToWim
+Compress-DriverFolderToWim,
+Get-AvailableSkusForRelease
