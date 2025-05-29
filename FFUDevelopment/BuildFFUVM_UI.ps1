@@ -2618,27 +2618,46 @@ $script:chkInstallApps.Add_Unchecked({
                 $sfd.FileName = "Drivers.json"
                 $sfd.CheckFileExists = $false # Allow creating a new file or selecting existing
 
-                # Set initial directory based on current TextBox value or DriversFolder default
                 $currentDriversJsonPath = $script:txtDriversJsonPath.Text
-                $initialDirectory = $null
-                if (-not [string]::IsNullOrWhiteSpace($currentDriversJsonPath) -and (Split-Path -Path $currentDriversJsonPath -IsValid)) {
-                    $initialDirectory = Split-Path -Path $currentDriversJsonPath -Parent
-                    if (-not (Test-Path -Path $initialDirectory -PathType Container)) {
-                        # If parent of current path doesn't exist, fall back
-                        $initialDirectory = $script:generalDefaults.DriversFolder
+                $dialogInitialDirectory = $null # Initialize to null
+
+                if (-not [string]::IsNullOrWhiteSpace($currentDriversJsonPath)) {
+                    WriteLog "Attempting to determine InitialDirectory for Drivers.json SaveFileDialog from txtDriversJsonPath: '$currentDriversJsonPath'"
+                    try {
+                        # Attempt to get the parent directory of the path in the textbox
+                        $parentDir = Split-Path -Path $currentDriversJsonPath -Parent -ErrorAction Stop
+                        
+                        # Check if the parent directory is not null/empty and actually exists as a directory
+                        if (-not ([string]::IsNullOrEmpty($parentDir)) -and (Test-Path -Path $parentDir -PathType Container)) {
+                            $dialogInitialDirectory = $parentDir
+                            WriteLog "Set InitialDirectory for SaveFileDialog to '$parentDir' based on parent of txtDriversJsonPath."
+                        }
+                        else {
+                            # Parent directory is invalid or doesn't exist
+                            WriteLog "Parent directory '$parentDir' from txtDriversJsonPath ('$currentDriversJsonPath') is not a valid existing directory. SaveFileDialog will use default InitialDirectory."
+                            # $dialogInitialDirectory remains $null, so dialog uses its default
+                        }
+                    }
+                    catch {
+                        # Error occurred trying to split the path (e.g., path is malformed)
+                        WriteLog "Error splitting path from txtDriversJsonPath ('$currentDriversJsonPath'): $($_.Exception.Message). SaveFileDialog will use default InitialDirectory."
+                        # $dialogInitialDirectory remains $null
                     }
                 }
                 else {
-                    $initialDirectory = $script:generalDefaults.DriversFolder
+                    # TextBox is empty, dialog will use its default initial directory
+                    WriteLog "txtDriversJsonPath is empty. SaveFileDialog will use default InitialDirectory."
+                    # $dialogInitialDirectory remains $null
                 }
-                # Ensure the fallback directory exists, otherwise use FFUDevelopmentPath
-                if (-not (Test-Path -Path $initialDirectory -PathType Container)) {
-                    $initialDirectory = $window.FindName('txtFFUDevPath').Text # Fallback to FFU Dev Path
-                }
-                $sfd.InitialDirectory = $initialDirectory
+
+                $sfd.InitialDirectory = $dialogInitialDirectory # Set to $null if no valid directory was found, dialog will use its default
 
                 if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                     $script:txtDriversJsonPath.Text = $sfd.FileName
+                    WriteLog "User selected or created Drivers.json at: $($sfd.FileName)"
+                }
+                else {
+                    WriteLog "User cancelled SaveFileDialog for Drivers.json."
                 }
             })
 
