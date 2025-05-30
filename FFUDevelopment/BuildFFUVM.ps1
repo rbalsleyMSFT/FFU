@@ -4316,8 +4316,12 @@ if ($InstallApps) {
                 if (-Not $MSRTDownloaded) {
                     # Create the search string for MSRT based on Windows architecture and release
                     if ($WindowsArch -eq 'x64') {
-                        if ($installationType -eq 'client') {
+                        if ($installationType -eq 'client' -and $isLTSC -eq $false) {
                             $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
+                        }
+                        # Handle LTSB/LTSC
+                        elseif ($installationType -eq 'client' -and $isLTSC -eq $true){
+                            $Name = """Windows Malicious Software Removal Tool x64""" + " " + """LTSB"""    
                         }
                         #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
                         elseif ($installationType -eq 'server' -and $WindowsRelease -eq '24H2') {
