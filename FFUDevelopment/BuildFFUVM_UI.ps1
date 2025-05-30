@@ -761,9 +761,8 @@ function Update-WindowsVersionCombo {
 
 # Function to refresh the Windows SKU ComboBox based on selected release
 function Update-WindowsSkuCombo {
-    param(
-        [int]$selectedReleaseValue
-    )
+    # This function no longer takes parameters.
+    # It derives the selected release value and display name from the cmbWindowsRelease ComboBox.
 
     $skuCombo = $script:cmbWindowsSKU
     if (-not $skuCombo) {
@@ -771,13 +770,26 @@ function Update-WindowsSkuCombo {
         return
     }
 
+    $releaseCombo = $script:cmbWindowsRelease
+    if (-not $releaseCombo -or $null -eq $releaseCombo.SelectedItem) {
+        WriteLog "Update-WindowsSkuCombo: Windows Release ComboBox not found or no item selected. Cannot update SKUs."
+        $skuCombo.ItemsSource = @() # Clear SKUs
+        $skuCombo.SelectedIndex = -1
+        return
+    }
+
+    $selectedReleaseItem = $releaseCombo.SelectedItem
+    $selectedReleaseValue = $selectedReleaseItem.Value
+    $selectedReleaseDisplayName = $selectedReleaseItem.Display
+
     $previousSelectedSku = $null
     if ($null -ne $skuCombo.SelectedItem) {
         $previousSelectedSku = $skuCombo.SelectedItem
     }
 
-    WriteLog "Update-WindowsSkuCombo: Updating SKUs for Release Value '$selectedReleaseValue'."
-    $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue
+    WriteLog "Update-WindowsSkuCombo: Updating SKUs for Release Value '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
+    # Call Get-AvailableSkusForRelease with both Value and DisplayName
+    $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue -SelectedReleaseDisplayName $selectedReleaseDisplayName
     
     $skuCombo.ItemsSource = $availableSkus
     WriteLog "Update-WindowsSkuCombo: Set ItemsSource with $($availableSkus.Count) SKUs."
@@ -797,7 +809,7 @@ function Update-WindowsSkuCombo {
     }
     else {
         $skuCombo.SelectedIndex = -1 # No SKUs available
-        WriteLog "Update-WindowsSkuCombo: No SKUs available for Release '$selectedReleaseValue'."
+        WriteLog "Update-WindowsSkuCombo: No SKUs available for Release '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
     }
 }
 
@@ -817,8 +829,8 @@ $script:RefreshWindowsSettingsCombos = {
     # Update Version combo based on the selected release
     Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath
 
-    # Update SKU combo based on the selected release
-    Update-WindowsSkuCombo -selectedReleaseValue $selectedReleaseValue
+    # Update SKU combo based on the selected release (now derives values internally)
+    Update-WindowsSkuCombo
 }
 
 Add-Type -AssemblyName WindowsBase
@@ -1726,8 +1738,8 @@ $window.Add_Loaded({
                 }
                 # Only need to update the Version combo when Release changes
                 Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $script:txtISOPath.Text
-                # Also update the SKU combo
-                Update-WindowsSkuCombo -selectedReleaseValue $selectedReleaseValue
+                # Also update the SKU combo (now derives values internally)
+                Update-WindowsSkuCombo
             })
         $script:btnBrowseISO.Add_Click({
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog

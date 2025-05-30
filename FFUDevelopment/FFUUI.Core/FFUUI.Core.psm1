@@ -86,8 +86,8 @@ $script:allWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows Server 2019"; Value = 2019 },
     [PSCustomObject]@{ Display = "Windows Server 2022"; Value = 2022 },
     [PSCustomObject]@{ Display = "Windows Server 2025"; Value = 2025 },
-    [PSCustomObject]@{ Display = "Windows 10 LTSB 2016"; Value = 1607 },
-    [PSCustomObject]@{ Display = "Windows 10 LTSC 2019"; Value = 1809 },
+    [PSCustomObject]@{ Display = "Windows 10 LTSB 2016"; Value = 2016 }, # Changed Value from 1607
+    [PSCustomObject]@{ Display = "Windows 10 LTSC 2019"; Value = 2019 }, # Changed Value from 1809
     [PSCustomObject]@{ Display = "Windows 10 LTSC 2021"; Value = 2021 },
     [PSCustomObject]@{ Display = "Windows 10 LTSC 2024"; Value = 2024 }
 )
@@ -100,10 +100,10 @@ $script:mctWindowsReleases = @(
 $script:windowsVersionMap = @{
     10   = @("22H2")
     11   = @("22H2", "23H2", "24H2")
-    1607 = @("1607") # Windows 10 LTSB 2016
-    1809 = @("1809") # Windows 10 LTSC 2019
-    2016 = @("1607") # Server 2016
-    2019 = @("1809") # Server 2019
+    2016 = @("1607") # Windows 10 LTSB 2016 & Server 2016
+    2019 = @("1809") # Windows 10 LTSC 2019 & Server 2019
+    # Note: Server 2016 and LTSB 2016 now share the key 2016, mapping to version "1607"
+    # Note: Server 2019 and LTSC 2019 now share the key 2019, mapping to version "1809"
     2021 = @("21H2") # LTSC 2021
     2022 = @("21H2") # Server 2022
     2024 = @("24H2") # LTSC 2024
@@ -155,14 +155,13 @@ $script:iotLtscSKUs = @(
 $script:windowsReleaseSkuMap = @{
     10   = $script:clientSKUs # Windows 10 Client
     11   = $script:clientSKUs # Windows 11 Client
-    2016 = $script:serverSKUs # Windows Server 2016
-    2019 = $script:serverSKUs # Windows Server 2019
+    2016 = $script:serverSKUs # Windows Server 2016 (LTSB 2016 handled by Get-AvailableSkusForRelease)
+    2019 = $script:serverSKUs # Windows Server 2019 (LTSC 2019 handled by Get-AvailableSkusForRelease)
     2022 = $script:serverSKUs # Windows Server 2022
     2025 = $script:serverSKUs # Windows Server 2025
-    1607 = $script:ltsc2016SKUs # Windows 10 LTSB 2016
-    1809 = $script:ltscGenericSKUs + $script:iotLtscSKUs # Windows 10 LTSC 2019
     2021 = $script:ltscGenericSKUs + $script:iotLtscSKUs # Windows 10 LTSC 2021
     2024 = $script:ltscGenericSKUs + $script:iotLtscSKUs # Windows 10 LTSC 2024
+    # Note: LTSC 2016 and LTSC 2019 SKUs are now conditionally returned by Get-AvailableSkusForRelease
 }
 
 # --------------------------------------------------------------------------
@@ -334,19 +333,35 @@ function Get-AvailableWindowsVersions {
     return $result
 }
 
-# Function to get available SKUs for a given Windows Release value
+# Function to get available SKUs for a given Windows Release value and display name
 function Get-AvailableSkusForRelease {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [int]$SelectedReleaseValue
+        [int]$SelectedReleaseValue,
+
+        [Parameter(Mandatory)]
+        [string]$SelectedReleaseDisplayName
     )
 
-    WriteLog "Get-AvailableSkusForRelease: Getting SKUs for Release Value '$SelectedReleaseValue'."
+    WriteLog "Get-AvailableSkusForRelease: Getting SKUs for Release Value '$SelectedReleaseValue', Display Name '$SelectedReleaseDisplayName'."
 
-    if ($script:windowsReleaseSkuMap.ContainsKey($SelectedReleaseValue)) {
+    # Handle LTSC 2016 specifically
+    if ($SelectedReleaseValue -eq 2016 -and $SelectedReleaseDisplayName -like '*LTSB*') {
+        WriteLog "Get-AvailableSkusForRelease: Matched LTSB 2016. Returning LTSC 2016 SKUs."
+        return $script:ltsc2016SKUs
+    }
+    # Handle LTSC 2019 specifically
+    # Ensure "Server" is not in the display name to avoid matching "Windows Server 2019"
+    elseif ($SelectedReleaseValue -eq 2019 -and $SelectedReleaseDisplayName -like '*LTSC*' -and $SelectedReleaseDisplayName -notlike '*Server*') {
+        WriteLog "Get-AvailableSkusForRelease: Matched LTSC 2019. Returning generic LTSC SKUs (including IoT)."
+        # Assuming LTSC 2019 uses the generic LTSC SKUs + IoT LTSC SKUs
+        return ($script:ltscGenericSKUs + $script:iotLtscSKUs | Select-Object -Unique)
+    }
+    # For all other cases, use the main SKU map
+    elseif ($script:windowsReleaseSkuMap.ContainsKey($SelectedReleaseValue)) {
         $availableSkus = $script:windowsReleaseSkuMap[$SelectedReleaseValue]
-        WriteLog "Get-AvailableSkusForRelease: Found $($availableSkus.Count) SKUs for Release '$SelectedReleaseValue'."
+        WriteLog "Get-AvailableSkusForRelease: Found $($availableSkus.Count) SKUs for Release '$SelectedReleaseValue' using standard map."
         return $availableSkus
     }
     else {
