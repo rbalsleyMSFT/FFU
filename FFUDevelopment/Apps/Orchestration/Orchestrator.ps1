@@ -30,8 +30,8 @@ $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 # Define the list of scripts to run, order doesn't matter - if you have a custom script, add it here
 $scriptList = @(
-    "Install-Office.ps1",
     "Update-Defender.ps1",
+    "Install-Office.ps1",
     "Update-MSRT.ps1",
     "Update-OneDrive.ps1",
     "Update-Edge.ps1",
@@ -48,7 +48,6 @@ foreach ($script in $scriptList) {
         Write-Host " Running script: $script                           " -ForegroundColor Yellow
         Write-Host "---------------------------------------------------" -ForegroundColor Yellow
         # Run script and wait for it to finish
-        # pause
         & $scriptFile
     }
 }
