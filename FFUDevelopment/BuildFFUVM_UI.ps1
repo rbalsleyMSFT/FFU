@@ -146,11 +146,15 @@ function Set-UIValue {
                 $itemValue = $null
                 if ($item -is [System.Windows.Controls.ComboBoxItem]) {
                     $itemValue = $item.Content
-                } elseif ($item -is [pscustomobject] -and $item.PSObject.Properties['Value']) {
+                }
+                elseif ($item -is [pscustomobject] -and $item.PSObject.Properties['Value']) {
                     $itemValue = $item.Value
-                } elseif ($item -is [pscustomobject] -and $item.PSObject.Properties['Display']) { # Assuming 'Display' might be used if 'Value' isn't
+                }
+                elseif ($item -is [pscustomobject] -and $item.PSObject.Properties['Display']) {
+                    # Assuming 'Display' might be used if 'Value' isn't
                     $itemValue = $item.Display
-                } else {
+                }
+                else {
                     $itemValue = $item # For simple string items or direct object comparison
                 }
 
@@ -164,10 +168,12 @@ function Set-UIValue {
             if ($null -ne $itemToSelect) {
                 $control.SelectedItem = $itemToSelect
                 WriteLog "LoadConfig: Successfully set '$ControlName.SelectedItem' by finding matching item for value '$finalValue'."
-            } elseif ($control.IsEditable -and ($finalValue -is [string] -or $finalValue -is [int] -or $finalValue -is [long])) {
+            }
+            elseif ($control.IsEditable -and ($finalValue -is [string] -or $finalValue -is [int] -or $finalValue -is [long])) {
                 $control.Text = $finalValue.ToString()
                 WriteLog "LoadConfig: Set '$ControlName.Text' to '$($finalValue.ToString())' as SelectedItem match failed (editable ComboBox)."
-            } else {
+            }
+            else {
                 $itemsString = ""
                 try {
                     # Safer way to get item strings
@@ -176,10 +182,12 @@ function Set-UIValue {
                         if ($null -ne $cbItem) { $itemStrings += $cbItem.ToString() } else { $itemStrings += "[NULL_ITEM]" }
                     }
                     $itemsString = $itemStrings -join "; "
-                } catch { $itemsString = "Error retrieving item strings." }
+                }
+                catch { $itemsString = "Error retrieving item strings." }
                 WriteLog "LoadConfig Warning: Could not find or set item matching value '$finalValue' for '$ControlName.SelectedItem'. Current items: [$itemsString]"
             }
-        } else {
+        }
+        else {
             # For other properties or controls
             $control.$PropertyName = $finalValue
             WriteLog "LoadConfig: Successfully set '$ControlName.$PropertyName' to '$finalValue'."
@@ -584,99 +592,101 @@ $defaultFFUPrefix = "_FFU"
 function Get-UIConfig {
     # Create hash to store configuration
     $config = [ordered]@{
-        AllowExternalHardDiskMedia  = $window.FindName('chkAllowExternalHardDiskMedia').IsChecked
-        AllowVHDXCaching            = $window.FindName('chkAllowVHDXCaching').IsChecked
-        AppListPath                 = $window.FindName('txtAppListJsonPath').Text
-        AppsPath                    = $window.FindName('txtApplicationPath').Text
-        AppsScriptVariables         = if ($window.FindName('chkDefineAppsScriptVariables').IsChecked) {
-                                        $vars = @{}
-                                        foreach ($item in $script:appsScriptVariablesDataList) {
-                                            $vars[$item.Key] = $item.Value
-                                        }
-                                        if ($vars.Count -gt 0) { $vars } else { $null }
-                                      } else { $null }
-        BuildUSBDrive               = $window.FindName('chkBuildUSBDriveEnable').IsChecked
-        CleanupAppsISO              = $window.FindName('chkCleanupAppsISO').IsChecked
-        CleanupCaptureISO           = $window.FindName('chkCleanupCaptureISO').IsChecked
-        CleanupDeployISO            = $window.FindName('chkCleanupDeployISO').IsChecked
-        CleanupDrivers              = $window.FindName('chkCleanupDrivers').IsChecked
-        CompactOS                   = $window.FindName('chkCompactOS').IsChecked
+        AllowExternalHardDiskMedia     = $window.FindName('chkAllowExternalHardDiskMedia').IsChecked
+        AllowVHDXCaching               = $window.FindName('chkAllowVHDXCaching').IsChecked
+        AppListPath                    = $window.FindName('txtAppListJsonPath').Text
+        AppsPath                       = $window.FindName('txtApplicationPath').Text
+        AppsScriptVariables            = if ($window.FindName('chkDefineAppsScriptVariables').IsChecked) {
+            $vars = @{}
+            foreach ($item in $script:appsScriptVariablesDataList) {
+                $vars[$item.Key] = $item.Value
+            }
+            if ($vars.Count -gt 0) { $vars } else { $null }
+        }
+        else { $null }
+        BuildUSBDrive                  = $window.FindName('chkBuildUSBDriveEnable').IsChecked
+        CleanupAppsISO                 = $window.FindName('chkCleanupAppsISO').IsChecked
+        CleanupCaptureISO              = $window.FindName('chkCleanupCaptureISO').IsChecked
+        CleanupDeployISO               = $window.FindName('chkCleanupDeployISO').IsChecked
+        CleanupDrivers                 = $window.FindName('chkCleanupDrivers').IsChecked
+        CompactOS                      = $window.FindName('chkCompactOS').IsChecked
         CompressDownloadedDriversToWim = $window.FindName('chkCompressDriversToWIM').IsChecked # Renamed from CompressDriversToWIM
-        CopyAutopilot               = $window.FindName('chkCopyAutopilot').IsChecked
-        CopyDrivers                 = $window.FindName('chkCopyDrivers').IsChecked
-        CopyOfficeConfigXML         = $window.FindName('chkCopyOfficeConfigXML').IsChecked # UI Only parameter
-        CopyPEDrivers               = $window.FindName('chkCopyPEDrivers').IsChecked
-        CopyPPKG                    = $window.FindName('chkCopyPPKG').IsChecked
-        CopyUnattend                = $window.FindName('chkCopyUnattend').IsChecked
-        CreateCaptureMedia          = $window.FindName('chkCreateCaptureMedia').IsChecked
-        CreateDeploymentMedia       = $window.FindName('chkCreateDeploymentMedia').IsChecked
-        CustomFFUNameTemplate       = $window.FindName('txtCustomFFUNameTemplate').Text
-        Disksize                    = [int64]$window.FindName('txtDiskSize').Text * 1GB # Renamed from DiskSize
-        DownloadDrivers             = $window.FindName('chkDownloadDrivers').IsChecked # UI Only parameter
-        DriversFolder               = $window.FindName('txtDriversFolder').Text
-        DriversJsonPath             = $script:txtDriversJsonPath.Text # Read from the new TextBox
-        FFUCaptureLocation          = $window.FindName('txtFFUCaptureLocation').Text
-        FFUDevelopmentPath          = $window.FindName('txtFFUDevPath').Text
-        FFUPrefix                   = $window.FindName('txtVMNamePrefix').Text
-        InstallApps                 = $window.FindName('chkInstallApps').IsChecked
-        InstallDrivers              = $window.FindName('chkInstallDrivers').IsChecked
-        InstallOffice               = $window.FindName('chkInstallOffice').IsChecked
-        InstallWingetApps           = $window.FindName('chkInstallWingetApps').IsChecked # UI Only parameter
-        ISOPath                     = $window.FindName('txtISOPath').Text
-        LogicalSectorSizeBytes      = [int]$window.FindName('cmbLogicalSectorSize').SelectedItem.Content
-        Make                        = $window.FindName('cmbMake').SelectedItem
-        MediaType                   = $window.FindName('cmbMediaType').SelectedItem
-        Memory                      = [int64]$window.FindName('txtMemory').Text * 1GB
-        Model                       = if ($window.FindName('chkDownloadDrivers').IsChecked) {
-                                        $selectedModels = $script:lstDriverModels.Items | Where-Object { $_.IsSelected }
-                                        if ($selectedModels.Count -ge 1) { # If one or more models are selected
-                                            $selectedModels[0].Model # Use the 'Model' property (display name) of the first selected one
-                                        }
-                                        else {
-                                            $null # No model selected in the list
-                                        }
-                                    }
-                                    else {
-                                        $null # Not downloading drivers via UI selection
-                                    }
-        OfficeConfigXMLFile         = $window.FindName('txtOfficeConfigXMLFilePath').Text # UI Only
-        OfficePath                  = $window.FindName('txtOfficePath').Text # UI Only parameter
-        Optimize                    = $window.FindName('chkOptimize').IsChecked
-        OptionalFeatures            = $window.FindName('txtOptionalFeatures').Text # Parameter from Sample_default.json
-        OrchestrationPath           = "$($window.FindName('txtApplicationPath').Text)\Orchestration" # Parameter from Sample_default.json, derived
-        PEDriversFolder             = $window.FindName('txtPEDriversFolder').Text
-        Processors                  = [int]$window.FindName('txtProcessors').Text
-        ProductKey                  = $window.FindName('txtProductKey').Text
-        PromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia').IsChecked
-        RemoveApps                  = $window.FindName('chkRemoveApps').IsChecked
-        RemoveFFU                   = $window.FindName('chkRemoveFFU').IsChecked
-        RemoveUpdates               = $window.FindName('chkRemoveUpdates').IsChecked
-        ShareName                   = $window.FindName('txtShareName').Text
-        UpdateADK                   = $script:chkUpdateADK.IsChecked
-        UpdateEdge                  = $window.FindName('chkUpdateEdge').IsChecked
-        UpdateLatestCU              = $window.FindName('chkUpdateLatestCU').IsChecked
-        UpdateLatestDefender        = $window.FindName('chkUpdateLatestDefender').IsChecked
-        UpdateLatestMicrocode       = $script:chkUpdateLatestMicrocode.IsChecked 
-        UpdateLatestMSRT            = $window.FindName('chkUpdateLatestMSRT').IsChecked
-        UpdateLatestNet             = $window.FindName('chkUpdateLatestNet').IsChecked
-        UpdateOneDrive              = $window.FindName('chkUpdateOneDrive').IsChecked
-        UpdatePreviewCU             = $window.FindName('chkUpdatePreviewCU').IsChecked
-        UserAppListPath             = "$($window.FindName('txtApplicationPath').Text)\UserAppList.json" # Parameter from Sample_default.json, derived
-        USBDriveList                = @{}
-        Username                    = $window.FindName('txtUsername').Text
-        VMHostIPAddress             = $window.FindName('txtVMHostIPAddress').Text
-        VMLocation                  = $window.FindName('txtVMLocation').Text
-        VMSwitchName                = if ($window.FindName('cmbVMSwitchName').SelectedItem -eq 'Other') {
+        CopyAutopilot                  = $window.FindName('chkCopyAutopilot').IsChecked
+        CopyDrivers                    = $window.FindName('chkCopyDrivers').IsChecked
+        CopyOfficeConfigXML            = $window.FindName('chkCopyOfficeConfigXML').IsChecked # UI Only parameter
+        CopyPEDrivers                  = $window.FindName('chkCopyPEDrivers').IsChecked
+        CopyPPKG                       = $window.FindName('chkCopyPPKG').IsChecked
+        CopyUnattend                   = $window.FindName('chkCopyUnattend').IsChecked
+        CreateCaptureMedia             = $window.FindName('chkCreateCaptureMedia').IsChecked
+        CreateDeploymentMedia          = $window.FindName('chkCreateDeploymentMedia').IsChecked
+        CustomFFUNameTemplate          = $window.FindName('txtCustomFFUNameTemplate').Text
+        Disksize                       = [int64]$window.FindName('txtDiskSize').Text * 1GB # Renamed from DiskSize
+        DownloadDrivers                = $window.FindName('chkDownloadDrivers').IsChecked # UI Only parameter
+        DriversFolder                  = $window.FindName('txtDriversFolder').Text
+        DriversJsonPath                = $script:txtDriversJsonPath.Text # Read from the new TextBox
+        FFUCaptureLocation             = $window.FindName('txtFFUCaptureLocation').Text
+        FFUDevelopmentPath             = $window.FindName('txtFFUDevPath').Text
+        FFUPrefix                      = $window.FindName('txtVMNamePrefix').Text
+        InstallApps                    = $window.FindName('chkInstallApps').IsChecked
+        InstallDrivers                 = $window.FindName('chkInstallDrivers').IsChecked
+        InstallOffice                  = $window.FindName('chkInstallOffice').IsChecked
+        InstallWingetApps              = $window.FindName('chkInstallWingetApps').IsChecked # UI Only parameter
+        ISOPath                        = $window.FindName('txtISOPath').Text
+        LogicalSectorSizeBytes         = [int]$window.FindName('cmbLogicalSectorSize').SelectedItem.Content
+        Make                           = $window.FindName('cmbMake').SelectedItem
+        MediaType                      = $window.FindName('cmbMediaType').SelectedItem
+        Memory                         = [int64]$window.FindName('txtMemory').Text * 1GB
+        Model                          = if ($window.FindName('chkDownloadDrivers').IsChecked) {
+            $selectedModels = $script:lstDriverModels.Items | Where-Object { $_.IsSelected }
+            if ($selectedModels.Count -ge 1) {
+                # If one or more models are selected
+                $selectedModels[0].Model # Use the 'Model' property (display name) of the first selected one
+            }
+            else {
+                $null # No model selected in the list
+            }
+        }
+        else {
+            $null # Not downloading drivers via UI selection
+        }
+        OfficeConfigXMLFile            = $window.FindName('txtOfficeConfigXMLFilePath').Text # UI Only
+        OfficePath                     = $window.FindName('txtOfficePath').Text # UI Only parameter
+        Optimize                       = $window.FindName('chkOptimize').IsChecked
+        OptionalFeatures               = $window.FindName('txtOptionalFeatures').Text # Parameter from Sample_default.json
+        OrchestrationPath              = "$($window.FindName('txtApplicationPath').Text)\Orchestration" # Parameter from Sample_default.json, derived
+        PEDriversFolder                = $window.FindName('txtPEDriversFolder').Text
+        Processors                     = [int]$window.FindName('txtProcessors').Text
+        ProductKey                     = $window.FindName('txtProductKey').Text
+        PromptExternalHardDiskMedia    = $window.FindName('chkPromptExternalHardDiskMedia').IsChecked
+        RemoveApps                     = $window.FindName('chkRemoveApps').IsChecked
+        RemoveFFU                      = $window.FindName('chkRemoveFFU').IsChecked
+        RemoveUpdates                  = $window.FindName('chkRemoveUpdates').IsChecked
+        ShareName                      = $window.FindName('txtShareName').Text
+        UpdateADK                      = $script:chkUpdateADK.IsChecked
+        UpdateEdge                     = $window.FindName('chkUpdateEdge').IsChecked
+        UpdateLatestCU                 = $window.FindName('chkUpdateLatestCU').IsChecked
+        UpdateLatestDefender           = $window.FindName('chkUpdateLatestDefender').IsChecked
+        UpdateLatestMicrocode          = $script:chkUpdateLatestMicrocode.IsChecked 
+        UpdateLatestMSRT               = $window.FindName('chkUpdateLatestMSRT').IsChecked
+        UpdateLatestNet                = $window.FindName('chkUpdateLatestNet').IsChecked
+        UpdateOneDrive                 = $window.FindName('chkUpdateOneDrive').IsChecked
+        UpdatePreviewCU                = $window.FindName('chkUpdatePreviewCU').IsChecked
+        UserAppListPath                = "$($window.FindName('txtApplicationPath').Text)\UserAppList.json" # Parameter from Sample_default.json, derived
+        USBDriveList                   = @{}
+        Username                       = $window.FindName('txtUsername').Text
+        VMHostIPAddress                = $window.FindName('txtVMHostIPAddress').Text
+        VMLocation                     = $window.FindName('txtVMLocation').Text
+        VMSwitchName                   = if ($window.FindName('cmbVMSwitchName').SelectedItem -eq 'Other') {
             $window.FindName('txtCustomVMSwitchName').Text
         }
         else {
             $window.FindName('cmbVMSwitchName').SelectedItem
         }
-        WindowsArch                 = $window.FindName('cmbWindowsArch').SelectedItem
-        WindowsLang                 = $window.FindName('cmbWindowsLang').SelectedItem
-        WindowsRelease              = [int]$window.FindName('cmbWindowsRelease').SelectedItem.Value
-        WindowsSKU                  = $window.FindName('cmbWindowsSKU').SelectedItem
-        WindowsVersion              = $window.FindName('cmbWindowsVersion').SelectedItem
+        WindowsArch                    = $window.FindName('cmbWindowsArch').SelectedItem
+        WindowsLang                    = $window.FindName('cmbWindowsLang').SelectedItem
+        WindowsRelease                 = [int]$window.FindName('cmbWindowsRelease').SelectedItem.Value
+        WindowsSKU                     = $window.FindName('cmbWindowsSKU').SelectedItem
+        WindowsVersion                 = $window.FindName('cmbWindowsVersion').SelectedItem
     }
 
     # Add selected USB drives to the config
@@ -1110,7 +1120,8 @@ function Invoke-ListViewSort {
         elseif ($property -eq "Value") {
             $secondarySortPropertyName = "Key"
         }
-        else { # Default secondary sort for IsSelected or other properties
+        else {
+            # Default secondary sort for IsSelected or other properties
             $secondarySortPropertyName = "Key"
         }
     }
@@ -1367,7 +1378,8 @@ function Add-SelectableGridViewColumn {
             $headerChk = Get-Variable -Name $headerCheckboxNameFromTag -Scope Script -ValueOnly -ErrorAction SilentlyContinue
             if ($null -ne $headerChk) {
                 Update-SelectAllHeaderCheckBoxState -ListView $targetListView -HeaderCheckBox $headerChk
-            } else {
+            }
+            else {
                 WriteLog "Add-SelectableGridViewColumn: Error - Could not retrieve script variable for header checkbox named '$headerCheckboxNameFromTag' for ListView '$listViewNameFromTag'."
             }
         })
@@ -1394,7 +1406,8 @@ function Update-SelectAllHeaderCheckBoxState {
     if ($null -ne $ListView.ItemsSource) {
         $collectionToInspect = @($ListView.ItemsSource)
     }
-    elseif ($ListView.HasItems) { # Check if Items collection has items and ItemsSource is null
+    elseif ($ListView.HasItems) {
+        # Check if Items collection has items and ItemsSource is null
         $collectionToInspect = @($ListView.Items)
     }
 
@@ -1407,7 +1420,8 @@ function Update-SelectAllHeaderCheckBoxState {
     $selectedCount = ($collectionToInspect | Where-Object { $_.IsSelected }).Count
     $totalItemCount = $collectionToInspect.Count # Get the total count from the collection being inspected
 
-    if ($totalItemCount -eq 0) { # Handle empty list case specifically
+    if ($totalItemCount -eq 0) {
+        # Handle empty list case specifically
         $HeaderCheckBox.IsChecked = $false
     }
     elseif ($selectedCount -eq $totalItemCount) {
@@ -2351,7 +2365,7 @@ $window.Add_Loaded({
                 # New logic for AppsScriptVariables
                 $script:chkDefineAppsScriptVariables.Visibility = 'Visible'
             })
-$script:chkInstallApps.Add_Unchecked({
+        $script:chkInstallApps.Add_Unchecked({
                 $script:chkInstallWingetApps.IsChecked = $false # Uncheck children when parent is unchecked
                 $script:chkBringYourOwnApps.IsChecked = $false
                 $script:chkInstallWingetApps.Visibility = 'Collapsed'
@@ -2751,68 +2765,69 @@ $script:chkInstallApps.Add_Unchecked({
 
         # AppsScriptVariables Event Handlers
         $script:chkDefineAppsScriptVariables.Add_Checked({
-            $script:appsScriptVariablesPanel.Visibility = 'Visible'
-        })
+                $script:appsScriptVariablesPanel.Visibility = 'Visible'
+            })
         $script:chkDefineAppsScriptVariables.Add_Unchecked({
-            $script:appsScriptVariablesPanel.Visibility = 'Collapsed'
-        })
+                $script:appsScriptVariablesPanel.Visibility = 'Collapsed'
+            })
 
         $script:btnAddAppsScriptVariable.Add_Click({
-            $key = $script:txtAppsScriptKey.Text.Trim()
-            $value = $script:txtAppsScriptValue.Text.Trim()
+                $key = $script:txtAppsScriptKey.Text.Trim()
+                $value = $script:txtAppsScriptValue.Text.Trim()
 
-            if ([string]::IsNullOrWhiteSpace($key)) {
-                [System.Windows.MessageBox]::Show("Apps Script Variable Key cannot be empty.", "Input Error", "OK", "Warning")
-                return
-            }
-            # Check for duplicate keys
-            $existingKey = $script:lstAppsScriptVariables.Items | Where-Object { $_.Key -eq $key }
-            if ($existingKey) {
-                [System.Windows.MessageBox]::Show("An Apps Script Variable with the key '$key' already exists.", "Duplicate Key", "OK", "Warning")
-                return
-            }
+                if ([string]::IsNullOrWhiteSpace($key)) {
+                    [System.Windows.MessageBox]::Show("Apps Script Variable Key cannot be empty.", "Input Error", "OK", "Warning")
+                    return
+                }
+                # Check for duplicate keys
+                $existingKey = $script:lstAppsScriptVariables.Items | Where-Object { $_.Key -eq $key }
+                if ($existingKey) {
+                    [System.Windows.MessageBox]::Show("An Apps Script Variable with the key '$key' already exists.", "Duplicate Key", "OK", "Warning")
+                    return
+                }
 
-            $newItem = [PSCustomObject]@{
-                IsSelected = $false # Add IsSelected property
-                Key        = $key
-                Value      = $value
-            }
-            $script:appsScriptVariablesDataList.Add($newItem)
-            $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
-            $script:txtAppsScriptKey.Clear()
-            $script:txtAppsScriptValue.Clear()
-            # Update the header checkbox state
-            if ($null -ne $script:chkSelectAllAppsScriptVariables) {
-                 Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
-            }
-        })
+                $newItem = [PSCustomObject]@{
+                    IsSelected = $false # Add IsSelected property
+                    Key        = $key
+                    Value      = $value
+                }
+                $script:appsScriptVariablesDataList.Add($newItem)
+                $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
+                $script:txtAppsScriptKey.Clear()
+                $script:txtAppsScriptValue.Clear()
+                # Update the header checkbox state
+                if ($null -ne $script:chkSelectAllAppsScriptVariables) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+                }
+            })
 
         $script:btnRemoveSelectedAppsScriptVariables.Add_Click({
-            $itemsToRemove = @($script:appsScriptVariablesDataList | Where-Object { $_.IsSelected })
-            if ($itemsToRemove.Count -eq 0) {
-                [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
-                return
-            }
+                $itemsToRemove = @($script:appsScriptVariablesDataList | Where-Object { $_.IsSelected })
+                if ($itemsToRemove.Count -eq 0) {
+                    [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
+                    return
+                }
 
-            foreach ($itemToRemove in $itemsToRemove) {
-                $script:appsScriptVariablesDataList.Remove($itemToRemove)
-            }
-            $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
+                foreach ($itemToRemove in $itemsToRemove) {
+                    $script:appsScriptVariablesDataList.Remove($itemToRemove)
+                }
+                $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
 
-            # Update the header checkbox state
-            if ($null -ne $script:chkSelectAllAppsScriptVariables) { # Check if variable exists
-                 Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
-            }
-        })
+                # Update the header checkbox state
+                if ($null -ne $script:chkSelectAllAppsScriptVariables) {
+                    # Check if variable exists
+                    Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+                }
+            })
 
         $script:btnClearAppsScriptVariables.Add_Click({
-            $script:appsScriptVariablesDataList.Clear()
-            $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
-            # Update the header checkbox state
-            if ($null -ne $script:chkSelectAllAppsScriptVariables) {
-                 Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
-            }
-        })
+                $script:appsScriptVariablesDataList.Clear()
+                $script:lstAppsScriptVariables.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
+                # Update the header checkbox state
+                if ($null -ne $script:chkSelectAllAppsScriptVariables) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $script:lstAppsScriptVariables -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+                }
+            })
 
         # Initial state for chkDefineAppsScriptVariables based on chkInstallApps
         if ($script:chkInstallApps.IsChecked) {
@@ -3238,7 +3253,8 @@ $btnLoadConfig.Add_Click({
                         if (($configContent.PSObject.Properties.Match('AppsScriptVariables')).Count -gt 0) {
                             $appsScriptVarsKeyExists = $true
                         }
-                    } catch { WriteLog "ERROR: Exception while trying to Match key 'AppsScriptVariables'. Error: $($_.Exception.Message)" }
+                    }
+                    catch { WriteLog "ERROR: Exception while trying to Match key 'AppsScriptVariables'. Error: $($_.Exception.Message)" }
                 }
 
                 $lstAppsScriptVars = $window.FindName('lstAppsScriptVariables')
@@ -3258,12 +3274,14 @@ $btnLoadConfig.Add_Click({
                         $chkDefineAppsScriptVars.IsChecked = $true
                         $appsScriptVarsPanel.Visibility = 'Visible'
                         WriteLog "LoadConfig: Loaded AppsScriptVariables and checked 'Define Apps Script Variables'."
-                    } else {
+                    }
+                    else {
                         $chkDefineAppsScriptVars.IsChecked = $false
                         $appsScriptVarsPanel.Visibility = 'Collapsed'
                         WriteLog "LoadConfig: AppsScriptVariables key was present but empty. Unchecked 'Define Apps Script Variables'."
                     }
-                } elseif ($appsScriptVarsKeyExists -and $null -ne $configContent.AppsScriptVariables -and $configContent.AppsScriptVariables -is [hashtable]) {
+                }
+                elseif ($appsScriptVarsKeyExists -and $null -ne $configContent.AppsScriptVariables -and $configContent.AppsScriptVariables -is [hashtable]) {
                     # Handle if it's already a hashtable (e.g., from older config or direct creation)
                     WriteLog "LoadConfig: Processing AppsScriptVariables (Hashtable) from config."
                     $loadedVars = $configContent.AppsScriptVariables
@@ -3276,12 +3294,14 @@ $btnLoadConfig.Add_Click({
                         $chkDefineAppsScriptVars.IsChecked = $true
                         $appsScriptVarsPanel.Visibility = 'Visible'
                         WriteLog "LoadConfig: Loaded AppsScriptVariables (Hashtable) and checked 'Define Apps Script Variables'."
-                    } else {
+                    }
+                    else {
                         $chkDefineAppsScriptVars.IsChecked = $false
                         $appsScriptVarsPanel.Visibility = 'Collapsed'
                         WriteLog "LoadConfig: AppsScriptVariables (Hashtable) key was present but empty. Unchecked 'Define Apps Script Variables'."
                     }
-                } else {
+                }
+                else {
                     $chkDefineAppsScriptVars.IsChecked = $false
                     $appsScriptVarsPanel.Visibility = 'Collapsed'
                     WriteLog "LoadConfig Info: Key 'AppsScriptVariables' not found, is null, or not a PSCustomObject/Hashtable. Unchecked 'Define Apps Script Variables'."
@@ -3290,7 +3310,7 @@ $btnLoadConfig.Add_Click({
                 $lstAppsScriptVars.ItemsSource = $script:appsScriptVariablesDataList.ToArray()
                 # Update the header checkbox state
                 if ($null -ne $script:chkSelectAllAppsScriptVariables) {
-                     Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+                    Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
                 }
 
                 # Update USB Drive selection if present in config
@@ -3300,7 +3320,8 @@ $btnLoadConfig.Add_Click({
                         if (($configContent.PSObject.Properties.Match('USBDriveList')).Count -gt 0) {
                             $usbDriveListKeyExists = $true
                         }
-                    } catch {
+                    }
+                    catch {
                         WriteLog "ERROR: Exception while trying to Match key 'USBDriveList' on configContent.PSObject.Properties. Error: $($_.Exception.Message)"
                     }
                 }
@@ -3333,7 +3354,8 @@ $btnLoadConfig.Add_Click({
                         if ($propertyExists -and ($propertyValue -eq $item.SerialNumber)) {
                             WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with Serial '$($item.SerialNumber)'."
                             $item.IsSelected = $true
-                        } else {
+                        }
+                        else {
                             if (-not $propertyExists -and ($null -ne $configContent.USBDriveList)) {
                                 WriteLog "LoadConfig: Property '$($propertyName)' not found on USBDriveList for item Model '$($item.Model)'."
                             }
@@ -3346,7 +3368,8 @@ $btnLoadConfig.Add_Click({
                     $allSelected = $script:lstUSBDrives.Items.Count -gt 0 -and -not ($script:lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
                     $script:chkSelectAllUSBDrives.IsChecked = $allSelected
                     WriteLog "LoadConfig: USBDriveList processing complete."
-                } else {
+                }
+                else {
                     WriteLog "LoadConfig Info: Key 'USBDriveList' not found or is null in configuration file. Skipping USB drive selection."
                 }
 
@@ -3359,7 +3382,8 @@ $btnLoadConfig.Add_Click({
                             $shouldAutoCheckSpecificDrives = $true
                         }
                     }
-                    elseif ($configContent.USBDriveList -is [hashtable]) { # Fallback for older configs
+                    elseif ($configContent.USBDriveList -is [hashtable]) {
+                        # Fallback for older configs
                         if ($configContent.USBDriveList.Keys.Count -gt 0) {
                             $shouldAutoCheckSpecificDrives = $true
                         }

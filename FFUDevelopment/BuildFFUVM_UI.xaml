@@ -584,7 +584,7 @@
                                     <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
                                     <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="10,5" ToolTip="Clear all applications from the list"/>
                                 </StackPanel>
-                                                        </StackPanel>
+                            </StackPanel>
 
                             <!-- AppsScriptVariables Section -->
                             <CheckBox x:Name="chkDefineAppsScriptVariables" Content="Define Apps Script Variables" Margin="5" ToolTip="Enable to define key-value pairs for Apps Script Variables"/>
@@ -597,7 +597,7 @@
                                 <!-- Value Input -->
                                 <TextBlock Text="Value:" Margin="0,0,0,5"/>
                                 <TextBox x:Name="txtAppsScriptValue" Margin="0,0,0,10" ToolTip="Enter the variable value"/>
-                                
+
                                 <!-- Add Variable Button -->
                                 <Button x:Name="btnAddAppsScriptVariable" Content="Add Variable" Width="120" HorizontalAlignment="Left" Margin="0,10,0,10" Padding="10,5" ToolTip="Add the key-value pair to the list"/>
 
