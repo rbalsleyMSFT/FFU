@@ -272,17 +272,19 @@ function ConvertTo-StandardizedDriverModel {
 function Get-ModelsForMake {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SelectedMake
+        [string]$SelectedMake,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
 
     $standardizedModels = [System.Collections.Generic.List[PSCustomObject]]::new()
     $rawModels = @()
 
     # Get necessary values from UI or script scope
-    $localDriversFolder = $window.FindName('txtDriversFolder').Text
+    $localDriversFolder = $State.Controls.txtDriversFolder.Text
     $localWindowsRelease = $null
-    if ($null -ne $window.FindName('cmbWindowsRelease').SelectedItem) {
-        $localWindowsRelease = $window.FindName('cmbWindowsRelease').SelectedItem.Value
+    if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
+        $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
     }
     
     # $Headers and $UserAgent are available from script scope
@@ -308,7 +310,7 @@ function Get-ModelsForMake {
                 # User cancelled or entered nothing
                 return @() 
             }
-            $script:uiState.Controls.txtStatus.Text = "Searching Lenovo models for '$modelSearchTerm'..."
+            $State.Controls.txtStatus.Text = "Searching Lenovo models for '$modelSearchTerm'..."
             $rawModels = Get-LenovoDriversModelList -ModelSearchTerm $modelSearchTerm -Headers $Headers -UserAgent $UserAgent
         }
         default {
@@ -769,11 +771,14 @@ $window = [Windows.Markup.XamlReader]::Load($xmlReader)
 
 # Dynamic checkboxes for optional features in Windows Settings tab
 function UpdateOptionalFeaturesString {
+    param(
+        [psobject]$State
+    )
     $checkedFeatures = @()
-    foreach ($entry in $script:uiState.Controls.featureCheckBoxes.GetEnumerator()) {
+    foreach ($entry in $State.Controls.featureCheckBoxes.GetEnumerator()) {
         if ($entry.Value.IsChecked) { $checkedFeatures += $entry.Key }
     }
-    $window.FindName('txtOptionalFeatures').Text = $checkedFeatures -join ";"
+    $State.Controls.txtOptionalFeatures.Text = $checkedFeatures -join ";"
 }
 function BuildFeaturesGrid {
     param (
@@ -815,8 +820,8 @@ function BuildFeaturesGrid {
         $chk = New-Object System.Windows.Controls.CheckBox
         $chk.Content = $featureName
         $chk.Margin = "5"
-        $chk.Add_Checked({ UpdateOptionalFeaturesString })
-        $chk.Add_Unchecked({ UpdateOptionalFeaturesString })
+        $chk.Add_Checked({ UpdateOptionalFeaturesString -State $script:uiState })
+        $chk.Add_Unchecked({ UpdateOptionalFeaturesString -State $script:uiState })
 
         $script:uiState.Controls.featureCheckBoxes[$featureName] = $chk # Track the checkbox
 
@@ -1106,7 +1111,7 @@ function Add-SelectableGridViewColumn {
                 return
             }
 
-            $actualListView = $window.FindName($localListViewName)
+            $actualListView = $script:uiState.Controls[$localListViewName]
             if ($null -eq $actualListView) {
                 WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderChecked event. Aborting."
                 return
@@ -1156,7 +1161,7 @@ function Add-SelectableGridViewColumn {
                 return
             }
             
-            $actualListView = $window.FindName($localListViewName)
+            $actualListView = $script:uiState.Controls[$localListViewName]
             if ($null -eq $actualListView) {
                 WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderUnchecked event. Aborting."
                 return
@@ -1249,7 +1254,7 @@ function Add-SelectableGridViewColumn {
             }
 
             # Retrieve the actual ListView control using its name stored in the Tag
-            $targetListView = $window.FindName($listViewNameFromTag)
+            $targetListView = $script:uiState.Controls[$listViewNameFromTag]
             if ($null -eq $targetListView) {
                 WriteLog "Add-SelectableGridViewColumn: Error - Could not find ListView control named '$listViewNameFromTag'."
                 return
@@ -1411,8 +1416,11 @@ function Move-ListViewItemBottom {
 
 # Function to update the enabled state of the Copy Apps button
 function Update-CopyButtonState {
-    $listView = $window.FindName('lstApplications')
-    $copyButton = $window.FindName('btnCopyBYOApps')
+    param(
+        [psobject]$State
+    )
+    $listView = $State.Controls.lstApplications
+    $copyButton = $State.Controls.btnCopyBYOApps
     if ($listView -and $copyButton) {
         $hasSource = $false
         foreach ($item in $listView.Items) {
@@ -1854,7 +1862,7 @@ $window.Add_Loaded({
                     $previouslySelectedModels = @($script:uiState.Data.allDriverModels | Where-Object { $_.IsSelected })
                     
                     # Get newly fetched models for the current make (already standardized)
-                    $newlyFetchedStandardizedModels = Get-ModelsForMake -SelectedMake $selectedMake
+                    $newlyFetchedStandardizedModels = Get-ModelsForMake -SelectedMake $selectedMake -State $script:uiState
                     
                     $combinedModelsList = [System.Collections.Generic.List[PSCustomObject]]::new()
                     $modelIdentifiersInCombinedList = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -2495,7 +2503,7 @@ $window.Add_Loaded({
                 $window.FindName('txtAppCommandLine').Text = ""
                 $window.FindName('txtAppArguments').Text = ""
                 $window.FindName('txtAppSource').Text = ""
-                Update-CopyButtonState
+                Update-CopyButtonState -State $script:uiState
             })
         $script:uiState.Controls.btnSaveBYOApplications.Add_Click({
                 $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -2515,11 +2523,11 @@ $window.Add_Loaded({
                 $initialDir = $window.FindName('txtApplicationPath').Text
                 if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
                 $openDialog.InitialDirectory = $initialDir
-                if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName; Update-CopyButtonState }
+                if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName; Update-CopyButtonState -State $script:uiState }
             })
         $script:uiState.Controls.btnClearBYOApplications.Add_Click({
                 $result = [System.Windows.MessageBox]::Show("Are you sure you want to clear all applications?", "Clear Applications", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
-                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $window.FindName('lstApplications').Items.Clear(); Update-CopyButtonState }
+                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $window.FindName('lstApplications').Items.Clear(); Update-CopyButtonState -State $script:uiState }
             })
         $script:uiState.Controls.btnCopyBYOApps.Add_Click({
                 param($buttonSender, $clickEventArgs)
@@ -2581,7 +2589,7 @@ $window.Add_Loaded({
                 if ($actionColumnIndex -ge 0) { $byoGridView.Columns.Insert($actionColumnIndex, $copyStatusColumn) } else { $byoGridView.Columns.Add($copyStatusColumn) }
             }
         }
-        Update-CopyButtonState # Initial check
+        Update-CopyButtonState -State $script:uiState # Initial check
 
         # General Browse Button Handlers (Keep existing logic)
         $script:uiState.Controls.btnBrowseFFUDevPath.Add_Click({
@@ -2894,9 +2902,12 @@ function Import-WingetList {
 
 # Function to remove application and reorder priorities
 function Remove-Application {
-    param($priority)
+    param(
+        $priority,
+        [psobject]$State
+    )
     
-    $listView = $window.FindName('lstApplications')
+    $listView = $State.Controls.lstApplications
     
     # Remove the item with the specified priority
     $itemToRemove = $listView.Items | Where-Object { $_.Priority -eq $priority } | Select-Object -First 1
@@ -2905,7 +2916,7 @@ function Remove-Application {
         # Reorder priorities for remaining items
         Update-ListViewPriorities -ListView $listView
         # Update the Copy Apps button state
-        Update-CopyButtonState
+        Update-CopyButtonState -State $State
     }
 }
 
@@ -2914,10 +2925,12 @@ function Save-BYOApplicationList {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$Path
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [psobject]$State
     )
 
-    $listView = $window.FindName('lstApplications')
+    $listView = $State.Controls.lstApplications
     if (-not $listView -or $listView.Items.Count -eq 0) {
         [System.Windows.MessageBox]::Show("No applications to save.", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
@@ -3330,7 +3343,7 @@ $window.Add_SourceInitialized({
             [System.Windows.RoutedEventHandler] {
                 param($buttonSender, $clickEventArgs)
                 if ($clickEventArgs.OriginalSource -is [System.Windows.Controls.Button] -and $clickEventArgs.OriginalSource.Content -eq "Remove") {
-                    Remove-Application -priority $clickEventArgs.OriginalSource.Tag
+                    Remove-Application -priority $clickEventArgs.OriginalSource.Tag -State $script:uiState
                 }
             }
         )
