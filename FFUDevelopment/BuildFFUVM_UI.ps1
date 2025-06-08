@@ -3005,7 +3005,7 @@ $btnRun.Add_Click({
             $configFilePath = Join-Path $config.FFUDevelopmentPath "FFUConfig.json"
             $config | ConvertTo-Json -Depth 10 | Set-Content $configFilePath -Encoding UTF8
             $txtStatus.Text = "Executing BuildFFUVM script with config file..."
-            & "$PSScriptRoot\BuildFFUVM.ps1" -ConfigFile $configFilePath -Verbose
+            & "$PSScriptRoot\BuildFFUVM.ps1" -ConfigFile $configFilePath
             if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {
                 Copy-Item -Path $config.OfficeConfigXMLFile -Destination $config.OfficePath -Force
                 $txtStatus.Text = "Office Configuration XML file copied successfully."
