@@ -2076,7 +2076,7 @@ $window.Add_Loaded({
                     -CompletedStatusText 'Completed' `
                     -ErrorStatusPrefix 'Error: ' `
                     -WindowObject $window `
-                    -MainThreadLogPath $global:LogFile 
+                    -MainThreadLogPath $script:uiState.LogFilePath
                 
                 $overallSuccess = $true
                 # Check if any item has an error status after processing
@@ -2470,7 +2470,7 @@ $window.Add_Loaded({
                     -CompletedStatusText "Completed" `
                     -ErrorStatusPrefix "Error: " `
                     -WindowObject $window `
-                    -MainThreadLogPath $global:LogFile
+                    -MainThreadLogPath $script:uiState.LogFilePath
 
                 # Final status update (handled by Invoke-ParallelProcessing)
                 $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
@@ -2565,7 +2565,7 @@ $window.Add_Loaded({
                     -CompletedStatusText "Copied" `
                     -ErrorStatusPrefix "Error: " `
                     -WindowObject $window `
-                    -MainThreadLogPath $global:LogFile
+                    -MainThreadLogPath $script:uiState.LogFilePath
 
                 # Final status update (handled by Invoke-ParallelProcessing)
                 $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
