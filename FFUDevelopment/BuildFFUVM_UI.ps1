@@ -1709,7 +1709,7 @@ $window.Add_Loaded({
         $script:uiState.Controls.cmbWindowsLang.ItemsSource = $script:uiState.Defaults.windowsSettingsDefaults.AllowedLanguages
         $script:uiState.Controls.cmbWindowsLang.SelectedItem = $script:uiState.Defaults.windowsSettingsDefaults.DefaultWindowsLang
 
-        # $script:uiState.Controls.cmbWindowsSKU.ItemsSource is now populated by Update-WindowsSkuCombo called from RefreshWindowsSettingsCombos
+        # $script:uiState.Controls.cmbWindowsSKU.ItemsSource is now populated by Update-WindowsSkuCombo
         $script:uiState.Controls.cmbWindowsSKU.SelectedItem = $script:uiState.Defaults.windowsSettingsDefaults.DefaultWindowsSKU # Attempt to set default
 
         $script:uiState.Controls.cmbMediaType.ItemsSource = $script:uiState.Defaults.windowsSettingsDefaults.AllowedMediaTypes
