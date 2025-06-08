@@ -37,7 +37,8 @@ $UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 $script:uiState = [PSCustomObject]@{
     Window      = $null;
     Controls    = @{
-        featureCheckBoxes = @{} # Moved from script scope
+        featureCheckBoxes              = @{}; # Moved from script scope
+        UpdateInstallAppsBasedOnUpdates = $null # Placeholder for the scriptblock
     };
     Data        = @{
         allDriverModels             = [System.Collections.Generic.List[PSCustomObject]]::new();
@@ -826,26 +827,6 @@ function BuildFeaturesGrid {
     $parent.Children.Add($featuresGrid) | Out-Null
 }
 
-# Define the function in script scope to update Install Apps based on Updates tab
-$script:uiState.Controls.UpdateInstallAppsBasedOnUpdates = {
-    $anyUpdateChecked = $window.FindName('chkUpdateLatestDefender').IsChecked -or $window.FindName('chkUpdateEdge').IsChecked -or $window.FindName('chkUpdateOneDrive').IsChecked -or $window.FindName('chkUpdateLatestMSRT').IsChecked
-    if ($anyUpdateChecked) {
-        if (-not $script:uiState.Flags.installAppsForcedByUpdates) {
-            $script:uiState.Flags.prevInstallAppsStateBeforeUpdates = $window.FindName('chkInstallApps').IsChecked
-            $script:uiState.Flags.installAppsForcedByUpdates = $true
-        }
-        $window.FindName('chkInstallApps').IsChecked = $true
-        $window.FindName('chkInstallApps').IsEnabled = $false
-    }
-    else {
-        if ($script:uiState.Flags.installAppsForcedByUpdates) {
-            $window.FindName('chkInstallApps').IsChecked = $script:uiState.Flags.prevInstallAppsStateBeforeUpdates
-            $script:uiState.Flags.installAppsForcedByUpdates = $false
-            $script:uiState.Flags.prevInstallAppsStateBeforeUpdates = $null
-        }
-        $window.FindName('chkInstallApps').IsEnabled = $true
-    }
-}
 # -----------------------------------------------------------------------------
 # SECTION: Winget UI
 # -----------------------------------------------------------------------------
@@ -2181,38 +2162,40 @@ $window.Add_Loaded({
         # Updates/InstallApps interplay (Keep existing logic)
         $script:uiState.Flags.installAppsForcedByUpdates = $false
         $script:uiState.Flags.prevInstallAppsStateBeforeUpdates = $null
+        # Define the scriptblock within the Loaded event and assign it to the state object
         $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates = {
-            $anyUpdateChecked = $window.FindName('chkUpdateLatestDefender').IsChecked -or $window.FindName('chkUpdateEdge').IsChecked -or $window.FindName('chkUpdateOneDrive').IsChecked -or $window.FindName('chkUpdateLatestMSRT').IsChecked
+            param($State) # Pass state object to avoid using $script: scope inside
+            $anyUpdateChecked = $State.Controls.chkUpdateLatestDefender.IsChecked -or $State.Controls.chkUpdateEdge.IsChecked -or $State.Controls.chkUpdateOneDrive.IsChecked -or $State.Controls.chkUpdateLatestMSRT.IsChecked
             if ($anyUpdateChecked) {
-                if (-not $script:uiState.Flags.installAppsForcedByUpdates) {
-                    $script:uiState.Flags.prevInstallAppsStateBeforeUpdates = $window.FindName('chkInstallApps').IsChecked
-                    $script:uiState.Flags.installAppsForcedByUpdates = $true
+                if (-not $State.Flags.installAppsForcedByUpdates) {
+                    $State.Flags.prevInstallAppsStateBeforeUpdates = $State.Controls.chkInstallApps.IsChecked
+                    $State.Flags.installAppsForcedByUpdates = $true
                 }
-                $window.FindName('chkInstallApps').IsChecked = $true
-                $window.FindName('chkInstallApps').IsEnabled = $false
+                $State.Controls.chkInstallApps.IsChecked = $true
+                $State.Controls.chkInstallApps.IsEnabled = $false
             }
             else {
-                if ($script:uiState.Flags.installAppsForcedByUpdates) {
-                    $window.FindName('chkInstallApps').IsChecked = $script:uiState.Flags.prevInstallAppsStateBeforeUpdates
-                    $script:uiState.Flags.installAppsForcedByUpdates = $false
-                    $script:uiState.Flags.prevInstallAppsStateBeforeUpdates = $null
+                if ($State.Flags.installAppsForcedByUpdates) {
+                    $State.Controls.chkInstallApps.IsChecked = $State.Flags.prevInstallAppsStateBeforeUpdates
+                    $State.Flags.installAppsForcedByUpdates = $false
+                    $State.Flags.prevInstallAppsStateBeforeUpdates = $null
                 }
                 # Only re-enable InstallApps if not forced by Office
-                if (-not $script:uiState.Controls.chkInstallOffice.IsChecked) {
-                    $window.FindName('chkInstallApps').IsEnabled = $true
+                if (-not $State.Controls.chkInstallOffice.IsChecked) {
+                    $State.Controls.chkInstallApps.IsEnabled = $true
                 }
             }
         }
-        $window.FindName('chkUpdateLatestDefender').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateLatestDefender').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateEdge').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateEdge').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateOneDrive').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateOneDrive').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateLatestMSRT').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
-        $window.FindName('chkUpdateLatestMSRT').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates })
+        $window.FindName('chkUpdateLatestDefender').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateLatestDefender').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateEdge').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateEdge').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateOneDrive').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateOneDrive').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateLatestMSRT').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $window.FindName('chkUpdateLatestMSRT').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
         # Initial check for Updates/InstallApps state
-        & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates
+        & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState
 
         # CU interplay (Keep existing logic)
         $script:uiState.Controls.chkLatestCU.Add_Checked({ $script:uiState.Controls.chkPreviewCU.IsEnabled = $false })
