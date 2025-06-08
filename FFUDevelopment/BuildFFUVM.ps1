@@ -4316,7 +4316,7 @@ if ($InstallApps) {
                 if (-Not $MSRTDownloaded) {
                     # Create the search string for MSRT based on Windows architecture and release
                     if ($WindowsArch -eq 'x64') {
-                        if ($installationType -eq 'client' -and $isLTSC -eq $false) {
+                        if ($installationType -eq 'client' -and (-not $isLTSC)) {
                             $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
                         }
                         # Handle LTSB/LTSC
@@ -4339,7 +4339,7 @@ if ($InstallApps) {
                         WriteLog "Creating $MSRTPath"
                         New-Item -Path $MSRTPath -ItemType Directory -Force | Out-Null
                     }
-
+                    WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $MSRTPath"
                     WriteLog "Getting Windows Malicious Software Removal Tool URL"
                     $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath
                     WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
