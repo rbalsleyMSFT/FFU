@@ -1768,11 +1768,6 @@ $window.Add_Loaded({
         $window.FindName('txtProcessors').Text = $script:uiState.Defaults.generalDefaults.Processors
         $window.FindName('txtVMLocation').Text = $script:uiState.Defaults.generalDefaults.VMLocation
         $window.FindName('txtVMNamePrefix').Text = $script:uiState.Defaults.generalDefaults.VMNamePrefix
-        WriteLog "DEBUG: Before cmbLogicalSectorSize assignment."
-        WriteLog "DEBUG: \$script:uiState.Defaults.generalDefaults is $($script:uiState.Defaults.generalDefaults -ne $null)."
-        if ($script:uiState.Defaults.generalDefaults -ne $null) {
-            WriteLog "DEBUG: \$script:uiState.Defaults.generalDefaults.LogicalSectorSize is $($script:uiState.Defaults.generalDefaults.LogicalSectorSize)."
-        }
         $window.FindName('cmbLogicalSectorSize').SelectedItem = ($window.FindName('cmbLogicalSectorSize').Items | Where-Object { $_.Content -eq $script:uiState.Defaults.generalDefaults.LogicalSectorSize.ToString() })
 
         # Hyper-V Settings: Populate VM Switch ComboBox (Keep existing logic)
