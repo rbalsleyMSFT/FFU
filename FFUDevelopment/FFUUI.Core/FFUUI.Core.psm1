@@ -269,14 +269,16 @@ function Get-WindowsSettingsDefaults {
 function Get-AvailableWindowsReleases {
     [CmdletBinding()]
     param(
-        [string]$IsoPath
+        [string]$IsoPath,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
 
     if ([string]::IsNullOrEmpty($IsoPath)) {
-        return $script:mctWindowsReleases
+        return $State.Defaults.GeneralDefaults.MctWindowsReleases
     }
     else {
-        return $script:allWindowsReleases
+        return $State.Defaults.GeneralDefaults.AllWindowsReleases
     }
 }
 
@@ -287,7 +289,9 @@ function Get-AvailableWindowsVersions {
         [Parameter(Mandatory)]
         [int]$SelectedRelease,
 
-        [string]$IsoPath
+        [string]$IsoPath,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
 
     $result = [PSCustomObject]@{
@@ -296,11 +300,11 @@ function Get-AvailableWindowsVersions {
         IsEnabled      = $false
     }
 
-    if (-not $script:windowsVersionMap.ContainsKey($SelectedRelease)) {
+    if (-not $State.Defaults.GeneralDefaults.WindowsVersionMap.ContainsKey($SelectedRelease)) {
         return $result # Return empty/disabled state
     }
 
-    $validVersions = $script:windowsVersionMap[$SelectedRelease]
+    $validVersions = $State.Defaults.GeneralDefaults.WindowsVersionMap[$SelectedRelease]
 
     if ([string]::IsNullOrEmpty($IsoPath)) {
         # Logic for when no ISO is specified (MCT scenario)
@@ -341,7 +345,9 @@ function Get-AvailableSkusForRelease {
         [int]$SelectedReleaseValue,
 
         [Parameter(Mandatory)]
-        [string]$SelectedReleaseDisplayName
+        [string]$SelectedReleaseDisplayName,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
 
     WriteLog "Get-AvailableSkusForRelease: Getting SKUs for Release Value '$SelectedReleaseValue', Display Name '$SelectedReleaseDisplayName'."
@@ -349,25 +355,25 @@ function Get-AvailableSkusForRelease {
     # Handle LTSC 2016 specifically
     if ($SelectedReleaseValue -eq 2016 -and $SelectedReleaseDisplayName -like '*LTSB*') {
         WriteLog "Get-AvailableSkusForRelease: Matched LTSB 2016. Returning LTSC 2016 SKUs."
-        return $script:ltsc2016SKUs
+        return $State.Defaults.GeneralDefaults.Ltsc2016SKUs
     }
     # Handle LTSC 2019 specifically
     # Ensure "Server" is not in the display name to avoid matching "Windows Server 2019"
     elseif ($SelectedReleaseValue -eq 2019 -and $SelectedReleaseDisplayName -like '*LTSC*' -and $SelectedReleaseDisplayName -notlike '*Server*') {
         WriteLog "Get-AvailableSkusForRelease: Matched LTSC 2019. Returning generic LTSC SKUs (including IoT)."
         # Assuming LTSC 2019 uses the generic LTSC SKUs + IoT LTSC SKUs
-        return ($script:ltscGenericSKUs + $script:iotLtscSKUs | Select-Object -Unique)
+        return ($State.Defaults.GeneralDefaults.LtscGenericSKUs + $State.Defaults.GeneralDefaults.IotLtscSKUs | Select-Object -Unique)
     }
     # For all other cases, use the main SKU map
-    elseif ($script:windowsReleaseSkuMap.ContainsKey($SelectedReleaseValue)) {
-        $availableSkus = $script:windowsReleaseSkuMap[$SelectedReleaseValue]
+    elseif ($State.Defaults.GeneralDefaults.WindowsReleaseSkuMap.ContainsKey($SelectedReleaseValue)) {
+        $availableSkus = $State.Defaults.GeneralDefaults.WindowsReleaseSkuMap[$SelectedReleaseValue]
         WriteLog "Get-AvailableSkusForRelease: Found $($availableSkus.Count) SKUs for Release '$SelectedReleaseValue' using standard map."
         return $availableSkus
     }
     else {
         WriteLog "Get-AvailableSkusForRelease: Warning - Release Value '$SelectedReleaseValue' not found in SKU map. Returning default client SKUs."
         # Fallback to a default list (e.g., client SKUs) or an empty list
-        return $script:clientSKUs
+        return $State.Defaults.GeneralDefaults.ClientSKUs
     }
 }
 
@@ -450,7 +456,20 @@ function Get-GeneralDefaults {
         InstallDrivers              = $false
         CopyDrivers                 = $false
         CopyPEDrivers               = $false
-        UpdateADK                   = $true
+        UpdateADK                      = $true
+        # Static Data Lists/Maps
+        AllowedFeatures         = $script:allowedFeatures
+        SkuList                 = $script:skuList
+        AllowedLanguages        = $script:allowedLangs
+        AllWindowsReleases      = $script:allWindowsReleases
+        MctWindowsReleases      = $script:mctWindowsReleases
+        WindowsVersionMap       = $script:windowsVersionMap
+        ClientSKUs              = $script:clientSKUs
+        ServerSKUs              = $script:serverSKUs
+        Ltsc2016SKUs            = $script:ltsc2016SKUs
+        LtscGenericSKUs         = $script:ltscGenericSKUs
+        IotLtscSKUs             = $script:iotLtscSKUs
+        WindowsReleaseSkuMap    = $script:windowsReleaseSkuMap
     }
 }
 

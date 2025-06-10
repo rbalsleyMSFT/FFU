@@ -228,7 +228,9 @@ function ConvertTo-StandardizedDriverModel {
         [Parameter(Mandatory = $true)]
         [PSCustomObject]$RawDriverObject,
         [Parameter(Mandatory = $true)]
-        [string]$Make
+        [string]$Make,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
 
     $modelDisplay = $RawDriverObject.Model # Default
@@ -326,7 +328,7 @@ function Get-ModelsForMake {
                 WriteLog "Get-ModelsForMake: Skipping Chromebook model: $($rawModel.Model)"
                 continue
             }
-            $standardizedModels.Add((ConvertTo-StandardizedDriverModel -RawDriverObject $rawModel -Make $SelectedMake))
+            $standardizedModels.Add((ConvertTo-StandardizedDriverModel -RawDriverObject $rawModel -Make $SelectedMake -State $State))
         }
     }
     
@@ -338,10 +340,12 @@ function Get-ModelsForMake {
 # Function to filter the driver model list based on text input
 function Filter-DriverModels {
     param(
-        [string]$filterText
+        [string]$filterText,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
     # Check if UI elements and the full list are available
-    if ($null -eq $script:uiState.Controls.lstDriverModels -or $null -eq $script:uiState.Data.allDriverModels) {
+    if ($null -eq $State.Controls.lstDriverModels -or $null -eq $State.Data.allDriverModels) {
         WriteLog "Filter-DriverModels: ListView or full model list not available."
         return
     }
@@ -351,19 +355,19 @@ function Filter-DriverModels {
     # Filter the full list based on the Model property (case-insensitive)
     # Use -match for potentially better performance or stick with -like
     # Ensure the result is always an array, even if only one item matches
-    $filteredModels = @($script:uiState.Data.allDriverModels | Where-Object { $_.Model -like "*$filterText*" })
+    $filteredModels = @($State.Data.allDriverModels | Where-Object { $_.Model -like "*$filterText*" })
 
     # Update the ListView's ItemsSource with the filtered list
     # Setting ItemsSource directly should work for simple scenarios
-    $script:uiState.Controls.lstDriverModels.ItemsSource = $filteredModels
+    $State.Controls.lstDriverModels.ItemsSource = $filteredModels
 
     # Explicitly refresh the ListView's view to reflect the changes in the bound source
-    if ($null -ne $script:uiState.Controls.lstDriverModels.ItemsSource -and $script:uiState.Controls.lstDriverModels.Items -is [System.ComponentModel.ICollectionView]) {
-        $script:uiState.Controls.lstDriverModels.Items.Refresh()
+    if ($null -ne $State.Controls.lstDriverModels.ItemsSource -and $State.Controls.lstDriverModels.Items -is [System.ComponentModel.ICollectionView]) {
+        $State.Controls.lstDriverModels.Items.Refresh()
     }
-    elseif ($null -ne $script:uiState.Controls.lstDriverModels.ItemsSource) {
+    elseif ($null -ne $State.Controls.lstDriverModels.ItemsSource) {
         # Fallback refresh if not using ICollectionView (less common for direct ItemsSource binding)
-        $script:uiState.Controls.lstDriverModels.Items.Refresh()
+        $State.Controls.lstDriverModels.Items.Refresh()
     }
 
 
@@ -372,8 +376,12 @@ function Filter-DriverModels {
     
 # Function to save selected driver models to a JSON file
 function Save-DriversJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
     WriteLog "Save-DriversJson function called."
-    $selectedDrivers = @($script:uiState.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })
+    $selectedDrivers = @($State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })
     
     if (-not $selectedDrivers) {
         [System.Windows.MessageBox]::Show("No drivers selected to save.", "Save Drivers", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
@@ -454,6 +462,10 @@ function Save-DriversJson {
 
 # Function to import driver models from a JSON file
 function Import-DriversJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
     WriteLog "Import-DriversJson function called."
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
@@ -472,8 +484,8 @@ function Import-DriversJson {
             $newModelsAdded = 0
             $existingModelsUpdated = 0
 
-            if ($null -eq $script:uiState.Data.allDriverModels) {
-                $script:uiState.Data.allDriverModels = @()
+            if ($null -eq $State.Data.allDriverModels) {
+                $State.Data.allDriverModels = @()
             }
 
             $importedData.PSObject.Properties | ForEach-Object {
@@ -503,7 +515,7 @@ function Import-DriversJson {
                         continue
                     }
 
-                    $existingModel = $script:uiState.Data.allDriverModels | Where-Object { $_.Make -eq $makeName -and $_.Model -eq $importedModelNameFromObject } | Select-Object -First 1
+                    $existingModel = $State.Data.allDriverModels | Where-Object { $_.Make -eq $makeName -and $_.Model -eq $importedModelNameFromObject } | Select-Object -First 1
 
                     if ($null -ne $existingModel) {
                         $existingModel.IsSelected = $true
@@ -577,16 +589,16 @@ function Import-DriversJson {
                             Arch           = ""
                             DownloadStatus = "Imported"
                         }
-                        $script:uiState.Data.allDriverModels += $newDriverModel
+                        $State.Data.allDriverModels += $newDriverModel
                         $newModelsAdded++
                         WriteLog "Import-DriversJson: Added new model '$($newDriverModel.Make) - $($newDriverModel.Model)' from import. ID: $($newDriverModel.Id), Link: $($newDriverModel.Link)"
                     }
                 }
             }
 
-            $script:uiState.Data.allDriverModels = $script:uiState.Data.allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
+            $State.Data.allDriverModels = $State.Data.allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
             
-            Filter-DriverModels -filterText $script:uiState.Controls.txtModelFilter.Text
+            Filter-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $State
 
             $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
             [System.Windows.MessageBox]::Show($message, "Import Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
@@ -615,27 +627,31 @@ if (Test-Path -Path $script:uiState.LogFilePath) {
 
 # Function to refresh the Windows Release ComboBox based on ISO path
 function Update-WindowsReleaseCombo {
-    param([string]$isoPath)
+    param(
+        [string]$isoPath,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
 
-    if (-not $script:uiState.Controls.cmbWindowsRelease) { return } # Ensure combo exists
+    if (-not $State.Controls.cmbWindowsRelease) { return } # Ensure combo exists
 
     $oldSelectedItemValue = $null
-    if ($null -ne $script:uiState.Controls.cmbWindowsRelease.SelectedItem) {
-        $oldSelectedItemValue = $script:uiState.Controls.cmbWindowsRelease.SelectedItem.Value
+    if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
+        $oldSelectedItemValue = $State.Controls.cmbWindowsRelease.SelectedItem.Value
     }
 
     # Get the appropriate list of releases from the helper module
-    $availableReleases = Get-AvailableWindowsReleases -IsoPath $isoPath
+    $availableReleases = Get-AvailableWindowsReleases -IsoPath $isoPath -State $State
 
     # Update the ComboBox ItemsSource
-    $script:uiState.Controls.cmbWindowsRelease.ItemsSource = $availableReleases
-    $script:uiState.Controls.cmbWindowsRelease.DisplayMemberPath = 'Display'
-    $script:uiState.Controls.cmbWindowsRelease.SelectedValuePath = 'Value'
+    $State.Controls.cmbWindowsRelease.ItemsSource = $availableReleases
+    $State.Controls.cmbWindowsRelease.DisplayMemberPath = 'Display'
+    $State.Controls.cmbWindowsRelease.SelectedValuePath = 'Value'
 
     # Try to re-select the previously selected item, or default
     $itemToSelect = $availableReleases | Where-Object { $_.Value -eq $oldSelectedItemValue } | Select-Object -First 1
     if ($null -ne $itemToSelect) {
-        $script:uiState.Controls.cmbWindowsRelease.SelectedItem = $itemToSelect
+        $State.Controls.cmbWindowsRelease.SelectedItem = $itemToSelect
     }
     elseif ($availableReleases.Count -gt 0) {
         # Default to Windows 11 if available, otherwise the first item
@@ -643,11 +659,11 @@ function Update-WindowsReleaseCombo {
         if ($null -eq $defaultItem) {
             $defaultItem = $availableReleases[0]
         }
-        $script:uiState.Controls.cmbWindowsRelease.SelectedItem = $defaultItem
+        $State.Controls.cmbWindowsRelease.SelectedItem = $defaultItem
     }
     else {
         # No items available (should not happen with current logic)
-        $script:uiState.Controls.cmbWindowsRelease.SelectedIndex = -1
+        $State.Controls.cmbWindowsRelease.SelectedIndex = -1
     }
 }
 
@@ -655,14 +671,16 @@ function Update-WindowsReleaseCombo {
 function Update-WindowsVersionCombo {
     param(
         [int]$selectedRelease,
-        [string]$isoPath
+        [string]$isoPath,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
     )
 
-    $combo = $script:uiState.Controls.cmbWindowsVersion # Use script-scoped variable
+    $combo = $State.Controls.cmbWindowsVersion # Use script-scoped variable
     if (-not $combo) { return } # Ensure combo exists
 
     # Get available versions and default from the helper module
-    $versionData = Get-AvailableWindowsVersions -SelectedRelease $selectedRelease -IsoPath $isoPath
+    $versionData = Get-AvailableWindowsVersions -SelectedRelease $selectedRelease -IsoPath $isoPath -State $State
 
     # Update the ComboBox ItemsSource and IsEnabled state
     $combo.ItemsSource = $versionData.Versions
@@ -682,10 +700,14 @@ function Update-WindowsVersionCombo {
 
 # Function to refresh the Windows SKU ComboBox based on selected release
 function Update-WindowsSkuCombo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
     # This function no longer takes parameters.
     # It derives the selected release value and display name from the cmbWindowsRelease ComboBox.
 
-    $skuCombo = $script:uiState.Controls.cmbWindowsSKU
+    $skuCombo = $State.Controls.cmbWindowsSKU
     if (-not $skuCombo) {
         WriteLog "Update-WindowsSkuCombo: SKU ComboBox not found."
         return
@@ -710,7 +732,7 @@ function Update-WindowsSkuCombo {
 
     WriteLog "Update-WindowsSkuCombo: Updating SKUs for Release Value '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
     # Call Get-AvailableSkusForRelease with both Value and DisplayName
-    $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue -SelectedReleaseDisplayName $selectedReleaseDisplayName
+    $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue -SelectedReleaseDisplayName $selectedReleaseDisplayName -State $State
     
     $skuCombo.ItemsSource = $availableSkus
     WriteLog "Update-WindowsSkuCombo: Set ItemsSource with $($availableSkus.Count) SKUs."
@@ -736,22 +758,26 @@ function Update-WindowsSkuCombo {
 
 # Combined function to refresh both Release and Version combos
 function Refresh-WindowsSettingsCombos {
-    param([string]$isoPath)
+    param(
+        [string]$isoPath,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
 
     # Update Release combo first
-    Update-WindowsReleaseCombo -isoPath $isoPath
+    Update-WindowsReleaseCombo -isoPath $isoPath -State $State
 
     # Get the newly selected release value
     $selectedReleaseValue = 11 # Default to 11 if selection is null
-    if ($null -ne $script:uiState.Controls.cmbWindowsRelease.SelectedItem) {
-        $selectedReleaseValue = $script:uiState.Controls.cmbWindowsRelease.SelectedItem.Value
+    if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
+        $selectedReleaseValue = $State.Controls.cmbWindowsRelease.SelectedItem.Value
     }
 
     # Update Version combo based on the selected release
-    Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath
+    Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath -State $State
 
     # Update SKU combo based on the selected release (now derives values internally)
-    Update-WindowsSkuCombo
+    Update-WindowsSkuCombo -State $State
 }
 
 Add-Type -AssemblyName WindowsBase
@@ -1672,17 +1698,17 @@ $window.Add_Loaded({
         $script:uiState.Defaults.generalDefaults = Get-GeneralDefaults -FFUDevelopmentPath $FFUDevelopmentPath
 
         # Initialize Windows Settings UI using data from helper module
-        Refresh-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath # Use combined refresh function
-        $script:uiState.Controls.txtISOPath.Add_TextChanged({ Refresh-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text })
+        Refresh-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
+        $script:uiState.Controls.txtISOPath.Add_TextChanged({ Refresh-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState })
         $script:uiState.Controls.cmbWindowsRelease.Add_SelectionChanged({
                 $selectedReleaseValue = 11 # Default if null
                 if ($null -ne $script:uiState.Controls.cmbWindowsRelease.SelectedItem) {
                     $selectedReleaseValue = $script:uiState.Controls.cmbWindowsRelease.SelectedItem.Value
                 }
                 # Only need to update the Version combo when Release changes
-                Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $script:uiState.Controls.txtISOPath.Text
+                Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState
                 # Also update the SKU combo (now derives values internally)
-                Update-WindowsSkuCombo
+                Update-WindowsSkuCombo -State $script:uiState
             })
         $script:uiState.Controls.btnBrowseISO.Add_Click({
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
@@ -1742,6 +1768,11 @@ $window.Add_Loaded({
         $window.FindName('txtProcessors').Text = $script:uiState.Defaults.generalDefaults.Processors
         $window.FindName('txtVMLocation').Text = $script:uiState.Defaults.generalDefaults.VMLocation
         $window.FindName('txtVMNamePrefix').Text = $script:uiState.Defaults.generalDefaults.VMNamePrefix
+        WriteLog "DEBUG: Before cmbLogicalSectorSize assignment."
+        WriteLog "DEBUG: \$script:uiState.Defaults.generalDefaults is $($script:uiState.Defaults.generalDefaults -ne $null)."
+        if ($script:uiState.Defaults.generalDefaults -ne $null) {
+            WriteLog "DEBUG: \$script:uiState.Defaults.generalDefaults.LogicalSectorSize is $($script:uiState.Defaults.generalDefaults.LogicalSectorSize)."
+        }
         $window.FindName('cmbLogicalSectorSize').SelectedItem = ($window.FindName('cmbLogicalSectorSize').Items | Where-Object { $_.Content -eq $script:uiState.Defaults.generalDefaults.LogicalSectorSize.ToString() })
 
         # Hyper-V Settings: Populate VM Switch ComboBox (Keep existing logic)
@@ -2406,13 +2437,13 @@ $window.Add_Loaded({
                 }
             }
         )
-        $script:uiState.Controls.btnWingetSearch.Add_Click({ Search-WingetApps })
+        $script:uiState.Controls.btnWingetSearch.Add_Click({ Search-WingetApps -State $script:uiState })
         $script:uiState.Controls.txtWingetSearch.Add_KeyDown({
                 param($eventSrc, $keyEvent)
-                if ($keyEvent.Key -eq 'Return') { Search-WingetApps; $keyEvent.Handled = $true }
+                if ($keyEvent.Key -eq 'Return') { Search-WingetApps -State $script:uiState; $keyEvent.Handled = $true }
             })
-        $script:uiState.Controls.btnSaveWingetList.Add_Click({ Save-WingetList })
-        $script:uiState.Controls.btnImportWingetList.Add_Click({ Import-WingetList })
+        $script:uiState.Controls.btnSaveWingetList.Add_Click({ Save-WingetList -State $script:uiState })
+        $script:uiState.Controls.btnImportWingetList.Add_Click({ Import-WingetList -State $script:uiState })
         $script:uiState.Controls.btnClearWingetList.Add_Click({
                 $script:uiState.Controls.lstWingetResults.ItemsSource = @() # Set ItemsSource to an empty array
                 $script:uiState.Controls.txtWingetSearch.Text = ""
@@ -2523,7 +2554,7 @@ $window.Add_Loaded({
                 $initialDir = $window.FindName('txtApplicationPath').Text
                 if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
                 $openDialog.InitialDirectory = $initialDir
-                if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName; Update-CopyButtonState -State $script:uiState }
+                if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName -State $script:uiState; Update-CopyButtonState -State $script:uiState }
             })
         $script:uiState.Controls.btnClearBYOApplications.Add_Click({
                 $result = [System.Windows.MessageBox]::Show("Are you sure you want to clear all applications?", "Clear Applications", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
@@ -2776,17 +2807,21 @@ $window.Add_Loaded({
 
 # Function to search for Winget apps
 function Search-WingetApps {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
     try {
-        $searchQuery = $script:uiState.Controls.txtWingetSearch.Text
+        $searchQuery = $State.Controls.txtWingetSearch.Text
         if ([string]::IsNullOrWhiteSpace($searchQuery)) { return }
 
         # Get current items from the ListView
         $currentItemsInListView = @()
-        if ($null -ne $script:uiState.Controls.lstWingetResults.ItemsSource) {
-            $currentItemsInListView = @($script:uiState.Controls.lstWingetResults.ItemsSource)
-        } 
-        elseif ($script:uiState.Controls.lstWingetResults.HasItems) {
-            $currentItemsInListView = @($script:uiState.Controls.lstWingetResults.Items)
+        if ($null -ne $State.Controls.lstWingetResults.ItemsSource) {
+            $currentItemsInListView = @($State.Controls.lstWingetResults.ItemsSource)
+        }
+        elseif ($State.Controls.lstWingetResults.HasItems) {
+            $currentItemsInListView = @($State.Controls.lstWingetResults.Items)
         }
         
         # Store selected apps from the current view
@@ -2831,8 +2866,12 @@ function Search-WingetApps {
 
 # Function to save selected apps to JSON
 function Save-WingetList {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
     try {
-        $selectedApps = $script:uiState.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
+        $selectedApps = $State.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
         if (-not $selectedApps) {
             [System.Windows.MessageBox]::Show("No apps selected to save.", "Warning", "OK", "Warning")
             return
@@ -2866,6 +2905,10 @@ function Save-WingetList {
 
 # Function to import app list from JSON
 function Import-WingetList {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
     try {
         $ofd = New-Object System.Windows.Forms.OpenFileDialog
         $ofd.Filter = "JSON files (*.json)|*.json"
@@ -2890,7 +2933,7 @@ function Import-WingetList {
                 }
             }
             
-            $script:uiState.Controls.lstWingetResults.ItemsSource = $newAppListForItemsSource.ToArray()
+            $State.Controls.lstWingetResults.ItemsSource = $newAppListForItemsSource.ToArray()
             
             [System.Windows.MessageBox]::Show("App list imported successfully.", "Success", "OK", "Information")
         }
@@ -2953,7 +2996,9 @@ function Import-BYOApplicationList {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$Path
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [psobject]$State
     )
 
     if (-not (Test-Path $Path)) {
@@ -2984,7 +3029,7 @@ function Import-BYOApplicationList {
         # Reorder priorities sequentially after loading
         Update-ListViewPriorities -ListView $listView
         # Update the Copy Apps button state
-        Update-CopyButtonState
+        Update-CopyButtonState -State $State
 
         [System.Windows.MessageBox]::Show("Applications imported successfully from `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
