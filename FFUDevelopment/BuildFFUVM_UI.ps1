@@ -1466,26 +1466,10 @@ function Update-CopyButtonState {
 # --------------------------------------------------------------------------
 
 $window.Add_Loaded({
-        # Assign UI elements to script variables
+        # Pass the state object to all initialization functions
         $script:uiState.Window = $window
-        $script:uiState.Controls.cmbWindowsRelease = $window.FindName('cmbWindowsRelease')
-        $script:uiState.Controls.cmbWindowsVersion = $window.FindName('cmbWindowsVersion')
-        $script:uiState.Controls.txtISOPath = $window.FindName('txtISOPath')
-        $script:uiState.Controls.btnBrowseISO = $window.FindName('btnBrowseISO')
-        $script:uiState.Controls.cmbWindowsArch = $window.FindName('cmbWindowsArch')
-        $script:uiState.Controls.cmbWindowsLang = $window.FindName('cmbWindowsLang')
-        $script:uiState.Controls.cmbWindowsSKU = $window.FindName('cmbWindowsSKU')
-        $script:uiState.Controls.cmbMediaType = $window.FindName('cmbMediaType')
-        $script:uiState.Controls.txtOptionalFeatures = $window.FindName('txtOptionalFeatures')
-        $script:uiState.Controls.featuresPanel = $window.FindName('stackFeaturesContainer')
-        $script:uiState.Controls.chkDownloadDrivers = $window.FindName('chkDownloadDrivers')
-        $script:uiState.Controls.cmbMake = $window.FindName('cmbMake')
-        # $script:uiState.Controls.cmbModel = $window.FindName('cmbModel') # cmbModel TextBox removed from XAML
-        $script:uiState.Controls.spMakeSection = $window.FindName('spMakeSection') # Updated StackPanel name
-        $script:uiState.Controls.btnGetModels = $window.FindName('btnGetModels')
-        $script:uiState.Controls.spModelFilterSection = $window.FindName('spModelFilterSection') # New StackPanel for filter
-        $script:uiState.Controls.txtModelFilter = $window.FindName('txtModelFilter') # New TextBox for filter
-        $script:uiState.Controls.lstDriverModels = $window.FindName('lstDriverModels')
+        Initialize-UIControls -State $script:uiState
+        
         # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
         $itemStyleDriverModels = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
         $itemStyleDriverModels.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
@@ -1512,136 +1496,11 @@ $window.Add_Loaded({
                 }
             }
         )
-        $script:uiState.Controls.spDriverActionButtons = $window.FindName('spDriverActionButtons')
-        $script:uiState.Controls.btnSaveDriversJson = $window.FindName('btnSaveDriversJson')
-        $script:uiState.Controls.btnImportDriversJson = $window.FindName('btnImportDriversJson')
-        $script:uiState.Controls.btnDownloadSelectedDrivers = $window.FindName('btnDownloadSelectedDrivers')
-        $script:uiState.Controls.btnClearDriverList = $window.FindName('btnClearDriverList')
-        # New button
-        $script:uiState.Controls.chkInstallOffice = $window.FindName('chkInstallOffice')
-        $script:uiState.Controls.chkInstallApps = $window.FindName('chkInstallApps')
-        $script:uiState.Controls.OfficePathStackPanel = $window.FindName('OfficePathStackPanel')
-        $script:uiState.Controls.OfficePathGrid = $window.FindName('OfficePathGrid')
-        $script:uiState.Controls.CopyOfficeConfigXMLStackPanel = $window.FindName('CopyOfficeConfigXMLStackPanel')
-        $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel = $window.FindName('OfficeConfigurationXMLFileStackPanel')
-        $script:uiState.Controls.OfficeConfigurationXMLFileGrid = $window.FindName('OfficeConfigurationXMLFileGrid')
-        $script:uiState.Controls.chkCopyOfficeConfigXML = $window.FindName('chkCopyOfficeConfigXML')
-        $script:uiState.Controls.chkLatestCU = $window.FindName('chkUpdateLatestCU')
-        $script:uiState.Controls.chkPreviewCU = $window.FindName('chkUpdatePreviewCU')
-        $script:uiState.Controls.btnCheckUSBDrives = $window.FindName('btnCheckUSBDrives')
-        $script:uiState.Controls.lstUSBDrives = $window.FindName('lstUSBDrives')
-        $script:uiState.Controls.chkSelectAllUSBDrives = $window.FindName('chkSelectAllUSBDrives')
-        $script:uiState.Controls.chkBuildUSBDriveEnable = $window.FindName('chkBuildUSBDriveEnable')
-        $script:uiState.Controls.usbSection = $window.FindName('usbDriveSection')
-        $script:uiState.Controls.chkSelectSpecificUSBDrives = $window.FindName('chkSelectSpecificUSBDrives')
-        $script:uiState.Controls.usbSelectionPanel = $window.FindName('usbDriveSelectionPanel')
-        $script:uiState.Controls.chkAllowExternalHardDiskMedia = $window.FindName('chkAllowExternalHardDiskMedia')
-        $script:uiState.Controls.chkPromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia')
-        $script:uiState.Controls.chkInstallWingetApps = $window.FindName('chkInstallWingetApps')
-        $script:uiState.Controls.wingetPanel = $window.FindName('wingetPanel')
-        $script:uiState.Controls.btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
-        $script:uiState.Controls.txtWingetVersion = $window.FindName('txtWingetVersion')
-        $script:uiState.Controls.txtWingetModuleVersion = $window.FindName('txtWingetModuleVersion')
-        $script:uiState.Controls.applicationPathPanel = $window.FindName('applicationPathPanel')
-        $script:uiState.Controls.appListJsonPathPanel = $window.FindName('appListJsonPathPanel')
-        $script:uiState.Controls.btnBrowseApplicationPath = $window.FindName('btnBrowseApplicationPath')
-        $script:uiState.Controls.btnBrowseAppListJsonPath = $window.FindName('btnBrowseAppListJsonPath')
-        $script:uiState.Controls.chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
-        $script:uiState.Controls.byoApplicationPanel = $window.FindName('byoApplicationPanel')
-        $script:uiState.Controls.wingetSearchPanel = $window.FindName('wingetSearchPanel')
-        $script:uiState.Controls.txtWingetSearch = $window.FindName('txtWingetSearch')
-        $script:uiState.Controls.btnWingetSearch = $window.FindName('btnWingetSearch')
-        $script:uiState.Controls.lstWingetResults = $window.FindName('lstWingetResults')
         # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
         $itemStyleWingetResults = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
         $itemStyleWingetResults.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
         $script:uiState.Controls.lstWingetResults.ItemContainerStyle = $itemStyleWingetResults
-        $script:uiState.Controls.btnSaveWingetList = $window.FindName('btnSaveWingetList')
-        $script:uiState.Controls.btnImportWingetList = $window.FindName('btnImportWingetList')
-        $script:uiState.Controls.btnClearWingetList = $window.FindName('btnClearWingetList')
-        $script:uiState.Controls.btnDownloadSelected = $window.FindName('btnDownloadSelected')
-        $script:uiState.Controls.btnBrowseAppSource = $window.FindName('btnBrowseAppSource')
-        $script:uiState.Controls.btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
-        $script:uiState.Controls.btnBrowseFFUCaptureLocation = $window.FindName('btnBrowseFFUCaptureLocation')
-        $script:uiState.Controls.btnBrowseOfficePath = $window.FindName('btnBrowseOfficePath')
-        $script:uiState.Controls.btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
-        $script:uiState.Controls.btnBrowsePEDriversFolder = $window.FindName('btnBrowsePEDriversFolder')
-        $script:uiState.Controls.txtAppName = $window.FindName('txtAppName')
-        $script:uiState.Controls.txtAppCommandLine = $window.FindName('txtAppCommandLine')
-        $script:uiState.Controls.txtAppArguments = $window.FindName('txtAppArguments')
-        $script:uiState.Controls.txtAppSource = $window.FindName('txtAppSource')
-        $script:uiState.Controls.btnAddApplication = $window.FindName('btnAddApplication')
-        $script:uiState.Controls.btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
-        $script:uiState.Controls.btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
-        $script:uiState.Controls.btnClearBYOApplications = $window.FindName('btnClearBYOApplications')
-        $script:uiState.Controls.btnCopyBYOApps = $window.FindName('btnCopyBYOApps')
-        $script:uiState.Controls.lstApplications = $window.FindName('lstApplications')
-        $script:uiState.Controls.btnMoveTop = $window.FindName('btnMoveTop')
-        $script:uiState.Controls.btnMoveUp = $window.FindName('btnMoveUp')
-        $script:uiState.Controls.btnMoveDown = $window.FindName('btnMoveDown')
-        $script:uiState.Controls.btnMoveBottom = $window.FindName('btnMoveBottom')
-        $script:uiState.Controls.txtStatus = $window.FindName('txtStatus') # Assign txtStatus control
-        # Assign Progress Bar and Overall Status Text controls to script variables
-        $script:uiState.Controls.pbOverallProgress = $window.FindName('progressBar') # Use the correct x:Name from XAML
-        $script:uiState.Controls.txtOverallStatus = $window.FindName('txtStatus')     # Use the correct x:Name from XAML (assuming it's txtStatus)
-        $script:uiState.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
-        $script:uiState.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')
-        $script:uiState.Controls.txtCustomVMSwitchName = $window.FindName('txtCustomVMSwitchName')
-        $script:uiState.Controls.txtFFUDevPath = $window.FindName('txtFFUDevPath')
-        $script:uiState.Controls.txtCustomFFUNameTemplate = $window.FindName('txtCustomFFUNameTemplate')
-        $script:uiState.Controls.txtFFUCaptureLocation = $window.FindName('txtFFUCaptureLocation')
-        $script:uiState.Controls.txtShareName = $window.FindName('txtShareName')
-        $script:uiState.Controls.txtUsername = $window.FindName('txtUsername')
-        $script:uiState.Controls.chkCompactOS = $window.FindName('chkCompactOS')
-        $script:uiState.Controls.chkOptimize = $window.FindName('chkOptimize')
-        $script:uiState.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
-        $script:uiState.Controls.chkCreateCaptureMedia = $window.FindName('chkCreateCaptureMedia')
-        $script:uiState.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
-        $script:uiState.Controls.chkCopyAutopilot = $window.FindName('chkCopyAutopilot')
-        $script:uiState.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
-        $script:uiState.Controls.chkCopyPPKG = $window.FindName('chkCopyPPKG')
-        $script:uiState.Controls.chkCleanupAppsISO = $window.FindName('chkCleanupAppsISO')
-        $script:uiState.Controls.chkCleanupCaptureISO = $window.FindName('chkCleanupCaptureISO')
-        $script:uiState.Controls.chkCleanupDeployISO = $window.FindName('chkCleanupDeployISO')
-        $script:uiState.Controls.chkCleanupDrivers = $window.FindName('chkCleanupDrivers')
-        $script:uiState.Controls.chkRemoveFFU = $window.FindName('chkRemoveFFU')
-        $script:uiState.Controls.txtDiskSize = $window.FindName('txtDiskSize')
-        $script:uiState.Controls.txtMemory = $window.FindName('txtMemory')
-        $script:uiState.Controls.txtProcessors = $window.FindName('txtProcessors')
-        $script:uiState.Controls.txtVMLocation = $window.FindName('txtVMLocation')
-        $script:uiState.Controls.txtVMNamePrefix = $window.FindName('txtVMNamePrefix')
-        $script:uiState.Controls.cmbLogicalSectorSize = $window.FindName('cmbLogicalSectorSize')
-        $script:uiState.Controls.txtProductKey = $window.FindName('txtProductKey')
-        $script:uiState.Controls.txtOfficePath = $window.FindName('txtOfficePath')
-        $script:uiState.Controls.txtOfficeConfigXMLFilePath = $window.FindName('txtOfficeConfigXMLFilePath')
-        $script:uiState.Controls.txtDriversFolder = $window.FindName('txtDriversFolder')
-        $script:uiState.Controls.txtPEDriversFolder = $window.FindName('txtPEDriversFolder')
-        $script:uiState.Controls.chkCopyPEDrivers = $window.FindName('chkCopyPEDrivers')
-        $script:uiState.Controls.chkUpdateLatestCU = $window.FindName('chkUpdateLatestCU')
-        $script:uiState.Controls.chkUpdateLatestNet = $window.FindName('chkUpdateLatestNet')
-        $script:uiState.Controls.chkUpdateLatestDefender = $window.FindName('chkUpdateLatestDefender')
-        $script:uiState.Controls.chkUpdateEdge = $window.FindName('chkUpdateEdge')
-        $script:uiState.Controls.chkUpdateOneDrive = $window.FindName('chkUpdateOneDrive')
-        $script:uiState.Controls.chkUpdateLatestMSRT = $window.FindName('chkUpdateLatestMSRT')
-        $script:uiState.Controls.chkUpdatePreviewCU = $window.FindName('chkUpdatePreviewCU')
-        $script:uiState.Controls.txtApplicationPath = $window.FindName('txtApplicationPath')
-        $script:uiState.Controls.txtAppListJsonPath = $window.FindName('txtAppListJsonPath')
-
-        # Assign Driver Checkboxes
-        $script:uiState.Controls.chkInstallDrivers = $window.FindName('chkInstallDrivers')
-        $script:uiState.Controls.chkCopyDrivers = $window.FindName('chkCopyDrivers')
-        $script:uiState.Controls.chkCompressDriversToWIM = $window.FindName('chkCompressDriversToWIM')
-        $script:uiState.Controls.chkRemoveApps = $window.FindName('chkRemoveApps')
-        $script:uiState.Controls.chkRemoveUpdates = $window.FindName('chkRemoveUpdates')
-        $script:uiState.Controls.chkUpdateLatestMicrocode = $window.FindName('chkUpdateLatestMicrocode')
-
-        # AppsScriptVariables Controls
-        $script:uiState.Controls.chkDefineAppsScriptVariables = $window.FindName('chkDefineAppsScriptVariables')
-        $script:uiState.Controls.appsScriptVariablesPanel = $window.FindName('appsScriptVariablesPanel')
-        $script:uiState.Controls.txtAppsScriptKey = $window.FindName('txtAppsScriptKey')
-        $script:uiState.Controls.txtAppsScriptValue = $window.FindName('txtAppsScriptValue')
-        $script:uiState.Controls.btnAddAppsScriptVariable = $window.FindName('btnAddAppsScriptVariable')
-        $script:uiState.Controls.lstAppsScriptVariables = $window.FindName('lstAppsScriptVariables')
+        
         # Bind ItemsSource to the data list
         $script:uiState.Controls.lstAppsScriptVariables.ItemsSource = $script:uiState.Data.appsScriptVariablesDataList.ToArray()
 
@@ -1693,9 +1552,6 @@ $window.Add_Loaded({
             WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
         }
 
-        $script:uiState.Controls.btnRemoveSelectedAppsScriptVariables = $window.FindName('btnRemoveSelectedAppsScriptVariables') # Updated variable name
-        $script:uiState.Controls.btnClearAppsScriptVariables = $window.FindName('btnClearAppsScriptVariables')
-
         # Get Windows Settings defaults and lists from helper module
         $script:uiState.Defaults.windowsSettingsDefaults = Get-WindowsSettingsDefaults
         # Get General defaults from helper module
@@ -1746,7 +1602,6 @@ $window.Add_Loaded({
         $window.FindName('txtUsername').Text = $script:uiState.Defaults.generalDefaults.Username
         $window.FindName('chkBuildUSBDriveEnable').IsChecked = $script:uiState.Defaults.generalDefaults.BuildUSBDriveEnable
         $window.FindName('chkCompactOS').IsChecked = $script:uiState.Defaults.generalDefaults.CompactOS
-        $script:uiState.Controls.chkUpdateADK = $window.FindName('chkUpdateADK') # Assign chkUpdateADK
         $script:uiState.Controls.chkUpdateADK.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateADK # Set default for chkUpdateADK
         $window.FindName('chkOptimize').IsChecked = $script:uiState.Defaults.generalDefaults.Optimize
         $window.FindName('chkAllowVHDXCaching').IsChecked = $script:uiState.Defaults.generalDefaults.AllowVHDXCaching
@@ -1842,9 +1697,7 @@ $window.Add_Loaded({
         # Drivers tab defaults from General Defaults
         $window.FindName('txtDriversFolder').Text = $script:uiState.Defaults.generalDefaults.DriversFolder
         $window.FindName('txtPEDriversFolder').Text = $script:uiState.Defaults.generalDefaults.PEDriversFolder
-        $script:uiState.Controls.txtDriversJsonPath = $window.FindName('txtDriversJsonPath') # Assign new TextBox
         $script:uiState.Controls.txtDriversJsonPath.Text = $script:uiState.Defaults.generalDefaults.DriversJsonPath # Set default text
-        $script:uiState.Controls.btnBrowseDriversJsonPath = $window.FindName('btnBrowseDriversJsonPath') # Assign new Button
         $window.FindName('chkDownloadDrivers').IsChecked = $script:uiState.Defaults.generalDefaults.DownloadDrivers
         $window.FindName('chkInstallDrivers').IsChecked = $script:uiState.Defaults.generalDefaults.InstallDrivers
         $window.FindName('chkCopyDrivers').IsChecked = $script:uiState.Defaults.generalDefaults.CopyDrivers
