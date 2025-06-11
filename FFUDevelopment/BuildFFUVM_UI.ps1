@@ -65,7 +65,7 @@ if (Get-Module -Name 'FFUUI.Core' -ErrorAction SilentlyContinue) {
     Remove-Module -Name 'FFUUI.Core' -Force
 }
 # Import the common core module first for logging
-Import-Module "$PSScriptRoot\common\FFU.Common.Core.psm1" 
+Import-Module "$PSScriptRoot\common\FFU.Common.Core.psm1"
 # Import the Core UI Logic Module
 Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
 
@@ -156,7 +156,7 @@ function Set-UIValue {
             return
         }
     }
-    
+
     try {
         # Handle ComboBox SelectedItem specifically
         if ($control -is [System.Windows.Controls.ComboBox] -and $PropertyName -eq 'SelectedItem') {
@@ -288,7 +288,7 @@ function Get-ModelsForMake {
     if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
         $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
     }
-    
+
     # $Headers and $UserAgent are available from script scope
 
     if (-not $localWindowsRelease -and ($SelectedMake -eq 'Dell' -or $SelectedMake -eq 'Lenovo')) {
@@ -310,7 +310,7 @@ function Get-ModelsForMake {
             $modelSearchTerm = [Microsoft.VisualBasic.Interaction]::InputBox("Enter Lenovo Model Name or Machine Type (e.g., T480 or 20L5):", "Lenovo Model Search", "")
             if ([string]::IsNullOrWhiteSpace($modelSearchTerm)) {
                 # User cancelled or entered nothing
-                return @() 
+                return @()
             }
             $State.Controls.txtStatus.Text = "Searching Lenovo models for '$modelSearchTerm'..."
             $rawModels = Get-LenovoDriversModelList -ModelSearchTerm $modelSearchTerm -Headers $Headers -UserAgent $UserAgent
@@ -331,7 +331,7 @@ function Get-ModelsForMake {
             $standardizedModels.Add((ConvertTo-StandardizedDriverModel -RawDriverObject $rawModel -Make $SelectedMake -State $State))
         }
     }
-    
+
     return $standardizedModels.ToArray()
 }
 
@@ -373,7 +373,7 @@ function Filter-DriverModels {
 
     WriteLog "Filtered list contains $($filteredModels.Count) models."
 }
-    
+
 # Function to save selected driver models to a JSON file
 function Save-DriversJson {
     param(
@@ -382,19 +382,19 @@ function Save-DriversJson {
     )
     WriteLog "Save-DriversJson function called."
     $selectedDrivers = @($State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })
-    
+
     if (-not $selectedDrivers) {
         [System.Windows.MessageBox]::Show("No drivers selected to save.", "Save Drivers", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         WriteLog "No drivers selected to save."
         return
     }
-    
+
     $outputJson = @{} # Use a Hashtable for the desired structure
-    
+
     $selectedDrivers | Group-Object -Property Make | ForEach-Object {
         $makeName = $_.Name
         $modelsForThisMake = @() # Initialize an array to hold model objects
-    
+
         foreach ($driverItem in $_.Group) {
             $modelObject = $null
             switch ($makeName) {
@@ -429,7 +429,7 @@ function Save-DriversJson {
                 $modelsForThisMake += $modelObject
             }
         }
-    
+
         if ($modelsForThisMake.Count -gt 0) {
             # Store the array of model objects under a "Models" key
             $outputJson[$makeName] = @{
@@ -437,13 +437,13 @@ function Save-DriversJson {
             }
         }
     }
-    
+
     $sfd = New-Object System.Windows.Forms.SaveFileDialog
     $sfd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
     $sfd.Title = "Save Selected Drivers"
     $sfd.FileName = "Drivers.json"
-    $sfd.InitialDirectory = $FFUDevelopmentPath 
-    
+    $sfd.InitialDirectory = $FFUDevelopmentPath
+
     if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
             $outputJson | ConvertTo-Json -Depth 5 | Set-Content -Path $sfd.FileName -Encoding UTF8
@@ -470,7 +470,7 @@ function Import-DriversJson {
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
     $ofd.Title = "Import Drivers"
-    $ofd.InitialDirectory = $FFUDevelopmentPath 
+    $ofd.InitialDirectory = $FFUDevelopmentPath
 
     if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
@@ -520,7 +520,7 @@ function Import-DriversJson {
                     if ($null -ne $existingModel) {
                         $existingModel.IsSelected = $true
                         $existingModel.DownloadStatus = "Imported"
-                        
+
                         if ($makeName -eq 'Microsoft' -and $importedModelObject.PSObject.Properties['Link']) {
                             if ($existingModel.Link -ne $importedModelObject.Link) {
                                 $existingModel.Link = $importedModelObject.Link
@@ -555,7 +555,7 @@ function Import-DriversJson {
                         if ($makeName -eq 'Lenovo') {
                             $importedProductName = if ($importedModelObject.PSObject.Properties['ProductName']) { $importedModelObject.ProductName } else { $null }
                             $importedMachineType = if ($importedModelObject.PSObject.Properties['MachineType']) { $importedModelObject.MachineType } else { $null }
-                            
+
                             if ($null -ne $importedMachineType) {
                                 $importedId = $importedMachineType # Override Id for Lenovo
                             }
@@ -564,12 +564,12 @@ function Import-DriversJson {
                             if (($null -eq $importedProductName -or $null -eq $importedMachineType) -and $importedModelNameFromObject -match '(.+?)\s*\((.+?)\)$') {
                                 WriteLog "Import-DriversJson: Lenovo model '$importedModelNameFromObject' missing ProductName or MachineType in JSON. Attempting to parse from Name."
                                 if ($null -eq $importedProductName) { $importedProductName = $matches[1].Trim() }
-                                if ($null -eq $importedMachineType) { 
+                                if ($null -eq $importedMachineType) {
                                     $importedMachineType = $matches[2].Trim()
                                     $importedId = $importedMachineType # Update Id if MachineType was parsed here
                                 }
                             }
-                            
+
                             if ($null -eq $importedProductName -or $null -eq $importedMachineType) {
                                 WriteLog "Import-DriversJson: Warning - Lenovo model '$importedModelNameFromObject' is missing ProductName or MachineType after parsing. ID might be based on full name."
                             }
@@ -597,8 +597,8 @@ function Import-DriversJson {
             }
 
             $State.Data.allDriverModels = $State.Data.allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
-            
-            Filter-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $State
+
+            Filter-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $script:uiState
 
             $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
             [System.Windows.MessageBox]::Show($message, "Import Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
@@ -613,9 +613,9 @@ function Import-DriversJson {
         WriteLog "Import drivers operation cancelled by user."
     }
 }
-    
+
 # Some default values
-$defaultFFUPrefix = "_FFU" 
+$defaultFFUPrefix = "_FFU"
 
 # --------------------------------------------------------------------------
 
@@ -733,7 +733,7 @@ function Update-WindowsSkuCombo {
     WriteLog "Update-WindowsSkuCombo: Updating SKUs for Release Value '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
     # Call Get-AvailableSkusForRelease with both Value and DisplayName
     $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue -SelectedReleaseDisplayName $selectedReleaseDisplayName -State $State
-    
+
     $skuCombo.ItemsSource = $availableSkus
     WriteLog "Update-WindowsSkuCombo: Set ItemsSource with $($availableSkus.Count) SKUs."
 
@@ -886,7 +886,7 @@ function Update-WingetVersionFields {
         [Parameter(Mandatory)]
         [string]$moduleText
     )
-    
+
     # Force UI update on the UI thread
     $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
             $script:uiState.Controls.txtWingetVersion.Text = $wingetText
@@ -904,7 +904,7 @@ function Add-SortableColumn {
         [string]$header,
         [string]$binding,
         [int]$width = 'Auto',
-        [bool]$isCheckbox = $false, 
+        [bool]$isCheckbox = $false,
         [System.Windows.HorizontalAlignment]$headerHorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
     )
 
@@ -918,14 +918,14 @@ function Add-SortableColumn {
         # Cell template for a column of checkboxes
         $cellTemplate = New-Object System.Windows.DataTemplate
         $gridFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Grid])
-        
+
         $checkBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
         $checkBoxFactory.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
         $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
         $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
 
         $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
-                param($eventSourceLocal, $eventArgsLocal) 
+                param($eventSourceLocal, $eventArgsLocal)
                 # Sync logic would be needed here if this column had a header checkbox
             })
         $gridFactory.AppendChild($checkBoxFactory)
@@ -935,8 +935,8 @@ function Add-SortableColumn {
     }
     else {
         # For regular text columns
-        $headerControl.HorizontalContentAlignment = $headerHorizontalAlignment 
-        $headerControl.Content = $header 
+        $headerControl.HorizontalContentAlignment = $headerHorizontalAlignment
+        $headerControl.Content = $header
 
         $headerTextElementFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
         $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, $header)
@@ -953,8 +953,8 @@ function Add-SortableColumn {
         $textBlockFactory.SetBinding([System.Windows.Controls.TextBlock]::TextProperty, (New-Object System.Windows.Data.Binding($binding)))
         # Adjust left padding to 0 for cell text to align with header text
         $cellTextBlockPadding = New-Object System.Windows.Thickness(0, $commonPadding.Top, $commonPadding.Right, $commonPadding.Bottom)
-        $textBlockFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $cellTextBlockPadding) 
-        $textBlockFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Left) 
+        $textBlockFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $cellTextBlockPadding)
+        $textBlockFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Left)
         $textBlockFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
 
         $cellTemplate.VisualTree = $textBlockFactory
@@ -977,7 +977,7 @@ function Invoke-ListViewSort {
         [System.Windows.Controls.ListView]$listView,
         [string]$property
     )
-    
+
     # Toggle sort direction if clicking the same column
     if ($script:uiState.Flags.lastSortProperty -eq $property) {
         $script:uiState.Flags.lastSortAscending = -not $script:uiState.Flags.lastSortAscending
@@ -986,7 +986,7 @@ function Invoke-ListViewSort {
         $script:uiState.Flags.lastSortAscending = $true
     }
     $script:uiState.Flags.lastSortProperty = $property
-    
+
     # Get items from ItemsSource or Items collection
     $currentItemsSource = $listView.ItemsSource
     $itemsToSort = @()
@@ -1003,7 +1003,7 @@ function Invoke-ListViewSort {
 
     $selectedItems = @($itemsToSort | Where-Object { $_.IsSelected })
     $unselectedItems = @($itemsToSort | Where-Object { -not $_.IsSelected })
-    
+
     # Define the primary sort criterion
     $primarySortDefinition = @{
         Expression = {
@@ -1053,7 +1053,7 @@ function Invoke-ListViewSort {
         if ($itemsHaveSecondaryProperty) {
             # Create a scriptblock for the secondary sort expression dynamically
             $expressionScriptBlock = [scriptblock]::Create("`$_.$secondarySortPropertyName")
-            
+
             $secondarySortDefinition = @{
                 Expression = {
                     $val = Invoke-Command -ScriptBlock $expressionScriptBlock -ArgumentList $_
@@ -1064,18 +1064,18 @@ function Invoke-ListViewSort {
             $sortCriteria.Add($secondarySortDefinition)
         }
     }
-    
+
     $sortedUnselected = $unselectedItems | Sort-Object -Property $sortCriteria.ToArray()
     # Ensure $sortedUnselected is not null before attempting to add its range
     if ($null -eq $sortedUnselected) {
         $sortedUnselected = @()
     }
-    
+
     # Combine sorted items: selected items first, then sorted unselected items
     $newSortedList = [System.Collections.Generic.List[object]]::new()
     $newSortedList.AddRange($selectedItems)
     $newSortedList.AddRange($sortedUnselected)
-    
+
     # Set the new sorted list as the ItemsSource
     # Try nulling out ItemsSource first to force a more complete refresh
     $listView.ItemsSource = $null
@@ -1186,7 +1186,7 @@ function Add-SelectableGridViewColumn {
                 WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListViewName from Tag is null or empty in HeaderUnchecked event. Aborting."
                 return
             }
-            
+
             $actualListView = $script:uiState.Controls[$localListViewName]
             if ($null -eq $actualListView) {
                 WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderUnchecked event. Aborting."
@@ -1230,17 +1230,17 @@ function Add-SelectableGridViewColumn {
 
     # Create the CellTemplate for item CheckBoxes
     $cellTemplate = New-Object System.Windows.DataTemplate
-    
+
     # Use a Border to ensure CheckBox centers and stretches
     $borderFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
     $borderFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
     $borderFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
-    
+
     $checkBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
     $checkBoxFactory.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding($IsSelectedPropertyName)))
     $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
     $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-    
+
     # Create an object to store both the header checkbox name and the ListView name
     $tagObject = [PSCustomObject]@{
         HeaderCheckboxName = $HeaderCheckBoxScriptVariableName
@@ -1252,7 +1252,7 @@ function Add-SelectableGridViewColumn {
     # Add handler to update the header checkbox state when an item checkbox is clicked
     $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
             param($eventSourceLocal, $eventArgsLocal)
-            
+
             $itemCheckBox = $eventSourceLocal -as [System.Windows.Controls.CheckBox]
             if ($null -eq $itemCheckBox) {
                 WriteLog "Add-SelectableGridViewColumn: CRITICAL - Event source in item checkbox click handler is not a CheckBox."
@@ -1264,7 +1264,7 @@ function Add-SelectableGridViewColumn {
                 WriteLog "Add-SelectableGridViewColumn: Error - Tag data on itemCheckBox is missing or malformed."
                 return
             }
-            
+
             $headerCheckboxNameFromTag = $tagData.HeaderCheckboxName
             $listViewNameFromTag = $tagData.ListViewName
 
@@ -1272,7 +1272,7 @@ function Add-SelectableGridViewColumn {
 
             if ([string]::IsNullOrEmpty($headerCheckboxNameFromTag)) {
                 WriteLog "Add-SelectableGridViewColumn: Error - Header checkbox name from Tag is null or empty for ListView '$listViewNameFromTag'."
-                return 
+                return
             }
             if ([string]::IsNullOrEmpty($listViewNameFromTag)) {
                 WriteLog "Add-SelectableGridViewColumn: Error - ListView name from Tag is null or empty."
@@ -1294,7 +1294,7 @@ function Add-SelectableGridViewColumn {
                 WriteLog "Add-SelectableGridViewColumn: Error - Could not retrieve script variable for header checkbox named '$headerCheckboxNameFromTag' for ListView '$listViewNameFromTag'."
             }
         })
-    
+
     $borderFactory.AppendChild($checkBoxFactory)
     $cellTemplate.VisualTree = $borderFactory
     $selectableColumn.CellTemplate = $cellTemplate
@@ -1353,7 +1353,7 @@ function Update-ListViewPriorities {
         [Parameter(Mandatory)]
         [System.Windows.Controls.ListView]$ListView
     )
-    
+
     $currentPriority = 1
     foreach ($item in $ListView.Items) {
         if ($null -ne $item -and $item.PSObject.Properties['Priority']) {
@@ -1370,10 +1370,10 @@ function Move-ListViewItemTop {
         [Parameter(Mandatory)]
         [System.Windows.Controls.ListView]$ListView
     )
-    
+
     $selectedItem = $ListView.SelectedItem
     if ($null -eq $selectedItem) { return }
-    
+
     $currentIndex = $ListView.Items.IndexOf($selectedItem)
     if ($currentIndex -gt 0) {
         $ListView.Items.RemoveAt($currentIndex)
@@ -1389,10 +1389,10 @@ function Move-ListViewItemUp {
         [Parameter(Mandatory)]
         [System.Windows.Controls.ListView]$ListView
     )
-    
+
     $selectedItem = $ListView.SelectedItem
     if ($null -eq $selectedItem) { return }
-    
+
     $currentIndex = $ListView.Items.IndexOf($selectedItem)
     if ($currentIndex -gt 0) {
         $ListView.Items.RemoveAt($currentIndex)
@@ -1408,10 +1408,10 @@ function Move-ListViewItemDown {
         [Parameter(Mandatory)]
         [System.Windows.Controls.ListView]$ListView
     )
-    
+
     $selectedItem = $ListView.SelectedItem
     if ($null -eq $selectedItem) { return }
-    
+
     $currentIndex = $ListView.Items.IndexOf($selectedItem)
     if ($currentIndex -lt ($ListView.Items.Count - 1)) {
         $ListView.Items.RemoveAt($currentIndex)
@@ -1427,10 +1427,10 @@ function Move-ListViewItemBottom {
         [Parameter(Mandatory)]
         [System.Windows.Controls.ListView]$ListView
     )
-    
+
     $selectedItem = $ListView.SelectedItem
     if ($null -eq $selectedItem) { return }
-    
+
     $currentIndex = $ListView.Items.IndexOf($selectedItem)
     if ($currentIndex -lt ($ListView.Items.Count - 1)) {
         $ListView.Items.RemoveAt($currentIndex)
@@ -1566,6 +1566,10 @@ $window.Add_Loaded({
         $script:uiState.Controls.btnBrowseOfficePath = $window.FindName('btnBrowseOfficePath')
         $script:uiState.Controls.btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
         $script:uiState.Controls.btnBrowsePEDriversFolder = $window.FindName('btnBrowsePEDriversFolder')
+        $script:uiState.Controls.txtAppName = $window.FindName('txtAppName')
+        $script:uiState.Controls.txtAppCommandLine = $window.FindName('txtAppCommandLine')
+        $script:uiState.Controls.txtAppArguments = $window.FindName('txtAppArguments')
+        $script:uiState.Controls.txtAppSource = $window.FindName('txtAppSource')
         $script:uiState.Controls.btnAddApplication = $window.FindName('btnAddApplication')
         $script:uiState.Controls.btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
         $script:uiState.Controls.btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
@@ -1640,7 +1644,7 @@ $window.Add_Loaded({
         $script:uiState.Controls.lstAppsScriptVariables = $window.FindName('lstAppsScriptVariables')
         # Bind ItemsSource to the data list
         $script:uiState.Controls.lstAppsScriptVariables.ItemsSource = $script:uiState.Data.appsScriptVariablesDataList.ToArray()
-        
+
         # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
         $itemStyleAppsScriptVars = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
         $itemStyleAppsScriptVars.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
@@ -1649,10 +1653,10 @@ $window.Add_Loaded({
         # The GridView for lstAppsScriptVariables is defined in XAML. We need to get it and add the column.
         if ($script:uiState.Controls.lstAppsScriptVariables.View -is [System.Windows.Controls.GridView]) {
             Add-SelectableGridViewColumn -ListView $script:uiState.Controls.lstAppsScriptVariables -HeaderCheckBoxScriptVariableName "chkSelectAllAppsScriptVariables" -ColumnWidth 60
-            
+
             # Make Key and Value columns sortable
             $appsScriptVarsGridView = $script:uiState.Controls.lstAppsScriptVariables.View
-            
+
             # Key Column (should be at index 1 after selectable column is inserted at 0)
             if ($appsScriptVarsGridView.Columns.Count -gt 1) {
                 $keyColumn = $appsScriptVarsGridView.Columns[1]
@@ -1886,10 +1890,10 @@ $window.Add_Loaded({
                     # Get previously selected models from the master list ($script:uiState.Data.allDriverModels)
                     # This ensures all selected items are captured, regardless of any active filter.
                     $previouslySelectedModels = @($script:uiState.Data.allDriverModels | Where-Object { $_.IsSelected })
-                    
+
                     # Get newly fetched models for the current make (already standardized)
                     $newlyFetchedStandardizedModels = Get-ModelsForMake -SelectedMake $selectedMake -State $script:uiState
-                    
+
                     $combinedModelsList = [System.Collections.Generic.List[PSCustomObject]]::new()
                     $modelIdentifiersInCombinedList = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -1910,7 +1914,7 @@ $window.Add_Loaded({
                             $addedNewCount++
                         }
                     }
-                    
+
                     $script:uiState.Data.allDriverModels = $combinedModelsList.ToArray() | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model # Sort by selection status, then Make, then Model
                     $script:uiState.Controls.lstDriverModels.ItemsSource = $script:uiState.Data.allDriverModels
                     $script:uiState.Controls.txtModelFilter.Text = "" # Clear any existing filter
@@ -1962,7 +1966,7 @@ $window.Add_Loaded({
             })
         $script:uiState.Controls.txtModelFilter.Add_TextChanged({
                 param($sourceObject, $textChangedEventArgs)
-                Filter-DriverModels -filterText $script:uiState.Controls.txtModelFilter.Text
+                Filter-DriverModels -filterText $script:uiState.Controls.txtModelFilter.Text -State $script:uiState
             })
         $script:uiState.Controls.btnDownloadSelectedDrivers.Add_Click({
                 param($buttonSender, $clickEventArgs)
@@ -1979,58 +1983,58 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtStatus.Text = "Preparing driver downloads..."
 
                 # Define common necessary task-specific variables locally
-                $localDriversFolder = $window.FindName('txtDriversFolder').Text
-                $localWindowsRelease = $window.FindName('cmbWindowsRelease').SelectedItem.Value
-                $localWindowsArch = $window.FindName('cmbWindowsArch').SelectedItem
+                $localDriversFolder = $script:uiState.Controls.txtDriversFolder.Text
+                $localWindowsRelease = $script:uiState.Controls.cmbWindowsRelease.SelectedItem.Value
+                $localWindowsArch = $script:uiState.Controls.cmbWindowsArch.SelectedItem
                 $localHeaders = $Headers # Use script-level variable
                 $localUserAgent = $UserAgent # Use script-level variable
                 $compressDrivers = $script:uiState.Controls.chkCompressDriversToWIM.IsChecked
 
                 # Define common necessary task-specific variables locally
                 # Ensure required selections are made
-                if ($null -eq $window.FindName('cmbWindowsRelease').SelectedItem) {
+                if ($null -eq $script:uiState.Controls.cmbWindowsRelease.SelectedItem) {
                     [System.Windows.MessageBox]::Show("Please select a Windows Release.", "Missing Information", "OK", "Warning")
                     $buttonSender.IsEnabled = $true
                     $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                     $script:uiState.Controls.txtStatus.Text = "Driver download cancelled."
                     return
                 }
-                if ($null -eq $window.FindName('cmbWindowsArch').SelectedItem) {
+                if ($null -eq $script:uiState.Controls.cmbWindowsArch.SelectedItem) {
                     [System.Windows.MessageBox]::Show("Please select a Windows Architecture.", "Missing Information", "OK", "Warning")
                     $buttonSender.IsEnabled = $true
                     $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                     $script:uiState.Controls.txtStatus.Text = "Driver download cancelled."
                     return
                 }
-                if (($selectedDrivers | Where-Object { $_.Make -eq 'HP' }) -and $null -eq $window.FindName('cmbWindowsVersion').SelectedItem) {
+                if (($selectedDrivers | Where-Object { $_.Make -eq 'HP' }) -and $null -ne $script:uiState.Controls.cmbWindowsVersion -and $null -eq $script:uiState.Controls.cmbWindowsVersion.SelectedItem) {
                     [System.Windows.MessageBox]::Show("HP drivers are selected. Please select a Windows Version.", "Missing Information", "OK", "Warning")
                     $buttonSender.IsEnabled = $true
                     $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                     $script:uiState.Controls.txtStatus.Text = "Driver download cancelled."
                     return
                 }
-            
-                $localDriversFolder = $window.FindName('txtDriversFolder').Text
-                $localWindowsRelease = $window.FindName('cmbWindowsRelease').SelectedItem.Value
-                $localWindowsArch = $window.FindName('cmbWindowsArch').SelectedItem
-                $localWindowsVersion = if ($null -ne $window.FindName('cmbWindowsVersion').SelectedItem) { $window.FindName('cmbWindowsVersion').SelectedItem } else { $null }
+
+                $localDriversFolder = $script:uiState.Controls.txtDriversFolder.Text
+                $localWindowsRelease = $script:uiState.Controls.cmbWindowsRelease.SelectedItem.Value
+                $localWindowsArch = $script:uiState.Controls.cmbWindowsArch.SelectedItem
+                $localWindowsVersion = if ($null -ne $script:uiState.Controls.cmbWindowsVersion -and $null -ne $script:uiState.Controls.cmbWindowsVersion.SelectedItem) { $script:uiState.Controls.cmbWindowsVersion.SelectedItem } else { $null }
                 $localHeaders = $Headers # Use script-level variable
                 $localUserAgent = $UserAgent # Use script-level variable
                 $compressDrivers = $script:uiState.Controls.chkCompressDriversToWIM.IsChecked
-            
+
                 # --- Dell Catalog Handling (once, if Dell drivers are selected) ---
                 $dellCatalogXmlPath = $null # This will be the path passed to the background task
                 if ($selectedDrivers | Where-Object { $_.Make -eq 'Dell' }) {
                     $script:uiState.Controls.txtStatus.Text = "Checking Dell Catalog..."
                     WriteLog "Dell drivers selected. Preparing Dell catalog..."
-                    
+
                     $dellDriversFolderUi = Join-Path -Path $localDriversFolder -ChildPath "Dell"
                     $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
                     $dellCabFileUi = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).cab"
                     # This $dellCatalogXmlPath is the one we ensure exists and is up-to-date for the Save-DellDriversTask
-                    $dellCatalogXmlPath = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).xml" 
+                    $dellCatalogXmlPath = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).xml"
                     $catalogUrl = if ($localWindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
-                    
+
                     $downloadDellCatalog = $true
                     if (Test-Path -Path $dellCatalogXmlPath -PathType Leaf) {
                         if (((Get-Date) - (Get-Item $dellCatalogXmlPath).LastWriteTime).TotalDays -lt 7) {
@@ -2058,7 +2062,7 @@ $window.Add_Loaded({
 
                             if (Test-Path $dellCabFileUi) { Remove-Item $dellCabFileUi -Force -ErrorAction SilentlyContinue }
                             if (Test-Path $dellCatalogXmlPath) { Remove-Item $dellCatalogXmlPath -Force -ErrorAction SilentlyContinue }
-                            
+
                             # Using Start-BitsTransferWithRetry and Invoke-Process (available from FFUUI.Core.psm1)
                             Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFileUi
                             WriteLog "Dell Catalog CAB downloaded to $dellCabFileUi"
@@ -2078,10 +2082,10 @@ $window.Add_Loaded({
                     # If $downloadDellCatalog was false, $dellCatalogXmlPath is already set to the existing valid XML.
                 }
                 # --- End Dell Catalog Handling ---
-            
+
                 $script:uiState.Controls.txtStatus.Text = "Processing all selected drivers..."
                 WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
-            
+
                 $taskArguments = @{
                     DriversFolder      = $localDriversFolder
                     WindowsRelease     = $localWindowsRelease
@@ -2092,7 +2096,7 @@ $window.Add_Loaded({
                     CompressToWim      = $compressDrivers
                     DellCatalogXmlPath = $dellCatalogXmlPath  # Will be null if not Dell or if Dell catalog prep failed
                 }
-                
+
                 Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
                     -ListViewControl $script:uiState.Controls.lstDriverModels `
                     -IdentifierProperty 'Model' `
@@ -2103,7 +2107,7 @@ $window.Add_Loaded({
                     -ErrorStatusPrefix 'Error: ' `
                     -WindowObject $window `
                     -MainThreadLogPath $script:uiState.LogFilePath
-                
+
                 $overallSuccess = $true
                 # Check if any item has an error status after processing
                 # We iterate over $script:lstDriverModels.Items because their DownloadStatus property was updated by Invoke-ParallelProcessing
@@ -2115,7 +2119,7 @@ $window.Add_Loaded({
                         # No break here, log all errors
                     }
                 }
-            
+
                 $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                 $buttonSender.IsEnabled = $true
                 if ($overallSuccess) {
@@ -2133,9 +2137,9 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtModelFilter.Text = ""
                 $script:uiState.Controls.txtStatus.Text = "Driver list cleared."
             })
-        $script:uiState.Controls.btnSaveDriversJson.Add_Click({ Save-DriversJson })
-        $script:uiState.Controls.btnImportDriversJson.Add_Click({ Import-DriversJson })
-        
+        $script:uiState.Controls.btnSaveDriversJson.Add_Click({ Save-DriversJson -State $script:uiState })
+        $script:uiState.Controls.btnImportDriversJson.Add_Click({ Import-DriversJson -State $script:uiState })
+
         # Office interplay (Keep existing logic)
         $script:uiState.Flags.installAppsCheckedByOffice = $false
         if ($script:uiState.Controls.chkInstallOffice.IsChecked) {
@@ -2191,7 +2195,7 @@ $window.Add_Loaded({
             })
 
         # Build dynamic multi-column checkboxes for optional features (Keep existing logic)
-        if ($script:featuresPanel) { BuildFeaturesGrid -parent $script:featuresPanel -allowedFeatures $script:windowsSettingsDefaults.AllowedFeatures }
+        if ($script:uiState.Controls.featuresPanel) { BuildFeaturesGrid -parent $script:uiState.Controls.featuresPanel -allowedFeatures $script:uiState.Defaults.windowsSettingsDefaults.AllowedFeatures }
 
         # Updates/InstallApps interplay (Keep existing logic)
         $script:uiState.Flags.installAppsForcedByUpdates = $false
@@ -2220,14 +2224,14 @@ $window.Add_Loaded({
                 }
             }
         }
-        $window.FindName('chkUpdateLatestDefender').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateLatestDefender').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateEdge').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateEdge').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateOneDrive').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateOneDrive').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateLatestMSRT').Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $window.FindName('chkUpdateLatestMSRT').Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateLatestDefender.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateLatestDefender.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateEdge.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateEdge.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateOneDrive.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateOneDrive.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
         # Initial check for Updates/InstallApps state
         & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState
 
@@ -2312,7 +2316,7 @@ $window.Add_Loaded({
         $script:uiState.Controls.byoApplicationPanel.Visibility = if ($script:uiState.Controls.chkBringYourOwnApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.wingetPanel.Visibility = if ($script:uiState.Controls.chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
-    
+
         $script:uiState.Controls.chkInstallApps.Add_Checked({
                 $script:uiState.Controls.chkInstallWingetApps.Visibility = 'Visible'
                 $script:uiState.Controls.applicationPathPanel.Visibility = 'Visible'
@@ -2338,23 +2342,23 @@ $window.Add_Loaded({
             })
         $script:uiState.Controls.btnBrowseApplicationPath.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Application Path Folder"
-                if ($selectedPath) { $window.FindName('txtApplicationPath').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtApplicationPath.Text = $selectedPath }
             })
         $script:uiState.Controls.btnBrowseAppListJsonPath.Add_Click({
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
                 $ofd.Filter = "JSON files (*.json)|*.json"
                 $ofd.Title = "Select AppList.json File"
                 $ofd.CheckFileExists = $false
-                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $window.FindName('txtAppListJsonPath').Text = $ofd.FileName }
+                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:uiState.Controls.txtAppListJsonPath.Text = $ofd.FileName }
             })
         $script:uiState.Controls.chkBringYourOwnApps.Add_Checked({ $script:uiState.Controls.byoApplicationPanel.Visibility = 'Visible' })
         $script:uiState.Controls.chkBringYourOwnApps.Add_Unchecked({
                 $script:uiState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
                 # Clear fields when hiding
-                $window.FindName('txtAppName').Text = ''
-                $window.FindName('txtAppCommandLine').Text = ''
-                $window.FindName('txtAppArguments').Text = ''
-                $window.FindName('txtAppSource').Text = ''
+                $script:uiState.Controls.txtAppName.Text = ''
+                $script:uiState.Controls.txtAppCommandLine.Text = ''
+                $script:uiState.Controls.txtAppArguments.Text = ''
+                $script:uiState.Controls.txtAppSource.Text = ''
             })
         $script:uiState.Controls.chkInstallWingetApps.Add_Checked({ $script:uiState.Controls.wingetPanel.Visibility = 'Visible' })
         $script:uiState.Controls.chkInstallWingetApps.Add_Unchecked({
@@ -2367,16 +2371,16 @@ $window.Add_Loaded({
                 $window.Cursor = [System.Windows.Input.Cursors]::Wait
                 # Initial UI update before calling the core function
                 Update-WingetVersionFields -wingetText "Checking..." -moduleText "Checking..."
-    
+
                 $statusResult = $null
                 try {
                     # Call the Core function to perform checks and potential install/update
                     # Pass the UI update function as a callback
-                    $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback { 
-                        param($wingetText, $moduleText) 
-                        Update-WingetVersionFields -wingetText $wingetText -moduleText $moduleText 
+                    $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback {
+                        param($wingetText, $moduleText)
+                        Update-WingetVersionFields -wingetText $wingetText -moduleText $moduleText
                     }
-    
+
                     # Display appropriate message based on the result
                     if ($statusResult.Success -and $statusResult.UpdateAttempted) {
                         # Update attempted and successful
@@ -2388,7 +2392,7 @@ $window.Add_Loaded({
                         [System.Windows.MessageBox]::Show($errorMessage, "Winget Error", "OK", "Error")
                     }
                     # If Winget components were already up-to-date ($statusResult.Success -eq $true -and $statusResult.UpdateAttempted -eq $false), no message box is shown.
-    
+
                     # Show search panel only if the final status is successful and checkbox is still checked
                     if ($statusResult.Success -and $script:uiState.Controls.chkInstallWingetApps.IsChecked) {
                         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Visible'
@@ -2410,7 +2414,7 @@ $window.Add_Loaded({
             })
 
         # Winget Search ListView setup
-        $wingetGridView = New-Object System.Windows.Controls.GridView 
+        $wingetGridView = New-Object System.Windows.Controls.GridView
         $script:uiState.Controls.lstWingetResults.View = $wingetGridView # Assign GridView to ListView first
 
         # Add the selectable column using the new function
@@ -2469,10 +2473,10 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtStatus.Text = "Starting Winget app downloads..."
 
                 # Define necessary task-specific variables locally
-                $localAppsPath = $window.FindName('txtApplicationPath').Text
-                $localAppListJsonPath = $window.FindName('txtAppListJsonPath').Text
-                $localWindowsArch = $window.FindName('cmbWindowsArch').SelectedItem
-                $localOrchestrationPath = Join-Path -Path $window.FindName('txtApplicationPath').Text -ChildPath "Orchestration"
+                $localAppsPath = $script:uiState.Controls.txtApplicationPath.Text
+                $localAppListJsonPath = $script:uiState.Controls.txtAppListJsonPath.Text
+                $localWindowsArch = $script:uiState.Controls.cmbWindowsArch.SelectedItem
+                $localOrchestrationPath = Join-Path -Path $script:uiState.Controls.txtApplicationPath.Text -ChildPath "Orchestration"
 
                 # Create hashtable for task-specific arguments to pass to Invoke-ParallelProcessing
                 $taskArguments = @{
@@ -2506,29 +2510,29 @@ $window.Add_Loaded({
         # BYO Apps UI logic (Keep existing logic)
         $script:uiState.Controls.btnBrowseAppSource.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
-                if ($selectedPath) { $window.FindName('txtAppSource').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtAppSource.Text = $selectedPath }
             })
         $script:uiState.Controls.btnAddApplication.Add_Click({
-                $name = $window.FindName('txtAppName').Text
-                $commandLine = $window.FindName('txtAppCommandLine').Text
-                $arguments = $window.FindName('txtAppArguments').Text
-                $source = $window.FindName('txtAppSource').Text
+                $name = $script:uiState.Controls.txtAppName.Text
+                $commandLine = $script:uiState.Controls.txtAppCommandLine.Text
+                $arguments = $script:uiState.Controls.txtAppArguments.Text
+                $source = $script:uiState.Controls.txtAppSource.Text
 
                 if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($arguments)) {
                     [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Arguments)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
                     return
                 }
-                $listView = $window.FindName('lstApplications')
+                $listView = $script:uiState.Controls.lstApplications
                 $priority = 1
                 if ($listView.Items.Count -gt 0) {
                     $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
                 }
                 $application = [PSCustomObject]@{ Priority = $priority; Name = $name; CommandLine = $commandLine; Arguments = $arguments; Source = $source; CopyStatus = "" }
                 $listView.Items.Add($application)
-                $window.FindName('txtAppName').Text = ""
-                $window.FindName('txtAppCommandLine').Text = ""
-                $window.FindName('txtAppArguments').Text = ""
-                $window.FindName('txtAppSource').Text = ""
+                $script:uiState.Controls.txtAppName.Text = ""
+                $script:uiState.Controls.txtAppCommandLine.Text = ""
+                $script:uiState.Controls.txtAppArguments.Text = ""
+                $script:uiState.Controls.txtAppSource.Text = ""
                 Update-CopyButtonState -State $script:uiState
             })
         $script:uiState.Controls.btnSaveBYOApplications.Add_Click({
@@ -2536,24 +2540,24 @@ $window.Add_Loaded({
                 $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
                 $saveDialog.DefaultExt = ".json"
                 $saveDialog.Title = "Save Application List"
-                $initialDir = $window.FindName('txtApplicationPath').Text
+                $initialDir = $script:uiState.Controls.txtApplicationPath.Text
                 if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
                 $saveDialog.InitialDirectory = $initialDir
                 $saveDialog.FileName = "UserAppList.json"
-                if ($saveDialog.ShowDialog()) { Save-BYOApplicationList -Path $saveDialog.FileName }
+                if ($saveDialog.ShowDialog()) { Save-BYOApplicationList -Path $saveDialog.FileName -State $script:uiState }
             })
         $script:uiState.Controls.btnLoadBYOApplications.Add_Click({
                 $openDialog = New-Object Microsoft.Win32.OpenFileDialog
                 $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
                 $openDialog.Title = "Import Application List"
-                $initialDir = $window.FindName('txtApplicationPath').Text
+                $initialDir = $script:uiState.Controls.txtApplicationPath.Text
                 if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
                 $openDialog.InitialDirectory = $initialDir
                 if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName -State $script:uiState; Update-CopyButtonState -State $script:uiState }
             })
         $script:uiState.Controls.btnClearBYOApplications.Add_Click({
                 $result = [System.Windows.MessageBox]::Show("Are you sure you want to clear all applications?", "Clear Applications", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
-                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $window.FindName('lstApplications').Items.Clear(); Update-CopyButtonState -State $script:uiState }
+                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $script:uiState.Controls.lstApplications.Items.Clear(); Update-CopyButtonState -State $script:uiState }
             })
         $script:uiState.Controls.btnCopyBYOApps.Add_Click({
                 param($buttonSender, $clickEventArgs)
@@ -2570,7 +2574,7 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtStatus.Text = "Starting BYO app copy..."
 
                 # Define necessary task-specific variables locally
-                $localAppsPath = $window.FindName('txtApplicationPath').Text
+                $localAppsPath = $script:uiState.Controls.txtApplicationPath.Text
 
                 # Create hashtable for task-specific arguments
                 $taskArguments = @{
@@ -2620,23 +2624,23 @@ $window.Add_Loaded({
         # General Browse Button Handlers (Keep existing logic)
         $script:uiState.Controls.btnBrowseFFUDevPath.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select FFU Development Path"
-                if ($selectedPath) { $window.FindName('txtFFUDevPath').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtFFUDevPath.Text = $selectedPath }
             })
         $script:uiState.Controls.btnBrowseFFUCaptureLocation.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select FFU Capture Location"
-                if ($selectedPath) { $window.FindName('txtFFUCaptureLocation').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtFFUCaptureLocation.Text = $selectedPath }
             })
         $script:uiState.Controls.btnBrowseOfficePath.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Office Path"
-                if ($selectedPath) { $window.FindName('txtOfficePath').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtOfficePath.Text = $selectedPath }
             })
         $script:uiState.Controls.btnBrowseDriversFolder.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Drivers Folder"
-                if ($selectedPath) { $window.FindName('txtDriversFolder').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtDriversFolder.Text = $selectedPath }
             })
         $script:uiState.Controls.btnBrowsePEDriversFolder.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
-                if ($selectedPath) { $window.FindName('txtPEDriversFolder').Text = $selectedPath }
+                if ($selectedPath) { $script:uiState.Controls.txtPEDriversFolder.Text = $selectedPath }
             })
         $script:uiState.Controls.btnBrowseDriversJsonPath.Add_Click({
                 $sfd = New-Object System.Windows.Forms.SaveFileDialog
@@ -2653,7 +2657,7 @@ $window.Add_Loaded({
                     try {
                         # Attempt to get the parent directory of the path in the textbox
                         $parentDir = Split-Path -Path $currentDriversJsonPath -Parent -ErrorAction Stop
-                        
+
                         # Check if the parent directory is not null/empty and actually exists as a directory
                         if (-not ([string]::IsNullOrEmpty($parentDir)) -and (Test-Path -Path $parentDir -PathType Container)) {
                             $dialogInitialDirectory = $parentDir
@@ -2818,10 +2822,10 @@ function Search-WingetApps {
         elseif ($State.Controls.lstWingetResults.HasItems) {
             $currentItemsInListView = @($State.Controls.lstWingetResults.Items)
         }
-        
+
         # Store selected apps from the current view
         $selectedAppsFromView = @($currentItemsInListView | Where-Object { $_.IsSelected })
-        
+
         # Search for new apps
         $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery | ForEach-Object {
             [PSCustomObject]@{
@@ -2830,10 +2834,10 @@ function Search-WingetApps {
                 Id             = $_.Id
                 Version        = $_.Version
                 Source         = $_.Source
-                DownloadStatus = "" 
+                DownloadStatus = ""
             }
         }
-        
+
         $finalAppList = [System.Collections.Generic.List[object]]::new()
         $addedAppIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -2842,7 +2846,7 @@ function Search-WingetApps {
             $finalAppList.Add($app)
             $addedAppIds.Add($app.Id) | Out-Null
         }
-        
+
         # Add new search results, avoiding duplicates of already added (selected) apps
         foreach ($result in $searchedAppResults) {
             if (-not $addedAppIds.Contains($result.Id)) {
@@ -2850,7 +2854,7 @@ function Search-WingetApps {
                 $addedAppIds.Add($result.Id) | Out-Null # Track added IDs to prevent duplicates from search results themselves
             }
         }
-        
+
         # Update the ListView's ItemsSource
         $script:uiState.Controls.lstWingetResults.ItemsSource = $finalAppList.ToArray()
     }
@@ -2871,7 +2875,7 @@ function Save-WingetList {
             [System.Windows.MessageBox]::Show("No apps selected to save.", "Warning", "OK", "Warning")
             return
         }
-        
+
         $appList = @{
             apps = @($selectedApps | ForEach-Object {
                     [ordered]@{
@@ -2881,13 +2885,13 @@ function Save-WingetList {
                     }
                 })
         }
-        
+
         $sfd = New-Object System.Windows.Forms.SaveFileDialog
         $sfd.Filter = "JSON files (*.json)|*.json"
         $sfd.Title = "Save App List"
         $sfd.InitialDirectory = $AppsPath
         $sfd.FileName = "AppList.json"
-        
+
         if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $appList | ConvertTo-Json -Depth 10 | Set-Content $sfd.FileName -Encoding UTF8
             [System.Windows.MessageBox]::Show("App list saved successfully.", "Success", "OK", "Information")
@@ -2909,12 +2913,12 @@ function Import-WingetList {
         $ofd.Filter = "JSON files (*.json)|*.json"
         $ofd.Title = "Import App List"
         $ofd.InitialDirectory = $AppsPath
-        
+
         if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $importedAppsData = Get-Content $ofd.FileName -Raw | ConvertFrom-Json
-            
+
             $newAppListForItemsSource = [System.Collections.Generic.List[object]]::new()
-            
+
             if ($null -ne $importedAppsData.apps) {
                 foreach ($appInfo in $importedAppsData.apps) {
                     $newAppListForItemsSource.Add([PSCustomObject]@{
@@ -2923,13 +2927,13 @@ function Import-WingetList {
                             Id             = $appInfo.id
                             Version        = ""  # Will be populated when searching or if data exists
                             Source         = $appInfo.source
-                            DownloadStatus = "" 
+                            DownloadStatus = ""
                         })
                 }
             }
-            
+
             $State.Controls.lstWingetResults.ItemsSource = $newAppListForItemsSource.ToArray()
-            
+
             [System.Windows.MessageBox]::Show("App list imported successfully.", "Success", "OK", "Information")
         }
     }
@@ -2944,9 +2948,9 @@ function Remove-Application {
         $priority,
         [psobject]$State
     )
-    
+
     $listView = $State.Controls.lstApplications
-    
+
     # Remove the item with the specified priority
     $itemToRemove = $listView.Items | Where-Object { $_.Priority -eq $priority } | Select-Object -First 1
     if ($itemToRemove) {
@@ -2977,7 +2981,7 @@ function Save-BYOApplicationList {
     try {
         # Ensure items are sorted by current priority before saving
         # Exclude CopyStatus when saving
-        $applications = $listView.Items | Sort-Object Priority | Select-Object Priority, Name, CommandLine, Arguments, Source 
+        $applications = $listView.Items | Sort-Object Priority | Select-Object Priority, Name, CommandLine, Arguments, Source
         $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Force -Encoding UTF8
         [System.Windows.MessageBox]::Show("Applications saved successfully to `"$Path`".", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
@@ -3003,7 +3007,7 @@ function Import-BYOApplicationList {
 
     try {
         $applications = Get-Content -Path $Path -Raw | ConvertFrom-Json
-        $listView = $window.FindName('lstApplications')
+        $listView = $State.Controls.lstApplications
         $listView.Items.Clear()
 
         # Add items and sort by priority from the file
@@ -3037,8 +3041,8 @@ function Import-BYOApplicationList {
 $btnRun = $window.FindName('btnRun')
 $btnRun.Add_Click({
         try {
-            $progressBar = $window.FindName('progressBar')
-            $txtStatus = $window.FindName('txtStatus')
+            $progressBar = $script:uiState.Controls.pbOverallProgress
+            $txtStatus = $script:uiState.Controls.txtStatus
             $progressBar.Visibility = 'Visible'
             $txtStatus.Text = "Starting FFU build..."
             $config = Get-UIConfig -State $script:uiState
@@ -3054,10 +3058,10 @@ $btnRun.Add_Click({
         }
         catch {
             [System.Windows.MessageBox]::Show("An error occurred: $_", "Error", "OK", "Error")
-            $window.FindName('txtStatus').Text = "FFU build failed."
+            $script:uiState.Controls.txtStatus.Text = "FFU build failed."
         }
         finally {
-            $window.FindName('progressBar').Visibility = 'Collapsed'
+            $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
         }
     })
 
@@ -3096,7 +3100,7 @@ $btnLoadConfig.Add_Click({
             if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
                 WriteLog "Loading configuration from: $($ofd.FileName)"
                 $configContent = Get-Content -Path $ofd.FileName -Raw | ConvertFrom-Json
-                
+
                 if ($null -eq $configContent) {
                     WriteLog "LoadConfig Error: configContent is null after parsing $($ofd.FileName). File might be empty or malformed."
                     [System.Windows.MessageBox]::Show("Failed to parse the configuration file. It might be empty or not valid JSON.", "Load Error", "OK", "Error")
@@ -3124,7 +3128,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyAutopilot' -State $script:uiState
                 Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyUnattend' -State $script:uiState
                 Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyPPKG' -State $script:uiState
-                
+
                 # Post Build Cleanup group (Build Tab)
                 Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupAppsISO' -State $script:uiState
                 Set-UIValue -ControlName 'chkCleanupCaptureISO' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CleanupCaptureISO' -State $script:uiState
@@ -3133,7 +3137,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'chkRemoveFFU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveFFU' -State $script:uiState
                 Set-UIValue -ControlName 'chkRemoveApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveApps' -State $script:uiState
                 Set-UIValue -ControlName 'chkRemoveUpdates' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'RemoveUpdates' -State $script:uiState
-                
+
                 # Hyper-V Settings
                 Set-UIValue -ControlName 'cmbVMSwitchName' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'VMSwitchName' -State $script:uiState
                 Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'VMHostIPAddress' -State $script:uiState
@@ -3143,7 +3147,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'txtVMLocation' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'VMLocation' -State $script:uiState
                 Set-UIValue -ControlName 'txtVMNamePrefix' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'FFUPrefix' -State $script:uiState
                 Set-UIValue -ControlName 'cmbLogicalSectorSize' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'LogicalSectorSizeBytes' -TransformValue { param($val) $val.ToString() } -State $script:uiState
-                
+
                 # Windows Settings
                 Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'ISOPath' -State $script:uiState
                 Set-UIValue -ControlName 'cmbWindowsRelease' -PropertyName 'SelectedItem' -ConfigObject $configContent -ConfigKey 'WindowsRelease' -State $script:uiState
@@ -3185,7 +3189,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'txtOfficePath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OfficePath' -State $script:uiState
                 Set-UIValue -ControlName 'chkCopyOfficeConfigXML' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'CopyOfficeConfigXML' -State $script:uiState
                 Set-UIValue -ControlName 'txtOfficeConfigXMLFilePath' -PropertyName 'Text' -ConfigObject $configContent -ConfigKey 'OfficeConfigXMLFile' -State $script:uiState
-                
+
                 # Drivers tab
                 Set-UIValue -ControlName 'chkInstallDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallDrivers' -State $script:uiState
                 Set-UIValue -ControlName 'chkDownloadDrivers' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'DownloadDrivers' -State $script:uiState
@@ -3207,7 +3211,7 @@ $btnLoadConfig.Add_Click({
                 Set-UIValue -ControlName 'chkUpdateLatestMSRT' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestMSRT' -State $script:uiState
                 Set-UIValue -ControlName 'chkUpdateLatestMicrocode' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdateLatestMicrocode' -State $script:uiState
                 Set-UIValue -ControlName 'chkUpdatePreviewCU' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'UpdatePreviewCU' -State $script:uiState
-                
+
                 # Applications tab
                 Set-UIValue -ControlName 'chkInstallApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallApps' -State $script:uiState
                 Set-UIValue -ControlName 'chkInstallWingetApps' -PropertyName 'IsChecked' -ConfigObject $configContent -ConfigKey 'InstallWingetApps' -State $script:uiState
@@ -3303,7 +3307,7 @@ $btnLoadConfig.Add_Click({
                             [System.Windows.Controls.Button]::ClickEvent
                         )
                     )
-                
+
                     # Then select the drives that match the saved configuration
                     foreach ($item in $script:uiState.Controls.lstUSBDrives.Items) {
                         $propertyName = $item.Model
@@ -3361,7 +3365,7 @@ $btnLoadConfig.Add_Click({
 
                 if ($shouldAutoCheckSpecificDrives) {
                     WriteLog "LoadConfig: Auto-checking 'Select Specific USB Drives' due to pre-selected USB drives in config."
-                    $window.FindName('chkSelectSpecificUSBDrives').IsChecked = $true
+                    $script:uiState.Controls.chkSelectSpecificUSBDrives.IsChecked = $true
                 }
                 else {
                     WriteLog "LoadConfig: Condition to auto-check 'Select Specific USB Drives' was NOT met."
