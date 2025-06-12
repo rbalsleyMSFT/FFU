@@ -66,7 +66,12 @@ RequiredModules = @('..\FFU.Common\FFU.Common.psd1')
 # FormatsToProcess = @()
 
 # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-NestedModules = @('FFUUI.Shared.psm1')
+NestedModules = @('FFUUI.Core.Shared.psm1',
+                'FFUUI.Core.Drivers.psm1',
+                'FFUUI.Core.Drivers.Dell.psm1',
+                'FFUUI.Core.Drivers.HP.psm1',
+                'FFUUI.Core.Drivers.Lenovo.psm1',
+                'FFUUI.Core.Drivers.Microsoft.psm1')
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
 FunctionsToExport = '*'

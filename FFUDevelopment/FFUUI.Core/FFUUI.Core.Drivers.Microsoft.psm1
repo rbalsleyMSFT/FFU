@@ -1,0 +1,384 @@
+# Function to get the list of Microsoft Surface models
+function Get-MicrosoftDriversModelList {
+    [CmdletBinding()]
+    param(
+        [hashtable]$Headers, # Pass necessary headers
+        [string]$UserAgent # Pass UserAgent
+    )
+
+    $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
+    $models = @()
+
+    try {
+        WriteLog "Getting Surface driver information from $url"
+        WriteLog "Using UserAgent: $UserAgent"
+        WriteLog "Using Headers: $($Headers | Out-String)"
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        # Use passed-in UserAgent and Headers
+        $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "Complete"
+
+        WriteLog "Parsing web content for models and download links"
+        $html = $webContent.Content
+        $divPattern = '<div[^>]*class="selectable-content-options__option-content(?: ocHidden)?"[^>]*>(.*?)</div>'
+        $divMatches = [regex]::Matches($html, $divPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+        foreach ($divMatch in $divMatches) {
+            $divContent = $divMatch.Groups[1].Value
+            $tablePattern = '<table[^>]*>(.*?)</table>'
+            $tableMatches = [regex]::Matches($divContent, $tablePattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+            foreach ($tableMatch in $tableMatches) {
+                $tableContent = $tableMatch.Groups[1].Value
+                $rowPattern = '<tr[^>]*>(.*?)</tr>'
+                $rowMatches = [regex]::Matches($tableContent, $rowPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+                foreach ($rowMatch in $rowMatches) {
+                    $rowContent = $rowMatch.Groups[1].Value
+                    $cellPattern = '<td[^>]*>\s*(?:<p[^>]*>)?(.*?)(?:</p>)?\s*</td>'
+                    $cellMatches = [regex]::Matches($rowContent, $cellPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+                    if ($cellMatches.Count -ge 2) {
+                        $modelName = ($cellMatches[0].Groups[1].Value).Trim()
+                        $secondTdContent = $cellMatches[1].Groups[1].Value.Trim()
+                        # $linkPattern = '<a[^>]+href="([^"]+)"[^>]*>'
+                        # Change linkPattern to match https://www.microsoft.com/download/details.aspx?id=
+                        $linkPattern = '<a[^>]+href="(https://www\.microsoft\.com/download/details\.aspx\?id=\d+)"[^>]*>'
+                        $linkMatch = [regex]::Match($secondTdContent, $linkPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+                        if ($linkMatch.Success) {
+                            $modelLink = $linkMatch.Groups[1].Value
+                        }
+                        else {
+                            continue
+                        }
+
+                        $models += [PSCustomObject]@{
+                            Make  = 'Microsoft'
+                            Model = $modelName
+                            Link  = $modelLink
+                        }
+                    }
+                }
+            }
+        }
+        WriteLog "Parsing complete. Found $($models.Count) models."
+        return $models
+    }
+    catch {
+        WriteLog "Error getting Microsoft models: $($_.Exception.Message)"
+        throw "Failed to retrieve Microsoft Surface models."
+    }
+}
+# Function to download and extract drivers for a specific Microsoft model (Modified for ForEach-Object -Parallel)
+function Save-MicrosoftDriversTask {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$DriverItemData, # Pass data, not the UI object
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers, # Pass necessary headers
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent, # Pass UserAgent
+        [Parameter()] # Made optional
+        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
+        [Parameter()]
+        [bool]$CompressToWim = $false # New parameter for compression
+        # REMOVED: UI-related parameters
+    )
+        
+    $modelName = $DriverItemData.Model
+    $modelLink = $DriverItemData.Link
+    $make = $DriverItemData.Make
+    $status = "Getting download link..." # Initial local status
+    $success = $false
+    
+    # Initial status update
+    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Checking..." }
+    
+    try {
+        # Check if drivers already exist for this model
+        $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
+        $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
+        if (Test-Path -Path $modelPath -PathType Container) {
+            $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+            if ($folderSize -gt 1MB) {
+                $status = "Already downloaded"
+                WriteLog "Drivers for '$modelName' already exist in '$modelPath'."
+                # Enqueue this status before returning
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                # Return success immediately
+                return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true }
+            }
+            else {
+                # Status is not set to error here, just log and continue
+                WriteLog "Driver folder '$modelPath' for '$modelName' exists but is empty or very small. Re-downloading."
+                # Allow the process to continue to re-download
+            }
+        }
+
+        ### GET THE DOWNLOAD LINK
+        $status = "Getting download link..."
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+        WriteLog "Getting download page content for $modelName from $modelLink"
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        # Use passed-in UserAgent and Headers
+        $downloadPageContent = Invoke-WebRequest -Uri $modelLink -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "Complete"
+
+        $status = "Parsing download page..."
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+        WriteLog "Parsing download page for file"
+        $scriptPattern = '<script>window.__DLCDetails__={(.*?)}<\/script>'
+        $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
+
+        if ($scriptMatch.Success) {
+            $scriptContent = $scriptMatch.Groups[1].Value
+            # $downloadFilePattern = '"name":"(.*?)",.*?"url":"(.*?)"'
+            $downloadFilePattern = '"name":"([^"]+\.(?:msi|zip))",[^}]*?"url":"(.*?)"'
+            $downloadFileMatches = [regex]::Matches($scriptContent, $downloadFilePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+
+            $win10Link = $null
+            $win10FileName = $null
+            $win11Link = $null
+            $win11FileName = $null
+
+            # Iterate through all matches to find potential Win10 and Win11 links
+            foreach ($downloadFile in $downloadFileMatches) {
+                $currentFileName = $downloadFile.Groups[1].Value
+                $fileUrl = $downloadFile.Groups[2].Value
+
+                if ($currentFileName -match "Win10") {
+                    $win10Link = $fileUrl
+                    $win10FileName = $currentFileName
+                    WriteLog "Found Win10 link: $win10FileName"
+                }
+                elseif ($currentFileName -match "Win11") {
+                    $win11Link = $fileUrl
+                    $win11FileName = $currentFileName
+                    WriteLog "Found Win11 link: $win11FileName"
+                }
+            }
+
+            # Decision logic to select the appropriate download link
+            $downloadLink = $null
+            $fileName = $null
+            $downloadedVersion = $null # Track which version we are actually downloading
+
+            if ($WindowsRelease -eq 10 -and $win10Link) {
+                $downloadLink = $win10Link
+                $fileName = $win10FileName
+                $downloadedVersion = 10
+                WriteLog "Exact match found for Win10."
+            }
+            elseif ($WindowsRelease -eq 11 -and $win11Link) {
+                $downloadLink = $win11Link
+                $fileName = $win11FileName
+                $downloadedVersion = 11
+                WriteLog "Exact match found for Win11."
+            }
+            elseif (-not $win10Link -and $win11Link) {
+                # Only Win11 available, regardless of $WindowsRelease
+                $downloadLink = $win11Link
+                $fileName = $win11FileName
+                $downloadedVersion = 11
+                WriteLog "Exact match for Win$($WindowsRelease) not found. Falling back to available Win11 driver."
+            }
+            elseif ($win10Link -and -not $win11Link) {
+                # Only Win10 available, regardless of $WindowsRelease
+                $downloadLink = $win10Link
+                $fileName = $win10FileName
+                $downloadedVersion = 10
+                WriteLog "Exact match for Win$($WindowsRelease) not found. Falling back to available Win10 driver."
+            }
+            # If both Win10 and Win11 links exist, but neither matches $WindowsRelease, $downloadLink remains $null.
+
+            ### DOWNLOAD AND EXTRACT
+            if ($downloadLink) {
+                WriteLog "Selected Download Link for $modelName (Actual: Windows $downloadedVersion): $downloadLink"
+                $status = "Downloading (Win$downloadedVersion)..." # Update status message
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+
+                # Create directories
+                if (-not (Test-Path -Path $DriversFolder)) {
+                    WriteLog "Creating Drivers folder: $DriversFolder"
+                    New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+                }
+                $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
+                $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
+                if (-Not (Test-Path -Path $modelPath)) {
+                    WriteLog "Creating model folder: $modelPath"
+                    New-Item -Path $modelPath -ItemType Directory -Force | Out-Null
+                }
+                else {
+                    WriteLog "Model folder already exists: $modelPath"
+                }
+
+                ### DOWNLOAD
+                $filePath = Join-Path -Path $makeDriversPath -ChildPath ($fileName)
+                WriteLog "Downloading $modelName driver file to $filePath"
+                # Use Start-BitsTransferWithRetry
+                Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
+                WriteLog "Download complete"
+
+                $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
+
+                ### EXTRACT
+                if ($fileExtension -eq ".msi") {
+                    $status = "Extracting MSI..." # Set initial status
+                    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+
+                    # Loop indefinitely to wait for mutex and handle MSIExec exit codes by catching errors
+                    while ($true) {
+                        $mutexClear = $false
+
+                        # 1. Check Mutex
+                        try {
+                            $Mutex = [System.Threading.Mutex]::OpenExisting("Global\_MSIExecute")
+                            $Mutex.Dispose()
+                            $status = "Waiting for MSIExec..."
+                            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                            WriteLog "Another MSIExec installer is running (Mutex Held). Waiting 5 seconds before rechecking for $modelName..."
+                            Start-Sleep -Seconds 5
+                            continue # Go back to start of while loop to re-check mutex
+                        }
+                        catch [System.Threading.WaitHandleCannotBeOpenedException] {
+                            # Mutex is clear, proceed to extraction attempt
+                            WriteLog "Mutex clear. Proceeding with MSI extraction attempt for $modelName."
+                            $status = "Extracting MSI..."
+                            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                            $mutexClear = $true
+                        }
+                        catch {
+                            # Handle other potential errors when checking the mutex
+                            WriteLog "Warning: Error checking MSIExec mutex for $($modelName): $_. Proceeding with caution."
+                            $status = "Extracting MSI (Mutex Error)..."
+                            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                            $mutexClear = $true # Proceed despite mutex error
+                        }
+
+                        # 2. Attempt Extraction (only if mutex was clear or error occurred during check)
+                        if ($mutexClear) {
+                            WriteLog "Extracting MSI file to $modelPath"
+                            $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
+                            try {
+                                # Use Invoke-Process. It will throw an error for any non-zero exit code.
+                                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait $true -ErrorAction Stop | Out-Null
+                                
+                                # If Invoke-Process succeeded (didn't throw), extraction is complete.
+                                WriteLog "Extraction complete for $modelName (Exit Code 0)."
+                                break # Success, exit the while loop
+                            }
+                            catch {
+                                # Catch errors thrown by Invoke-Process
+                                $errorMessage = $_.Exception.Message
+                                if ($errorMessage -match 'Process exited with code 1618') {
+                                    # Specific handling for MSIExec busy error (1618)
+                                    WriteLog "MSIExec collision detected (Exit Code 1618) for $modelName. Retrying after wait..."
+                                    $status = "Waiting (MSI Collision)..."
+                                    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                                    Start-Sleep -Seconds 5 # Wait before retrying
+                                    continue # Go back to start of while loop to re-check mutex/retry
+                                }
+                                else {
+                                    # Handle other errors from Invoke-Process (e.g., file not found, permissions, other exit codes)
+                                    WriteLog "Error during MSI extraction process for $($modelName): $errorMessage"
+                                    throw # Re-throw the original exception to be caught by the outer try/catch
+                                }
+                            }
+                        } # End if ($mutexClear)
+                    } # End while ($true) - Loop runs until break or throw
+                }
+                elseif ($fileExtension -eq ".zip") {
+                    $status = "Extracting ZIP..." # Set status before extraction
+                    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                    WriteLog "Extracting ZIP file to $modelPath"
+                    $ProgressPreference = 'SilentlyContinue'
+                    Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
+                    $ProgressPreference = 'Continue'
+                    WriteLog "Extraction complete"
+                }
+                else {
+                    WriteLog "Unsupported file type: $fileExtension"
+                    throw "Unsupported file type: $fileExtension"
+                }
+                # Remove downloaded file
+                $status = "Cleaning up..."
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                WriteLog "Removing $filePath"
+                Remove-Item -Path $filePath -Force
+                WriteLog "Cleanup complete." # Changed log message slightly
+        
+                # --- Compress to WIM if requested ---
+                if ($CompressToWim) {
+                    $status = "Compressing..."
+                    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                    $wimFileName = "$($modelName).wim"
+                    # Corrected WIM path: WIM file should be next to the model folder, not inside it.
+                    $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName 
+                    WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
+                    try {
+                        # Use the function from the imported common module
+                        $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $modelName -WimDescription $modelName -ErrorAction Stop
+                        if ($compressResult) {
+                            WriteLog "Compression successful for '$modelName'."
+                            $status = "Completed & Compressed"
+                        }
+                        else {
+                            WriteLog "Compression failed for '$modelName'. Check verbose/error output from Compress-DriverFolderToWim."
+                            $status = "Completed (Compression Failed)"
+                            # Don't mark overall success as false, download/extract succeeded
+                        }
+                    }
+                    catch {
+                        WriteLog "Error during compression for '$modelName': $($_.Exception.Message)"
+                        $status = "Completed (Compression Error)"
+                        # Don't mark overall success as false
+                    }
+                }
+                else {
+                    $status = "Completed" # Final status if not compressing
+                }
+                # --- End Compression ---
+        
+                $success = $true # Mark success as download/extract was okay
+            } # End if/elseif for .msi/.zip
+            else {
+                WriteLog "No suitable download link found for Windows $WindowsRelease (or fallback) for model $modelName."
+                $status = "Error: No Win$($WindowsRelease)/Fallback link"
+                $success = $false
+            }
+        }
+        else {
+            WriteLog "Failed to parse the download page for the driver file for model $modelName."
+            $status = "Error: Parse failed"
+            $success = $false
+        }
+    }
+    catch {
+        $status = "Error: $($_.Exception.Message.Split('.')[0])" # Shorten error message
+        WriteLog "Error saving Microsoft drivers for $($modelName): $($_.Exception.Message)"
+        $success = $false
+        # Enqueue the error status before returning
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+        # Ensure return object is created even on error
+        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
+    }
+    
+    # Enqueue the final status (success or error) before returning
+    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+    
+    # Return the final status (this is still used by Receive-Job for final confirmation)
+    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
+}
+
+Export-ModuleMember -Function *
