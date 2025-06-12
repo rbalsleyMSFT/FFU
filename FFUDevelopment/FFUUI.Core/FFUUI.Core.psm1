@@ -3,19 +3,16 @@
 
 #Requires -Modules BitsTransfer 
 
-# Import shared modules
-Import-Module "$PSScriptRoot\..\common\FFU.Common.Core.psm1"
-Import-Module "$PSScriptRoot\..\common\FFU.Common.Winget.psm1"
-Import-Module "$PSScriptRoot\..\common\FFU.Common.Drivers.psm1"
+# # Import shared modules
+# Import-Module "$PSScriptRoot\..\common\FFU.Common.Core.psm1"
+# Import-Module "$PSScriptRoot\..\common\FFU.Common.Winget.psm1"
+# Import-Module "$PSScriptRoot\..\common\FFU.Common.Drivers.psm1"
 
 
 # --------------------------------------------------------------------------
 # SECTION: Module Variables (Static Data & State)
 # --------------------------------------------------------------------------
 
-# Mutex for log file access is now in FFU.Common.Core.psm1
-
-# Static data moved from UI_Helpers
 $script:allowedFeatures = @(
     "AppServerClient", "Client-DeviceLockdown", "Client-EmbeddedBootExp", "Client-EmbeddedLogon",
     "Client-EmbeddedShellLauncher", "Client-KeyboardFilter", "Client-ProjFS", "Client-UnifiedWriteFilter",
@@ -164,15 +161,6 @@ $script:windowsReleaseSkuMap = @{
     # Note: LTSC 2016 and LTSC 2019 SKUs are now conditionally returned by Get-AvailableSkusForRelease
 }
 
-# --------------------------------------------------------------------------
-# SECTION: Logging Function (Moved from UI_Helpers)
-# --------------------------------------------------------------------------
-# WriteLog function has been moved to FFU.Common.Core.psm1
-# All WriteLog calls in this module will now use the common WriteLog.
-
-# --------------------------------------------------------------------------
-# SECTION: Data Retrieval Functions (Moved from UI_Helpers & BuildFFUVM_UI)
-# --------------------------------------------------------------------------
 
 # Function to get VM Switch names and associated IP addresses (Moved from UI_Helpers)
 function Get-VMSwitchData {
@@ -257,8 +245,7 @@ function Get-WindowsSettingsDefaults {
         DefaultMediaType        = "Consumer"
         DefaultOptionalFeatures = ""
         DefaultProductKey       = ""
-        AllowedFeatures         = $script:allowedFeatures # Return the list
-        # SkuList will now be populated dynamically based on Windows Release
+        AllowedFeatures         = $script:allowedFeatures
         AllowedLanguages        = $script:allowedLangs
         AllowedArchitectures    = @('x86', 'x64', 'arm64')
         AllowedMediaTypes       = @('Consumer', 'Business')
@@ -301,7 +288,7 @@ function Get-AvailableWindowsVersions {
     }
 
     if (-not $State.Defaults.GeneralDefaults.WindowsVersionMap.ContainsKey($SelectedRelease)) {
-        return $result # Return empty/disabled state
+        return $result 
     }
 
     $validVersions = $State.Defaults.GeneralDefaults.WindowsVersionMap[$SelectedRelease]
@@ -329,9 +316,9 @@ function Get-AvailableWindowsVersions {
             $result.DefaultVersion = "24H2"
         }
         elseif ($validVersions.Count -gt 0) {
-            $result.DefaultVersion = $validVersions[0] # Default to first in list otherwise
+            $result.DefaultVersion = $validVersions[0]
         }
-        $result.IsEnabled = $true # Combo should be enabled
+        $result.IsEnabled = $true 
     }
 
     return $result
@@ -473,8 +460,7 @@ function Get-GeneralDefaults {
     }
 }
 
-# Function to get the list of Dell models from the catalog using XML streaming (Moved from UI_Helpers)
-# Depends on private functions: Start-BitsTransferWithRetry, Invoke-Process
+# Function to get the list of Dell models from the catalog using XML streaming
 function Get-DellDriversModelList {
     [CmdletBinding()]
     param(
@@ -494,7 +480,7 @@ function Get-DellDriversModelList {
     $catalogUrl = if ($WindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
 
     $uniqueModelNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    $reader = $null # Initialize reader variable
+    $reader = $null 
 
     try {
         # Check if the Dell catalog XML exists and is recent
@@ -604,7 +590,6 @@ function Get-DellDriversModelList {
         if ($null -ne $reader) {
             $reader.Dispose()
         }
-        # REMOVED: Cleanup of temp folder - XML is kept in DriversFolder
         # Ensure CAB file is deleted even if extraction failed but download succeeded
         if (Test-Path -Path $dellCabFile) {
             WriteLog "Cleaning up downloaded Dell CAB file: $dellCabFile"
@@ -737,9 +722,9 @@ function Get-LenovoDriversModelList {
                         # Add each combination as a separate entry
                         $models.Add([PSCustomObject]@{
                                 Make        = 'Lenovo'
-                                Model       = $displayModel # Combined string for display
-                                ProductName = $productName # Original product name stored separately if needed
-                                MachineType = $machineType # Machine type needed for catalog URL
+                                Model       = $displayModel
+                                ProductName = $productName 
+                                MachineType = $machineType 
                             })
                     }
                     else {
@@ -757,8 +742,6 @@ function Get-LenovoDriversModelList {
         WriteLog "Error querying Lenovo PSREF API: $($_.Exception.Message)"
         # Return empty list on error
     }
-
-    # Return the list (sorting might be done in the UI layer if needed)
     return $models
 }
 
@@ -777,17 +760,15 @@ function Save-LenovoDriversTask {
         [Parameter(Mandatory = $true)]
         [string]$UserAgent,
         [Parameter()] # Made optional
-        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
+        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null,
         [Parameter()]
-        [bool]$CompressToWim = $false # New parameter for compression
+        [bool]$CompressToWim = $false
     )
             
     # The Model property from the UI already contains the combined "ProductName (MachineType)" string
-    $identifier = $DriverItemData.Model       
-    # We still need the machine type for the catalog URL
+    $identifier = $DriverItemData.Model
     $machineType = $DriverItemData.MachineType 
     $make = "Lenovo"
-    # $identifier = "$($modelName) ($($machineType))" # No longer needed, use Model directly
     $status = "Starting..."
     $success = $false
     
@@ -1103,7 +1084,7 @@ function Save-LenovoDriversTask {
             }
         }
         else {
-            $status = "Completed" # Final status if not compressing
+            $status = "Completed" 
         }
         # --- End Compression ---
         
@@ -1133,7 +1114,6 @@ function Save-LenovoDriversTask {
 }
 
 # Function to get the list of HP models from the PlatformList.xml
-# Depends on private functions: Start-BitsTransferWithRetry, Invoke-Process
 function Get-HPDriversModelList {
     [CmdletBinding()]
     param (
@@ -1203,7 +1183,6 @@ function Get-HPDriversModelList {
                             $modelList.Add([PSCustomObject]@{
                                     Make  = $Make
                                     Model = $modelName
-                                    # Add other properties like SystemID if needed later, but keep it simple for now
                                 })
                         }
                     }
@@ -1218,8 +1197,6 @@ function Get-HPDriversModelList {
     }
     catch {
         WriteLog "Error getting HP driver model list: $($_.Exception.Message)"
-        # Optionally re-throw or return an empty list/error object
-        # For now, just return the potentially partially populated list or empty list
     }
 
     # Sort the list alphabetically by Model name before returning
@@ -1240,173 +1217,6 @@ function Get-USBDrives {
             DriveIndex   = $_.Index
         }
     }
-}
-
-# --------------------------------------------------------------------------
-# SECTION: Modern Folder Picker (Moved from BuildFFUVM_UI.ps1)
-# --------------------------------------------------------------------------
-
-# 1) Define a C# class that uses the correct GUIDs for IFileDialog, IFileOpenDialog, and FileOpenDialog,
-#    while omitting conflicting "GetResults/GetSelectedItems" from IFileDialog.
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class ModernFolderBrowser
-{
-    // Flags for IFileDialog
-    [Flags]
-    private enum FileDialogOptions : uint
-    {
-        OverwritePrompt      = 0x00000002,
-        StrictFileTypes      = 0x00000004,
-        NoChangeDir          = 0x00000008,
-        PickFolders          = 0x00000020,
-        ForceFileSystem      = 0x00000040,
-        AllNonStorageItems   = 0x00000080,
-        NoValidate           = 0x00000100,
-        AllowMultiSelect     = 0x00000200,
-        PathMustExist        = 0x00000800,
-        FileMustExist        = 0x00001000,
-        CreatePrompt         = 0x00002000,
-        ShareAware           = 0x00004000,
-        NoReadOnlyReturn     = 0x00008000,
-        NoTestFileCreate     = 0x00010000,
-        DontAddToRecent      = 0x02000000,
-        ForceShowHidden      = 0x10000000
-    }
-
-    // IFileDialog (GUID from Windows SDK)
-    //  - Omitting GetResults / GetSelectedItems to avoid overshadow.
-    [ComImport]
-    [Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileDialog
-    {
-        [PreserveSig]
-        int Show(IntPtr parent);
-
-        void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
-        void SetFileTypeIndex(uint iFileType);
-        void GetFileTypeIndex(out uint piFileType);
-        void Advise(IntPtr pfde, out uint pdwCookie);
-        void Unadvise(uint dwCookie);
-        void SetOptions(FileDialogOptions fos);
-        void GetOptions(out FileDialogOptions pfos);
-        void SetDefaultFolder(IShellItem psi);
-        void SetFolder(IShellItem psi);
-        void GetFolder(out IShellItem ppsi);
-        void GetCurrentSelection(out IShellItem ppsi);
-        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-        void GetFileName(out IntPtr pszName);
-        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
-        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
-        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
-        void GetResult(out IShellItem ppsi);
-        void AddPlace(IShellItem psi, int fdap);
-        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
-        void Close(int hr);
-        void SetClientGuid(ref Guid guid);
-        void ClearClientData();
-        void SetFilter(IntPtr pFilter);
-
-        // NOTE: We intentionally do NOT define GetResults and GetSelectedItems here,
-        // because they cause overshadow warnings in IFileOpenDialog.
-    }
-
-    // IFileOpenDialog extends IFileDialog by adding 2 new methods with the same name,
-    // which otherwise cause overshadow warnings. We'll define them only here.
-    [ComImport]
-    [Guid("D57C7288-D4AD-4768-BE02-9D969532D960")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileOpenDialog : IFileDialog
-    {
-        // These two come after the parent's vtable:
-        void GetResults(out IntPtr ppenum);
-        void GetSelectedItems(out IntPtr ppsai);
-    }
-
-    // The coclass for creating an IFileOpenDialog
-    [ComImport]
-    [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
-    private class FileOpenDialog
-    {
-    }
-
-    // IShellItem
-    [ComImport]
-    [Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellItem
-    {
-        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
-        void GetParent(out IShellItem ppsi);
-        void GetDisplayName(uint sigdnName, out IntPtr ppszName);
-        void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
-        void Compare(IShellItem psi, uint hint, out int piOrder);
-    }
-
-    private const uint SIGDN_FILESYSPATH = 0x80058000;
-
-    public static string ShowDialog(string title, IntPtr parentHandle)
-    {
-        // Create COM dialog instance
-        IFileOpenDialog dialog = (IFileOpenDialog)(new FileOpenDialog());
-
-        // Get current options
-        FileDialogOptions opts;
-        dialog.GetOptions(out opts);
-
-        // Add flags for picking folders
-        opts |= FileDialogOptions.PickFolders | FileDialogOptions.PathMustExist | FileDialogOptions.ForceFileSystem;
-        dialog.SetOptions(opts);
-
-        // Set title
-        if (!string.IsNullOrEmpty(title))
-        {
-            dialog.SetTitle(title);
-        }
-
-        // Show the dialog
-        int hr = dialog.Show(parentHandle);
-        // 0 = S_OK. 1 or 0x800704C7 often means user canceled. Return null if so.
-        if (hr != 0)
-        {
-            if ((uint)hr == 0x800704C7 || hr == 1)
-            {
-                return null; // Canceled
-            }
-            else
-            {
-                Marshal.ThrowExceptionForHR(hr);
-            }
-        }
-
-        // Retrieve the selection (IShellItem)
-        IShellItem shellItem;
-        dialog.GetResult(out shellItem);
-        if (shellItem == null) return null;
-
-        // Convert to file system path
-        IntPtr pszPath = IntPtr.Zero;
-        shellItem.GetDisplayName(SIGDN_FILESYSPATH, out pszPath);
-        if (pszPath == IntPtr.Zero) return null;
-
-        string folderPath = Marshal.PtrToStringAuto(pszPath);
-        Marshal.FreeCoTaskMem(pszPath);
-
-        return folderPath;
-    }
-}
-"@ -Language CSharp
-
-# 2) Define a PowerShell function that invokes our C# wrapper
-function Show-ModernFolderPicker {
-    param(
-        [string]$Title = "Select a folder"
-    )
-    # For a simple test, pass IntPtr.Zero as the parent window handle
-    return [ModernFolderBrowser]::ShowDialog($Title, [IntPtr]::Zero)
 }
 
 # --------------------------------------------------------------------------
@@ -1560,10 +1370,7 @@ function Confirm-WingetInstallationUI {
             # Use callback to indicate installation attempt
             & $UiUpdateCallback $result.CliVersion "Installing/Updating..."
 
-            # Call Install-WingetComponents (which also uses the callback internally)
-            # Note: Install-WingetComponents currently only installs the module.
-            # CLI installation/update might need separate handling or integration here if desired.
-            # For now, we focus on the module install triggered by this check.
+            # Attempt to install/update Winget CLI and module
             $installedModule = Install-WingetComponents -UiUpdateCallback $UiUpdateCallback
             
             # Re-check status after attempt
@@ -1680,11 +1487,6 @@ function Start-WingetAppDownloadTask {
 
         # 2. Check previous Winget download
         if (-not $appFound) {
-            # Set environment variable for Get-Application checks (if needed by sub-functions)
-            # Set environment variables needed by Get-Application if called within this scope
-            # Note: ForEach-Object -Parallel handles variable scoping differently than Runspaces.
-            # Ensure Get-Application correctly accesses these if needed, potentially via $using: scope
-            # or by passing them as parameters if Get-Application            # 2. Check previous Winget download and WinGetWin32Apps.json for duplicate entries
             if (-not $appFound) {
                 $wingetWin32jsonFile = Join-Path -Path $OrchestrationPath -ChildPath "WinGetWin32Apps.json"
                 if (Test-Path -Path $wingetWin32jsonFile) {
@@ -2109,18 +1911,6 @@ function Start-CopyBYOApplicationTask {
         
     # Return the final status
     return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
-}
-# Helper function to enqueue progress updates to the UI thread
-function Invoke-ProgressUpdate {
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue,
-        [Parameter(Mandatory)]
-        [string]$Identifier,
-        [Parameter(Mandatory)]
-        [string]$Status
-    )
-    $ProgressQueue.Enqueue(@{ Identifier = $Identifier; Status = $Status })
 }
 
 # Function to download and extract drivers for a specific Microsoft model (Modified for ForEach-Object -Parallel)
@@ -3138,589 +2928,7 @@ function Save-HPDriversTask {
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
     return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $successState }
 }
-# Function to update status of a specific item in a ListView
-function Update-ListViewItemStatus {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$WindowObject, # Changed type to [object]
-        [Parameter(Mandatory)]
-        [object]$ListView,     # Changed type to [object]
-        [Parameter(Mandatory)]
-        [string]$IdentifierProperty, 
-        [Parameter(Mandatory)]
-        [string]$IdentifierValue,
-        [Parameter(Mandatory)]
-        [string]$StatusProperty,     
-        [Parameter(Mandatory)]
-        [string]$StatusValue
-    )
-    
-    # Ensure we are in UI mode and objects are of correct WPF types
-    if ($WindowObject -is [System.Windows.Window] -and $ListView -is [System.Windows.Controls.ListView]) {
-        # Directly update UI elements as this function is now called on the UI thread
-        try {
-            $itemToUpdate = $ListView.Items | Where-Object { $_.$IdentifierProperty -eq $IdentifierValue } | Select-Object -First 1
-            if ($null -ne $itemToUpdate) {
-                $itemToUpdate.$StatusProperty = $StatusValue
-                $ListView.Items.Refresh() # Refresh the view to show the change
-            }
-            else {
-                # Log if item not found (for debugging)
-                WriteLog "Update-ListViewItemStatus: Item with $IdentifierProperty '$IdentifierValue' not found in ListView."
-            }
-        }
-        catch {
-            WriteLog "Update-ListViewItemStatus: Error updating ListView: $($_.Exception.Message)"
-        }
-    } # End of if ($WindowObject -is [System.Windows.Window]...)
-    else {
-        # Log if called in non-UI mode or with incorrect types (should not happen if Invoke-ParallelProcessing $isUiMode is correct)
-        WriteLog "Update-ListViewItemStatus: Skipped UI update for $IdentifierValue due to non-UI mode or incorrect object types."
-    }
-}
 
-# Function to update overall progress bar and status text label
-function Update-OverallProgress {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$WindowObject, # Changed type to [object]
-        [Parameter(Mandatory)]
-        [int]$CompletedCount,
-        [Parameter(Mandatory)]
-        [int]$TotalCount,
-        [Parameter(Mandatory)]
-        [string]$StatusText,
-        [Parameter(Mandatory)] 
-        [string]$ProgressBarName,
-        [Parameter(Mandatory)]
-        [string]$StatusLabelName
-    )
-
-    # Ensure we are in UI mode and WindowObject is of correct WPF type
-    if ($WindowObject -is [System.Windows.Window]) {
-        # Directly update UI elements as this function is now called on the UI thread
-        try {
-            # Find controls by name using the $WindowObject
-            $pb = $WindowObject.FindName($ProgressBarName)
-            $lbl = $WindowObject.FindName($StatusLabelName)
-
-            if ($null -eq $pb) {
-                WriteLog "Update-OverallProgress: ProgressBar '$ProgressBarName' not found."
-                return
-            }
-            if ($null -eq $lbl) {
-                WriteLog "Update-OverallProgress: StatusLabel '$StatusLabelName' not found."
-                return
-            }
-
-            # Update the progress bar
-            if ($TotalCount -gt 0) {
-                $percentComplete = ($CompletedCount / $TotalCount) * 100
-                $pb.Value = $percentComplete
-            }
-            else {
-                $pb.Value = 0 
-            }
-            
-            # Update the status label
-            $lbl.Text = $StatusText
-            
-        }
-        catch {
-            WriteLog "Update-OverallProgress: Error updating progress: $($_.Exception.Message)"
-        }
-    } # End of if ($WindowObject -is [System.Windows.Window])
-    else {
-        # Log if called in non-UI mode or with incorrect types
-        WriteLog "Update-OverallProgress: Skipped UI update ($StatusText) due to non-UI mode or incorrect WindowObject type."
-    }
-}
-
-# Reusable function to invoke parallel processing with UI updates
-function Invoke-ParallelProcessing {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [array]$ItemsToProcess,
-        [Parameter(Mandatory = $false)] 
-        [object]$ListViewControl = $null, # Changed type to [object]
-        [Parameter(Mandatory = $false)] 
-        [string]$IdentifierProperty = 'Identifier', 
-        [Parameter(Mandatory = $false)] 
-        [string]$StatusProperty = 'Status',         
-        [Parameter(Mandatory)]
-        [ValidateSet('WingetDownload', 'CopyBYO', 'DownloadDriverByMake')]
-        [string]$TaskType,
-        [Parameter()]
-        [hashtable]$TaskArguments = @{},
-        [Parameter(Mandatory = $false)] 
-        [string]$CompletedStatusText = "Completed",
-        [Parameter(Mandatory = $false)] 
-        [string]$ErrorStatusPrefix = "Error: ",
-        [Parameter(Mandatory = $false)] 
-        [object]$WindowObject = $null, # Changed type to [object]
-        [Parameter(Mandatory = $false)]
-        [string]$MainThreadLogPath = $null # New parameter for the log path
-    )
-    # Check if running in UI mode by verifying the types of the passed objects
-    $isUiMode = ($null -ne $WindowObject -and $WindowObject -is [System.Windows.Window] -and $null -ne $ListViewControl -and $ListViewControl -is [System.Windows.Controls.ListView])
-
-    if ($isUiMode) {
-        WriteLog "Invoke-ParallelProcessing started for $($ItemsToProcess.Count) items in ListView '$($ListViewControl.Name)'."
-    }
-    else {
-        WriteLog "Invoke-ParallelProcessing started for $($ItemsToProcess.Count) items (non-UI mode)."
-    }
-    $resultsCollection = [System.Collections.Generic.List[object]]::new()
-    $jobs = @()
-    $results = @() # Store results from jobs
-    $totalItems = $ItemsToProcess.Count
-    $processedCount = 0
-
-    # Create a thread-safe queue for intermediate progress updates
-    $progressQueue = New-Object System.Collections.Concurrent.ConcurrentQueue[hashtable]
-
-    # Define common paths locally within this function's scope
-    $coreModulePath = $MyInvocation.MyCommand.Module.Path 
-    $coreModuleDirectory = Split-Path -Path $coreModulePath -Parent
-    $ffuDevelopmentRoot = Split-Path -Path $coreModuleDirectory -Parent 
-    
-    # Paths to other modules needed by the parallel threads
-    $commonCoreModulePathForJob = Join-Path -Path $ffuDevelopmentRoot -ChildPath "common\FFU.Common.Core.psm1"
-    $commonWingetModulePathForJob = Join-Path -Path $ffuDevelopmentRoot -ChildPath "common\FFU.Common.Winget.psm1"
-    $commonDriversModulePathForJob = Join-Path -Path $ffuDevelopmentRoot -ChildPath "common\FFU.Common.Drivers.psm1"
-    
-    # Use the explicitly passed MainThreadLogPath for the parallel jobs.
-    # If not provided (e.g., older calls or direct module use without this param), it might be null.
-    # The parallel job's Set-CommonCoreLogPath will handle null/empty paths by warning.
-    $currentLogFilePathForJob = $MainThreadLogPath
-
-    $jobScopeVariables = $TaskArguments.Clone() 
-    $jobScopeVariables['_thisCoreModulePath'] = $coreModulePath # Path to FFUUI.Core.psm1 itself
-    $jobScopeVariables['_commonCoreModulePath'] = $commonCoreModulePathForJob
-    $jobScopeVariables['_commonWingetModulePath'] = $commonWingetModulePathForJob
-    $jobScopeVariables['_commonDriversModulePath'] = $commonDriversModulePathForJob
-    $jobScopeVariables['_currentLogFilePathForJob'] = $currentLogFilePathForJob # Pass the determined log path
-    $jobScopeVariables['_progressQueue'] = $progressQueue
-
-    # The $TaskScriptBlock parameter is already a local variable in this scope
-
-    # Initial UI update needs to happen *before* starting the jobs
-    # Update all items to a static "Processing..." status
-    if ($isUiMode) {
-        # Use the new $isUiMode flag
-        foreach ($item in $ItemsToProcess) {
-            $identifierValue = $item.$IdentifierProperty
-            $initialStaticStatus = "Queued..." 
-            try {
-                # Update the UI on the main thread to show the item is being queued for processing
-                $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                        Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $identifierValue -StatusProperty $StatusProperty -StatusValue $initialStaticStatus 
-                    })
-            }
-            catch {
-                WriteLog "Error setting initial status for item '$identifierValue': $($_.Exception.Message)"
-            }
-        }
-    }
-
-    # Queue items and start jobs using the pipeline and $using:
-    try {
-        # $jobScopeVariables and $TaskType are local here
-        # Inside the -Parallel scriptblock, we access them with $using:
-        $jobs = $ItemsToProcess | ForEach-Object -Parallel {
-            # Access the current item via pipeline variable $_
-            $currentItem = $_
-            # Access the combined arguments hashtable from the calling scope using $using:
-            $localJobArgs = $using:jobScopeVariables
-            # Access the task type string from the calling scope using $using:
-            $localTaskType = $using:TaskType
-            # Access the progress queue using $using:
-            $localProgressQueue = $localJobArgs['_progressQueue']
-
-            # Initialize result hashtable
-            $taskResult = $null
-            $resultIdentifier = $null
-            $resultStatus = "Error: Task type '$localTaskType' not recognized"
-            $resultCode = 1 # Default to error
-
-            try {
-                # Import the common core module first
-                Import-Module $localJobArgs['_commonCoreModulePath']
-                # Set the log path for this parallel thread
-                Set-CommonCoreLogPath -Path $localJobArgs['_currentLogFilePathForJob']
-
-                # Set other global variables if tasks rely on them (prefer passing as parameters)
-                $global:AppsPath = $localJobArgs['AppsPath']
-                $global:WindowsArch = $localJobArgs['WindowsArch']
-                if ($localJobArgs.ContainsKey('OrchestrationPath')) {
-                    $global:OrchestrationPath = $localJobArgs['OrchestrationPath']
-                }
-
-                # Import other necessary modules. Their WriteLog calls will use the path set above.
-                Import-Module $localJobArgs['_thisCoreModulePath'] # FFUUI.Core.psm1
-                Import-Module $localJobArgs['_commonWingetModulePath']
-                Import-Module $localJobArgs['_commonDriversModulePath']
-
-                # Execute the appropriate background task based on $localTaskType
-                switch ($localTaskType) {
-                    'WingetDownload' {
-                        # Pass the progress queue to the task function
-                        $taskResult = Start-WingetAppDownloadTask -ApplicationItemData $currentItem `
-                            -AppListJsonPath $localJobArgs['AppListJsonPath'] `
-                            -AppsPath $localJobArgs['AppsPath'] `
-                            -WindowsArch $localJobArgs['WindowsArch'] `
-                            -OrchestrationPath $localJobArgs['OrchestrationPath'] `
-                            -ProgressQueue $localProgressQueue
-                        if ($null -ne $taskResult) {
-                            $resultIdentifier = $taskResult.Id
-                            $resultStatus = $taskResult.Status
-                            $resultCode = $taskResult.ResultCode
-                        }
-                        else {
-                            $resultIdentifier = $currentItem.Id # Fallback
-                            $resultStatus = "Error: WingetDownload task returned null"
-                            $resultCode = 1
-                            WriteLog $resultStatus
-                        }
-                    }
-                    'CopyBYO' {
-                        # Pass the progress queue to the task function
-                        $taskResult = Start-CopyBYOApplicationTask -ApplicationItemData $currentItem `
-                            -AppsPath $localJobArgs['AppsPath'] `
-                            -ProgressQueue $localProgressQueue 
-                        if ($null -ne $taskResult) {
-                            $resultIdentifier = $taskResult.Name
-                            $resultStatus = $taskResult.Status
-                            $resultCode = if ($taskResult.Success) { 0 } else { 1 }
-                        }
-                        else {
-                            $resultIdentifier = $currentItem.Name # Fallback
-                            $resultStatus = "Error: CopyBYO task returned null"
-                            $resultCode = 1
-                            WriteLog $resultStatus
-                        }
-                    }
-                    'DownloadDriverByMake' {
-                        $make = $currentItem.Make
-                        # Ensure $resultIdentifier is set before the switch, using the main IdentifierProperty
-                        # This is crucial if a Make is unsupported or a task fails to return a result.
-                        $resultIdentifier = $currentItem.$($using:IdentifierProperty)
-
-                        switch ($make) {
-                            'Microsoft' {
-                                $taskResult = Save-MicrosoftDriversTask -DriverItemData $currentItem `
-                                    -DriversFolder $localJobArgs['DriversFolder'] `
-                                    -WindowsRelease $localJobArgs['WindowsRelease'] `
-                                    -Headers $localJobArgs['Headers'] `
-                                    -UserAgent $localJobArgs['UserAgent'] `
-                                    -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
-                            }
-                            'Dell' {
-                                # DellCatalogXmlPath might be null if catalog prep failed; Save-DellDriversTask should handle this.
-                                $taskResult = Save-DellDriversTask -DriverItemData $currentItem `
-                                    -DriversFolder $localJobArgs['DriversFolder'] `
-                                    -WindowsArch $localJobArgs['WindowsArch'] `
-                                    -WindowsRelease $localJobArgs['WindowsRelease'] `
-                                    -DellCatalogXmlPath $localJobArgs['DellCatalogXmlPath'] `
-                                    -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
-                            }
-                            'HP' {
-                                $taskResult = Save-HPDriversTask -DriverItemData $currentItem `
-                                    -DriversFolder $localJobArgs['DriversFolder'] `
-                                    -WindowsArch $localJobArgs['WindowsArch'] `
-                                    -WindowsRelease $localJobArgs['WindowsRelease'] `
-                                    -WindowsVersion $localJobArgs['WindowsVersion'] `
-                                    -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
-                            }
-                            'Lenovo' {
-                                $taskResult = Save-LenovoDriversTask -DriverItemData $currentItem `
-                                    -DriversFolder $localJobArgs['DriversFolder'] `
-                                    -WindowsRelease $localJobArgs['WindowsRelease'] `
-                                    -Headers $localJobArgs['Headers'] `
-                                    -UserAgent $localJobArgs['UserAgent'] `
-                                    -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
-                            }
-                            default {
-                                $unsupportedMakeMessage = "Error: Unsupported Make '$make' for driver download."
-                                WriteLog $unsupportedMakeMessage
-                                $resultStatus = $unsupportedMakeMessage
-                                $resultCode = 1
-                                # $resultIdentifier is already set from $currentItem.$($using:IdentifierProperty)
-                                $localProgressQueue.Enqueue(@{ Identifier = $resultIdentifier; Status = $resultStatus })
-                                # $taskResult remains null, handled below
-                            }
-                        }
-
-                        # Consolidate result handling for 'DownloadDriverByMake'
-                        if ($null -ne $taskResult) {
-                            # $resultIdentifier is already $currentItem.$($using:IdentifierProperty)
-                            # We use the task's returned Model/Identifier for logging/status if needed,
-                            # but the primary identifier for UI updates should be consistent.
-                            $taskSpecificIdentifier = $null
-                            if ($taskResult.PSObject.Properties.Name -contains 'Model') { $taskSpecificIdentifier = $taskResult.Model }
-                            elseif ($taskResult.PSObject.Properties.Name -contains 'Identifier') { $taskSpecificIdentifier = $taskResult.Identifier }
-
-                            $resultStatus = $taskResult.Status
-                            if ($taskResult.PSObject.Properties.Name -contains 'Success') {
-                                # Dell, Microsoft, Lenovo
-                                $resultCode = if ($taskResult.Success) { 0 } else { 1 }
-                            }
-                            elseif ($taskResult.Status -like 'Completed*') {
-                                # HP success
-                                $resultCode = 0
-                            }
-                            elseif ($taskResult.Status -like 'Error*') {
-                                # HP error
-                                $resultCode = 1
-                            }
-                            else {
-                                # Default for HP if status is unexpected, or if 'Success' property is missing but status isn't 'Completed*' or 'Error*'
-                                WriteLog "Unexpected status or missing 'Success' property from task for '$taskSpecificIdentifier': $($taskResult.Status)"
-                                $resultCode = 1 # Assume error
-                            }
-                        }
-                        elseif ($make -in ('Microsoft', 'Dell', 'HP', 'Lenovo')) {
-                            # This means a specific Make case was hit, but $taskResult was unexpectedly null
-                            $nullTaskResultMessage = "Error: Task for Make '$make' returned null."
-                            WriteLog $nullTaskResultMessage
-                            $resultStatus = $nullTaskResultMessage
-                            $resultCode = 1
-                            # $resultIdentifier is already set
-                        }
-                        # If it was an unsupported Make, $resultStatus and $resultCode are already set from the 'default' case.
-                    }
-                    Default {
-                        # This handles unknown $localTaskType values
-                        $resultStatus = "Error: Task type '$localTaskType' not recognized"
-                        $resultCode = 1
-                        if ($currentItem -is [pscustomobject] -and $currentItem.PSObject.Properties.Name -match $using:IdentifierProperty) {
-                            $resultIdentifier = $currentItem.$($using:IdentifierProperty)
-                        }
-                        else {
-                            $resultIdentifier = "UnknownItem"
-                        }
-                        WriteLog "Error in parallel job: Unknown TaskType '$localTaskType' provided for item '$resultIdentifier'."
-                    }
-                }
-            }
-            catch {
-                # Catch errors within the parallel task execution
-                $resultStatus = "Error: $($_.Exception.Message)"
-                $resultCode = 1
-                # Try to get an identifier
-                if ($currentItem -is [pscustomobject] -and $currentItem.PSObject.Properties.Name -match $using:IdentifierProperty) {
-                    $resultIdentifier = $currentItem.$($using:IdentifierProperty)
-                }
-                else {
-                    $resultIdentifier = "UnknownItemOnError"
-                }
-                WriteLog "Exception during parallel task '$localTaskType' for item '$resultIdentifier': $($_.Exception.ToString())"
-                # Enqueue the error status from the catch block
-                $localProgressQueue.Enqueue(@{ Identifier = $resultIdentifier; Status = $resultStatus })
-            }
-
-            # Return a consistent hashtable structure (final result)
-            return @{
-                Identifier = $resultIdentifier
-                Status     = $resultStatus # Return the final status
-                ResultCode = $resultCode
-            }
-
-        } -ThrottleLimit 5 -AsJob
-    }
-    catch {
-        # Catch errors during the *creation* of the parallel jobs (e.g., module loading in main thread failed)
-        WriteLog "Error initiating ForEach-Object -Parallel: $($_.Exception.Message)"
-        # Update all items to show a general startup error
-        $errorStatus = "$ErrorStatusPrefix Failed to start processing"
-        foreach ($item in $ItemsToProcess) {
-            $identifier = $item.$IdentifierProperty
-            $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { # Use $WindowObject
-                    Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $identifier -StatusProperty $StatusProperty -StatusValue $errorStatus # Pass $WindowObject
-                })
-        }
-        # Exit the function as processing cannot proceed
-        return
-    }
-
-    # Check if any jobs failed to start immediately (e.g., module loading issues within the job)
-    $failedJobs = $jobs | Where-Object { $_.State -eq 'Failed' -and $_.JobStateInfo.Reason }
-    foreach ($failedJob in $failedJobs) {
-        WriteLog "Job $($failedJob.Id) failed to start or failed early: $($failedJob.JobStateInfo.Reason)"
-        # We don't easily know which item failed here without more complex mapping
-        # Update overall status maybe?
-        $processedCount++
-    }
-    # Filter out jobs that failed immediately
-    $jobs = $jobs | Where-Object { $_.State -ne 'Failed' }
-
-    # Process job results and intermediate status updates without blocking the UI thread
-    while ($jobs.Count -gt 0 -or -not $progressQueue.IsEmpty) {
-        # Continue while jobs are running OR queue has messages
-
-        # 1. Process intermediate status updates from the queue
-        $statusUpdate = $null 
-        while ($progressQueue.TryDequeue([ref]$statusUpdate)) {
-            if ($null -ne $statusUpdate) {
-                $intermediateIdentifier = $statusUpdate.Identifier
-                $intermediateStatus = $statusUpdate.Status
-                if ($isUiMode) {
-                    # Use the new $isUiMode flag
-                    # Update the UI with the intermediate status
-                    try {
-                        $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                                Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $intermediateIdentifier -StatusProperty $StatusProperty -StatusValue $intermediateStatus 
-                            })
-                    }
-                    catch {
-                        WriteLog "Error setting intermediate status for item '$intermediateIdentifier': $($_.Exception.Message)"
-                    }
-                }
-                else {
-                    # Log intermediate status if not in UI mode
-                    WriteLog "Intermediate Status for '$intermediateIdentifier': $intermediateStatus"
-                }
-            }
-        }
-
-        # 2. Check for completed jobs
-        $completedJobs = $jobs | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' }
-
-        if ($completedJobs) {
-            foreach ($completedJob in $completedJobs) {
-                $finalIdentifier = "UnknownJob" # Placeholder if we can't get result
-                $finalStatus = "$ErrorStatusPrefix Job $($completedJob.Id) ended unexpectedly"
-                $finalResultCode = 1 # Assume error
-
-                if ($completedJob.State -eq 'Failed') {
-                    WriteLog "Job $($completedJob.Id) failed: $($completedJob.Error)"
-                    # Try to get identifier from job name if possible (less reliable)
-                    # $finalIdentifier = ... logic to parse job name or map ID ...
-                    $finalStatus = "$ErrorStatusPrefix Job Failed"
-                    $processedCount++ # Count failed job as processed
-                }
-                elseif ($completedJob.HasMoreData) {
-                    # Receive final results specifically from the completed job
-                    $jobResults = $completedJob | Receive-Job
-                    foreach ($result in $jobResults) {
-                        # Should only be one result per job in this setup
-                        if ($null -ne $result -and $result -is [hashtable] -and $result.ContainsKey('Identifier')) {
-                            $finalIdentifier = $result.Identifier
-                            $status = $result.Status # This is the FINAL status returned by the task
-                            $finalResultCode = $result.ResultCode
-    
-                            # Determine final status text based on the result code
-                            if ($finalResultCode -eq 0) {
-                                # Assuming 0 means success
-                                # Use the specific status returned by the successful job
-                                # This handles cases like "Already downloaded" correctly
-                                $finalStatus = $status
-                            }
-                            else {
-                                $finalStatus = "$($ErrorStatusPrefix)$($status)" # Use status from result for error message
-                            }
-                            $processedCount++
-                        }
-                        else {
-                            WriteLog "Warning: Received unexpected final job result format: $($result | Out-String)"
-                            $finalStatus = "$ErrorStatusPrefix Invalid Result Format"
-                            $processedCount++ # Count as processed to avoid loop issues
-                        }
-                        # Add the received result (even if format was unexpected, for logging)
-                        if ($null -ne $result) { $resultsCollection.Add($result) }
-                        break # Only process first result from this job
-                    }
-                }
-                else {
-                    # Job completed but had no data
-                    if ($completedJob.State -ne 'Failed') {
-                        WriteLog "Job $($completedJob.Id) completed with state '$($completedJob.State)' but had no data."
-                        # $finalIdentifier = ... logic to parse job name or map ID ...
-                        $finalStatus = "$ErrorStatusPrefix No Result Data"
-                        $processedCount++
-                    }
-                    # If it was 'Failed', it was handled above
-                }
-
-                # Update the specific item in the ListView with its FINAL status
-                if ($isUiMode) {
-                    # Use the new $isUiMode flag
-                    try {
-                        $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                                Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $finalIdentifier -StatusProperty $StatusProperty -StatusValue $finalStatus 
-                            })
-                    }
-                    catch {
-                        WriteLog "Error setting FINAL status for item '$finalIdentifier': $($_.Exception.Message)"
-                    }
-
-                    # Update overall progress after processing a job's results
-                    $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                            Update-OverallProgress -WindowObject $WindowObject -CompletedCount $processedCount -TotalCount $totalItems -StatusText "Processed $processedCount of $totalItems..." -ProgressBarName "progressBar" -StatusLabelName "txtStatus" 
-                        })
-                }
-                else {
-                    # Log final status if not in UI mode
-                    WriteLog "Final Status for '$finalIdentifier': $finalStatus (ResultCode: $finalResultCode)"
-                }
-
-                # Remove the completed/failed job from the list and clean it up
-                $jobs = $jobs | Where-Object { $_.Id -ne $completedJob.Id }
-                Remove-Job -Job $completedJob -Force -ErrorAction SilentlyContinue
-            } # End foreach completedJob
-        } # End if ($completedJobs)
-
-        # 3. Allow UI events to process and sleep briefly
-        if ($isUiMode) {
-            # Use the new $isUiMode flag
-            # Only sleep if jobs are still running AND the queue is empty (to avoid delaying UI updates)
-            if ($jobs.Count -gt 0 -and $progressQueue.IsEmpty) {
-                $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [action] { }) | Out-Null 
-                Start-Sleep -Milliseconds 100
-            }
-            elseif (-not $progressQueue.IsEmpty) {
-                # If queue has messages, process them immediately without sleeping
-                $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [action] { }) | Out-Null 
-            }
-        }
-        else {
-            # Non-UI mode, just sleep if jobs are running
-            if ($jobs.Count -gt 0) {
-                Start-Sleep -Milliseconds 100
-            }
-        }
-        # If jobs are done AND queue is empty, the loop condition will terminate
-
-    } # End while ($jobs.Count -gt 0 -or -not $progressQueue.IsEmpty)
-
-    # Final cleanup of any remaining jobs (shouldn't be necessary with this loop logic, but good practice)
-    if ($jobs.Count -gt 0) {
-        WriteLog "Cleaning up $($jobs.Count) remaining jobs after loop exit."
-        Remove-Job -Job $jobs -Force -ErrorAction SilentlyContinue
-    }
-
-    if ($isUiMode) {
-        # Use the new $isUiMode flag
-        WriteLog "Invoke-ParallelProcessing finished for ListView '$($ListViewControl.Name)'."
-        # Final overall progress update
-        $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                Update-OverallProgress -WindowObject $WindowObject -CompletedCount $processedCount -TotalCount $totalItems -StatusText "Processing complete. Processed $processedCount of $totalItems." -ProgressBarName "progressBar" -StatusLabelName "txtStatus" 
-            })
-    }
-    else {
-        WriteLog "Invoke-ParallelProcessing finished (non-UI mode). Processed $processedCount of $totalItems."
-    }
-        
-    # Return all collected final results from jobs
-    return $resultsCollection
-}
 # --------------------------------------------------------------------------
 # SECTION: UI Configuration
 # --------------------------------------------------------------------------
@@ -3992,32 +3200,4 @@ function Initialize-UIControls {
 # --------------------------------------------------------------------------
 
 # Export only the functions intended for public use by the UI script
-Export-ModuleMember -Function Get-UIConfig,
-Get-VMSwitchData,
-Get-WindowsSettingsDefaults,
-Get-AvailableWindowsReleases,
-Get-AvailableWindowsVersions,
-Get-GeneralDefaults,
-Get-DellDriversModelList,
-Get-HPDriversModelList,
-Get-MicrosoftDriversModelList,
-Get-LenovoDriversModelList,
-Get-USBDrives,
-Show-ModernFolderPicker,
-Test-WingetCLI,
-Install-WingetComponents,
-Confirm-WingetInstallationUI,
-Search-WingetPackagesPublic,
-Start-WingetAppDownloadTask,
-Start-CopyBYOApplicationTask,
-Save-MicrosoftDriversTask,
-Save-DellDriversTask,
-Save-HPDriversTask,
-Save-LenovoDriversTask,
-Invoke-ProgressUpdate,
-Invoke-ParallelProcessing,
-Update-ListViewItemStatus,
-Update-OverallProgress,
-Compress-DriverFolderToWim,
-Get-AvailableSkusForRelease,
-Initialize-UIControls
+Export-ModuleMember -Function *

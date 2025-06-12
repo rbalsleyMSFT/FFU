@@ -1,5 +1,5 @@
-# Import the common core module for logging
-Import-Module "$PSScriptRoot\FFU.Common.Core.psm1"
+# # Import the common core module for logging
+# Import-Module "$PSScriptRoot\FFU.Common.Core.psm1"
 
 function Get-Application {
     [CmdletBinding()]

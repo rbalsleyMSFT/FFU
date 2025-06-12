@@ -3,8 +3,8 @@
 
 #Requires -Modules Dism
 
-# Import the common core module for logging and process invocation
-Import-Module "$PSScriptRoot\FFU.Common.Core.psm1"
+# # Import the common core module for logging and process invocation
+# Import-Module "$PSScriptRoot\FFU.Common.Core.psm1"
 
 # --------------------------------------------------------------------------
 # SECTION: Driver Compression Function

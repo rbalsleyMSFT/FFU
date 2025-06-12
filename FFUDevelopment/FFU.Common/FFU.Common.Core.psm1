@@ -248,4 +248,4 @@ function Start-BitsTransferWithRetry {
     throw $lastError 
 }
 
-Export-ModuleMember -Function Set-CommonCoreLogPath, WriteLog, Invoke-Process, Start-BitsTransferWithRetry
+Export-ModuleMember -Function *

@@ -37,14 +37,14 @@ $UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 $script:uiState = [PSCustomObject]@{
     Window      = $null;
     Controls    = @{
-        featureCheckBoxes              = @{}; # Moved from script scope
-        UpdateInstallAppsBasedOnUpdates = $null # Placeholder for the scriptblock
+        featureCheckBoxes              = @{}; 
+        UpdateInstallAppsBasedOnUpdates = $null 
     };
     Data        = @{
         allDriverModels             = [System.Collections.Generic.List[PSCustomObject]]::new();
         appsScriptVariablesDataList = [System.Collections.Generic.List[PSCustomObject]]::new();
-        versionData                 = $null; # Will be initialized later
-        vmSwitchMap                 = @{}   # To store Hyper-V switch to IP mapping
+        versionData                 = $null; 
+        vmSwitchMap                 = @{}   
     };
     Flags       = @{
         installAppsForcedByUpdates      = $false;
@@ -65,9 +65,9 @@ if (Get-Module -Name 'FFUUI.Core' -ErrorAction SilentlyContinue) {
     Remove-Module -Name 'FFUUI.Core' -Force
 }
 # Import the common core module first for logging
-Import-Module "$PSScriptRoot\common\FFU.Common.Core.psm1"
+Import-Module "$PSScriptRoot\FFU.Common" -Force
 # Import the Core UI Logic Module
-Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
+Import-Module "$PSScriptRoot\FFUUI.Core" -Force
 
 # Set the log path for the common logger (for UI operations)
 Set-CommonCoreLogPath -Path $script:uiState.LogFilePath
@@ -92,8 +92,6 @@ if ($script:uiState.Flags.originalLongPathsValue -ne 1) {
     }
     catch {
         WriteLog "Error setting LongPathsEnabled registry key: $($_.Exception.Message). Long path issues might persist."
-        # Optionally show a warning to the user if this fails?
-        # [System.Windows.MessageBox]::Show("Could not enable long path support. Some operations might fail.", "Warning", "OK", "Warning")
     }
 }
 else {
@@ -245,23 +243,20 @@ function ConvertTo-StandardizedDriverModel {
 
     # Lenovo specific handling
     if ($Make -eq 'Lenovo') {
-        # RawDriverObject.Model is "ProductName (MachineType)" from Get-LenovoDriversModelList
-        # RawDriverObject.ProductName is "ProductName"
-        # RawDriverObject.MachineType is "MachineType"
-        $modelDisplay = $RawDriverObject.Model # This is already "ProductName (MachineType)"
+        $modelDisplay = $RawDriverObject.Model 
         $productName = $RawDriverObject.ProductName
         $machineType = $RawDriverObject.MachineType
-        $id = $RawDriverObject.MachineType # Use MachineType as a more specific ID for Lenovo backend operations if needed
+        $id = $RawDriverObject.MachineType 
     }
 
     return [PSCustomObject]@{
         IsSelected     = $false
         Make           = $Make
-        Model          = $modelDisplay # Primary display string, used as identifier in ListView
+        Model          = $modelDisplay 
         Link           = $link
-        Id             = $id            # Technical/unique identifier (e.g., MachineType for Lenovo)
-        ProductName    = $productName   # Specific for Lenovo
-        MachineType    = $machineType   # Specific for Lenovo
+        Id             = $id            
+        ProductName    = $productName   
+        MachineType    = $machineType   
         Version        = "" # Placeholder
         Type           = "" # Placeholder
         Size           = "" # Placeholder
@@ -353,7 +348,6 @@ function Filter-DriverModels {
     WriteLog "Filtering models with text: '$filterText'"
 
     # Filter the full list based on the Model property (case-insensitive)
-    # Use -match for potentially better performance or stick with -like
     # Ensure the result is always an array, even if only one item matches
     $filteredModels = @($State.Data.allDriverModels | Where-Object { $_.Model -like "*$filterText*" })
 
@@ -614,12 +608,6 @@ function Import-DriversJson {
     }
 }
 
-# Some default values
-$defaultFFUPrefix = "_FFU"
-
-# --------------------------------------------------------------------------
-
-
 #Remove old log file if found
 if (Test-Path -Path $script:uiState.LogFilePath) {
     Remove-item -Path $script:uiState.LogFilePath -Force
@@ -633,7 +621,7 @@ function Update-WindowsReleaseCombo {
         [psobject]$State
     )
 
-    if (-not $State.Controls.cmbWindowsRelease) { return } # Ensure combo exists
+    if (-not $State.Controls.cmbWindowsRelease) { return }
 
     $oldSelectedItemValue = $null
     if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
@@ -676,8 +664,8 @@ function Update-WindowsVersionCombo {
         [psobject]$State
     )
 
-    $combo = $State.Controls.cmbWindowsVersion # Use script-scoped variable
-    if (-not $combo) { return } # Ensure combo exists
+    $combo = $State.Controls.cmbWindowsVersion 
+    if (-not $combo) { return } 
 
     # Get available versions and default from the helper module
     $versionData = Get-AvailableWindowsVersions -SelectedRelease $selectedRelease -IsoPath $isoPath -State $State
@@ -691,7 +679,7 @@ function Update-WindowsVersionCombo {
         $combo.SelectedItem = $versionData.DefaultVersion
     }
     elseif ($versionData.Versions.Count -gt 0) {
-        $combo.SelectedIndex = 0 # Fallback to first item if default isn't valid
+        $combo.SelectedIndex = 0 
     }
     else {
         $combo.SelectedIndex = -1 # No items available
@@ -704,8 +692,6 @@ function Update-WindowsSkuCombo {
         [Parameter(Mandatory = $true)]
         [psobject]$State
     )
-    # This function no longer takes parameters.
-    # It derives the selected release value and display name from the cmbWindowsRelease ComboBox.
 
     $skuCombo = $State.Controls.cmbWindowsSKU
     if (-not $skuCombo) {
@@ -896,457 +882,6 @@ function Update-WingetVersionFields {
         })
 }
 
-
-# Add a function to create a sortable list view for Winget search results
-function Add-SortableColumn {
-    param(
-        [System.Windows.Controls.GridView]$gridView,
-        [string]$header,
-        [string]$binding,
-        [int]$width = 'Auto',
-        [bool]$isCheckbox = $false,
-        [System.Windows.HorizontalAlignment]$headerHorizontalAlignment = [System.Windows.HorizontalAlignment]::Stretch
-    )
-
-    $column = New-Object System.Windows.Controls.GridViewColumn
-    $commonPadding = New-Object System.Windows.Thickness(5, 2, 5, 2)
-
-    $headerControl = New-Object System.Windows.Controls.GridViewColumnHeader
-    $headerControl.Tag = $binding # Used for sorting
-
-    if ($isCheckbox) {
-        # Cell template for a column of checkboxes
-        $cellTemplate = New-Object System.Windows.DataTemplate
-        $gridFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Grid])
-
-        $checkBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
-        $checkBoxFactory.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding("IsSelected")))
-        $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-        $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-
-        $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
-                param($eventSourceLocal, $eventArgsLocal)
-                # Sync logic would be needed here if this column had a header checkbox
-            })
-        $gridFactory.AppendChild($checkBoxFactory)
-        $cellTemplate.VisualTree = $gridFactory
-        $column.CellTemplate = $cellTemplate
-        # $column.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Center # REMOVED
-    }
-    else {
-        # For regular text columns
-        $headerControl.HorizontalContentAlignment = $headerHorizontalAlignment
-        $headerControl.Content = $header
-
-        $headerTextElementFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
-        $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, $header)
-        $headerTextBlockPadding = New-Object System.Windows.Thickness($commonPadding.Left, $commonPadding.Top, $commonPadding.Right, $commonPadding.Bottom)
-        $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $headerTextBlockPadding)
-        $headerTextElementFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-
-        $headerDataTemplate = New-Object System.Windows.DataTemplate
-        $headerDataTemplate.VisualTree = $headerTextElementFactory
-        $headerControl.ContentTemplate = $headerDataTemplate
-
-        $cellTemplate = New-Object System.Windows.DataTemplate
-        $textBlockFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
-        $textBlockFactory.SetBinding([System.Windows.Controls.TextBlock]::TextProperty, (New-Object System.Windows.Data.Binding($binding)))
-        # Adjust left padding to 0 for cell text to align with header text
-        $cellTextBlockPadding = New-Object System.Windows.Thickness(0, $commonPadding.Top, $commonPadding.Right, $commonPadding.Bottom)
-        $textBlockFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $cellTextBlockPadding)
-        $textBlockFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Left)
-        $textBlockFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-
-        $cellTemplate.VisualTree = $textBlockFactory
-        $column.CellTemplate = $cellTemplate
-        # $column.HorizontalContentAlignment = $headerHorizontalAlignment # REMOVED
-    }
-
-    $column.Header = $headerControl
-
-    if ($width -ne 'Auto') {
-        $column.Width = $width
-    }
-
-    $gridView.Columns.Add($column)
-}
-
-# Function to sort ListView items
-function Invoke-ListViewSort {
-    param(
-        [System.Windows.Controls.ListView]$listView,
-        [string]$property
-    )
-
-    # Toggle sort direction if clicking the same column
-    if ($script:uiState.Flags.lastSortProperty -eq $property) {
-        $script:uiState.Flags.lastSortAscending = -not $script:uiState.Flags.lastSortAscending
-    }
-    else {
-        $script:uiState.Flags.lastSortAscending = $true
-    }
-    $script:uiState.Flags.lastSortProperty = $property
-
-    # Get items from ItemsSource or Items collection
-    $currentItemsSource = $listView.ItemsSource
-    $itemsToSort = @()
-    if ($null -ne $currentItemsSource) {
-        $itemsToSort = @($currentItemsSource)
-    }
-    else {
-        $itemsToSort = @($listView.Items)
-    }
-
-    if ($itemsToSort.Count -eq 0) {
-        return
-    }
-
-    $selectedItems = @($itemsToSort | Where-Object { $_.IsSelected })
-    $unselectedItems = @($itemsToSort | Where-Object { -not $_.IsSelected })
-
-    # Define the primary sort criterion
-    $primarySortDefinition = @{
-        Expression = {
-            $val = $_.$property
-            if ($null -eq $val) { '' } else { $val }
-        }
-        Ascending  = $script:uiState.Flags.lastSortAscending
-    }
-
-    $sortCriteria = [System.Collections.Generic.List[hashtable]]::new()
-    $sortCriteria.Add($primarySortDefinition)
-
-    # Determine secondary sort property based on the ListView
-    $secondarySortPropertyName = $null
-    if ($listView.Name -eq 'lstDriverModels') {
-        $secondarySortPropertyName = "Model"
-    }
-    elseif ($listView.Name -eq 'lstWingetResults') {
-        $secondarySortPropertyName = "Name"
-    }
-    elseif ($listView.Name -eq 'lstAppsScriptVariables') {
-        if ($property -eq "Key") {
-            $secondarySortPropertyName = "Value"
-        }
-        elseif ($property -eq "Value") {
-            $secondarySortPropertyName = "Key"
-        }
-        else {
-            # Default secondary sort for IsSelected or other properties
-            $secondarySortPropertyName = "Key"
-        }
-    }
-
-    if ($null -ne $secondarySortPropertyName -and $property -ne $secondarySortPropertyName) {
-        $itemsHaveSecondaryProperty = $false
-        if ($unselectedItems.Count -gt 0) {
-            if ($null -ne $unselectedItems[0].PSObject.Properties[$secondarySortPropertyName]) {
-                $itemsHaveSecondaryProperty = $true
-            }
-        }
-        elseif ($selectedItems.Count -gt 0) {
-            if ($null -ne $selectedItems[0].PSObject.Properties[$secondarySortPropertyName]) {
-                $itemsHaveSecondaryProperty = $true
-            }
-        }
-
-        if ($itemsHaveSecondaryProperty) {
-            # Create a scriptblock for the secondary sort expression dynamically
-            $expressionScriptBlock = [scriptblock]::Create("`$_.$secondarySortPropertyName")
-
-            $secondarySortDefinition = @{
-                Expression = {
-                    $val = Invoke-Command -ScriptBlock $expressionScriptBlock -ArgumentList $_
-                    if ($null -eq $val) { '' } else { $val }
-                }
-                Ascending  = $true # Secondary sort always ascending
-            }
-            $sortCriteria.Add($secondarySortDefinition)
-        }
-    }
-
-    $sortedUnselected = $unselectedItems | Sort-Object -Property $sortCriteria.ToArray()
-    # Ensure $sortedUnselected is not null before attempting to add its range
-    if ($null -eq $sortedUnselected) {
-        $sortedUnselected = @()
-    }
-
-    # Combine sorted items: selected items first, then sorted unselected items
-    $newSortedList = [System.Collections.Generic.List[object]]::new()
-    $newSortedList.AddRange($selectedItems)
-    $newSortedList.AddRange($sortedUnselected)
-
-    # Set the new sorted list as the ItemsSource
-    # Try nulling out ItemsSource first to force a more complete refresh
-    $listView.ItemsSource = $null
-    $listView.ItemsSource = $newSortedList.ToArray()
-}
-
-# Function to add a selectable GridViewColumn with a "Select All" header CheckBox
-function Add-SelectableGridViewColumn {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [System.Windows.Controls.ListView]$ListView,
-        [Parameter(Mandatory)]
-        [string]$HeaderCheckBoxScriptVariableName,
-        [Parameter(Mandatory)]
-        [double]$ColumnWidth,
-        [string]$IsSelectedPropertyName = "IsSelected"
-    )
-
-    # Ensure the ListView has a GridView
-    if ($null -eq $ListView.View -or -not ($ListView.View -is [System.Windows.Controls.GridView])) {
-        WriteLog "Add-SelectableGridViewColumn: ListView '$($ListView.Name)' does not have a GridView or View is null. Cannot add column."
-        # Optionally, create a new GridView if one doesn't exist, though XAML usually defines it.
-        # $ListView.View = New-Object System.Windows.Controls.GridView
-        return
-    }
-    $gridView = $ListView.View
-
-    # Create the "Select All" CheckBox for the header
-    $headerCheckBox = New-Object System.Windows.Controls.CheckBox
-    $headerCheckBox.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
-    # Store an object containing the IsSelectedPropertyName and the ListView's Name in the Tag
-    $headerTagObject = [PSCustomObject]@{
-        PropertyName = $IsSelectedPropertyName
-        ListViewName = $ListView.Name
-    }
-    $headerCheckBox.Tag = $headerTagObject
-    # Removed debug WriteLog for storing tag data
-
-    $headerCheckBox.Add_Checked({
-            param($senderCheckBoxLocal, $eventArgsCheckedLocal)
-
-            $tagData = $senderCheckBoxLocal.Tag
-            if ($null -eq $tagData -or -not $tagData.PSObject.Properties['PropertyName'] -or -not $tagData.PSObject.Properties['ListViewName']) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - Tag data on header checkbox is missing, null, or malformed. Aborting HeaderChecked event."
-                return
-            }
-
-            $localPropertyName = $tagData.PropertyName
-            $localListViewName = $tagData.ListViewName
-            # Removed debug WriteLog for HeaderChecked event fired
-
-            if ([string]::IsNullOrEmpty($localPropertyName)) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - PropertyName from Tag is null or empty in HeaderChecked event for ListView '$localListViewName'. Aborting."
-                return
-            }
-            if ([string]::IsNullOrEmpty($localListViewName)) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListViewName from Tag is null or empty in HeaderChecked event. Aborting."
-                return
-            }
-
-            $actualListView = $script:uiState.Controls[$localListViewName]
-            if ($null -eq $actualListView) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderChecked event. Aborting."
-                return
-            }
-            # Removed debug WriteLog for successfully finding ListView in HeaderChecked
-
-            $collectionToUpdate = $null
-            if ($null -ne $actualListView.ItemsSource) {
-                $collectionToUpdate = $actualListView.ItemsSource
-            }
-            elseif ($actualListView.HasItems) {
-                $collectionToUpdate = $actualListView.Items
-            }
-
-            if ($null -ne $collectionToUpdate) {
-                foreach ($item in $collectionToUpdate) {
-                    try {
-                        $item.($localPropertyName) = $true
-                    }
-                    catch {
-                        WriteLog "Error setting '$localPropertyName' to true for item in $($actualListView.Name): $($_.Exception.Message)"
-                    }
-                }
-                $actualListView.Items.Refresh()
-                WriteLog "Header checkbox for $($actualListView.Name) checked. All items' '$localPropertyName' set to true."
-            }
-        })
-    $headerCheckBox.Add_Unchecked({
-            param($senderCheckBoxLocal, $eventArgsUncheckedLocal)
-
-            $tagData = $senderCheckBoxLocal.Tag
-            if ($null -eq $tagData -or -not $tagData.PSObject.Properties['PropertyName'] -or -not $tagData.PSObject.Properties['ListViewName']) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - Tag data on header checkbox is missing, null, or malformed. Aborting HeaderUnchecked event."
-                return
-            }
-
-            $localPropertyName = $tagData.PropertyName
-            $localListViewName = $tagData.ListViewName
-            # Removed debug WriteLog for HeaderUnchecked event fired
-
-            if ([string]::IsNullOrEmpty($localPropertyName)) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - PropertyName from Tag is null or empty in HeaderUnchecked event for ListView '$localListViewName'. Aborting."
-                return
-            }
-            if ([string]::IsNullOrEmpty($localListViewName)) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListViewName from Tag is null or empty in HeaderUnchecked event. Aborting."
-                return
-            }
-
-            $actualListView = $script:uiState.Controls[$localListViewName]
-            if ($null -eq $actualListView) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - ListView control '$localListViewName' not found in window during HeaderUnchecked event. Aborting."
-                return
-            }
-            # Removed debug WriteLog for successfully finding ListView in HeaderUnchecked
-
-            # Only proceed if the uncheck was initiated by the user (IsChecked is explicitly false)
-            if ($senderCheckBoxLocal.IsChecked -eq $false) {
-                $collectionToUpdate = $null
-                if ($null -ne $actualListView.ItemsSource) {
-                    $collectionToUpdate = $actualListView.ItemsSource
-                }
-                elseif ($actualListView.HasItems) {
-                    $collectionToUpdate = $actualListView.Items
-                }
-
-                if ($null -ne $collectionToUpdate) {
-                    foreach ($item in $collectionToUpdate) {
-                        try {
-                            $item.($localPropertyName) = $false
-                        }
-                        catch {
-                            WriteLog "Error setting '$localPropertyName' to false for item in $($actualListView.Name): $($_.Exception.Message)"
-                        }
-                    }
-                    $actualListView.Items.Refresh()
-                    WriteLog "Header checkbox for $($actualListView.Name) unchecked by user. All items' '$localPropertyName' set to false."
-                }
-            }
-        })
-
-    # Store the header checkbox in a script-scoped variable
-    Set-Variable -Name $HeaderCheckBoxScriptVariableName -Value $headerCheckBox -Scope Script -Force
-    WriteLog "Add-SelectableGridViewColumn: Stored header checkbox in script variable '$HeaderCheckBoxScriptVariableName'."
-
-    # Create the GridViewColumn
-    $selectableColumn = New-Object System.Windows.Controls.GridViewColumn
-    $selectableColumn.Header = $headerCheckBox
-    $selectableColumn.Width = $ColumnWidth
-
-    # Create the CellTemplate for item CheckBoxes
-    $cellTemplate = New-Object System.Windows.DataTemplate
-
-    # Use a Border to ensure CheckBox centers and stretches
-    $borderFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Border])
-    $borderFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
-    $borderFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
-
-    $checkBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
-    $checkBoxFactory.SetBinding([System.Windows.Controls.CheckBox]::IsCheckedProperty, (New-Object System.Windows.Data.Binding($IsSelectedPropertyName)))
-    $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
-    $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
-
-    # Create an object to store both the header checkbox name and the ListView name
-    $tagObject = [PSCustomObject]@{
-        HeaderCheckboxName = $HeaderCheckBoxScriptVariableName
-        ListViewName       = $ListView.Name # Store the name of the ListView
-    }
-    # Store this object in the Tag of each item checkbox
-    $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::TagProperty, $tagObject)
-
-    # Add handler to update the header checkbox state when an item checkbox is clicked
-    $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
-            param($eventSourceLocal, $eventArgsLocal)
-
-            $itemCheckBox = $eventSourceLocal -as [System.Windows.Controls.CheckBox]
-            if ($null -eq $itemCheckBox) {
-                WriteLog "Add-SelectableGridViewColumn: CRITICAL - Event source in item checkbox click handler is not a CheckBox."
-                return
-            }
-
-            $tagData = $itemCheckBox.Tag
-            if ($null -eq $tagData -or -not $tagData.PSObject.Properties['HeaderCheckboxName'] -or -not $tagData.PSObject.Properties['ListViewName']) {
-                WriteLog "Add-SelectableGridViewColumn: Error - Tag data on itemCheckBox is missing or malformed."
-                return
-            }
-
-            $headerCheckboxNameFromTag = $tagData.HeaderCheckboxName
-            $listViewNameFromTag = $tagData.ListViewName
-
-            WriteLog "Add-SelectableGridViewColumn: Item Click. ListView: '$listViewNameFromTag', HeaderChkName: '$headerCheckboxNameFromTag'"
-
-            if ([string]::IsNullOrEmpty($headerCheckboxNameFromTag)) {
-                WriteLog "Add-SelectableGridViewColumn: Error - Header checkbox name from Tag is null or empty for ListView '$listViewNameFromTag'."
-                return
-            }
-            if ([string]::IsNullOrEmpty($listViewNameFromTag)) {
-                WriteLog "Add-SelectableGridViewColumn: Error - ListView name from Tag is null or empty."
-                return
-            }
-
-            # Retrieve the actual ListView control using its name stored in the Tag
-            $targetListView = $script:uiState.Controls[$listViewNameFromTag]
-            if ($null -eq $targetListView) {
-                WriteLog "Add-SelectableGridViewColumn: Error - Could not find ListView control named '$listViewNameFromTag'."
-                return
-            }
-
-            $headerChk = Get-Variable -Name $headerCheckboxNameFromTag -Scope Script -ValueOnly -ErrorAction SilentlyContinue
-            if ($null -ne $headerChk) {
-                Update-SelectAllHeaderCheckBoxState -ListView $targetListView -HeaderCheckBox $headerChk
-            }
-            else {
-                WriteLog "Add-SelectableGridViewColumn: Error - Could not retrieve script variable for header checkbox named '$headerCheckboxNameFromTag' for ListView '$listViewNameFromTag'."
-            }
-        })
-
-    $borderFactory.AppendChild($checkBoxFactory)
-    $cellTemplate.VisualTree = $borderFactory
-    $selectableColumn.CellTemplate = $cellTemplate
-
-    # Insert the new column at the beginning of the GridView
-    $gridView.Columns.Insert(0, $selectableColumn)
-    WriteLog "Add-SelectableGridViewColumn: Successfully added selectable column to '$($ListView.Name)'."
-}
-
-# Function to update the IsChecked state of a "Select All" header CheckBox
-function Update-SelectAllHeaderCheckBoxState {
-    param(
-        [Parameter(Mandatory)]
-        [System.Windows.Controls.ListView]$ListView,
-        [Parameter(Mandatory)]
-        [System.Windows.Controls.CheckBox]$HeaderCheckBox
-    )
-
-    $collectionToInspect = $null
-    if ($null -ne $ListView.ItemsSource) {
-        $collectionToInspect = @($ListView.ItemsSource)
-    }
-    elseif ($ListView.HasItems) {
-        # Check if Items collection has items and ItemsSource is null
-        $collectionToInspect = @($ListView.Items)
-    }
-
-    # If no items to inspect (either ItemsSource was null and Items was empty, or ItemsSource was empty)
-    if ($null -eq $collectionToInspect -or $collectionToInspect.Count -eq 0) {
-        $HeaderCheckBox.IsChecked = $false
-        return
-    }
-
-    $selectedCount = ($collectionToInspect | Where-Object { $_.IsSelected }).Count
-    $totalItemCount = $collectionToInspect.Count # Get the total count from the collection being inspected
-
-    if ($totalItemCount -eq 0) {
-        # Handle empty list case specifically
-        $HeaderCheckBox.IsChecked = $false
-    }
-    elseif ($selectedCount -eq $totalItemCount) {
-        $HeaderCheckBox.IsChecked = $true
-    }
-    elseif ($selectedCount -eq 0) {
-        $HeaderCheckBox.IsChecked = $false
-    }
-    else {
-        # Indeterminate state
-        $HeaderCheckBox.IsChecked = $null
-    }
-}
-
 # Function to update priorities sequentially in a ListView
 function Update-ListViewPriorities {
     param(
@@ -1459,11 +994,6 @@ function Update-CopyButtonState {
     }
 }
 
-# --------------------------------------------------------------------------
-# SECTION: Parallel Processing
-# --------------------------------------------------------------------------
-
-# --------------------------------------------------------------------------
 
 $window.Add_Loaded({
         # Pass the state object to all initialization functions
@@ -1492,7 +1022,7 @@ $window.Add_Loaded({
                 param($eventSource, $e)
                 $header = $e.OriginalSource
                 if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
-                    Invoke-ListViewSort -listView $script:uiState.Controls.lstDriverModels -property $header.Tag
+                    Invoke-ListViewSort -listView $script:uiState.Controls.lstDriverModels -property $header.Tag -State $script:uiState 
                 }
             }
         )
@@ -1543,7 +1073,7 @@ $window.Add_Loaded({
                     param($eventSource, $e)
                     $header = $e.OriginalSource
                     if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
-                        Invoke-ListViewSort -listView $script:uiState.Controls.lstAppsScriptVariables -property $header.Tag
+                        Invoke-ListViewSort -listView $script:uiState.Controls.lstAppsScriptVariables -property $header.Tag -State $script:uiState 
                     }
                 }
             )
@@ -2285,7 +1815,7 @@ $window.Add_Loaded({
                 param($eventSource, $e)
                 $header = $e.OriginalSource
                 if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
-                    Invoke-ListViewSort -listView $script:uiState.Controls.lstWingetResults -property $header.Tag
+                    Invoke-ListViewSort -listView $script:uiState.Controls.lstWingetResults -property $header.Tag -State $script:uiState 
                 }
             }
         )
@@ -2301,15 +1831,6 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtWingetSearch.Text = ""
                 if ($script:uiState.Controls.txtStatus) { $script:uiState.Controls.txtStatus.Text = "Cleared all applications from the list" }
             })
-        # --------------------------------------------------------------------------
-        # SECTION: Background Task Management (Using ForEach-Object -Parallel)
-        # --------------------------------------------------------------------------
-        # Modules (UI_Helpers, BackgroundTasks) and Scripts (WingetFunctions) are imported/dot-sourced
-        # directly into the main script scope. ForEach-Object -Parallel automatically handles
-        # module/variable availability in the parallel threads.
-        # UI updates are handled by calling helper functions directly on the main UI thread
-        # after the parallel processing completes.
-        # --------------------------------------------------------------------------
 
         $script:uiState.Controls.btnDownloadSelected.Add_Click({
                 param($buttonSender, $clickEventArgs)

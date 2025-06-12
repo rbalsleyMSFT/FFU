@@ -419,9 +419,7 @@ if (Get-Module -Name 'FFU.Common.Drivers' -ErrorAction SilentlyContinue) {
     Remove-Module -Name 'FFU.Common.Drivers' -Force
 }
 # Import the required modules
-Import-Module "$PSScriptRoot\common\FFU.Common.Core.psm1"
-Import-Module "$PSScriptRoot\common\FFU.Common.Winget.psm1" 
-Import-Module "$PSScriptRoot\common\FFU.Common.Drivers.psm1"
+Import-Module "$PSScriptRoot\common" -Force
 
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
