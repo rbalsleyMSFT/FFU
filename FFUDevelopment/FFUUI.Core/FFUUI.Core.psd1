@@ -71,7 +71,8 @@ NestedModules = @('FFUUI.Core.Shared.psm1',
                 'FFUUI.Core.Drivers.Dell.psm1',
                 'FFUUI.Core.Drivers.HP.psm1',
                 'FFUUI.Core.Drivers.Lenovo.psm1',
-                'FFUUI.Core.Drivers.Microsoft.psm1')
+                'FFUUI.Core.Drivers.Microsoft.psm1',
+                'FFUUI.Core.Winget.psm1')
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
 FunctionsToExport = '*'
