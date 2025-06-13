@@ -81,10 +81,44 @@ $script:skuList = @(
 )
 
 $script:allowedLangs = @(
-    'ar-sa', 'bg-bg', 'cs-cz', 'da-dk', 'de-de', 'el-gr', 'en-gb', 'en-us', 'es-es', 'es-mx', 'et-ee',
-    'fi-fi', 'fr-ca', 'fr-fr', 'he-il', 'hr-hr', 'hu-hu', 'it-it', 'ja-jp', 'ko-kr', 'lt-lt', 'lv-lv',
-    'nb-no', 'nl-nl', 'pl-pl', 'pt-br', 'pt-pt', 'ro-ro', 'ru-ru', 'sk-sk', 'sl-si', 'sr-latn-rs',
-    'sv-se', 'th-th', 'tr-tr', 'uk-ua', 'zh-cn', 'zh-tw'
+    'ar-sa',
+    'bg-bg',
+    'cs-cz',
+    'da-dk',
+    'de-de',
+    'el-gr',
+    'en-gb',
+    'en-us',
+    'es-es',
+    'es-mx',
+    'et-ee',
+    'fi-fi',
+    'fr-ca',
+    'fr-fr',
+    'he-il',
+    'hr-hr',
+    'hu-hu',
+    'it-it',
+    'ja-jp',
+    'ko-kr',
+    'lt-lt',
+    'lv-lv',
+    'nb-no',
+    'nl-nl',
+    'pl-pl',
+    'pt-br',
+    'pt-pt',
+    'ro-ro',
+    'ru-ru',
+    'sk-sk',
+    'sl-si',
+    'sr-latn-rs',
+    'sv-se',
+    'th-th',
+    'tr-tr',
+    'uk-ua',
+    'zh-cn',
+    'zh-tw'
 )
 
 $script:allWindowsReleases = @(
