@@ -13,9 +13,6 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 # --------------------------------------------------------------------------
 # $FFUDevelopmentPath = $PSScriptRoot
 $FFUDevelopmentPath = 'C:\FFUDevelopment' # hard coded for testing
-$AppsPath = "$FFUDevelopmentPath\Apps"
-$AppListJsonPath = "$AppsPath\AppList.json"
-$UserAppListJsonPath = "$AppsPath\UserAppList.json" # Define path for UserAppList.json
 
 # --- NEW: Central State Object ---
 $script:uiState = [PSCustomObject]@{
