@@ -67,6 +67,7 @@ RequiredModules = @('..\FFU.Common\FFU.Common.psd1')
 
 # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
 NestedModules = @('FFUUI.Core.Shared.psm1',
+                'FFUUI.Core.Applications.psm1',
                 'FFUUI.Core.Drivers.psm1',
                 'FFUUI.Core.Drivers.Dell.psm1',
                 'FFUUI.Core.Drivers.HP.psm1',

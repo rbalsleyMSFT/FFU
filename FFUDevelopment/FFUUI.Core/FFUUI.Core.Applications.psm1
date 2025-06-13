@@ -1,0 +1,364 @@
+# FFU UI Core Applications Module
+# Contains UI-layer logic for the "Bring Your Own Apps" and related features.
+
+# Function to update priorities sequentially in a ListView
+function Update-ListViewPriorities {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+
+    $currentPriority = 1
+    foreach ($item in $ListView.Items) {
+        if ($null -ne $item -and $item.PSObject.Properties['Priority']) {
+            $item.Priority = $currentPriority
+            $currentPriority++
+        }
+    }
+    $ListView.Items.Refresh()
+}
+
+# Function to move selected item to the top
+function Move-ListViewItemTop {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -gt 0) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Insert(0, $selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to move selected item up one position
+function Move-ListViewItemUp {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -gt 0) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Insert($currentIndex - 1, $selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to move selected item down one position
+function Move-ListViewItemDown {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -lt ($ListView.Items.Count - 1)) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Insert($currentIndex + 1, $selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to move selected item to the bottom
+function Move-ListViewItemBottom {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+
+    $currentIndex = $ListView.Items.IndexOf($selectedItem)
+    if ($currentIndex -lt ($ListView.Items.Count - 1)) {
+        $ListView.Items.RemoveAt($currentIndex)
+        $ListView.Items.Add($selectedItem)
+        $ListView.SelectedItem = $selectedItem
+        Update-ListViewPriorities -ListView $ListView
+    }
+}
+
+# Function to update the enabled state of the Copy Apps button
+function Update-CopyButtonState {
+    param(
+        [psobject]$State
+    )
+    $listView = $State.Controls.lstApplications
+    $copyButton = $State.Controls.btnCopyBYOApps
+    if ($listView -and $copyButton) {
+        $hasSource = $false
+        foreach ($item in $listView.Items) {
+            if ($null -ne $item -and $item.PSObject.Properties['Source'] -and -not [string]::IsNullOrWhiteSpace($item.Source)) {
+                $hasSource = $true
+                break
+            }
+        }
+        $copyButton.IsEnabled = $hasSource
+    }
+}
+
+# Function to remove application and reorder priorities
+function Remove-Application {
+    param(
+        $priority,
+        [psobject]$State
+    )
+
+    $listView = $State.Controls.lstApplications
+
+    # Remove the item with the specified priority
+    $itemToRemove = $listView.Items | Where-Object { $_.Priority -eq $priority } | Select-Object -First 1
+    if ($itemToRemove) {
+        $listView.Items.Remove($itemToRemove)
+        # Reorder priorities for remaining items
+        Update-ListViewPriorities -ListView $listView
+        # Update the Copy Apps button state
+        Update-CopyButtonState -State $State
+    }
+}
+
+# Function to save BYO applications to JSON
+function Save-BYOApplicationList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    $listView = $State.Controls.lstApplications
+    if (-not $listView -or $listView.Items.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("No applications to save.", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        return
+    }
+
+    try {
+        # Ensure items are sorted by current priority before saving
+        # Exclude CopyStatus when saving
+        $applications = $listView.Items | Sort-Object Priority | Select-Object Priority, Name, CommandLine, Arguments, Source
+        $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Force -Encoding UTF8
+        [System.Windows.MessageBox]::Show("Applications saved successfully to `"$Path`".", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    }
+    catch {
+        [System.Windows.MessageBox]::Show("Failed to save applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
+}
+
+# Function to load BYO applications from JSON
+function Import-BYOApplicationList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    if (-not (Test-Path $Path)) {
+        [System.Windows.MessageBox]::Show("Application list file not found at `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        return
+    }
+
+    try {
+        $applications = Get-Content -Path $Path -Raw | ConvertFrom-Json
+        $listView = $State.Controls.lstApplications
+        $listView.Items.Clear()
+
+        # Add items and sort by priority from the file
+        $sortedApps = $applications | Sort-Object Priority
+        foreach ($app in $sortedApps) {
+            # Ensure all properties exist, add CopyStatus
+            $appObject = [PSCustomObject]@{
+                Priority    = $app.Priority # Keep original priority for now
+                Name        = $app.Name
+                CommandLine = $app.CommandLine
+                Arguments   = if ($app.PSObject.Properties['Arguments']) { $app.Arguments } else { "" } # Handle missing Arguments
+                Source      = $app.Source
+                CopyStatus  = "" # Initialize CopyStatus
+            }
+            $listView.Items.Add($appObject)
+        }
+
+        # Reorder priorities sequentially after loading
+        Update-ListViewPriorities -ListView $listView
+        # Update the Copy Apps button state
+        Update-CopyButtonState -State $State
+
+        [System.Windows.MessageBox]::Show("Applications imported successfully from `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    }
+    catch {
+        [System.Windows.MessageBox]::Show("Failed to import applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+    }
+}
+
+# Function to copy a single BYO application (Modified for ForEach-Object -Parallel)
+function Start-CopyBYOApplicationTask {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [PSCustomObject]$ApplicationItemData, # Pass data, not the UI object
+        [Parameter(Mandatory)]
+        [string]$AppsPath, # Pass necessary path
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue # Add queue parameter
+        # REMOVED: UI-related parameters
+    )
+    
+    $priority = $ApplicationItemData.Priority
+    $appName = $ApplicationItemData.Name
+    $commandLine = $ApplicationItemData.CommandLine
+    $arguments = $ApplicationItemData.Arguments
+    $sourcePath = $ApplicationItemData.Source   
+    $status = "Starting..." # Initial local status
+    $success = $false
+    
+    # Initial status update
+    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+    
+    if ([string]::IsNullOrWhiteSpace($AppsPath)) {
+        $status = "Error: Apps Path not set"
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+        WriteLog "Copy error for $($appName): Apps Path not set."
+        return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($sourcePath)) {
+        $status = "No source specified"
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+        # This isn't an error, just nothing to do. Consider it success.
+        $success = $true
+        return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
+    }
+
+    if (-not (Test-Path -Path $sourcePath -PathType Container)) {
+        $status = "Error: Source path not found"
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+        WriteLog "Copy error for $($appName): Source path '$sourcePath' not found."
+        return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
+    }
+
+    $win32BasePath = Join-Path -Path $AppsPath -ChildPath "Win32"
+    $destinationPath = Join-Path -Path $win32BasePath -ChildPath $appName
+
+    try {
+        # Check destination
+        if (Test-Path -Path $destinationPath -PathType Container) {
+            $folderSize = (Get-ChildItem -Path $destinationPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+            if ($folderSize -gt 1MB) {
+                $status = "Already copied"
+                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+                WriteLog "Skipping copy for $($appName): Destination '$destinationPath' exists and has content."
+                $success = $true
+                return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
+            }
+            else {
+                WriteLog "Destination '$destinationPath' exists but is empty/small. Proceeding with copy."
+            }
+        }
+
+        # Ensure base directory exists
+        if (-not (Test-Path -Path $win32BasePath -PathType Container)) {
+            New-Item -Path $win32BasePath -ItemType Directory -Force | Out-Null
+            WriteLog "Created directory: $win32BasePath"
+        }
+
+        # Perform the copy
+        $status = "Copying..."
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+        WriteLog "Copying '$sourcePath' to '$destinationPath'..."
+        Copy-Item -Path $sourcePath -Destination $destinationPath -Recurse -Force -ErrorAction Stop
+        $status = "Copied successfully"
+        $success = $true
+        WriteLog "Successfully copied '$appName' to '$destinationPath'."
+
+        # ------------------------------------------------------------------
+        # Update (or create) UserAppList.json with the copied application
+        # ------------------------------------------------------------------
+        try {
+            WriteLog "Updating UserAppList.json for '$appName'..."
+            $userAppListPath = Join-Path -Path $AppsPath -ChildPath 'UserAppList.json'
+
+            # Build the new entry
+            $newEntry = [pscustomobject]@{
+                Priority    = $priority
+                Name        = $appName
+                CommandLine = $commandLine
+                Arguments   = $arguments
+                Source      = $sourcePath
+            }
+
+            # Load existing list if present, ensuring it's always an array
+            if (Test-Path -Path $userAppListPath) {
+                try {
+                    # Attempt to load and ensure it's an array
+                    $appList = @(Get-Content -Path $userAppListPath -Raw | ConvertFrom-Json -ErrorAction Stop)
+                }
+                catch {
+                    WriteLog "Warning: Could not parse '$userAppListPath' or it's not a valid JSON array. Initializing as empty array. Error: $($_.Exception.Message)"
+                    $appList = @() # Initialize as empty array on error
+                }
+            }
+            else {
+                $appList = @() # Initialize as empty array if file doesn't exist
+            }
+
+            # Ensure $appList is an array even if ConvertFrom-Json returned $null or a single object somehow
+            if ($null -eq $appList -or $appList -isnot [array]) {
+                # If it was a single object, wrap it in an array. Otherwise, start fresh.
+                $appList = if ($null -ne $appList) { @($appList) } else { @() }
+            }
+
+            # Skip adding if an entry with the same Name already exists
+            if (-not ($appList | Where-Object { $_.Name -eq $newEntry.Name })) {
+                # Now $appList is guaranteed to be an array, so += is safe
+                $appList += $newEntry
+                # Sort by Priority before saving
+                $sortedAppList = $appList | Sort-Object Priority
+                $sortedAppList | ConvertTo-Json -Depth 10 | Set-Content -Path $userAppListPath -Encoding UTF8
+                WriteLog "Added '$($newEntry.Name)' to '$userAppListPath'."
+            }
+            else {
+                WriteLog "'$appName' already exists in '$userAppListPath'."
+            }
+        }
+        catch {
+            WriteLog "Failed to update UserAppList.json for '$appName': $($_.Exception.Message)"
+        }
+
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        $status = "Error: $($errorMessage)"
+        WriteLog "Copy error for $($appName): $($errorMessage)"
+        $success = $false
+        # Enqueue error status
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+    }
+        
+    # Enqueue final success status if applicable
+    if ($success) {
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
+    }
+        
+    # Return the final status
+    return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
+}
+
+Export-ModuleMember -Function *
