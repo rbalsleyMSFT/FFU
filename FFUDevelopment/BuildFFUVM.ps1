@@ -419,7 +419,7 @@ if (Get-Module -Name 'FFU.Common.Drivers' -ErrorAction SilentlyContinue) {
     Remove-Module -Name 'FFU.Common.Drivers' -Force
 }
 # Import the required modules
-Import-Module "$PSScriptRoot\common" -Force
+Import-Module "$PSScriptRoot\FFU.Common" -Force
 
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
