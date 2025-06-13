@@ -66,13 +66,14 @@ RequiredModules = @('..\FFU.Common\FFU.Common.psd1')
 # FormatsToProcess = @()
 
 # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-NestedModules = @('FFUUI.Core.Shared.psm1',
-                'FFUUI.Core.Applications.psm1',
+NestedModules = @('FFUUI.Core.Applications.psm1',
+                'FFUUI.Core.Config.psm1',
                 'FFUUI.Core.Drivers.psm1',
                 'FFUUI.Core.Drivers.Dell.psm1',
                 'FFUUI.Core.Drivers.HP.psm1',
                 'FFUUI.Core.Drivers.Lenovo.psm1',
                 'FFUUI.Core.Drivers.Microsoft.psm1',
+                'FFUUI.Core.Shared.psm1',
                 'FFUUI.Core.WindowsSettings.psm1',
                 'FFUUI.Core.Winget.psm1')
 
