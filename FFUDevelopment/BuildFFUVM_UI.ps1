@@ -202,159 +202,6 @@ if (Test-Path -Path $script:uiState.LogFilePath) {
     Remove-item -Path $script:uiState.LogFilePath -Force
 }
 
-# Function to refresh the Windows Release ComboBox based on ISO path
-function Update-WindowsReleaseCombo {
-    param(
-        [string]$isoPath,
-        [Parameter(Mandatory = $true)]
-        [psobject]$State
-    )
-
-    if (-not $State.Controls.cmbWindowsRelease) { return }
-
-    $oldSelectedItemValue = $null
-    if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
-        $oldSelectedItemValue = $State.Controls.cmbWindowsRelease.SelectedItem.Value
-    }
-
-    # Get the appropriate list of releases from the helper module
-    $availableReleases = Get-AvailableWindowsReleases -IsoPath $isoPath -State $State
-
-    # Update the ComboBox ItemsSource
-    $State.Controls.cmbWindowsRelease.ItemsSource = $availableReleases
-    $State.Controls.cmbWindowsRelease.DisplayMemberPath = 'Display'
-    $State.Controls.cmbWindowsRelease.SelectedValuePath = 'Value'
-
-    # Try to re-select the previously selected item, or default
-    $itemToSelect = $availableReleases | Where-Object { $_.Value -eq $oldSelectedItemValue } | Select-Object -First 1
-    if ($null -ne $itemToSelect) {
-        $State.Controls.cmbWindowsRelease.SelectedItem = $itemToSelect
-    }
-    elseif ($availableReleases.Count -gt 0) {
-        # Default to Windows 11 if available, otherwise the first item
-        $defaultItem = $availableReleases | Where-Object { $_.Value -eq 11 } | Select-Object -First 1
-        if ($null -eq $defaultItem) {
-            $defaultItem = $availableReleases[0]
-        }
-        $State.Controls.cmbWindowsRelease.SelectedItem = $defaultItem
-    }
-    else {
-        # No items available (should not happen with current logic)
-        $State.Controls.cmbWindowsRelease.SelectedIndex = -1
-    }
-}
-
-# Function to refresh the Windows Version ComboBox based on selected release and ISO path
-function Update-WindowsVersionCombo {
-    param(
-        [int]$selectedRelease,
-        [string]$isoPath,
-        [Parameter(Mandatory = $true)]
-        [psobject]$State
-    )
-
-    $combo = $State.Controls.cmbWindowsVersion 
-    if (-not $combo) { return } 
-
-    # Get available versions and default from the helper module
-    $versionData = Get-AvailableWindowsVersions -SelectedRelease $selectedRelease -IsoPath $isoPath -State $State
-
-    # Update the ComboBox ItemsSource and IsEnabled state
-    $combo.ItemsSource = $versionData.Versions
-    $combo.IsEnabled = $versionData.IsEnabled
-
-    # Set the selected item
-    if ($null -ne $versionData.DefaultVersion -and $versionData.Versions -contains $versionData.DefaultVersion) {
-        $combo.SelectedItem = $versionData.DefaultVersion
-    }
-    elseif ($versionData.Versions.Count -gt 0) {
-        $combo.SelectedIndex = 0 
-    }
-    else {
-        $combo.SelectedIndex = -1 # No items available
-    }
-}
-
-# Function to refresh the Windows SKU ComboBox based on selected release
-function Update-WindowsSkuCombo {
-    param(
-        [Parameter(Mandatory = $true)]
-        [psobject]$State
-    )
-
-    $skuCombo = $State.Controls.cmbWindowsSKU
-    if (-not $skuCombo) {
-        WriteLog "Update-WindowsSkuCombo: SKU ComboBox not found."
-        return
-    }
-
-    $releaseCombo = $script:uiState.Controls.cmbWindowsRelease
-    if (-not $releaseCombo -or $null -eq $releaseCombo.SelectedItem) {
-        WriteLog "Update-WindowsSkuCombo: Windows Release ComboBox not found or no item selected. Cannot update SKUs."
-        $skuCombo.ItemsSource = @() # Clear SKUs
-        $skuCombo.SelectedIndex = -1
-        return
-    }
-
-    $selectedReleaseItem = $releaseCombo.SelectedItem
-    $selectedReleaseValue = $selectedReleaseItem.Value
-    $selectedReleaseDisplayName = $selectedReleaseItem.Display
-
-    $previousSelectedSku = $null
-    if ($null -ne $skuCombo.SelectedItem) {
-        $previousSelectedSku = $skuCombo.SelectedItem
-    }
-
-    WriteLog "Update-WindowsSkuCombo: Updating SKUs for Release Value '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
-    # Call Get-AvailableSkusForRelease with both Value and DisplayName
-    $availableSkus = Get-AvailableSkusForRelease -SelectedReleaseValue $selectedReleaseValue -SelectedReleaseDisplayName $selectedReleaseDisplayName -State $State
-
-    $skuCombo.ItemsSource = $availableSkus
-    WriteLog "Update-WindowsSkuCombo: Set ItemsSource with $($availableSkus.Count) SKUs."
-
-    # Attempt to re-select the previous SKU, or "Pro", or the first available
-    if ($null -ne $previousSelectedSku -and $availableSkus -contains $previousSelectedSku) {
-        $skuCombo.SelectedItem = $previousSelectedSku
-        WriteLog "Update-WindowsSkuCombo: Re-selected previous SKU '$previousSelectedSku'."
-    }
-    elseif ($availableSkus -contains "Pro") {
-        $skuCombo.SelectedItem = "Pro"
-        WriteLog "Update-WindowsSkuCombo: Selected default SKU 'Pro'."
-    }
-    elseif ($availableSkus.Count -gt 0) {
-        $skuCombo.SelectedIndex = 0
-        WriteLog "Update-WindowsSkuCombo: Selected first available SKU '$($skuCombo.SelectedItem)'."
-    }
-    else {
-        $skuCombo.SelectedIndex = -1 # No SKUs available
-        WriteLog "Update-WindowsSkuCombo: No SKUs available for Release '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
-    }
-}
-
-# Combined function to refresh both Release and Version combos
-function Refresh-WindowsSettingsCombos {
-    param(
-        [string]$isoPath,
-        [Parameter(Mandatory = $true)]
-        [psobject]$State
-    )
-
-    # Update Release combo first
-    Update-WindowsReleaseCombo -isoPath $isoPath -State $State
-
-    # Get the newly selected release value
-    $selectedReleaseValue = 11 # Default to 11 if selection is null
-    if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
-        $selectedReleaseValue = $State.Controls.cmbWindowsRelease.SelectedItem.Value
-    }
-
-    # Update Version combo based on the selected release
-    Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath -State $State
-
-    # Update SKU combo based on the selected release (now derives values internally)
-    Update-WindowsSkuCombo -State $State
-}
-
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName PresentationCore, PresentationFramework
 Add-Type -AssemblyName System.Windows.Forms
@@ -369,69 +216,6 @@ $xamlString = Get-Content $xamlPath -Raw
 $reader = New-Object System.IO.StringReader($xamlString)
 $xmlReader = [System.Xml.XmlReader]::Create($reader)
 $window = [Windows.Markup.XamlReader]::Load($xmlReader)
-
-# Dynamic checkboxes for optional features in Windows Settings tab
-function UpdateOptionalFeaturesString {
-    param(
-        [psobject]$State
-    )
-    $checkedFeatures = @()
-    foreach ($entry in $State.Controls.featureCheckBoxes.GetEnumerator()) {
-        if ($entry.Value.IsChecked) { $checkedFeatures += $entry.Key }
-    }
-    $State.Controls.txtOptionalFeatures.Text = $checkedFeatures -join ";"
-}
-function BuildFeaturesGrid {
-    param (
-        [Parameter(Mandatory)]
-        [System.Windows.FrameworkElement]$parent,
-        [Parameter(Mandatory)]
-        [array]$allowedFeatures # Pass the list of features explicitly
-    )
-    $parent.Children.Clear()
-    $script:uiState.Controls.featureCheckBoxes.Clear() # Clear the tracking hashtable
-
-    $sortedFeatures = $allowedFeatures | Sort-Object
-    $rows = 10 # Define number of rows for layout
-    $columns = [math]::Ceiling($sortedFeatures.Count / $rows)
-
-    $featuresGrid = New-Object System.Windows.Controls.Grid
-    $featuresGrid.Margin = "0,5,0,5"
-    $featuresGrid.ShowGridLines = $false
-
-    # Define grid rows
-    for ($r = 0; $r -lt $rows; $r++) {
-        $rowDef = New-Object System.Windows.Controls.RowDefinition
-        $rowDef.Height = [System.Windows.GridLength]::Auto
-        $featuresGrid.RowDefinitions.Add($rowDef) | Out-Null
-    }
-    # Define grid columns
-    for ($c = 0; $c -lt $columns; $c++) {
-        $colDef = New-Object System.Windows.Controls.ColumnDefinition
-        $colDef.Width = [System.Windows.GridLength]::Auto
-        $featuresGrid.ColumnDefinitions.Add($colDef) | Out-Null
-    }
-
-    # Populate grid with checkboxes
-    for ($i = 0; $i -lt $sortedFeatures.Count; $i++) {
-        $featureName = $sortedFeatures[$i]
-        $colIndex = [int]([math]::Floor($i / $rows))
-        $rowIndex = $i % $rows
-
-        $chk = New-Object System.Windows.Controls.CheckBox
-        $chk.Content = $featureName
-        $chk.Margin = "5"
-        $chk.Add_Checked({ UpdateOptionalFeaturesString -State $script:uiState })
-        $chk.Add_Unchecked({ UpdateOptionalFeaturesString -State $script:uiState })
-
-        $script:uiState.Controls.featureCheckBoxes[$featureName] = $chk # Track the checkbox
-
-        [System.Windows.Controls.Grid]::SetRow($chk, $rowIndex)
-        [System.Windows.Controls.Grid]::SetColumn($chk, $colIndex)
-        $featuresGrid.Children.Add($chk) | Out-Null
-    }
-    $parent.Children.Add($featuresGrid) | Out-Null
-}
 
 # -----------------------------------------------------------------------------
 # SECTION: Winget UI
@@ -474,6 +258,7 @@ function Update-WingetVersionFields {
 $window.Add_Loaded({
         # Pass the state object to all initialization functions
         $script:uiState.Window = $window
+        $window.Tag = $script:uiState # Store state in the window's Tag property
         Initialize-UIControls -State $script:uiState
         
         # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
@@ -1047,7 +832,7 @@ $window.Add_Loaded({
             })
 
         # Build dynamic multi-column checkboxes for optional features (Keep existing logic)
-        if ($script:uiState.Controls.featuresPanel) { BuildFeaturesGrid -parent $script:uiState.Controls.featuresPanel -allowedFeatures $script:uiState.Defaults.windowsSettingsDefaults.AllowedFeatures }
+        if ($script:uiState.Controls.featuresPanel) { BuildFeaturesGrid -parent $script:uiState.Controls.featuresPanel -allowedFeatures $script:uiState.Defaults.windowsSettingsDefaults.AllowedFeatures -State $script:uiState }
 
         # Updates/InstallApps interplay (Keep existing logic)
         $script:uiState.Flags.installAppsForcedByUpdates = $false
