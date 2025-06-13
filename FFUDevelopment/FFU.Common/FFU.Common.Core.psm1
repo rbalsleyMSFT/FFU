@@ -1,8 +1,6 @@
 # FFU.Common.Core.psm1
 # Contains common core functions like logging and process invocation.
 
-#Requires -Modules BitsTransfer
-
 # Script-scoped variable for the log file path
 $script:CommonCoreLogFilePath = $null
 # Mutex for log file access

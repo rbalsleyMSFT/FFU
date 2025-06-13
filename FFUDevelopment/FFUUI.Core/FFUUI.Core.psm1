@@ -1,8 +1,6 @@
 # FFU UI Core Logic Module
 # Contains non-UI specific helper functions, data retrieval, and core processing logic.
 
-#Requires -Modules BitsTransfer 
-
 # --------------------------------------------------------------------------
 # SECTION: Module Variables (Static Data & State)
 # --------------------------------------------------------------------------

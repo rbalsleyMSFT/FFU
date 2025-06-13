@@ -1,11 +1,6 @@
 # FFU Common Drivers Module
 # Contains shared functions related to driver handling.
 
-#Requires -Modules Dism
-
-# # Import the common core module for logging and process invocation
-# Import-Module "$PSScriptRoot\FFU.Common.Core.psm1"
-
 # --------------------------------------------------------------------------
 # SECTION: Driver Compression Function
 # --------------------------------------------------------------------------
