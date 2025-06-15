@@ -375,16 +375,14 @@ $window.Add_Loaded({
         $window.FindName('chkCopyDrivers').IsChecked = $script:uiState.Defaults.generalDefaults.CopyDrivers
         $window.FindName('chkCopyPEDrivers').IsChecked = $script:uiState.Defaults.generalDefaults.CopyPEDrivers
 
-        # Drivers tab UI logic (Keep existing logic)
-        $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo') # Added Lenovo
+        # Drivers tab UI logic
+        $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo') 
         foreach ($m in $makeList) { [void]$script:uiState.Controls.cmbMake.Items.Add($m) }
         if ($script:uiState.Controls.cmbMake.Items.Count -gt 0) { $script:uiState.Controls.cmbMake.SelectedIndex = 0 }
         $script:uiState.Controls.chkDownloadDrivers.Add_Checked({
                 $script:uiState.Controls.cmbMake.Visibility = 'Visible'
                 $script:uiState.Controls.btnGetModels.Visibility = 'Visible'
                 $script:uiState.Controls.spMakeSection.Visibility = 'Visible'
-                # Make the model filter, list, and action buttons visible immediately
-                # This allows users to import a Drivers.json without first clicking "Get Models"
                 $script:uiState.Controls.spModelFilterSection.Visibility = 'Visible'
                 $script:uiState.Controls.lstDriverModels.Visibility = 'Visible'
                 $script:uiState.Controls.spDriverActionButtons.Visibility = 'Visible'
@@ -409,7 +407,7 @@ $window.Add_Loaded({
                 $selectedMake = $script:uiState.Controls.cmbMake.SelectedItem
                 $script:uiState.Controls.txtStatus.Text = "Getting models for $selectedMake..."
                 $window.Cursor = [System.Windows.Input.Cursors]::Wait
-                $this.IsEnabled = $false # Disable the button
+                $this.IsEnabled = $false
 
                 try {
                     # Get previously selected models from the master list ($script:uiState.Data.allDriverModels)
