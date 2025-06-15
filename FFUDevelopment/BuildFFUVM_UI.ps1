@@ -1508,7 +1508,7 @@ $btnLoadConfig.Add_Click({
                 $lstAppsScriptVars = $script:uiState.Controls.lstAppsScriptVariables
                 $chkDefineAppsScriptVars = $script:uiState.Controls.chkDefineAppsScriptVariables
                 $appsScriptVarsPanel = $script:uiState.Controls.appsScriptVariablesPanel
-                $script:uiState.Data.appsScriptVariablesDataList.Clear() # Clear the backing data list
+                $script:uiState.Data.appsScriptVariablesDataList.Clear()
 
                 if ($appsScriptVarsKeyExists -and $null -ne $configContent.AppsScriptVariables -and $configContent.AppsScriptVariables -is [System.Management.Automation.PSCustomObject]) {
                     WriteLog "LoadConfig: Processing AppsScriptVariables from config."
