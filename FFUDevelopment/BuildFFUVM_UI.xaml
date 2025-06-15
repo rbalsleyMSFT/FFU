@@ -1,13 +1,6 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:sys="clr-namespace:System;assembly=mscorlib" Title="FFU Builder UI">
-    <!-- 
-      ─────────────────────────────────────────────────────────────────
-       1) Window.Resources:
-          A minimal Expander style with no highlight/hover states 
-          and arrow text toggling (▼ to ▲).
-      ─────────────────────────────────────────────────────────────────
-    -->
     <Window.Resources>
         <Style x:Key="MinimalExpanderNoHighlightStyle" TargetType="Expander">
             <Setter Property="Template">
