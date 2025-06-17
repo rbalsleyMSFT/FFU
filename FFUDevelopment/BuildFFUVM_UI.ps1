@@ -147,8 +147,12 @@ $window.Add_Loaded({
 
         Initialize-DynamicUIElements -State $script:uiState
 
+        Initialize-VMSwitchData -State $script:uiState
+
+        Register-EventHandlers -State $script:uiState
+
         # Get Windows Settings UI using data from helper module
-        Get-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
+        Get-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState
 
         $script:uiState.Controls.txtISOPath.Add_TextChanged({
                 Get-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState
@@ -168,49 +172,6 @@ $window.Add_Loaded({
                 $ofd.Filter = "ISO files (*.iso)|*.iso"
                 $ofd.Title = "Select Windows ISO File"
                 if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:uiState.Controls.txtISOPath.Text = $ofd.FileName }
-            })
-
-        
-        # Hyper-V Settings: Populate VM Switch ComboBox (Keep existing logic)
-        $vmSwitchData = Get-VMSwitchData
-        $script:uiState.Data.vmSwitchMap = $vmSwitchData.SwitchMap
-        $script:uiState.Controls.cmbVMSwitchName.Items.Clear()
-        foreach ($switchName in $vmSwitchData.SwitchNames) {
-            $script:uiState.Controls.cmbVMSwitchName.Items.Add($switchName) | Out-Null
-        }
-        $script:uiState.Controls.cmbVMSwitchName.Items.Add('Other') | Out-Null
-        if ($script:uiState.Controls.cmbVMSwitchName.Items.Count -gt 1) {
-            $script:uiState.Controls.cmbVMSwitchName.SelectedIndex = 0
-            $firstSwitch = $script:uiState.Controls.cmbVMSwitchName.SelectedItem
-            if ($script:uiState.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
-                $script:uiState.Controls.txtVMHostIPAddress.Text = $script:uiState.Data.vmSwitchMap[$firstSwitch]
-            }
-            else {
-                $script:uiState.Controls.txtVMHostIPAddress.Text = $script:uiState.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found
-            }
-            $script:uiState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-        }
-        else {
-            $script:uiState.Controls.cmbVMSwitchName.SelectedItem = 'Other'
-            $script:uiState.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-            $script:uiState.Controls.txtVMHostIPAddress.Text = $script:uiState.Defaults.generalDefaults.VMHostIPAddress # Use default
-        }
-        $script:uiState.Controls.cmbVMSwitchName.Add_SelectionChanged({
-                param($eventSource, $selectionChangedEventArgs)
-                $selectedItem = $eventSource.SelectedItem
-                if ($selectedItem -eq 'Other') {
-                    $script:uiState.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-                    $script:uiState.Controls.txtVMHostIPAddress.Text = '' # Clear IP for custom
-                }
-                else {
-                    $script:uiState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-                    if ($script:uiState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
-                        $script:uiState.Controls.txtVMHostIPAddress.Text = $script:uiState.Data.vmSwitchMap[$selectedItem]
-                    }
-                    else {
-                        $script:uiState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found in map
-                    }
-                }
             })
 
         # Drivers tab UI logic

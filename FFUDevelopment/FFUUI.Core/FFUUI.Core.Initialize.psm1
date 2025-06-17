@@ -150,7 +150,7 @@ function Initialize-UIControls {
 function Initialize-UIDefaults {
     param([PSCustomObject]$State)
     WriteLog "Initializing UI defaults..."
-    
+
     # Get default values from helper functions
     $State.Defaults.windowsSettingsDefaults = Get-WindowsSettingsDefaults
     $State.Defaults.generalDefaults = Get-GeneralDefaults -FFUDevelopmentPath $State.FFUDevelopmentPath
@@ -371,4 +371,64 @@ function Initialize-DynamicUIElements {
     }
 }
 
-Export-ModuleMember -Function Initialize-UIControls, Initialize-DynamicUIElements, Initialize-UIDefaults
+function Initialize-VMSwitchData {
+    param([PSCustomObject]$State)
+
+    WriteLog "Initializing VM Switch data..."
+    
+    # Hyper-V Settings: Populate VM Switch ComboBox
+    $vmSwitchData = Get-VMSwitchData
+    $State.Data.vmSwitchMap = $vmSwitchData.SwitchMap
+    $State.Controls.cmbVMSwitchName.Items.Clear()
+    foreach ($switchName in $vmSwitchData.SwitchNames) {
+        $State.Controls.cmbVMSwitchName.Items.Add($switchName) | Out-Null
+    }
+    $State.Controls.cmbVMSwitchName.Items.Add('Other') | Out-Null
+    if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
+        $State.Controls.cmbVMSwitchName.SelectedIndex = 0
+        $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
+        if ($State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
+            $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
+        }
+        else {
+            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found
+        }
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+    }
+    else {
+        $State.Controls.cmbVMSwitchName.SelectedItem = 'Other'
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
+        $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default
+    }
+}
+
+function Register-EventHandlers {
+    param([PSCustomObject]$State)
+    WriteLog "Registering UI event handlers..."
+
+    # Hyper-V VM Switch Selection Changed Event
+    # This event handler updates the IP address field based on the selected VM switch
+    $State.Controls.cmbVMSwitchName.Add_SelectionChanged({
+            param($eventSource, $selectionChangedEventArgs)
+            # The state object is available via the parent window's Tag property
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $selectedItem = $eventSource.SelectedItem
+            if ($selectedItem -eq 'Other') {
+                $localState.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
+                $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP for custom
+            }
+            else {
+                $localState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+                if ($localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
+                    $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.vmSwitchMap[$selectedItem]
+                }
+                else {
+                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found in map
+                }
+            }
+        })
+}
+
+Export-ModuleMember -Function *

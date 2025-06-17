@@ -567,4 +567,4 @@ function BuildFeaturesGrid {
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 
-Export-ModuleMember -Function Get-WindowsSettingsDefaults, Get-AvailableWindowsReleases, Get-AvailableWindowsVersions, Get-AvailableSkusForRelease, Update-WindowsReleaseCombo, Update-WindowsVersionCombo, Update-WindowsSkuCombo, Initialize-WindowsSettingsCombos, UpdateOptionalFeaturesString, BuildFeaturesGrid
+Export-ModuleMember -Function *
