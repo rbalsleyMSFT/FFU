@@ -112,7 +112,7 @@ function ConvertTo-StandardizedDriverModel {
 }
 
 # Function to filter the driver model list based on text input
-function Filter-DriverModels {
+function Search-DriverModels {
     param(
         [string]$filterText,
         [Parameter(Mandatory = $true)]
@@ -120,7 +120,7 @@ function Filter-DriverModels {
     )
     # Check if UI elements and the full list are available
     if ($null -eq $State.Controls.lstDriverModels -or $null -eq $State.Data.allDriverModels) {
-        WriteLog "Filter-DriverModels: ListView or full model list not available."
+        WriteLog "Search-DriverModels: ListView or full model list not available."
         return
     }
 
@@ -371,7 +371,7 @@ function Import-DriversJson {
 
             $State.Data.allDriverModels = $State.Data.allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
 
-            Filter-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $script:uiState
+            Search-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $script:uiState
 
             $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
             [System.Windows.MessageBox]::Show($message, "Import Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)

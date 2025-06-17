@@ -18,7 +18,7 @@ $FFUDevelopmentPath = 'C:\FFUDevelopment' # hard coded for testing
 $script:uiState = [PSCustomObject]@{
     Window      = $null;
     Controls    = @{
-        featureCheckBoxes              = @{}; 
+        featureCheckBoxes               = @{}; 
         UpdateInstallAppsBasedOnUpdates = $null 
     };
     Data        = @{
@@ -28,11 +28,11 @@ $script:uiState = [PSCustomObject]@{
         vmSwitchMap                 = @{}   
     };
     Flags       = @{
-        installAppsForcedByUpdates      = $false;
+        installAppsForcedByUpdates        = $false;
         prevInstallAppsStateBeforeUpdates = $null;
-        installAppsCheckedByOffice      = $false;
-        lastSortProperty                = $null;
-        lastSortAscending               = $true
+        installAppsCheckedByOffice        = $false;
+        lastSortProperty                  = $null;
+        lastSortAscending                 = $true
     };
     Defaults    = @{};
     LogFilePath = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
@@ -151,8 +151,10 @@ $window.Add_Loaded({
         Initialize-DynamicUIElements -State $script:uiState
 
         # Initialize Windows Settings UI using data from helper module
-        Refresh-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
-        $script:uiState.Controls.txtISOPath.Add_TextChanged({ Refresh-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState })
+        Initialize-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
+        $script:uiState.Controls.txtISOPath.Add_TextChanged({ 
+                Initialize-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState 
+            })
         $script:uiState.Controls.cmbWindowsRelease.Add_SelectionChanged({
                 $selectedReleaseValue = 11 # Default if null
                 if ($null -ne $script:uiState.Controls.cmbWindowsRelease.SelectedItem) {
@@ -410,7 +412,7 @@ $window.Add_Loaded({
             })
         $script:uiState.Controls.txtModelFilter.Add_TextChanged({
                 param($sourceObject, $textChangedEventArgs)
-                Filter-DriverModels -filterText $script:uiState.Controls.txtModelFilter.Text -State $script:uiState
+                Search-DriverModels -filterText $script:uiState.Controls.txtModelFilter.Text -State $script:uiState
             })
         $script:uiState.Controls.btnDownloadSelectedDrivers.Add_Click({
                 param($buttonSender, $clickEventArgs)
@@ -574,8 +576,12 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtModelFilter.Text = ""
                 $script:uiState.Controls.txtStatus.Text = "Driver list cleared."
             })
-        $script:uiState.Controls.btnSaveDriversJson.Add_Click({ Save-DriversJson -State $script:uiState })
-        $script:uiState.Controls.btnImportDriversJson.Add_Click({ Import-DriversJson -State $script:uiState })
+        $script:uiState.Controls.btnSaveDriversJson.Add_Click({ 
+                Save-DriversJson -State $script:uiState 
+            })
+        $script:uiState.Controls.btnImportDriversJson.Add_Click({ 
+                Import-DriversJson -State $script:uiState 
+            })
 
         # Office interplay (Keep existing logic)
         $script:uiState.Flags.installAppsCheckedByOffice = $false
@@ -658,22 +664,46 @@ $window.Add_Loaded({
                 }
             }
         }
-        $script:uiState.Controls.chkUpdateLatestDefender.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateLatestDefender.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateEdge.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateEdge.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateOneDrive.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateOneDrive.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Checked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
-        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Unchecked({ & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState })
+        $script:uiState.Controls.chkUpdateLatestDefender.Add_Checked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateLatestDefender.Add_Unchecked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateEdge.Add_Checked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateEdge.Add_Unchecked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateOneDrive.Add_Checked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateOneDrive.Add_Unchecked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Checked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
+        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Unchecked({ 
+                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
+            })
         # Initial check for Updates/InstallApps state
         & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState
 
         # CU interplay (Keep existing logic)
-        $script:uiState.Controls.chkLatestCU.Add_Checked({ $script:uiState.Controls.chkPreviewCU.IsEnabled = $false })
-        $script:uiState.Controls.chkLatestCU.Add_Unchecked({ $script:uiState.Controls.chkPreviewCU.IsEnabled = $true })
-        $script:uiState.Controls.chkPreviewCU.Add_Checked({ $script:uiState.Controls.chkLatestCU.IsEnabled = $false })
-        $script:uiState.Controls.chkPreviewCU.Add_Unchecked({ $script:uiState.Controls.chkLatestCU.IsEnabled = $true })
+        $script:uiState.Controls.chkLatestCU.Add_Checked({ 
+                $script:uiState.Controls.chkPreviewCU.IsEnabled = $false 
+            })
+        $script:uiState.Controls.chkLatestCU.Add_Unchecked({ 
+                $script:uiState.Controls.chkPreviewCU.IsEnabled = $true 
+            })
+        $script:uiState.Controls.chkPreviewCU.Add_Checked({ 
+                $script:uiState.Controls.chkLatestCU.IsEnabled = $false 
+            })
+        $script:uiState.Controls.chkPreviewCU.Add_Unchecked({ 
+                $script:uiState.Controls.chkLatestCU.IsEnabled = $true 
+            })
         # Set initial state based on defaults
         $script:uiState.Controls.chkPreviewCU.IsEnabled = -not $script:uiState.Controls.chkLatestCU.IsChecked
         $script:uiState.Controls.chkLatestCU.IsEnabled = -not $script:uiState.Controls.chkPreviewCU.IsChecked
@@ -727,14 +757,18 @@ $window.Add_Loaded({
                 $script:uiState.Controls.lstUSBDrives.Items.Clear()
                 $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $false
             })
-        $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Checked({ $script:uiState.Controls.usbSelectionPanel.Visibility = 'Visible' })
+        $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Checked({ 
+                $script:uiState.Controls.usbSelectionPanel.Visibility = 'Visible' 
+            })
         $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Unchecked({
                 $script:uiState.Controls.usbSelectionPanel.Visibility = 'Collapsed'
                 $script:uiState.Controls.lstUSBDrives.Items.Clear()
                 $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $false
             })
         $script:uiState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $script:uiState.Controls.chkBuildUSBDriveEnable.IsChecked
-        $script:uiState.Controls.chkAllowExternalHardDiskMedia.Add_Checked({ $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $true })
+        $script:uiState.Controls.chkAllowExternalHardDiskMedia.Add_Checked({ 
+                $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $true 
+            })
         $script:uiState.Controls.chkAllowExternalHardDiskMedia.Add_Unchecked({
                 $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $false
                 $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $false
@@ -785,7 +819,9 @@ $window.Add_Loaded({
                 $ofd.CheckFileExists = $false
                 if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:uiState.Controls.txtAppListJsonPath.Text = $ofd.FileName }
             })
-        $script:uiState.Controls.chkBringYourOwnApps.Add_Checked({ $script:uiState.Controls.byoApplicationPanel.Visibility = 'Visible' })
+        $script:uiState.Controls.chkBringYourOwnApps.Add_Checked({ 
+                $script:uiState.Controls.byoApplicationPanel.Visibility = 'Visible' 
+            })
         $script:uiState.Controls.chkBringYourOwnApps.Add_Unchecked({
                 $script:uiState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
                 # Clear fields when hiding
@@ -794,7 +830,9 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtAppArguments.Text = ''
                 $script:uiState.Controls.txtAppSource.Text = ''
             })
-        $script:uiState.Controls.chkInstallWingetApps.Add_Checked({ $script:uiState.Controls.wingetPanel.Visibility = 'Visible' })
+        $script:uiState.Controls.chkInstallWingetApps.Add_Checked({ 
+            $script:uiState.Controls.wingetPanel.Visibility = 'Visible' 
+            })
         $script:uiState.Controls.chkInstallWingetApps.Add_Unchecked({
                 $script:uiState.Controls.wingetPanel.Visibility = 'Collapsed'
                 $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Hide search when unchecked
@@ -846,17 +884,27 @@ $window.Add_Loaded({
                     $window.Cursor = $null
                 }
             })
-        $script:uiState.Controls.btnWingetSearch.Add_Click({ Search-WingetApps -State $script:uiState })
+        $script:uiState.Controls.btnWingetSearch.Add_Click({ 
+            Search-WingetApps -State $script:uiState 
+        })
         $script:uiState.Controls.txtWingetSearch.Add_KeyDown({
                 param($eventSrc, $keyEvent)
-                if ($keyEvent.Key -eq 'Return') { Search-WingetApps -State $script:uiState; $keyEvent.Handled = $true }
+                if ($keyEvent.Key -eq 'Return') { 
+                    Search-WingetApps -State $script:uiState; $keyEvent.Handled = $true 
+                }
             })
-        $script:uiState.Controls.btnSaveWingetList.Add_Click({ Save-WingetList -State $script:uiState })
-        $script:uiState.Controls.btnImportWingetList.Add_Click({ Import-WingetList -State $script:uiState })
+        $script:uiState.Controls.btnSaveWingetList.Add_Click({ 
+            Save-WingetList -State $script:uiState 
+        })
+        $script:uiState.Controls.btnImportWingetList.Add_Click({ 
+            Import-WingetList -State $script:uiState 
+        })
         $script:uiState.Controls.btnClearWingetList.Add_Click({
                 $script:uiState.Controls.lstWingetResults.ItemsSource = @() # Set ItemsSource to an empty array
                 $script:uiState.Controls.txtWingetSearch.Text = ""
-                if ($script:uiState.Controls.txtStatus) { $script:uiState.Controls.txtStatus.Text = "Cleared all applications from the list" }
+                if ($script:uiState.Controls.txtStatus) { 
+                    $script:uiState.Controls.txtStatus.Text = "Cleared all applications from the list" 
+                }
             })
 
         $script:uiState.Controls.btnDownloadSelected.Add_Click({
@@ -1002,10 +1050,18 @@ $window.Add_Loaded({
                 $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                 $buttonSender.IsEnabled = $true
             })
-        $script:uiState.Controls.btnMoveTop.Add_Click({ Move-ListViewItemTop -ListView $script:uiState.Controls.lstApplications })
-        $script:uiState.Controls.btnMoveUp.Add_Click({ Move-ListViewItemUp -ListView $script:uiState.Controls.lstApplications })
-        $script:uiState.Controls.btnMoveDown.Add_Click({ Move-ListViewItemDown -ListView $script:uiState.Controls.lstApplications })
-        $script:uiState.Controls.btnMoveBottom.Add_Click({ Move-ListViewItemBottom -ListView $script:uiState.Controls.lstApplications })
+        $script:uiState.Controls.btnMoveTop.Add_Click({ 
+            Move-ListViewItemTop -ListView $script:uiState.Controls.lstApplications 
+        })
+        $script:uiState.Controls.btnMoveUp.Add_Click({ 
+            Move-ListViewItemUp -ListView $script:uiState.Controls.lstApplications 
+        })
+        $script:uiState.Controls.btnMoveDown.Add_Click({ 
+            Move-ListViewItemDown -ListView $script:uiState.Controls.lstApplications 
+        })
+        $script:uiState.Controls.btnMoveBottom.Add_Click({ 
+            Move-ListViewItemBottom -ListView $script:uiState.Controls.lstApplications 
+        })
 
         # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column is handled)
         $byoGridView = $script:uiState.Controls.lstApplications.View
@@ -1100,8 +1156,12 @@ $window.Add_Loaded({
             })
         $script:uiState.Controls.chkInstallDrivers.Add_Unchecked({
                 # Only re-enable if the other checkboxes are not checked
-                if (-not $script:uiState.Controls.chkCopyDrivers.IsChecked) { $script:uiState.Controls.chkCopyDrivers.IsEnabled = $true }
-                if (-not $script:uiState.Controls.chkCompressDriversToWIM.IsChecked) { $script:uiState.Controls.chkCompressDriversToWIM.IsEnabled = $true }
+                if (-not $script:uiState.Controls.chkCopyDrivers.IsChecked) { 
+                    $script:uiState.Controls.chkCopyDrivers.IsEnabled = $true 
+                }
+                if (-not $script:uiState.Controls.chkCompressDriversToWIM.IsChecked) { 
+                    $script:uiState.Controls.chkCompressDriversToWIM.IsEnabled = $true 
+                }
             })
         $script:uiState.Controls.chkCopyDrivers.Add_Checked({
                 $script:uiState.Controls.chkInstallDrivers.IsEnabled = $false

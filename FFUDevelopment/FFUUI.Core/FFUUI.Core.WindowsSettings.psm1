@@ -463,8 +463,8 @@ function Update-WindowsSkuCombo {
     }
 }
 
-# Combined function to refresh both Release and Version combos
-function Refresh-WindowsSettingsCombos {
+# Combined function to initialize the Release, Version, and SKU combos
+function Initialize-WindowsSettingsCombos {
     param(
         [string]$isoPath,
         [Parameter(Mandatory = $true)]
@@ -568,4 +568,4 @@ function BuildFeaturesGrid {
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 
-Export-ModuleMember -Function Get-WindowsSettingsDefaults, Get-AvailableWindowsReleases, Get-AvailableWindowsVersions, Get-AvailableSkusForRelease, Update-WindowsReleaseCombo, Update-WindowsVersionCombo, Update-WindowsSkuCombo, Refresh-WindowsSettingsCombos, UpdateOptionalFeaturesString, BuildFeaturesGrid
+Export-ModuleMember -Function Get-WindowsSettingsDefaults, Get-AvailableWindowsReleases, Get-AvailableWindowsVersions, Get-AvailableSkusForRelease, Update-WindowsReleaseCombo, Update-WindowsVersionCombo, Update-WindowsSkuCombo, Initialize-WindowsSettingsCombos, UpdateOptionalFeaturesString, BuildFeaturesGrid
