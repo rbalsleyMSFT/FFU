@@ -147,4 +147,141 @@ function Initialize-UIControls {
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
 }
 
-Export-ModuleMember -Function *
+function Initialize-DynamicUIElements {
+    param([PSCustomObject]$State)
+    WriteLog "Initializing dynamic UI elements (Grids, Columns)..."
+
+    # Driver Models ListView setup
+    # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+    $itemStyleDriverModels = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleDriverModels.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstDriverModels.ItemContainerStyle = $itemStyleDriverModels
+
+    $driverModelsGridView = New-Object System.Windows.Controls.GridView
+    $State.Controls.lstDriverModels.View = $driverModelsGridView # Assign GridView to ListView first
+
+    # Add the selectable column using the new function
+    Add-SelectableGridViewColumn -ListView $State.Controls.lstDriverModels -HeaderCheckBoxScriptVariableName "chkSelectAllDriverModels" -ColumnWidth 70
+
+    # Add other sortable columns with left-aligned headers
+    Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $driverModelsGridView -header "Model" -binding "Model" -width 200 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $driverModelsGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
+    $State.Controls.lstDriverModels.AddHandler(
+        [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+        [System.Windows.RoutedEventHandler] {
+            param($eventSource, $e) # $eventSource is the ListView control
+            $header = $e.OriginalSource
+            if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                # Retrieve the main UI state object from the window's Tag property
+                $listViewControl = $eventSource
+                $window = [System.Windows.Window]::GetWindow($listViewControl)
+                $uiStateFromWindowTag = $window.Tag
+                
+                Invoke-ListViewSort -listView $eventSource -property $header.Tag -State $uiStateFromWindowTag
+            }
+        }
+    )
+
+    # Winget Search ListView setup
+    $wingetGridView = New-Object System.Windows.Controls.GridView
+    $State.Controls.lstWingetResults.View = $wingetGridView # Assign GridView to ListView first
+
+    # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+    $itemStyleWingetResults = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleWingetResults.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstWingetResults.ItemContainerStyle = $itemStyleWingetResults
+
+    # Add the selectable column using the new function
+    Add-SelectableGridViewColumn -ListView $State.Controls.lstWingetResults -HeaderCheckBoxScriptVariableName "chkSelectAllWingetResults" -ColumnWidth 60
+
+    # Add other sortable columns with left-aligned headers
+    Add-SortableColumn -gridView $wingetGridView -header "Name" -binding "Name" -width 200 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $wingetGridView -header "Id" -binding "Id" -width 200 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $wingetGridView -header "Version" -binding "Version" -width 100 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $wingetGridView -header "Source" -binding "Source" -width 100 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
+
+    $State.Controls.lstWingetResults.AddHandler(
+        [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+        [System.Windows.RoutedEventHandler] {
+            param($eventSource, $e) # $eventSource is the ListView control
+            $header = $e.OriginalSource
+            if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                # Retrieve the main UI state object from the window's Tag property
+                $listViewControl = $eventSource
+                $window = [System.Windows.Window]::GetWindow($listViewControl)
+                $uiStateFromWindowTag = $window.Tag
+                
+                Invoke-ListViewSort -listView $eventSource -property $header.Tag -State $uiStateFromWindowTag
+            }
+        }
+    )
+
+    # Apps Script Variables ListView setup
+    # Bind ItemsSource to the data list
+    $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+
+    # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+    $itemStyleAppsScriptVars = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleAppsScriptVars.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstAppsScriptVariables.ItemContainerStyle = $itemStyleAppsScriptVars
+
+    # The GridView for lstAppsScriptVariables is defined in XAML. We need to get it and add the column.
+    if ($State.Controls.lstAppsScriptVariables.View -is [System.Windows.Controls.GridView]) {
+        Add-SelectableGridViewColumn -ListView $State.Controls.lstAppsScriptVariables -HeaderCheckBoxScriptVariableName "chkSelectAllAppsScriptVariables" -ColumnWidth 60
+
+        # Make Key and Value columns sortable
+        $appsScriptVarsGridView = $State.Controls.lstAppsScriptVariables.View
+
+        # Key Column (should be at index 1 after selectable column is inserted at 0)
+        if ($appsScriptVarsGridView.Columns.Count -gt 1) {
+            $keyColumn = $appsScriptVarsGridView.Columns[1]
+            $keyHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $keyHeader.Content = "Key"
+            $keyHeader.Tag = "Key" # Property to sort by
+            $keyHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $keyColumn.Header = $keyHeader
+        }
+
+        # Value Column (should be at index 2)
+        if ($appsScriptVarsGridView.Columns.Count -gt 2) {
+            $valueColumn = $appsScriptVarsGridView.Columns[2]
+            $valueHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $valueHeader.Content = "Value"
+            $valueHeader.Tag = "Value" # Property to sort by
+            $valueHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $valueColumn.Header = $valueHeader
+        }
+
+        # Add Click event handler for sorting
+        $State.Controls.lstAppsScriptVariables.AddHandler(
+            [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+            [System.Windows.RoutedEventHandler] {
+                param($eventSource, $e) # $eventSource is the ListView control
+                $header = $e.OriginalSource
+                if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                    # Retrieve the main UI state object from the window's Tag property
+                    $listViewControl = $eventSource
+                    $window = [System.Windows.Window]::GetWindow($listViewControl)
+                    $uiStateFromWindowTag = $window.Tag
+                
+                    Invoke-ListViewSort -listView $eventSource -property $header.Tag -State $uiStateFromWindowTag
+                }
+            }
+        )
+    }
+    else {
+        WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
+    }
+
+    # Build dynamic multi-column checkboxes for optional features
+    if ($State.Controls.featuresPanel -and $State.Defaults.windowsSettingsDefaults) {
+        BuildFeaturesGrid -parent $State.Controls.featuresPanel -allowedFeatures $State.Defaults.windowsSettingsDefaults.AllowedFeatures -State $State
+    }
+    else {
+        WriteLog "Initialize-DynamicUIElements: Could not build features grid. Panel or defaults missing."
+    }
+}
+
+Export-ModuleMember -Function Initialize-UIControls, Initialize-DynamicUIElements

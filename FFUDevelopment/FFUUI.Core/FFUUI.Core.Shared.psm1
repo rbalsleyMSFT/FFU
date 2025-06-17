@@ -437,6 +437,26 @@ function Invoke-ListViewSort {
         [PSCustomObject]$State
     )
 
+    # Ensure $State.Flags is a hashtable and contains the required sort properties
+    if ($State.Flags -is [hashtable]) {
+        if (-not $State.Flags.ContainsKey('lastSortProperty')) {
+            $State.Flags['lastSortProperty'] = $null
+        }
+        if (-not $State.Flags.ContainsKey('lastSortAscending')) {
+            $State.Flags['lastSortAscending'] = $true # Default to ascending
+        }
+    }
+    else {
+        Write-Warning "Invoke-ListViewSort: \$State.Flags is not a hashtable or is null. Sort state may not work correctly."
+        # Attempt to initialize if $State.Flags is null or unexpectedly not a hashtable,
+        # though this might indicate a deeper issue with $State.Flags initialization.
+        if ($null -eq $State.Flags) { $State.Flags = @{} }
+        if ($State.Flags -is [hashtable]) { # Check again after potential initialization
+            if (-not $State.Flags.ContainsKey('lastSortProperty')) { $State.Flags['lastSortProperty'] = $null }
+            if (-not $State.Flags.ContainsKey('lastSortAscending')) { $State.Flags['lastSortAscending'] = $true }
+        }
+    }
+
     # Toggle sort direction if clicking the same column
     if ($State.Flags.lastSortProperty -eq $property) {
         $State.Flags.lastSortAscending = -not $State.Flags.lastSortAscending
