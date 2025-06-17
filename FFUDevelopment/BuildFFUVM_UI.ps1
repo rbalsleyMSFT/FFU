@@ -277,7 +277,6 @@ $window.Add_Loaded({
                             $script:uiState.Controls.txtStatus.Text = "Dell Catalog download failed. Dell drivers may not download."
                         }
                     }
-                    # If $downloadDellCatalog was false, $dellCatalogXmlPath is already set to the existing valid XML.
                 }
                 # --- End Dell Catalog Handling ---
 
@@ -288,11 +287,11 @@ $window.Add_Loaded({
                     DriversFolder      = $localDriversFolder
                     WindowsRelease     = $localWindowsRelease
                     WindowsArch        = $localWindowsArch
-                    WindowsVersion     = $localWindowsVersion # Will be null if not applicable (e.g., not HP)
+                    WindowsVersion     = $localWindowsVersion
                     Headers            = $localHeaders
                     UserAgent          = $localUserAgent
                     CompressToWim      = $compressDrivers
-                    DellCatalogXmlPath = $dellCatalogXmlPath  # Will be null if not Dell or if Dell catalog prep failed
+                    DellCatalogXmlPath = $dellCatalogXmlPath
                 }
 
                 Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
