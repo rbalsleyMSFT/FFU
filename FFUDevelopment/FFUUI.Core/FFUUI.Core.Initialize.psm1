@@ -147,6 +147,93 @@ function Initialize-UIControls {
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
 }
 
+function Initialize-UIDefaults {
+    param([PSCustomObject]$State)
+    WriteLog "Initializing UI defaults..."
+    
+    # Get default values from helper functions
+    $State.Defaults.windowsSettingsDefaults = Get-WindowsSettingsDefaults
+    $State.Defaults.generalDefaults = Get-GeneralDefaults -FFUDevelopmentPath $State.FFUDevelopmentPath
+
+    # Build tab defaults from General Defaults
+    $State.Controls.txtFFUDevPath.Text = $State.FFUDevelopmentPath 
+    $State.Controls.txtCustomFFUNameTemplate.Text = $State.Defaults.generalDefaults.CustomFFUNameTemplate
+    $State.Controls.txtFFUCaptureLocation.Text = $State.Defaults.generalDefaults.FFUCaptureLocation
+    $State.Controls.txtShareName.Text = $State.Defaults.generalDefaults.ShareName
+    $State.Controls.txtUsername.Text = $State.Defaults.generalDefaults.Username
+    $State.Controls.chkBuildUSBDriveEnable.IsChecked = $State.Defaults.generalDefaults.BuildUSBDriveEnable
+    $State.Controls.chkCompactOS.IsChecked = $State.Defaults.generalDefaults.CompactOS
+    $State.Controls.chkUpdateADK.IsChecked = $State.Defaults.generalDefaults.UpdateADK
+    $State.Controls.chkOptimize.IsChecked = $State.Defaults.generalDefaults.Optimize
+    $State.Controls.chkAllowVHDXCaching.IsChecked = $State.Defaults.generalDefaults.AllowVHDXCaching
+    $State.Controls.chkCreateCaptureMedia.IsChecked = $State.Defaults.generalDefaults.CreateCaptureMedia
+    $State.Controls.chkCreateDeploymentMedia.IsChecked = $State.Defaults.generalDefaults.CreateDeploymentMedia
+    $State.Controls.chkAllowExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.AllowExternalHardDiskMedia
+    $State.Controls.chkPromptExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.PromptExternalHardDiskMedia
+    $State.Controls.chkSelectSpecificUSBDrives.IsChecked = $State.Defaults.generalDefaults.SelectSpecificUSBDrives
+    $State.Controls.chkCopyAutopilot.IsChecked = $State.Defaults.generalDefaults.CopyAutopilot
+    $State.Controls.chkCopyUnattend.IsChecked = $State.Defaults.generalDefaults.CopyUnattend
+    $State.Controls.chkCopyPPKG.IsChecked = $State.Defaults.generalDefaults.CopyPPKG
+    $State.Controls.chkCleanupAppsISO.IsChecked = $State.Defaults.generalDefaults.CleanupAppsISO
+    $State.Controls.chkCleanupCaptureISO.IsChecked = $State.Defaults.generalDefaults.CleanupCaptureISO
+    $State.Controls.chkCleanupDeployISO.IsChecked = $State.Defaults.generalDefaults.CleanupDeployISO
+    $State.Controls.chkCleanupDrivers.IsChecked = $State.Defaults.generalDefaults.CleanupDrivers
+    $State.Controls.chkRemoveFFU.IsChecked = $State.Defaults.generalDefaults.RemoveFFU
+    $State.Controls.chkRemoveApps.IsChecked = $State.Defaults.generalDefaults.RemoveApps
+    $State.Controls.chkRemoveUpdates.IsChecked = $State.Defaults.generalDefaults.RemoveUpdates
+
+    # Hyper-V Settings defaults from General Defaults
+    $State.Controls.txtDiskSize.Text = $State.Defaults.generalDefaults.DiskSizeGB
+    $State.Controls.txtMemory.Text = $State.Defaults.generalDefaults.MemoryGB
+    $State.Controls.txtProcessors.Text = $State.Defaults.generalDefaults.Processors
+    $State.Controls.txtVMLocation.Text = $State.Defaults.generalDefaults.VMLocation
+    $State.Controls.txtVMNamePrefix.Text = $State.Defaults.generalDefaults.VMNamePrefix
+    $State.Controls.cmbLogicalSectorSize.SelectedItem = ($State.Controls.cmbLogicalSectorSize.Items | Where-Object { $_.Content -eq $State.Defaults.generalDefaults.LogicalSectorSize.ToString() })
+
+    # Windows Settings tab defaults
+    $State.Controls.cmbWindowsArch.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedArchitectures
+    $State.Controls.cmbWindowsArch.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsArch
+    $State.Controls.cmbWindowsLang.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedLanguages
+    $State.Controls.cmbWindowsLang.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsLang
+    $State.Controls.cmbWindowsSKU.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsSKU
+    $State.Controls.cmbMediaType.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedMediaTypes
+    $State.Controls.cmbMediaType.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultMediaType
+    $State.Controls.txtOptionalFeatures.Text = $State.Defaults.windowsSettingsDefaults.DefaultOptionalFeatures
+    $State.Controls.txtProductKey.Text = $State.Defaults.windowsSettingsDefaults.DefaultProductKey
+
+    # Updates tab defaults from General Defaults
+    $State.Controls.chkUpdateLatestCU.IsChecked = $State.Defaults.generalDefaults.UpdateLatestCU
+    $State.Controls.chkUpdateLatestNet.IsChecked = $State.Defaults.generalDefaults.UpdateLatestNet
+    $State.Controls.chkUpdateLatestDefender.IsChecked = $State.Defaults.generalDefaults.UpdateLatestDefender
+    $State.Controls.chkUpdateEdge.IsChecked = $State.Defaults.generalDefaults.UpdateEdge
+    $State.Controls.chkUpdateOneDrive.IsChecked = $State.Defaults.generalDefaults.UpdateOneDrive
+    $State.Controls.chkUpdateLatestMSRT.IsChecked = $State.Defaults.generalDefaults.UpdateLatestMSRT
+    $State.Controls.chkUpdateLatestMicrocode.IsChecked = $State.Defaults.generalDefaults.UpdateLatestMicrocode
+    $State.Controls.chkUpdatePreviewCU.IsChecked = $State.Defaults.generalDefaults.UpdatePreviewCU
+
+    # Applications tab defaults from General Defaults
+    $State.Controls.chkInstallApps.IsChecked = $State.Defaults.generalDefaults.InstallApps
+    $State.Controls.txtApplicationPath.Text = $State.Defaults.generalDefaults.ApplicationPath
+    $State.Controls.txtAppListJsonPath.Text = $State.Defaults.generalDefaults.AppListJsonPath
+    $State.Controls.chkInstallWingetApps.IsChecked = $State.Defaults.generalDefaults.InstallWingetApps
+    $State.Controls.chkBringYourOwnApps.IsChecked = $State.Defaults.generalDefaults.BringYourOwnApps
+
+    # M365 Apps/Office tab defaults from General Defaults
+    $State.Controls.chkInstallOffice.IsChecked = $State.Defaults.generalDefaults.InstallOffice
+    $State.Controls.txtOfficePath.Text = $State.Defaults.generalDefaults.OfficePath
+    $State.Controls.chkCopyOfficeConfigXML.IsChecked = $State.Defaults.generalDefaults.CopyOfficeConfigXML
+    $State.Controls.txtOfficeConfigXMLFilePath.Text = $State.Defaults.generalDefaults.OfficeConfigXMLFilePath
+
+    # Drivers tab defaults from General Defaults
+    $State.Controls.txtDriversFolder.Text = $State.Defaults.generalDefaults.DriversFolder
+    $State.Controls.txtPEDriversFolder.Text = $State.Defaults.generalDefaults.PEDriversFolder
+    $State.Controls.txtDriversJsonPath.Text = $State.Defaults.generalDefaults.DriversJsonPath
+    $State.Controls.chkDownloadDrivers.IsChecked = $State.Defaults.generalDefaults.DownloadDrivers
+    $State.Controls.chkInstallDrivers.IsChecked = $State.Defaults.generalDefaults.InstallDrivers
+    $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
+    $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
+}
+
 function Initialize-DynamicUIElements {
     param([PSCustomObject]$State)
     WriteLog "Initializing dynamic UI elements (Grids, Columns)..."
@@ -284,4 +371,4 @@ function Initialize-DynamicUIElements {
     }
 }
 
-Export-ModuleMember -Function Initialize-UIControls, Initialize-DynamicUIElements
+Export-ModuleMember -Function Initialize-UIControls, Initialize-DynamicUIElements, Initialize-UIDefaults

@@ -16,6 +16,7 @@ $FFUDevelopmentPath = 'C:\FFUDevelopment' # hard coded for testing
 
 # --- NEW: Central State Object ---
 $script:uiState = [PSCustomObject]@{
+    FFUDevelopmentPath = $FFUDevelopmentPath;
     Window      = $null;
     Controls    = @{
         featureCheckBoxes               = @{}; 
@@ -142,16 +143,13 @@ $window.Add_Loaded({
         $window.Tag = $script:uiState
         Initialize-UIControls -State $script:uiState
 
-        # Get Windows Settings defaults and lists from helper module
-        $script:uiState.Defaults.windowsSettingsDefaults = Get-WindowsSettingsDefaults
+        Initialize-UIDefaults -State $script:uiState
 
-        # Get General defaults from helper module
-        $script:uiState.Defaults.generalDefaults = Get-GeneralDefaults -FFUDevelopmentPath $FFUDevelopmentPath
-        
         Initialize-DynamicUIElements -State $script:uiState
 
         # Initialize Windows Settings UI using data from helper module
         Initialize-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
+
         $script:uiState.Controls.txtISOPath.Add_TextChanged({ 
                 Initialize-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState 
             })
@@ -172,58 +170,7 @@ $window.Add_Loaded({
                 if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:uiState.Controls.txtISOPath.Text = $ofd.FileName }
             })
 
-        # Populate static combos from defaults object
-        $script:uiState.Controls.cmbWindowsArch.ItemsSource = $script:uiState.Defaults.windowsSettingsDefaults.AllowedArchitectures
-        $script:uiState.Controls.cmbWindowsArch.SelectedItem = $script:uiState.Defaults.windowsSettingsDefaults.DefaultWindowsArch
-
-        $script:uiState.Controls.cmbWindowsLang.ItemsSource = $script:uiState.Defaults.windowsSettingsDefaults.AllowedLanguages
-        $script:uiState.Controls.cmbWindowsLang.SelectedItem = $script:uiState.Defaults.windowsSettingsDefaults.DefaultWindowsLang
-
-        # $script:uiState.Controls.cmbWindowsSKU.ItemsSource is now populated by Update-WindowsSkuCombo
-        $script:uiState.Controls.cmbWindowsSKU.SelectedItem = $script:uiState.Defaults.windowsSettingsDefaults.DefaultWindowsSKU # Attempt to set default
-
-        $script:uiState.Controls.cmbMediaType.ItemsSource = $script:uiState.Defaults.windowsSettingsDefaults.AllowedMediaTypes
-        $script:uiState.Controls.cmbMediaType.SelectedItem = $script:uiState.Defaults.windowsSettingsDefaults.DefaultMediaType
-
-        # Set default text values for Windows Settings
-        $script:uiState.Controls.txtOptionalFeatures.Text = $script:uiState.Defaults.windowsSettingsDefaults.DefaultOptionalFeatures
-        $script:uiState.Controls.txtProductKey.Text = $script:uiState.Defaults.windowsSettingsDefaults.DefaultProductKey
-
-        # Build tab defaults from General Defaults
-        $script:uiState.Controls.txtFFUDevPath.Text = $FFUDevelopmentPath # Keep this as it's the base path
-        $script:uiState.Controls.txtCustomFFUNameTemplate.Text = $script:uiState.Defaults.generalDefaults.CustomFFUNameTemplate
-        $script:uiState.Controls.txtFFUCaptureLocation.Text = $script:uiState.Defaults.generalDefaults.FFUCaptureLocation
-        $script:uiState.Controls.txtShareName.Text = $script:uiState.Defaults.generalDefaults.ShareName
-        $script:uiState.Controls.txtUsername.Text = $script:uiState.Defaults.generalDefaults.Username
-        $script:uiState.Controls.chkBuildUSBDriveEnable.IsChecked = $script:uiState.Defaults.generalDefaults.BuildUSBDriveEnable
-        $script:uiState.Controls.chkCompactOS.IsChecked = $script:uiState.Defaults.generalDefaults.CompactOS
-        $script:uiState.Controls.chkUpdateADK.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateADK # Set default for chkUpdateADK
-        $script:uiState.Controls.chkOptimize.IsChecked = $script:uiState.Defaults.generalDefaults.Optimize
-        $script:uiState.Controls.chkAllowVHDXCaching.IsChecked = $script:uiState.Defaults.generalDefaults.AllowVHDXCaching
-        $script:uiState.Controls.chkCreateCaptureMedia.IsChecked = $script:uiState.Defaults.generalDefaults.CreateCaptureMedia
-        $script:uiState.Controls.chkCreateDeploymentMedia.IsChecked = $script:uiState.Defaults.generalDefaults.CreateDeploymentMedia
-        $script:uiState.Controls.chkAllowExternalHardDiskMedia.IsChecked = $script:uiState.Defaults.generalDefaults.AllowExternalHardDiskMedia
-        $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $script:uiState.Defaults.generalDefaults.PromptExternalHardDiskMedia
-        $script:uiState.Controls.chkSelectSpecificUSBDrives.IsChecked = $script:uiState.Defaults.generalDefaults.SelectSpecificUSBDrives
-        $script:uiState.Controls.chkCopyAutopilot.IsChecked = $script:uiState.Defaults.generalDefaults.CopyAutopilot
-        $script:uiState.Controls.chkCopyUnattend.IsChecked = $script:uiState.Defaults.generalDefaults.CopyUnattend
-        $script:uiState.Controls.chkCopyPPKG.IsChecked = $script:uiState.Defaults.generalDefaults.CopyPPKG
-        $script:uiState.Controls.chkCleanupAppsISO.IsChecked = $script:uiState.Defaults.generalDefaults.CleanupAppsISO
-        $script:uiState.Controls.chkCleanupCaptureISO.IsChecked = $script:uiState.Defaults.generalDefaults.CleanupCaptureISO
-        $script:uiState.Controls.chkCleanupDeployISO.IsChecked = $script:uiState.Defaults.generalDefaults.CleanupDeployISO
-        $script:uiState.Controls.chkCleanupDrivers.IsChecked = $script:uiState.Defaults.generalDefaults.CleanupDrivers
-        $script:uiState.Controls.chkRemoveFFU.IsChecked = $script:uiState.Defaults.generalDefaults.RemoveFFU
-        $script:uiState.Controls.chkRemoveApps.IsChecked = $script:uiState.Defaults.generalDefaults.RemoveApps
-        $script:uiState.Controls.chkRemoveUpdates.IsChecked = $script:uiState.Defaults.generalDefaults.RemoveUpdates
-
-        # Hyper-V Settings defaults from General Defaults
-        $script:uiState.Controls.txtDiskSize.Text = $script:uiState.Defaults.generalDefaults.DiskSizeGB
-        $script:uiState.Controls.txtMemory.Text = $script:uiState.Defaults.generalDefaults.MemoryGB
-        $script:uiState.Controls.txtProcessors.Text = $script:uiState.Defaults.generalDefaults.Processors
-        $script:uiState.Controls.txtVMLocation.Text = $script:uiState.Defaults.generalDefaults.VMLocation
-        $script:uiState.Controls.txtVMNamePrefix.Text = $script:uiState.Defaults.generalDefaults.VMNamePrefix
-        $script:uiState.Controls.cmbLogicalSectorSize.SelectedItem = ($script:uiState.Controls.cmbLogicalSectorSize.Items | Where-Object { $_.Content -eq $script:uiState.Defaults.generalDefaults.LogicalSectorSize.ToString() })
-
+        
         # Hyper-V Settings: Populate VM Switch ComboBox (Keep existing logic)
         $vmSwitchData = Get-VMSwitchData
         $script:uiState.Data.vmSwitchMap = $vmSwitchData.SwitchMap
@@ -265,38 +212,6 @@ $window.Add_Loaded({
                     }
                 }
             })
-
-        # Updates tab defaults from General Defaults
-        $script:uiState.Controls.chkUpdateLatestCU.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateLatestCU
-        $script:uiState.Controls.chkUpdateLatestNet.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateLatestNet
-        $script:uiState.Controls.chkUpdateLatestDefender.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateLatestDefender
-        $script:uiState.Controls.chkUpdateEdge.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateEdge
-        $script:uiState.Controls.chkUpdateOneDrive.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateOneDrive
-        $script:uiState.Controls.chkUpdateLatestMSRT.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateLatestMSRT
-        $script:uiState.Controls.chkUpdateLatestMicrocode.IsChecked = $script:uiState.Defaults.generalDefaults.UpdateLatestMicrocode # Added for UpdateLatestMicrocode
-        $script:uiState.Controls.chkUpdatePreviewCU.IsChecked = $script:uiState.Defaults.generalDefaults.UpdatePreviewCU
-
-        # Applications tab defaults from General Defaults
-        $script:uiState.Controls.chkInstallApps.IsChecked = $script:uiState.Defaults.generalDefaults.InstallApps
-        $script:uiState.Controls.txtApplicationPath.Text = $script:uiState.Defaults.generalDefaults.ApplicationPath
-        $script:uiState.Controls.txtAppListJsonPath.Text = $script:uiState.Defaults.generalDefaults.AppListJsonPath
-        $script:uiState.Controls.chkInstallWingetApps.IsChecked = $script:uiState.Defaults.generalDefaults.InstallWingetApps
-        $script:uiState.Controls.chkBringYourOwnApps.IsChecked = $script:uiState.Defaults.generalDefaults.BringYourOwnApps
-
-        # M365 Apps/Office tab defaults from General Defaults
-        $script:uiState.Controls.chkInstallOffice.IsChecked = $script:uiState.Defaults.generalDefaults.InstallOffice
-        $script:uiState.Controls.txtOfficePath.Text = $script:uiState.Defaults.generalDefaults.OfficePath
-        $script:uiState.Controls.chkCopyOfficeConfigXML.IsChecked = $script:uiState.Defaults.generalDefaults.CopyOfficeConfigXML
-        $script:uiState.Controls.txtOfficeConfigXMLFilePath.Text = $script:uiState.Defaults.generalDefaults.OfficeConfigXMLFilePath
-
-        # Drivers tab defaults from General Defaults
-        $script:uiState.Controls.txtDriversFolder.Text = $script:uiState.Defaults.generalDefaults.DriversFolder
-        $script:uiState.Controls.txtPEDriversFolder.Text = $script:uiState.Defaults.generalDefaults.PEDriversFolder
-        $script:uiState.Controls.txtDriversJsonPath.Text = $script:uiState.Defaults.generalDefaults.DriversJsonPath # Set default text
-        $script:uiState.Controls.chkDownloadDrivers.IsChecked = $script:uiState.Defaults.generalDefaults.DownloadDrivers
-        $script:uiState.Controls.chkInstallDrivers.IsChecked = $script:uiState.Defaults.generalDefaults.InstallDrivers
-        $script:uiState.Controls.chkCopyDrivers.IsChecked = $script:uiState.Defaults.generalDefaults.CopyDrivers
-        $script:uiState.Controls.chkCopyPEDrivers.IsChecked = $script:uiState.Defaults.generalDefaults.CopyPEDrivers
 
         # Drivers tab UI logic
         $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo') 
