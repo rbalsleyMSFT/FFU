@@ -463,7 +463,7 @@ function Update-WindowsSkuCombo {
 }
 
 # Combined function to initialize the Release, Version, and SKU combos
-function Initialize-WindowsSettingsCombos {
+function Get-WindowsSettingsCombos {
     param(
         [string]$isoPath,
         [Parameter(Mandatory = $true)]

@@ -147,11 +147,11 @@ $window.Add_Loaded({
 
         Initialize-DynamicUIElements -State $script:uiState
 
-        # Initialize Windows Settings UI using data from helper module
-        Initialize-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
+        # Get Windows Settings UI using data from helper module
+        Get-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState # Use combined refresh function
 
-        $script:uiState.Controls.txtISOPath.Add_TextChanged({ 
-                Initialize-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState 
+        $script:uiState.Controls.txtISOPath.Add_TextChanged({
+                Get-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState
             })
         $script:uiState.Controls.cmbWindowsRelease.Add_SelectionChanged({
                 $selectedReleaseValue = 11 # Default if null
