@@ -490,6 +490,93 @@ function Register-EventHandlers {
             $localState.Data.allDriverModels.Clear()
             $localState.Controls.txtModelFilter.Text = ""
         })
+
+    $State.Controls.btnGetModels.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $selectedMake = $localState.Controls.cmbMake.SelectedItem
+            $localState.Controls.txtStatus.Text = "Getting models for $selectedMake..."
+            $window.Cursor = [System.Windows.Input.Cursors]::Wait
+            $eventSource.IsEnabled = $false
+            try {
+                # Get previously selected models from the master list ($localState.Data.allDriverModels)
+                $previouslySelectedModels = @($localState.Data.allDriverModels | Where-Object { $_.IsSelected })
+
+                # Get newly fetched models for the current make
+                $newlyFetchedStandardizedModels = Get-ModelsForMake -SelectedMake $selectedMake -State $localState
+
+                $combinedModelsList = [System.Collections.Generic.List[PSCustomObject]]::new()
+                $modelIdentifiersInCombinedList = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+                # Add previously selected models first
+                foreach ($item in $previouslySelectedModels) {
+                    $combinedModelsList.Add($item)
+                    $modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)") | Out-Null
+                }
+
+                # Add newly fetched models if they are not already in the list
+                $addedNewCount = 0
+                foreach ($item in $newlyFetchedStandardizedModels) {
+                    if (-not $modelIdentifiersInCombinedList.Contains("$($item.Make)::$($item.Model)")) {
+                        $combinedModelsList.Add($item)
+                        $modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)") | Out-Null
+                        $addedNewCount++
+                    }
+                }
+
+                # Sort the combined list and update the master list while preserving its List<> type
+                $sortedModels = $combinedModelsList | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
+                $localState.Data.allDriverModels.Clear()
+                $sortedModels.ForEach({ $localState.Data.allDriverModels.Add($_) })
+
+                # Update the UI
+                $localState.Controls.lstDriverModels.ItemsSource = $localState.Data.allDriverModels
+                $localState.Controls.txtModelFilter.Text = ""
+
+                if ($localState.Data.allDriverModels.Count -gt 0) {
+                    $localState.Controls.spModelFilterSection.Visibility = 'Visible'
+                    $localState.Controls.lstDriverModels.Visibility = 'Visible'
+                    $localState.Controls.spDriverActionButtons.Visibility = 'Visible'
+                    $statusText = "Displaying $($localState.Data.allDriverModels.Count) models."
+                    if ($newlyFetchedStandardizedModels.Count -gt 0 -and $addedNewCount -eq 0 -and $previouslySelectedModels.Count -gt 0) {
+                        $statusText = "Fetched $($newlyFetchedStandardizedModels.Count) models for $selectedMake; all were already in the selected list. Displaying $($localState.Data.allDriverModels.Count) total selected models."
+                    }
+                    elseif ($addedNewCount -gt 0) {
+                        $statusText = "Added $addedNewCount new models for $selectedMake. Displaying $($localState.Data.allDriverModels.Count) total models."
+                    }
+                    elseif ($newlyFetchedStandardizedModels.Count -eq 0 -and $selectedMake -eq 'Lenovo' ) {
+                        $statusText = if ($previouslySelectedModels.Count -gt 0) { "No new models found for $selectedMake. Displaying $($previouslySelectedModels.Count) previously selected models." } else { "No models found for $selectedMake." }
+                    }
+                    elseif ($newlyFetchedStandardizedModels.Count -eq 0) {
+                        $statusText = "No new models found for $selectedMake. Displaying $($localState.Data.allDriverModels.Count) previously selected models."
+                    }
+                    $localState.Controls.txtStatus.Text = $statusText
+                }
+                else {
+                    $localState.Controls.spModelFilterSection.Visibility = 'Collapsed'
+                    $localState.Controls.lstDriverModels.Visibility = 'Collapsed'
+                    $localState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
+                    $localState.Controls.txtStatus.Text = "No models to display for $selectedMake."
+                }
+            }
+            catch {
+                $localState.Controls.txtStatus.Text = "Error getting models: $($_.Exception.Message)"
+                [System.Windows.MessageBox]::Show("Error getting models: $($_.Exception.Message)", "Error", "OK", "Error")
+                if ($null -eq $localState.Data.allDriverModels -or $localState.Data.allDriverModels.Count -eq 0) {
+                    $localState.Controls.spModelFilterSection.Visibility = 'Collapsed'
+                    $localState.Controls.lstDriverModels.Visibility = 'Collapsed'
+                    $localState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
+                    $localState.Controls.lstDriverModels.ItemsSource = $null
+                    $localState.Controls.txtModelFilter.Text = ""
+                }
+            }
+            finally {
+                $window.Cursor = $null
+                $eventSource.IsEnabled = $true
+            }
+        })
 }
 
 Export-ModuleMember -Function *
