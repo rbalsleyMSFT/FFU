@@ -577,6 +577,12 @@ function Register-EventHandlers {
                 $eventSource.IsEnabled = $true
             }
         })
+    $State.Controls.txtModelFilter.Add_TextChanged({
+            param($sourceObject, $textChangedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($sourceObject)
+            $localState = $window.Tag
+            Search-DriverModels -filterText $localState.Controls.txtModelFilter.Text -State $localState
+        })
 }
 
 Export-ModuleMember -Function *

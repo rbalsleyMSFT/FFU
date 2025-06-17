@@ -169,10 +169,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
         $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
         $script:uiState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
-        $script:uiState.Controls.txtModelFilter.Add_TextChanged({
-                param($sourceObject, $textChangedEventArgs)
-                Search-DriverModels -filterText $script:uiState.Controls.txtModelFilter.Text -State $script:uiState
-            })
         $script:uiState.Controls.btnDownloadSelectedDrivers.Add_Click({
                 param($buttonSender, $clickEventArgs)
 
