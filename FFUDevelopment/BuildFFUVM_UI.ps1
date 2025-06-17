@@ -220,78 +220,17 @@ $window.Add_Loaded({
                 $localUserAgent = $coreStaticVars.UserAgent
                 $compressDrivers = $script:uiState.Controls.chkCompressDriversToWIM.IsChecked
 
-                # --- Dell Catalog Handling (once, if Dell drivers are selected) ---
-                $dellCatalogXmlPath = $null # This will be the path passed to the background task
-                if ($selectedDrivers | Where-Object { $_.Make -eq 'Dell' }) {
-                    $script:uiState.Controls.txtStatus.Text = "Checking Dell Catalog..."
-                    WriteLog "Dell drivers selected. Preparing Dell catalog..."
-
-                    $dellDriversFolderUi = Join-Path -Path $localDriversFolder -ChildPath "Dell"
-                    $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
-                    $dellCabFileUi = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).cab"
-                    # This $dellCatalogXmlPath is the one we ensure exists and is up-to-date for the Save-DellDriversTask
-                    $dellCatalogXmlPath = Join-Path -Path $dellDriversFolderUi -ChildPath "$($catalogBaseName).xml"
-                    $catalogUrl = if ($localWindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
-
-                    $downloadDellCatalog = $true
-                    if (Test-Path -Path $dellCatalogXmlPath -PathType Leaf) {
-                        if (((Get-Date) - (Get-Item $dellCatalogXmlPath).LastWriteTime).TotalDays -lt 7) {
-                            WriteLog "Using existing Dell Catalog XML (less than 7 days old) for download task: $dellCatalogXmlPath"
-                            $downloadDellCatalog = $false
-                            $script:uiState.Controls.txtStatus.Text = "Dell Catalog ready."
-                        }
-                        else {
-                            WriteLog "Existing Dell Catalog XML '$dellCatalogXmlPath' is older than 7 days."
-                        }
-                    }
-                    else {
-                        WriteLog "Dell Catalog XML '$dellCatalogXmlPath' not found."
-                    }
-
-                    if ($downloadDellCatalog) {
-                        WriteLog "Dell Catalog XML '$dellCatalogXmlPath' needs to be downloaded/updated for driver download task."
-                        $script:uiState.Controls.txtStatus.Text = "Downloading Dell Catalog..."
-                        try {
-                            # Ensure Dell drivers folder exists
-                            if (-not (Test-Path -Path $dellDriversFolderUi -PathType Container)) {
-                                WriteLog "Creating Dell drivers folder: $dellDriversFolderUi"
-                                New-Item -Path $dellDriversFolderUi -ItemType Directory -Force | Out-Null
-                            }
-
-                            if (Test-Path $dellCabFileUi) { Remove-Item $dellCabFileUi -Force -ErrorAction SilentlyContinue }
-                            if (Test-Path $dellCatalogXmlPath) { Remove-Item $dellCatalogXmlPath -Force -ErrorAction SilentlyContinue }
-
-                            # Using Start-BitsTransferWithRetry and Invoke-Process (available from FFUUI.Core.psm1)
-                            Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFileUi
-                            WriteLog "Dell Catalog CAB downloaded to $dellCabFileUi"
-                            Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFileUi"" ""$dellCatalogXmlPath""" | Out-Null
-                            WriteLog "Dell Catalog XML extracted to $dellCatalogXmlPath"
-                            Remove-Item -Path $dellCabFileUi -Force -ErrorAction SilentlyContinue
-                            WriteLog "Dell Catalog CAB file $dellCabFileUi deleted."
-                            $script:uiState.Controls.txtStatus.Text = "Dell Catalog ready."
-                        }
-                        catch {
-                            $errMsg = "Failed to download/extract Dell Catalog for driver download task: $($_.Exception.Message)"
-                            WriteLog $errMsg; [System.Windows.MessageBox]::Show($errMsg, "Dell Catalog Error", "OK", "Error")
-                            $dellCatalogXmlPath = $null # Ensure it's null if failed, Save-DellDriversTask will handle this
-                            $script:uiState.Controls.txtStatus.Text = "Dell Catalog download failed. Dell drivers may not download."
-                        }
-                    }
-                }
-                # --- End Dell Catalog Handling ---
-
                 $script:uiState.Controls.txtStatus.Text = "Processing all selected drivers..."
                 WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
 
                 $taskArguments = @{
-                    DriversFolder      = $localDriversFolder
-                    WindowsRelease     = $localWindowsRelease
-                    WindowsArch        = $localWindowsArch
-                    WindowsVersion     = $localWindowsVersion
-                    Headers            = $localHeaders
-                    UserAgent          = $localUserAgent
-                    CompressToWim      = $compressDrivers
-                    DellCatalogXmlPath = $dellCatalogXmlPath
+                    DriversFolder  = $localDriversFolder
+                    WindowsRelease = $localWindowsRelease
+                    WindowsArch    = $localWindowsArch
+                    WindowsVersion = $localWindowsVersion
+                    Headers        = $localHeaders
+                    UserAgent      = $localUserAgent
+                    CompressToWim  = $compressDrivers
                 }
 
                 Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `

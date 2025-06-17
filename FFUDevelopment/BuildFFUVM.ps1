@@ -579,7 +579,7 @@ if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" 
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
 if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
 if (-not $installationType) { $installationType = if ($WindowsSKU -like "Standard*" -or $WindowsSKU -like "Datacenter*") { 'Server' } else { 'Client' } }
-if ($installationType -eq 'Server'){
+if ($installationType -eq 'Server') {
     #Map $WindowsRelease to $WindowsVersion for Windows Server
     switch ($WindowsRelease) {
         2016 { $WindowsVersion = '1607' }
@@ -1910,7 +1910,8 @@ function Get-WindowsESD {
     }
     elseif ($WindowsRelease -eq 11) {
         'https://go.microsoft.com/fwlink/?LinkId=2156292'
-    } else {
+    }
+    else {
         throw "Downloading Windows $WindowsRelease is not supported. Please use the -ISOPath parameter to specify the path to the Windows $WindowsRelease ISO file."
     }
 
@@ -2703,47 +2704,47 @@ function Get-ShortenedWindowsSKU {
     param (
         [string]$WindowsSKU
     )
-        $shortenedWindowsSKU = switch ($WindowsSKU) {
-            'Core' { 'Home' }
-            'Home' { 'Home' }
-            'CoreN' { 'Home_N' }
-            'Home N' { 'Home_N' }
-            'CoreSingleLanguage' { 'Home_SL' }
-            'Home Single Language' { 'Home_SL' }
-            'Education' { 'Edu' }
-            'EducationN' { 'Edu_N' }
-            'Education N' { 'Edu_N' }
-            'Professional' { 'Pro' }
-            'Pro' { 'Pro' }
-            'ProfessionalN' { 'Pro_N' }
-            'Pro N' { 'Pro_N' }
-            'ProfessionalEducation' { 'Pro_Edu' }
-            'Pro Education' { 'Pro_Edu' }
-            'ProfessionalEducationN' { 'Pro_Edu_N' }
-            'Pro Education N' { 'Pro_Edu_N' }
-            'ProfessionalWorkstation' { 'Pro_WKS' }
-            'Pro for Workstations' { 'Pro_WKS' }
-            'ProfessionalWorkstationN' { 'Pro_WKS_N' }
-            'Pro N for Workstations' { 'Pro_WKS_N' }
-            'Enterprise' { 'Ent' }
-            'EnterpriseN' { 'Ent_N' }
-            'Enterprise N' { 'Ent_N' }
-            'Enterprise N LTSC' { 'Ent_N_LTSC' }
-            'EnterpriseS' { 'Ent_LTSC' }
-            'EnterpriseSN' { 'Ent_N_LTSC' }
-            'Enterprise LTSC' { 'Ent_LTSC' }
-            'Enterprise 2016 LTSB' { 'Ent_LTSC' }
-            'Enterprise N 2016 LTSB' { 'Ent_N_LTSC' }
-            'IoT Enterprise LTSC' { 'IoT_Ent_LTSC' }
-            'IoTEnterpriseS' { 'IoT_Ent_LTSC' }
-            'IoT Enterprise N LTSC' { 'IoT_Ent_N_LTSC' }
-            'ServerStandard' { 'Srv_Std' }
-            'Standard' { 'Srv_Std' }
-            'ServerDatacenter' { 'Srv_Dtc' }
-            'Datacenter' { 'Srv_Dtc' }
-            'Standard (Desktop Experience)' { 'Srv_Std_DE' }
-            'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }  
-        }
+    $shortenedWindowsSKU = switch ($WindowsSKU) {
+        'Core' { 'Home' }
+        'Home' { 'Home' }
+        'CoreN' { 'Home_N' }
+        'Home N' { 'Home_N' }
+        'CoreSingleLanguage' { 'Home_SL' }
+        'Home Single Language' { 'Home_SL' }
+        'Education' { 'Edu' }
+        'EducationN' { 'Edu_N' }
+        'Education N' { 'Edu_N' }
+        'Professional' { 'Pro' }
+        'Pro' { 'Pro' }
+        'ProfessionalN' { 'Pro_N' }
+        'Pro N' { 'Pro_N' }
+        'ProfessionalEducation' { 'Pro_Edu' }
+        'Pro Education' { 'Pro_Edu' }
+        'ProfessionalEducationN' { 'Pro_Edu_N' }
+        'Pro Education N' { 'Pro_Edu_N' }
+        'ProfessionalWorkstation' { 'Pro_WKS' }
+        'Pro for Workstations' { 'Pro_WKS' }
+        'ProfessionalWorkstationN' { 'Pro_WKS_N' }
+        'Pro N for Workstations' { 'Pro_WKS_N' }
+        'Enterprise' { 'Ent' }
+        'EnterpriseN' { 'Ent_N' }
+        'Enterprise N' { 'Ent_N' }
+        'Enterprise N LTSC' { 'Ent_N_LTSC' }
+        'EnterpriseS' { 'Ent_LTSC' }
+        'EnterpriseSN' { 'Ent_N_LTSC' }
+        'Enterprise LTSC' { 'Ent_LTSC' }
+        'Enterprise 2016 LTSB' { 'Ent_LTSC' }
+        'Enterprise N 2016 LTSB' { 'Ent_N_LTSC' }
+        'IoT Enterprise LTSC' { 'IoT_Ent_LTSC' }
+        'IoTEnterpriseS' { 'IoT_Ent_LTSC' }
+        'IoT Enterprise N LTSC' { 'IoT_Ent_N_LTSC' }
+        'ServerStandard' { 'Srv_Std' }
+        'Standard' { 'Srv_Std' }
+        'ServerDatacenter' { 'Srv_Dtc' }
+        'Datacenter' { 'Srv_Dtc' }
+        'Standard (Desktop Experience)' { 'Srv_Std_DE' }
+        'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }  
+    }
     return $shortenedWindowsSKU
 
 }
@@ -3956,53 +3957,14 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
     else {
         WriteLog "Found $($driversToProcess.Count) driver entries to process from $driversJsonPath."
 
-        $dellCatalogXmlPathForJob = $null
-        if ($driversToProcess | Where-Object { $_.Make -eq 'Dell' }) {
-            WriteLog "Dell drivers found in JSON, ensuring Dell Catalog XML is available..."
-            $dellDriversFolderScript = Join-Path -Path $DriversFolder -ChildPath "Dell"
-            $catalogBaseNameScript = if ($WindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
-            $dellCabFileScript = Join-Path -Path $dellDriversFolderScript -ChildPath "$($catalogBaseNameScript).cab"
-            $dellCatalogXmlPathForJob = Join-Path -Path $dellDriversFolderScript -ChildPath "$($catalogBaseNameScript).xml"
-            $catalogUrlScript = if ($WindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
-            
-            $downloadDellCatalogScript = $true
-            if (Test-Path -Path $dellCatalogXmlPathForJob -PathType Leaf) {
-                if (((Get-Date) - (Get-Item $dellCatalogXmlPathForJob).LastWriteTime).TotalDays -lt 7) {
-                    WriteLog "Using existing Dell Catalog XML (less than 7 days old): $dellCatalogXmlPathForJob"
-                    $downloadDellCatalogScript = $false
-                }
-                else { WriteLog "Existing Dell Catalog XML '$dellCatalogXmlPathForJob' is older than 7 days." }
-            }
-            else { WriteLog "Dell Catalog XML '$dellCatalogXmlPathForJob' not found." }
-
-            if ($downloadDellCatalogScript) {
-                WriteLog "Dell Catalog XML '$dellCatalogXmlPathForJob' needs to be downloaded/updated."
-                try {
-                    if (-not (Test-Path -Path $dellDriversFolderScript -PathType Container)) { New-Item -Path $dellDriversFolderScript -ItemType Directory -Force | Out-Null }
-                    if (Test-Path $dellCabFileScript) { Remove-Item $dellCabFileScript -Force -ErrorAction SilentlyContinue }
-                    if (Test-Path $dellCatalogXmlPathForJob) { Remove-Item $dellCatalogXmlPathForJob -Force -ErrorAction SilentlyContinue }
-                    
-                    Start-BitsTransferWithRetry -Source $catalogUrlScript -Destination $dellCabFileScript
-                    Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFileScript"" ""$dellCatalogXmlPathForJob""" | Out-Null
-                    Remove-Item -Path $dellCabFileScript -Force -ErrorAction SilentlyContinue
-                    WriteLog "Dell Catalog XML prepared at $dellCatalogXmlPathForJob"
-                }
-                catch {
-                    WriteLog "Failed to prepare Dell Catalog XML: $($_.Exception.Message). Dell driver downloads may fail."
-                    $dellCatalogXmlPathForJob = $null 
-                }
-            }
-        }
-
         $taskArguments = @{
-            DriversFolder      = $DriversFolder
-            WindowsRelease     = $WindowsRelease
-            WindowsArch        = $WindowsArch
-            WindowsVersion     = $WindowsVersion 
-            Headers            = $Headers
-            UserAgent          = $UserAgent
-            CompressToWim      = $CompressDownloadedDriversToWim
-            DellCatalogXmlPath = $dellCatalogXmlPathForJob 
+            DriversFolder  = $DriversFolder
+            WindowsRelease = $WindowsRelease
+            WindowsArch    = $WindowsArch
+            WindowsVersion = $WindowsVersion 
+            Headers        = $Headers
+            UserAgent      = $UserAgent
+            CompressToWim  = $CompressDownloadedDriversToWim
         }
         
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
@@ -4318,7 +4280,7 @@ if ($InstallApps) {
                             $Name = """Windows Malicious Software Removal Tool x64""" + " " + """Windows $WindowsRelease""" 
                         }
                         # Handle LTSB/LTSC
-                        elseif ($installationType -eq 'client' -and $isLTSC -eq $true){
+                        elseif ($installationType -eq 'client' -and $isLTSC -eq $true) {
                             $Name = """Windows Malicious Software Removal Tool x64""" + " " + """LTSB"""    
                         }
                         #Windows Server 2025 isn't listed as a product in the Microsoft Update Catalog, so we'll use the 2019 version
@@ -4624,7 +4586,7 @@ try {
             if ($WindowsRelease -eq 2019) {
                 $name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows 10 Version $WindowsVersion for $WindowsArch"""
             }
-            if ($WindowsRelease -eq 2021){
+            if ($WindowsRelease -eq 2021) {
                 $name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1 for Windows 10 Version $WindowsVersion for $WindowsArch"""
             }
             
@@ -4726,12 +4688,12 @@ try {
         }
 
         # Windows 10 LTSC 2016 (1607) and Windows Server 2016
-        if($WindowsRelease -eq 2016){
+        if ($WindowsRelease -eq 2016) {
             $name = "KB4589210 $windowsArch"
         }
 
         # Windows 10 LTSC 2019 (1809) and Windows Server 2019
-        if($WindowsRelease -eq 2019){
+        if ($WindowsRelease -eq 2019) {
             $name = "KB4589208 $windowsArch"
         }
         WriteLog "Searching for $name from Microsoft Update Catalog and saving to $MicrocodePath"
@@ -4746,7 +4708,7 @@ try {
             WriteLog "Found $VHDXCacheFolder"
             $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
             WriteLog "Found $($vhdxJsons.Count) cached VHDX files"
-            if (Test-Path -Path $KBPath){
+            if (Test-Path -Path $KBPath) {
                 $downloadedKBs = @(Get-ChildItem -File -Path $KBPath -Recurse)
             }
             else {

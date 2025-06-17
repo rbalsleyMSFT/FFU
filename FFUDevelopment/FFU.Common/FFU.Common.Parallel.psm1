@@ -173,12 +173,10 @@ function Invoke-ParallelProcessing {
                                     -CompressToWim $localJobArgs['CompressToWim']
                             }
                             'Dell' {
-                                # DellCatalogXmlPath might be null if catalog prep failed; Save-DellDriversTask should handle this.
                                 $taskResult = Save-DellDriversTask -DriverItemData $currentItem `
                                     -DriversFolder $localJobArgs['DriversFolder'] `
                                     -WindowsArch $localJobArgs['WindowsArch'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
-                                    -DellCatalogXmlPath $localJobArgs['DellCatalogXmlPath'] `
                                     -ProgressQueue $localProgressQueue `
                                     -CompressToWim $localJobArgs['CompressToWim']
                             }

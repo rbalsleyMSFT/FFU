@@ -160,13 +160,10 @@ function Save-DellDriversTask {
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
         [int]$WindowsRelease,
-        [Parameter(Mandatory = $true)]
-        [string]$DellCatalogXmlPath,    # Path to the *existing* central XML catalog file
         [Parameter()] # Made optional
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
         [Parameter()]
         [bool]$CompressToWim = $false # New parameter for compression
-        # REMOVED: UI-related parameters, Catalog download/extract params
     )
         
     $modelName = $DriverItemData.Model
@@ -181,6 +178,42 @@ function Save-DellDriversTask {
     $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
 
     try {
+        # --- Dell Catalog Handling ---
+        $dellDriversFolder = Join-Path -Path $DriversFolder -ChildPath "Dell"
+        $catalogBaseName = if ($WindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+        $dellCabFile = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).cab"
+        $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
+        $catalogUrl = if ($WindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+
+        $downloadCatalog = $true
+        if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
+            if (((Get-Date) - (Get-Item $dellCatalogXML).LastWriteTime).TotalDays -lt 7) {
+                WriteLog "Using existing Dell Catalog XML (less than 7 days old): $dellCatalogXML"
+                $downloadCatalog = $false
+            }
+            else { WriteLog "Existing Dell Catalog XML is older than 7 days: $dellCatalogXML" }
+        }
+        else { WriteLog "Dell Catalog XML not found: $dellCatalogXML" }
+
+        if ($downloadCatalog) {
+            WriteLog "Downloading and extracting Dell Catalog for task..."
+            if (-not (Test-Path -Path $dellDriversFolder -PathType Container)) {
+                New-Item -Path $dellDriversFolder -ItemType Directory -Force | Out-Null
+            }
+            try {
+                $request = [System.Net.WebRequest]::Create($catalogUrl); $request.Method = 'HEAD'; $response = $request.GetResponse(); $response.Close()
+            }
+            catch { throw "Dell Catalog URL '$catalogUrl' not accessible: $($_.Exception.Message)" }
+
+            if (Test-Path -Path $dellCabFile) { Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue }
+            if (Test-Path -Path $dellCatalogXML) { Remove-Item -Path $dellCatalogXML -Force -ErrorAction SilentlyContinue }
+
+            Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFile
+            Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFile"" ""$dellCatalogXML""" | Out-Null
+            Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue
+        }
+        # --- End Dell Catalog Handling ---
+
         # 1. Check if drivers already exist for this model (final destination)
         if (Test-Path -Path $modelPath -PathType Container) {
             $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
@@ -195,19 +228,17 @@ function Save-DellDriversTask {
             }
         }
 
-        # 2. REMOVED: Download and Extract Catalog - This is now done centrally in the UI script
-
         # 3. Parse the *EXISTING* XML and Find Drivers for *this specific model*
         $status = "Finding drivers..."
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
         # Check if the provided XML path exists
-        if (-not (Test-Path -Path $DellCatalogXmlPath -PathType Leaf)) {
-            throw "Dell Catalog XML file not found at specified path: $DellCatalogXmlPath"
+        if (-not (Test-Path -Path $dellCatalogXML -PathType Leaf)) {
+            throw "Dell Catalog XML file not found at specified path: $dellCatalogXML"
         }
 
-        WriteLog "Parsing existing Dell Catalog XML for model '$modelName' from: $DellCatalogXmlPath"
-        [xml]$xmlContent = Get-Content -Path $DellCatalogXmlPath
+        WriteLog "Parsing existing Dell Catalog XML for model '$modelName' from: $dellCatalogXML"
+        [xml]$xmlContent = Get-Content -Path $dellCatalogXML
         # Check if manifest and baseLocation exist before accessing
         if ($null -eq $xmlContent.manifest -or $null -eq $xmlContent.manifest.baseLocation) {
             throw "Invalid Dell Catalog XML format: Missing 'manifest' or 'baseLocation' element in '$DellCatalogXmlPath'."
@@ -219,7 +250,7 @@ function Save-DellDriversTask {
         $softwareComponents = @($xmlContent.Manifest.SoftwareComponent | Where-Object { $_.ComponentType.value -eq "DRVR" })
         $modelSpecificDriversFound = $false
 
-        WriteLog "Searching $($softwareComponents.Count) DRVR components in '$DellCatalogXmlPath' for model '$modelName'..."
+        WriteLog "Searching $($softwareComponents.Count) DRVR components in '$dellCatalogXML' for model '$modelName'..."
 
         foreach ($component in $softwareComponents) {
             # Check if SupportedSystems and Brand exist
@@ -303,7 +334,7 @@ function Save-DellDriversTask {
 
         if (-not $modelSpecificDriversFound) {
             $status = "No drivers found for OS"
-            WriteLog "No drivers found for model '$modelName' matching Windows Release '$WindowsRelease' and Arch '$WindowsArch' in '$DellCatalogXmlPath'."
+            WriteLog "No drivers found for model '$modelName' matching Windows Release '$WindowsRelease' and Arch '$WindowsArch' in '$dellCatalogXML'."
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
             # Consider this success as the process completed, just no drivers to download
             return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true }
