@@ -73,6 +73,7 @@ NestedModules = @('FFUUI.Core.Applications.psm1',
                 'FFUUI.Core.Drivers.HP.psm1',
                 'FFUUI.Core.Drivers.Lenovo.psm1',
                 'FFUUI.Core.Drivers.Microsoft.psm1',
+                'FFUUI.Core.Initialize.psm1',
                 'FFUUI.Core.Shared.psm1',
                 'FFUUI.Core.WindowsSettings.psm1',
                 'FFUUI.Core.Winget.psm1')
