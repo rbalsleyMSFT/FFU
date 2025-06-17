@@ -151,9 +151,6 @@ $window.Add_Loaded({
 
         Register-EventHandlers -State $script:uiState
 
-        # Get Windows Settings UI using data from helper module
-        Get-WindowsSettingsCombos -isoPath $script:uiState.Defaults.windowsSettingsDefaults.DefaultISOPath -State $script:uiState
-
         $script:uiState.Controls.txtISOPath.Add_TextChanged({
                 Get-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState
             })

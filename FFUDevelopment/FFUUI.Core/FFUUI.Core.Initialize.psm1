@@ -189,7 +189,10 @@ function Initialize-UIDefaults {
     $State.Controls.txtVMLocation.Text = $State.Defaults.generalDefaults.VMLocation
     $State.Controls.txtVMNamePrefix.Text = $State.Defaults.generalDefaults.VMNamePrefix
     $State.Controls.cmbLogicalSectorSize.SelectedItem = ($State.Controls.cmbLogicalSectorSize.Items | Where-Object { $_.Content -eq $State.Defaults.generalDefaults.LogicalSectorSize.ToString() })
-
+   
+    # Populate Windows Release, Version, and SKU comboboxes
+    Get-WindowsSettingsCombos -isoPath $State.Defaults.windowsSettingsDefaults.DefaultISOPath -State $State
+    
     # Windows Settings tab defaults
     $State.Controls.cmbWindowsArch.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedArchitectures
     $State.Controls.cmbWindowsArch.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsArch
