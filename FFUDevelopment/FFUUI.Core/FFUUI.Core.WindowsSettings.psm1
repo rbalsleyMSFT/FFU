@@ -208,7 +208,6 @@ function Get-WindowsSettingsDefaults {
         AllowedLanguages        = $script:allowedLangs
         AllowedArchitectures    = @('x86', 'x64', 'arm64')
         AllowedMediaTypes       = @('Consumer', 'Business')
-        # Static Data Lists/Maps
         SkuList                 = $script:skuList
         AllWindowsReleases      = $script:allWindowsReleases
         MctWindowsReleases      = $script:mctWindowsReleases
