@@ -409,8 +409,7 @@ function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
 
-    # Hyper-V VM Switch Selection Changed Event
-    # This event handler updates the IP address field based on the selected VM switch
+    # Hyper-V tab event handlers
     $State.Controls.cmbVMSwitchName.Add_SelectionChanged({
             param($eventSource, $selectionChangedEventArgs)
             # The state object is available via the parent window's Tag property
@@ -431,6 +430,65 @@ function Register-EventHandlers {
                     $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found in map
                 }
             }
+        })
+
+    # Windows Settings tab Event Handlers
+    $State.Controls.txtISOPath.Add_TextChanged({
+            param($eventSource, $textChangedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Get-WindowsSettingsCombos -isoPath $localState.Controls.txtISOPath.Text -State $localState
+        })
+
+    $State.Controls.cmbWindowsRelease.Add_SelectionChanged({
+            param($eventSource, $selectionChangedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedReleaseValue = 11 # Default if null
+            if ($null -ne $localState.Controls.cmbWindowsRelease.SelectedItem) {
+                $selectedReleaseValue = $localState.Controls.cmbWindowsRelease.SelectedItem.Value
+            }
+            # Only need to update the Version combo when Release changes
+            Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $localState.Controls.txtISOPath.Text -State $localState
+            # Also update the SKU combo (now derives values internally)
+            Update-WindowsSkuCombo -State $localState
+        })
+
+    $State.Controls.btnBrowseISO.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $ofd = New-Object System.Windows.Forms.OpenFileDialog
+            $ofd.Filter = "ISO files (*.iso)|*.iso"
+            $ofd.Title = "Select Windows ISO File"
+            if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtISOPath.Text = $ofd.FileName }
+        })
+
+    # Drivers Tab Event Handlers
+    $State.Controls.chkDownloadDrivers.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.cmbMake.Visibility = 'Visible'
+            $localState.Controls.btnGetModels.Visibility = 'Visible'
+            $localState.Controls.spMakeSection.Visibility = 'Visible'
+            $localState.Controls.spModelFilterSection.Visibility = 'Visible'
+            $localState.Controls.lstDriverModels.Visibility = 'Visible'
+            $localState.Controls.spDriverActionButtons.Visibility = 'Visible'
+        })
+    $State.Controls.chkDownloadDrivers.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.cmbMake.Visibility = 'Collapsed'
+            $localState.Controls.btnGetModels.Visibility = 'Collapsed'
+            $localState.Controls.spMakeSection.Visibility = 'Collapsed'
+            $localState.Controls.spModelFilterSection.Visibility = 'Collapsed'
+            $localState.Controls.lstDriverModels.Visibility = 'Collapsed'
+            $localState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
+            $localState.Controls.lstDriverModels.ItemsSource = $null
+            $localState.Data.allDriverModels.Clear()
+            $localState.Controls.txtModelFilter.Text = ""
         })
 }
 

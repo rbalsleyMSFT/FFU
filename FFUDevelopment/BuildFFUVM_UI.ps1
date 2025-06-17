@@ -17,26 +17,26 @@ $FFUDevelopmentPath = 'C:\FFUDevelopment' # hard coded for testing
 # --- NEW: Central State Object ---
 $script:uiState = [PSCustomObject]@{
     FFUDevelopmentPath = $FFUDevelopmentPath;
-    Window      = $null;
-    Controls    = @{
+    Window             = $null;
+    Controls           = @{
         featureCheckBoxes               = @{}; 
         UpdateInstallAppsBasedOnUpdates = $null 
     };
-    Data        = @{
+    Data               = @{
         allDriverModels             = [System.Collections.Generic.List[PSCustomObject]]::new();
         appsScriptVariablesDataList = [System.Collections.Generic.List[PSCustomObject]]::new();
         versionData                 = $null; 
         vmSwitchMap                 = @{}   
     };
-    Flags       = @{
+    Flags              = @{
         installAppsForcedByUpdates        = $false;
         prevInstallAppsStateBeforeUpdates = $null;
         installAppsCheckedByOffice        = $false;
         lastSortProperty                  = $null;
         lastSortAscending                 = $true
     };
-    Defaults    = @{};
-    LogFilePath = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
+    Defaults           = @{};
+    LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
 }
 
 # Remove any existing modules to avoid conflicts
@@ -151,50 +151,20 @@ $window.Add_Loaded({
 
         Register-EventHandlers -State $script:uiState
 
-        $script:uiState.Controls.txtISOPath.Add_TextChanged({
-                Get-WindowsSettingsCombos -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState
-            })
-        $script:uiState.Controls.cmbWindowsRelease.Add_SelectionChanged({
-                $selectedReleaseValue = 11 # Default if null
-                if ($null -ne $script:uiState.Controls.cmbWindowsRelease.SelectedItem) {
-                    $selectedReleaseValue = $script:uiState.Controls.cmbWindowsRelease.SelectedItem.Value
-                }
-                # Only need to update the Version combo when Release changes
-                Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $script:uiState.Controls.txtISOPath.Text -State $script:uiState
-                # Also update the SKU combo (now derives values internally)
-                Update-WindowsSkuCombo -State $script:uiState
-            })
-        $script:uiState.Controls.btnBrowseISO.Add_Click({
-                $ofd = New-Object System.Windows.Forms.OpenFileDialog
-                $ofd.Filter = "ISO files (*.iso)|*.iso"
-                $ofd.Title = "Select Windows ISO File"
-                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:uiState.Controls.txtISOPath.Text = $ofd.FileName }
-            })
-
         # Drivers tab UI logic
         $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo') 
-        foreach ($m in $makeList) { [void]$script:uiState.Controls.cmbMake.Items.Add($m) }
-        if ($script:uiState.Controls.cmbMake.Items.Count -gt 0) { $script:uiState.Controls.cmbMake.SelectedIndex = 0 }
-        $script:uiState.Controls.chkDownloadDrivers.Add_Checked({
-                $script:uiState.Controls.cmbMake.Visibility = 'Visible'
-                $script:uiState.Controls.btnGetModels.Visibility = 'Visible'
-                $script:uiState.Controls.spMakeSection.Visibility = 'Visible'
-                $script:uiState.Controls.spModelFilterSection.Visibility = 'Visible'
-                $script:uiState.Controls.lstDriverModels.Visibility = 'Visible'
-                $script:uiState.Controls.spDriverActionButtons.Visibility = 'Visible'
-            })
-        $script:uiState.Controls.chkDownloadDrivers.Add_Unchecked({
-                $script:uiState.Controls.cmbMake.Visibility = 'Collapsed'
-                $script:uiState.Controls.btnGetModels.Visibility = 'Collapsed'
-                $script:uiState.Controls.spMakeSection.Visibility = 'Collapsed'
-                $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
-                $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
-                $script:uiState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
-                $script:uiState.Controls.lstDriverModels.ItemsSource = $null
-                $script:uiState.Data.allDriverModels = @()
-                $script:uiState.Controls.txtModelFilter.Text = ""
-            })
-        $script:uiState.Controls.spMakeSection.Visibility = if ($script:uiState.Controls.chkDownloadDrivers.IsChecked) { 'Visible' } else { 'Collapsed' }
+        foreach ($m in $makeList) {
+            [void]$script:uiState.Controls.cmbMake.Items.Add($m)
+        }
+        if ($script:uiState.Controls.cmbMake.Items.Count -gt 0) {
+            $script:uiState.Controls.cmbMake.SelectedIndex = 0
+        }
+        $script:uiState.Controls.spMakeSection.Visibility = if ($script:uiState.Controls.chkDownloadDrivers.IsChecked) {
+            'Visible' 
+        } 
+        else { 
+            'Collapsed' 
+        }
         $script:uiState.Controls.btnGetModels.Visibility = if ($script:uiState.Controls.chkDownloadDrivers.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
         $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
@@ -204,7 +174,6 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtStatus.Text = "Getting models for $selectedMake..."
                 $window.Cursor = [System.Windows.Input.Cursors]::Wait
                 $this.IsEnabled = $false
-
                 try {
                     # Get previously selected models from the master list ($script:uiState.Data.allDriverModels)
                     # This ensures all selected items are captured, regardless of any active filter.
@@ -704,7 +673,7 @@ $window.Add_Loaded({
                 $script:uiState.Controls.txtAppSource.Text = ''
             })
         $script:uiState.Controls.chkInstallWingetApps.Add_Checked({ 
-            $script:uiState.Controls.wingetPanel.Visibility = 'Visible' 
+                $script:uiState.Controls.wingetPanel.Visibility = 'Visible' 
             })
         $script:uiState.Controls.chkInstallWingetApps.Add_Unchecked({
                 $script:uiState.Controls.wingetPanel.Visibility = 'Collapsed'
@@ -758,8 +727,8 @@ $window.Add_Loaded({
                 }
             })
         $script:uiState.Controls.btnWingetSearch.Add_Click({ 
-            Search-WingetApps -State $script:uiState 
-        })
+                Search-WingetApps -State $script:uiState 
+            })
         $script:uiState.Controls.txtWingetSearch.Add_KeyDown({
                 param($eventSrc, $keyEvent)
                 if ($keyEvent.Key -eq 'Return') { 
@@ -767,11 +736,11 @@ $window.Add_Loaded({
                 }
             })
         $script:uiState.Controls.btnSaveWingetList.Add_Click({ 
-            Save-WingetList -State $script:uiState 
-        })
+                Save-WingetList -State $script:uiState 
+            })
         $script:uiState.Controls.btnImportWingetList.Add_Click({ 
-            Import-WingetList -State $script:uiState 
-        })
+                Import-WingetList -State $script:uiState 
+            })
         $script:uiState.Controls.btnClearWingetList.Add_Click({
                 $script:uiState.Controls.lstWingetResults.ItemsSource = @() # Set ItemsSource to an empty array
                 $script:uiState.Controls.txtWingetSearch.Text = ""
@@ -924,17 +893,17 @@ $window.Add_Loaded({
                 $buttonSender.IsEnabled = $true
             })
         $script:uiState.Controls.btnMoveTop.Add_Click({ 
-            Move-ListViewItemTop -ListView $script:uiState.Controls.lstApplications 
-        })
+                Move-ListViewItemTop -ListView $script:uiState.Controls.lstApplications 
+            })
         $script:uiState.Controls.btnMoveUp.Add_Click({ 
-            Move-ListViewItemUp -ListView $script:uiState.Controls.lstApplications 
-        })
+                Move-ListViewItemUp -ListView $script:uiState.Controls.lstApplications 
+            })
         $script:uiState.Controls.btnMoveDown.Add_Click({ 
-            Move-ListViewItemDown -ListView $script:uiState.Controls.lstApplications 
-        })
+                Move-ListViewItemDown -ListView $script:uiState.Controls.lstApplications 
+            })
         $script:uiState.Controls.btnMoveBottom.Add_Click({ 
-            Move-ListViewItemBottom -ListView $script:uiState.Controls.lstApplications 
-        })
+                Move-ListViewItemBottom -ListView $script:uiState.Controls.lstApplications 
+            })
 
         # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column is handled)
         $byoGridView = $script:uiState.Controls.lstApplications.View
