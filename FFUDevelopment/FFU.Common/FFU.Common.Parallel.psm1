@@ -34,7 +34,6 @@ function Invoke-ParallelProcessing {
     }
     $resultsCollection = [System.Collections.Generic.List[object]]::new()
     $jobs = @()
-    $results = @() # Store results from jobs
     $totalItems = $ItemsToProcess.Count
     $processedCount = 0
 

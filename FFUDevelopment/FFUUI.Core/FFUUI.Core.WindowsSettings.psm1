@@ -540,19 +540,19 @@ function BuildFeaturesGrid {
         $chk.Content = $featureName
         $chk.Margin = "5"
         $chk.Add_Checked({
-            param($sender, $e)
-            $window = [System.Windows.Window]::GetWindow($sender)
-            if ($null -ne $window) {
-                UpdateOptionalFeaturesString -State $window.Tag
-            }
-        })
+                param($eventSource, $e)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -ne $window) {
+                    UpdateOptionalFeaturesString -State $window.Tag
+                }
+            })
         $chk.Add_Unchecked({
-            param($sender, $e)
-            $window = [System.Windows.Window]::GetWindow($sender)
-            if ($null -ne $window) {
-                UpdateOptionalFeaturesString -State $window.Tag
-            }
-        })
+                param($eventSource, $e)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -ne $window) {
+                    UpdateOptionalFeaturesString -State $window.Tag
+                }
+            })
 
         $State.Controls.featureCheckBoxes[$featureName] = $chk # Track the checkbox
 
