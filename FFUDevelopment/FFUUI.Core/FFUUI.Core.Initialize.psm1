@@ -37,7 +37,6 @@ function Initialize-UIControls {
     $State.Controls.chkPreviewCU = $window.FindName('chkUpdatePreviewCU')
     $State.Controls.btnCheckUSBDrives = $window.FindName('btnCheckUSBDrives')
     $State.Controls.lstUSBDrives = $window.FindName('lstUSBDrives')
-    $State.Controls.chkSelectAllUSBDrives = $window.FindName('chkSelectAllUSBDrives')
     $State.Controls.chkBuildUSBDriveEnable = $window.FindName('chkBuildUSBDriveEnable')
     $State.Controls.usbSection = $window.FindName('usbDriveSection')
     $State.Controls.chkSelectSpecificUSBDrives = $window.FindName('chkSelectSpecificUSBDrives')
@@ -254,7 +253,7 @@ function Initialize-DynamicUIElements {
     $State.Controls.lstDriverModels.View = $driverModelsGridView # Assign GridView to ListView first
 
     # Add the selectable column using the new function
-    Add-SelectableGridViewColumn -ListView $State.Controls.lstDriverModels -HeaderCheckBoxScriptVariableName "chkSelectAllDriverModels" -ColumnWidth 70
+    Add-SelectableGridViewColumn -ListView $State.Controls.lstDriverModels -State $State -HeaderCheckBoxKeyName "chkSelectAllDriverModels" -ColumnWidth 70
 
     # Add other sortable columns with left-aligned headers
     Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
@@ -286,7 +285,7 @@ function Initialize-DynamicUIElements {
     $State.Controls.lstWingetResults.ItemContainerStyle = $itemStyleWingetResults
 
     # Add the selectable column using the new function
-    Add-SelectableGridViewColumn -ListView $State.Controls.lstWingetResults -HeaderCheckBoxScriptVariableName "chkSelectAllWingetResults" -ColumnWidth 60
+    Add-SelectableGridViewColumn -ListView $State.Controls.lstWingetResults -State $State -HeaderCheckBoxKeyName "chkSelectAllWingetResults" -ColumnWidth 60
 
     # Add other sortable columns with left-aligned headers
     Add-SortableColumn -gridView $wingetGridView -header "Name" -binding "Name" -width 200 -headerHorizontalAlignment Left
@@ -322,7 +321,7 @@ function Initialize-DynamicUIElements {
 
     # The GridView for lstAppsScriptVariables is defined in XAML. We need to get it and add the column.
     if ($State.Controls.lstAppsScriptVariables.View -is [System.Windows.Controls.GridView]) {
-        Add-SelectableGridViewColumn -ListView $State.Controls.lstAppsScriptVariables -HeaderCheckBoxScriptVariableName "chkSelectAllAppsScriptVariables" -ColumnWidth 60
+        Add-SelectableGridViewColumn -ListView $State.Controls.lstAppsScriptVariables -State $State -HeaderCheckBoxKeyName "chkSelectAllAppsScriptVariables" -ColumnWidth 60
 
         # Make Key and Value columns sortable
         $appsScriptVarsGridView = $State.Controls.lstAppsScriptVariables.View
@@ -374,6 +373,70 @@ function Initialize-DynamicUIElements {
     }
     else {
         WriteLog "Initialize-DynamicUIElements: Could not build features grid. Panel or defaults missing."
+    }
+    
+    # USB Drives ListView setup
+    # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
+    $itemStyleUSBDrives = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleUSBDrives.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstUSBDrives.ItemContainerStyle = $itemStyleUSBDrives
+    
+    if ($State.Controls.lstUSBDrives.View -is [System.Windows.Controls.GridView]) {
+        # Add the selectable column using the shared function
+        Add-SelectableGridViewColumn -ListView $State.Controls.lstUSBDrives -State $State -HeaderCheckBoxKeyName "chkSelectAllUSBDrivesHeader" -ColumnWidth 70
+    
+        # Make other columns sortable
+        $usbDrivesGridView = $State.Controls.lstUSBDrives.View
+            
+        # Model Column (index 0 in XAML, now 1)
+        if ($usbDrivesGridView.Columns.Count -gt 1) {
+            $modelColumn = $usbDrivesGridView.Columns[1]
+            $modelHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $modelHeader.Content = "Model"
+            $modelHeader.Tag = "Model" # Property to sort by
+            $modelHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $modelColumn.Header = $modelHeader
+        }
+    
+        # Serial Number Column (index 1 in XAML, now 2)
+        if ($usbDrivesGridView.Columns.Count -gt 2) {
+            $serialColumn = $usbDrivesGridView.Columns[2]
+            $serialHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $serialHeader.Content = "Serial Number"
+            $serialHeader.Tag = "SerialNumber" # Property to sort by
+            $serialHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $serialColumn.Header = $serialHeader
+        }
+    
+        # Size Column (index 2 in XAML, now 3)
+        if ($usbDrivesGridView.Columns.Count -gt 3) {
+            $sizeColumn = $usbDrivesGridView.Columns[3]
+            $sizeHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $sizeHeader.Content = "Size (GB)"
+            $sizeHeader.Tag = "Size" # Property to sort by
+            $sizeHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $sizeColumn.Header = $sizeHeader
+        }
+    
+        # Add Click event handler for sorting
+        $State.Controls.lstUSBDrives.AddHandler(
+            [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+            [System.Windows.RoutedEventHandler] {
+                param($eventSource, $e) # $eventSource is the ListView control
+                $header = $e.OriginalSource
+                if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                    # Retrieve the main UI state object from the window's Tag property
+                    $listViewControl = $eventSource
+                    $window = [System.Windows.Window]::GetWindow($listViewControl)
+                    $uiStateFromWindowTag = $window.Tag
+                        
+                    Invoke-ListViewSort -listView $eventSource -property $header.Tag -State $uiStateFromWindowTag
+                }
+            }
+        )
+    }
+    else {
+        WriteLog "Warning: lstUSBDrives.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
     }
 }
 

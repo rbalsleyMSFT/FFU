@@ -12,30 +12,23 @@ function Register-EventHandlers {
             $localState.Controls.lstUSBDrives.Items.Clear()
             $usbDrives = Get-USBDrives
             foreach ($drive in $usbDrives) {
-                $localState.Controls.lstUSBDrives.Items.Add([PSCustomObject]$drive)
+                $driveObject = [PSCustomObject]$drive
+                # Explicitly add and initialize the IsSelected property for each new item.
+                $driveObject | Add-Member -MemberType NoteProperty -Name 'IsSelected' -Value $false -Force
+                $localState.Controls.lstUSBDrives.Items.Add($driveObject)
             }
             if ($localState.Controls.lstUSBDrives.Items.Count -gt 0) {
                 $localState.Controls.lstUSBDrives.SelectedIndex = 0
             }
-        })
-        
-    $State.Controls.chkSelectAllUSBDrives.Add_Checked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            foreach ($item in $localState.Controls.lstUSBDrives.Items) { $item.IsSelected = $true }
-            $localState.Controls.lstUSBDrives.Items.Refresh()
-        })
-    $State.Controls.chkSelectAllUSBDrives.Add_Unchecked({
-            param($eventSource, $routedEventArgs)
-            # This event also fires for indeterminate state, so only act if it's explicitly false.
-            if ($eventSource.IsChecked -eq $false) {
-                $window = [System.Windows.Window]::GetWindow($eventSource)
-                $localState = $window.Tag
-                foreach ($item in $localState.Controls.lstUSBDrives.Items) { $item.IsSelected = $false }
-                $localState.Controls.lstUSBDrives.Items.Refresh()
+            WriteLog "Check USB Drives: Found $($localState.Controls.lstUSBDrives.Items.Count) USB drives."
+            # After clearing and repopulating, update the 'Select All' header checkbox state
+            $headerChk = $localState.Controls.chkSelectAllUSBDrivesHeader
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstUSBDrives -HeaderCheckBox $headerChk
             }
         })
+        
+
     $State.Controls.lstUSBDrives.Add_KeyDown({
             param($eventSource, $keyEvent)
             if ($keyEvent.Key -eq 'Space') {
@@ -45,10 +38,11 @@ function Register-EventHandlers {
                 if ($selectedItem) {
                     $selectedItem.IsSelected = -not $selectedItem.IsSelected
                     $localState.Controls.lstUSBDrives.Items.Refresh()
-                    # After toggling, update the 'Select All' checkbox state
-                    $items = $localState.Controls.lstUSBDrives.Items
-                    $allSelected = $items.Count -gt 0 -and ($items | Where-Object { -not $_.IsSelected }).Count -eq 0
-                    $localState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
+                    # After toggling, update the 'Select All' header checkbox state
+                    $headerChk = $localState.Controls.chkSelectAllUSBDrivesHeader
+                    if ($null -ne $headerChk) {
+                        Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstUSBDrives -HeaderCheckBox $headerChk
+                    }
                 }
             }
         })
@@ -56,10 +50,11 @@ function Register-EventHandlers {
             param($eventSource, $selChangeEvent)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $items = $localState.Controls.lstUSBDrives.Items
-            # Update the 'Select All' checkbox state based on current selections
-            $allSelected = $items.Count -gt 0 -and ($items | Where-Object { -not $_.IsSelected }).Count -eq 0
-            $localState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
+            # Update the 'Select All' header checkbox state based on current selections
+            $headerChk = $localState.Controls.chkSelectAllUSBDrivesHeader
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstUSBDrives -HeaderCheckBox $headerChk
+            }
         })
 
     # Hyper-V tab event handlers

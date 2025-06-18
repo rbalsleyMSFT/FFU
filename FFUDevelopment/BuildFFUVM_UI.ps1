@@ -205,7 +205,6 @@ $window.Add_Loaded({
                 $script:uiState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $false
                 $script:uiState.Controls.chkSelectSpecificUSBDrives.IsChecked = $false
                 $script:uiState.Controls.lstUSBDrives.Items.Clear()
-                $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $false
             })
         $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Checked({ 
                 $script:uiState.Controls.usbSelectionPanel.Visibility = 'Visible' 
@@ -213,7 +212,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Unchecked({
                 $script:uiState.Controls.usbSelectionPanel.Visibility = 'Collapsed'
                 $script:uiState.Controls.lstUSBDrives.Items.Clear()
-                $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $false
             })
         $script:uiState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $script:uiState.Controls.chkBuildUSBDriveEnable.IsChecked
         $script:uiState.Controls.chkAllowExternalHardDiskMedia.Add_Checked({ 
@@ -961,8 +959,8 @@ $btnLoadConfig.Add_Click({
                 # Update the ListView's ItemsSource after populating the data list
                 $lstAppsScriptVars.ItemsSource = $script:uiState.Data.appsScriptVariablesDataList.ToArray()
                 # Update the header checkbox state
-                if ($null -ne (Get-Variable -Name 'chkSelectAllAppsScriptVariables' -Scope Script -ErrorAction SilentlyContinue)) {
-                    Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $script:chkSelectAllAppsScriptVariables
+                if ($null -ne $script:uiState.Controls.chkSelectAllAppsScriptVariables) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $script:uiState.Controls.chkSelectAllAppsScriptVariables
                 }
 
                 # Update USB Drive selection if present in config
@@ -1016,9 +1014,11 @@ $btnLoadConfig.Add_Click({
                     }
                     $script:uiState.Controls.lstUSBDrives.Items.Refresh()
 
-                    # Update the Select All checkbox state
-                    $allSelected = $script:uiState.Controls.lstUSBDrives.Items.Count -gt 0 -and -not ($script:uiState.Controls.lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
-                    $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
+                    # Update the Select All header checkbox state
+                    $headerChk = $script:uiState.Controls.chkSelectAllUSBDrivesHeader
+                    if ($null -ne $headerChk) {
+                        Update-SelectAllHeaderCheckBoxState -ListView $script:uiState.Controls.lstUSBDrives -HeaderCheckBox $headerChk
+                    }
                     WriteLog "LoadConfig: USBDriveList processing complete."
                 }
                 else {

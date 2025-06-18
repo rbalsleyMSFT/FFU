@@ -198,19 +198,12 @@
                                     <!-- Button and Select All row -->
                                     <DockPanel Grid.Row="0" Margin="0,5" LastChildFill="False">
                                         <Button x:Name="btnCheckUSBDrives" Content="Check USB drives" DockPanel.Dock="Left" Padding="10,5"/>
-                                        <CheckBox x:Name="chkSelectAllUSBDrives" Content="Select All" DockPanel.Dock="Left" Margin="15,0,0,0" VerticalAlignment="Center"/>
                                     </DockPanel>
                                     <!-- ListView row -->
                                     <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0,5" Height="150">
                                         <ListView.View>
                                             <GridView>
-                                                <GridViewColumn Header="Selected" Width="70">
-                                                    <GridViewColumn.CellTemplate>
-                                                        <DataTemplate>
-                                                            <CheckBox IsChecked="{Binding IsSelected}"/>
-                                                        </DataTemplate>
-                                                    </GridViewColumn.CellTemplate>
-                                                </GridViewColumn>
+
                                                 <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
                                                 <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
                                                 <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>

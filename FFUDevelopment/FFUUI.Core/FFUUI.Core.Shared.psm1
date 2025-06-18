@@ -283,7 +283,9 @@ function Add-SelectableGridViewColumn {
         [Parameter(Mandatory)]
         [System.Windows.Controls.ListView]$ListView,
         [Parameter(Mandatory)]
-        [string]$HeaderCheckBoxScriptVariableName,
+        [psobject]$State,
+        [Parameter(Mandatory)]
+        [string]$HeaderCheckBoxKeyName,
         [Parameter(Mandatory)]
         [double]$ColumnWidth,
         [string]$IsSelectedPropertyName = "IsSelected"
@@ -335,8 +337,8 @@ function Add-SelectableGridViewColumn {
             }
         })
 
-    Set-Variable -Name $HeaderCheckBoxScriptVariableName -Value $headerCheckBox -Scope Script -Force
-    WriteLog "Add-SelectableGridViewColumn: Stored header checkbox in script variable '$HeaderCheckBoxScriptVariableName'."
+    $State.Controls[$HeaderCheckBoxKeyName] = $headerCheckBox
+    WriteLog "Add-SelectableGridViewColumn: Stored header checkbox in State.Controls with key '$HeaderCheckBoxKeyName'."
 
     $selectableColumn = New-Object System.Windows.Controls.GridViewColumn
     $selectableColumn.Header = $headerCheckBox
@@ -354,8 +356,8 @@ function Add-SelectableGridViewColumn {
 
     # MODIFICATION: Store the actual ListView object in the item checkbox's Tag
     $tagObject = [PSCustomObject]@{
-        HeaderCheckboxName = $HeaderCheckBoxScriptVariableName
-        ListViewControl    = $ListView # Store the object itself
+        HeaderCheckboxKeyName = $HeaderCheckBoxKeyName
+        ListViewControl       = $ListView # Store the object itself
     }
     $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::TagProperty, $tagObject)
 
@@ -364,17 +366,25 @@ function Add-SelectableGridViewColumn {
             $itemCheckBox = $eventSourceLocal -as [System.Windows.Controls.CheckBox]
             $tagData = $itemCheckBox.Tag
             
-            $headerCheckboxNameFromTag = $tagData.HeaderCheckboxName
+            $headerCheckboxKeyFromTag = $tagData.HeaderCheckboxKeyName
             $targetListView = $tagData.ListViewControl # Get the control directly from the tag
 
-            WriteLog "Add-SelectableGridViewColumn: Item Click. ListView: '$($targetListView.Name)', HeaderChkName: '$headerCheckboxNameFromTag'"
+            # Get the state from the window tag
+            $window = [System.Windows.Window]::GetWindow($targetListView)
+            if ($null -eq $window -or $null -eq $window.Tag) {
+                WriteLog "Add-SelectableGridViewColumn: ERROR - Could not get window or state from window tag."
+                return
+            }
+            $localState = $window.Tag
 
-            $headerChk = Get-Variable -Name $headerCheckboxNameFromTag -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+            WriteLog "Add-SelectableGridViewColumn: Item Click. ListView: '$($targetListView.Name)', HeaderChkKey: '$headerCheckboxKeyFromTag'"
+
+            $headerChk = $localState.Controls[$headerCheckboxKeyFromTag]
             if ($null -ne $headerChk) {
                 Update-SelectAllHeaderCheckBoxState -ListView $targetListView -HeaderCheckBox $headerChk
             }
             else {
-                WriteLog "Add-SelectableGridViewColumn: Error - Could not retrieve script variable for header checkbox named '$headerCheckboxNameFromTag'."
+                WriteLog "Add-SelectableGridViewColumn: Error - Could not retrieve header checkbox from state with key '$headerCheckboxKeyFromTag'."
             }
         })
 
@@ -411,7 +421,9 @@ function Update-SelectAllHeaderCheckBoxState {
     }
 
     $selectedCount = ($collectionToInspect | Where-Object { $_.IsSelected }).Count
+    WriteLog "Update-SelectAllHeaderCheckBoxState: Selected count is $selectedCount for ListView '$($ListView.Name)'."
     $totalItemCount = $collectionToInspect.Count # Get the total count from the collection being inspected
+    WriteLog "Update-SelectAllHeaderCheckBoxState: Total item count is $totalItemCount for ListView '$($ListView.Name)'."
 
     if ($totalItemCount -eq 0) {
         # Handle empty list case specifically
