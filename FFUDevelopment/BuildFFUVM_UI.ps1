@@ -188,60 +188,6 @@ $window.Add_Loaded({
             $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
         }
 
-        # Updates/InstallApps interplay (Keep existing logic)
-        $script:uiState.Flags.installAppsForcedByUpdates = $false
-        $script:uiState.Flags.prevInstallAppsStateBeforeUpdates = $null
-        # Define the scriptblock within the Loaded event and assign it to the state object
-        $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates = {
-            param($State) # Pass state object to avoid using $script: scope inside
-            $anyUpdateChecked = $State.Controls.chkUpdateLatestDefender.IsChecked -or $State.Controls.chkUpdateEdge.IsChecked -or $State.Controls.chkUpdateOneDrive.IsChecked -or $State.Controls.chkUpdateLatestMSRT.IsChecked
-            if ($anyUpdateChecked) {
-                if (-not $State.Flags.installAppsForcedByUpdates) {
-                    $State.Flags.prevInstallAppsStateBeforeUpdates = $State.Controls.chkInstallApps.IsChecked
-                    $State.Flags.installAppsForcedByUpdates = $true
-                }
-                $State.Controls.chkInstallApps.IsChecked = $true
-                $State.Controls.chkInstallApps.IsEnabled = $false
-            }
-            else {
-                if ($State.Flags.installAppsForcedByUpdates) {
-                    $State.Controls.chkInstallApps.IsChecked = $State.Flags.prevInstallAppsStateBeforeUpdates
-                    $State.Flags.installAppsForcedByUpdates = $false
-                    $State.Flags.prevInstallAppsStateBeforeUpdates = $null
-                }
-                # Only re-enable InstallApps if not forced by Office
-                if (-not $State.Controls.chkInstallOffice.IsChecked) {
-                    $State.Controls.chkInstallApps.IsEnabled = $true
-                }
-            }
-        }
-        $script:uiState.Controls.chkUpdateLatestDefender.Add_Checked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateLatestDefender.Add_Unchecked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateEdge.Add_Checked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateEdge.Add_Unchecked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateOneDrive.Add_Checked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateOneDrive.Add_Unchecked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Checked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        $script:uiState.Controls.chkUpdateLatestMSRT.Add_Unchecked({ 
-                & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState 
-            })
-        # Initial check for Updates/InstallApps state
-        & $script:uiState.Controls.UpdateInstallAppsBasedOnUpdates -State $script:uiState
-
         # CU interplay (Keep existing logic)
         $script:uiState.Controls.chkLatestCU.Add_Checked({ 
                 $script:uiState.Controls.chkPreviewCU.IsEnabled = $false 

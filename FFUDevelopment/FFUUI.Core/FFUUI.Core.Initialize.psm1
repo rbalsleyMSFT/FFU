@@ -235,6 +235,9 @@ function Initialize-UIDefaults {
     $State.Controls.chkInstallDrivers.IsChecked = $State.Defaults.generalDefaults.InstallDrivers
     $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
     $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
+    
+    # Set initial state for InstallApps checkbox based on updates
+    Update-InstallAppsState -State $State
 }
 
 function Initialize-DynamicUIElements {

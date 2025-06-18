@@ -188,6 +188,43 @@ function Get-USBDrives {
     }
 }
 
+# Function to manage the state of the main "Install Apps" checkbox based on selections in Updates/Office
+function Update-InstallAppsState {
+    param([PSCustomObject]$State)
+
+    $installAppsChk = $State.Controls.chkInstallApps
+    $installOfficeChk = $State.Controls.chkInstallOffice
+
+    # Determine if any checkbox that forces "Install Apps" is checked
+    $anyUpdateChecked = $State.Controls.chkUpdateLatestDefender.IsChecked -or `
+                        $State.Controls.chkUpdateEdge.IsChecked -or `
+                        $State.Controls.chkUpdateOneDrive.IsChecked -or `
+                        $State.Controls.chkUpdateLatestMSRT.IsChecked
+    
+    $isForced = $anyUpdateChecked -or $installOfficeChk.IsChecked
+
+    if ($isForced) {
+        # If InstallApps is not already forced (i.e., it's enabled), save its current state.
+        if ($installAppsChk.IsEnabled) {
+            $State.Flags.prevInstallAppsState = $installAppsChk.IsChecked
+        }
+        $installAppsChk.IsChecked = $true
+        $installAppsChk.IsEnabled = $false
+    }
+    else {
+        # No longer forced. Restore the previous state if it was saved.
+        if ($State.Flags.ContainsKey('prevInstallAppsState')) {
+            $installAppsChk.IsChecked = $State.Flags.prevInstallAppsState
+            $State.Flags.Remove('prevInstallAppsState') # Use the saved state only once
+        }
+        else {
+            # If no state was saved (e.g., it was never forced), ensure it's unchecked.
+            $installAppsChk.IsChecked = $false
+        }
+        $installAppsChk.IsEnabled = $true
+    }
+}
+
 # --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------

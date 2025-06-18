@@ -57,17 +57,36 @@ function Register-EventHandlers {
             if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtISOPath.Text = $ofd.FileName }
         })
 
+    # Updates Tab Event Handlers
+    # Define a single handler scriptblock for all update checkboxes that affect the main InstallApps checkbox
+    $updateCheckboxHandler = {
+        param($eventSource, $routedEventArgs)
+        $window = [System.Windows.Window]::GetWindow($eventSource)
+        if ($null -ne $window) {
+            # The function to call now lives in the Applications module
+            Update-InstallAppsState -State $window.Tag
+        }
+    }
+        
+    # Attach the handler to all relevant update checkboxes
+    $State.Controls.chkUpdateLatestDefender.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestDefender.Add_Unchecked($updateCheckboxHandler)
+    $State.Controls.chkUpdateEdge.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkUpdateEdge.Add_Unchecked($updateCheckboxHandler)
+    $State.Controls.chkUpdateOneDrive.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkUpdateOneDrive.Add_Unchecked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestMSRT.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestMSRT.Add_Unchecked($updateCheckboxHandler)
+    
+    # Also attach the handler to the Office checkbox
+    $State.Controls.chkInstallOffice.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkInstallOffice.Add_Unchecked($updateCheckboxHandler)
+
     # M365 Apps/Office tab Event Handlers
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-
-            if (-not $localState.Controls.chkInstallApps.IsChecked) {
-                $localState.Controls.chkInstallApps.IsChecked = $true
-                $localState.Flags.installAppsCheckedByOffice = $true
-            }
-            $localState.Controls.chkInstallApps.IsEnabled = $false
             $localState.Controls.OfficePathStackPanel.Visibility = 'Visible'
             $localState.Controls.OfficePathGrid.Visibility = 'Visible'
             $localState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
@@ -79,15 +98,6 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-
-            if ($localState.Flags.installAppsCheckedByOffice) {
-                $localState.Controls.chkInstallApps.IsChecked = $false
-                $localState.Flags.installAppsCheckedByOffice = $false
-            }
-            # Only re-enable InstallApps if not forced by Updates
-            if (-not $localState.Flags.installAppsForcedByUpdates) {
-                $localState.Controls.chkInstallApps.IsEnabled = $true
-            }
             $localState.Controls.OfficePathStackPanel.Visibility = 'Collapsed'
             $localState.Controls.OfficePathGrid.Visibility = 'Collapsed'
             $localState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
@@ -110,7 +120,7 @@ function Register-EventHandlers {
             $localState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
             $localState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
         })
-
+            
     # Drivers Tab Event Handlers
     $State.Controls.chkDownloadDrivers.Add_Checked({
             param($eventSource, $routedEventArgs)
