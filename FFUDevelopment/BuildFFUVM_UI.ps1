@@ -189,18 +189,6 @@ $window.Add_Loaded({
         }
 
         # CU interplay (Keep existing logic)
-        $script:uiState.Controls.chkLatestCU.Add_Checked({ 
-                $script:uiState.Controls.chkPreviewCU.IsEnabled = $false 
-            })
-        $script:uiState.Controls.chkLatestCU.Add_Unchecked({ 
-                $script:uiState.Controls.chkPreviewCU.IsEnabled = $true 
-            })
-        $script:uiState.Controls.chkPreviewCU.Add_Checked({ 
-                $script:uiState.Controls.chkLatestCU.IsEnabled = $false 
-            })
-        $script:uiState.Controls.chkPreviewCU.Add_Unchecked({ 
-                $script:uiState.Controls.chkLatestCU.IsEnabled = $true 
-            })
         # Set initial state based on defaults
         $script:uiState.Controls.chkPreviewCU.IsEnabled = -not $script:uiState.Controls.chkLatestCU.IsChecked
         $script:uiState.Controls.chkLatestCU.IsEnabled = -not $script:uiState.Controls.chkPreviewCU.IsChecked

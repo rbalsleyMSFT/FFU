@@ -82,6 +82,32 @@ function Register-EventHandlers {
     $State.Controls.chkInstallOffice.Add_Checked($updateCheckboxHandler)
     $State.Controls.chkInstallOffice.Add_Unchecked($updateCheckboxHandler)
 
+    # CU Interplay Event Handlers
+    $State.Controls.chkLatestCU.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkPreviewCU.IsEnabled = $false
+        })
+    $State.Controls.chkLatestCU.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkPreviewCU.IsEnabled = $true
+        })
+    $State.Controls.chkPreviewCU.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkLatestCU.IsEnabled = $false
+        })
+    $State.Controls.chkPreviewCU.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkLatestCU.IsEnabled = $true
+        })
+
     # M365 Apps/Office tab Event Handlers
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)
