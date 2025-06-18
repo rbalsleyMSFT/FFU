@@ -169,7 +169,7 @@ $window.Add_Loaded({
         $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
         $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
         $script:uiState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
-        
+
         # Office interplay (Keep existing logic)
         $script:uiState.Flags.installAppsCheckedByOffice = $false
         if ($script:uiState.Controls.chkInstallOffice.IsChecked) {
@@ -187,42 +187,6 @@ $window.Add_Loaded({
             $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
             $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
         }
-        $script:uiState.Controls.chkInstallOffice.Add_Checked({
-                if (-not $script:uiState.Controls.chkInstallApps.IsChecked) {
-                    $script:uiState.Controls.chkInstallApps.IsChecked = $true
-                    $script:uiState.Flags.installAppsCheckedByOffice = $true
-                }
-                $script:uiState.Controls.chkInstallApps.IsEnabled = $false
-                $script:uiState.Controls.OfficePathStackPanel.Visibility = 'Visible'
-                $script:uiState.Controls.OfficePathGrid.Visibility = 'Visible'
-                $script:uiState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
-                # Show/hide XML file path based on checkbox state
-                $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = if ($script:uiState.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
-                $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = if ($script:uiState.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
-            })
-        $script:uiState.Controls.chkInstallOffice.Add_Unchecked({
-                if ($script:uiState.Flags.installAppsCheckedByOffice) {
-                    $script:uiState.Controls.chkInstallApps.IsChecked = $false
-                    $script:uiState.Flags.installAppsCheckedByOffice = $false
-                }
-                # Only re-enable InstallApps if not forced by Updates
-                if (-not $script:uiState.Flags.installAppsForcedByUpdates) {
-                    $script:uiState.Controls.chkInstallApps.IsEnabled = $true
-                }
-                $script:uiState.Controls.OfficePathStackPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.OfficePathGrid.Visibility = 'Collapsed'
-                $script:uiState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
-            })
-        $script:uiState.Controls.chkCopyOfficeConfigXML.Add_Checked({
-                $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Visible'
-                $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Visible'
-            })
-        $script:uiState.Controls.chkCopyOfficeConfigXML.Add_Unchecked({
-                $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
-            })
 
         # Updates/InstallApps interplay (Keep existing logic)
         $script:uiState.Flags.installAppsForcedByUpdates = $false

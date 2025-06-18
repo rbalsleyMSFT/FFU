@@ -57,6 +57,60 @@ function Register-EventHandlers {
             if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtISOPath.Text = $ofd.FileName }
         })
 
+    # M365 Apps/Office tab Event Handlers
+    $State.Controls.chkInstallOffice.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            if (-not $localState.Controls.chkInstallApps.IsChecked) {
+                $localState.Controls.chkInstallApps.IsChecked = $true
+                $localState.Flags.installAppsCheckedByOffice = $true
+            }
+            $localState.Controls.chkInstallApps.IsEnabled = $false
+            $localState.Controls.OfficePathStackPanel.Visibility = 'Visible'
+            $localState.Controls.OfficePathGrid.Visibility = 'Visible'
+            $localState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
+            # Show/hide XML file path based on checkbox state
+            $localState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = if ($localState.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
+            $localState.Controls.OfficeConfigurationXMLFileGrid.Visibility = if ($localState.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
+        })
+    $State.Controls.chkInstallOffice.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            if ($localState.Flags.installAppsCheckedByOffice) {
+                $localState.Controls.chkInstallApps.IsChecked = $false
+                $localState.Flags.installAppsCheckedByOffice = $false
+            }
+            # Only re-enable InstallApps if not forced by Updates
+            if (-not $localState.Flags.installAppsForcedByUpdates) {
+                $localState.Controls.chkInstallApps.IsEnabled = $true
+            }
+            $localState.Controls.OfficePathStackPanel.Visibility = 'Collapsed'
+            $localState.Controls.OfficePathGrid.Visibility = 'Collapsed'
+            $localState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
+            $localState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+            $localState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
+        })
+    $State.Controls.chkCopyOfficeConfigXML.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $localState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Visible'
+            $localState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Visible'
+        })
+    $State.Controls.chkCopyOfficeConfigXML.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $localState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+            $localState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
+        })
+
     # Drivers Tab Event Handlers
     $State.Controls.chkDownloadDrivers.Add_Checked({
             param($eventSource, $routedEventArgs)
@@ -308,5 +362,4 @@ function Register-EventHandlers {
             Import-DriversJson -State $localState
         })
 }
-
 Export-ModuleMember -Function *
