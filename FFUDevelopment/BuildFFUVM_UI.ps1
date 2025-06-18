@@ -169,6 +169,7 @@ $window.Add_Loaded({
         $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
         $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
         $script:uiState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
+        
         # Office interplay (Keep existing logic)
         $script:uiState.Flags.installAppsCheckedByOffice = $false
         if ($script:uiState.Controls.chkInstallOffice.IsChecked) {
