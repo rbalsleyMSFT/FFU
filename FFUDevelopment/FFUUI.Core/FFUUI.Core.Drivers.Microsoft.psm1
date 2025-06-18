@@ -11,8 +11,6 @@ function Get-MicrosoftDriversModelList {
 
     try {
         WriteLog "Getting Surface driver information from $url"
-        WriteLog "Using UserAgent: $UserAgent"
-        WriteLog "Using Headers: $($Headers | Out-String)"
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
         # Use passed-in UserAgent and Headers
@@ -41,7 +39,7 @@ function Get-MicrosoftDriversModelList {
                     $cellMatches = [regex]::Matches($rowContent, $cellPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
 
                     if ($cellMatches.Count -ge 2) {
-                        $modelName = ($cellMatches[0].Groups[1].Value).Trim()
+                        $modelName = ([System.Net.WebUtility]::HtmlDecode(($cellMatches[0].Groups[1].Value).Trim()))
                         $secondTdContent = $cellMatches[1].Groups[1].Value.Trim()
                         # $linkPattern = '<a[^>]+href="([^"]+)"[^>]*>'
                         # Change linkPattern to match https://www.microsoft.com/download/details.aspx?id=

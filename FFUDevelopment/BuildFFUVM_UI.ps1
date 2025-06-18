@@ -169,19 +169,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
         $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
         $script:uiState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
-        $script:uiState.Controls.btnClearDriverList.Add_Click({
-                $script:uiState.Controls.lstDriverModels.ItemsSource = $null
-                $script:uiState.Data.allDriverModels = @()
-                $script:uiState.Controls.txtModelFilter.Text = ""
-                $script:uiState.Controls.txtStatus.Text = "Driver list cleared."
-            })
-        $script:uiState.Controls.btnSaveDriversJson.Add_Click({ 
-                Save-DriversJson -State $script:uiState 
-            })
-        $script:uiState.Controls.btnImportDriversJson.Add_Click({ 
-                Import-DriversJson -State $script:uiState 
-            })
-
         # Office interplay (Keep existing logic)
         $script:uiState.Flags.installAppsCheckedByOffice = $false
         if ($script:uiState.Controls.chkInstallOffice.IsChecked) {

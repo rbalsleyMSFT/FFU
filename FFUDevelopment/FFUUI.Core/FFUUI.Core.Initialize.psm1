@@ -501,8 +501,8 @@ function Register-EventHandlers {
             $window.Cursor = [System.Windows.Input.Cursors]::Wait
             $eventSource.IsEnabled = $false
             try {
-                # Get previously selected models from the master list ($localState.Data.allDriverModels)
-                $previouslySelectedModels = @($localState.Data.allDriverModels | Where-Object { $_.IsSelected })
+                # Get ALL previously selected models to preserve them, regardless of make.
+                $allPreviouslySelectedModels = @($localState.Data.allDriverModels | Where-Object { $_.IsSelected })
 
                 # Get newly fetched models for the current make
                 $newlyFetchedStandardizedModels = Get-ModelsForMake -SelectedMake $selectedMake -State $localState
@@ -510,28 +510,37 @@ function Register-EventHandlers {
                 $combinedModelsList = [System.Collections.Generic.List[PSCustomObject]]::new()
                 $modelIdentifiersInCombinedList = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-                # Add previously selected models first
-                foreach ($item in $previouslySelectedModels) {
+                # Add all previously selected models first to preserve their 'IsSelected' state.
+                foreach ($item in $allPreviouslySelectedModels) {
                     $combinedModelsList.Add($item)
                     $modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)") | Out-Null
                 }
 
-                # Add newly fetched models if they are not already in the list
+                # Add newly fetched models, but only if they are not already in the list.
+                # This prevents overwriting a selected model with an unselected one.
                 $addedNewCount = 0
                 foreach ($item in $newlyFetchedStandardizedModels) {
-                    if (-not $modelIdentifiersInCombinedList.Contains("$($item.Make)::$($item.Model)")) {
+                    if ($modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)")) {
                         $combinedModelsList.Add($item)
-                        $modelIdentifiersInCombinedList.Add("$($item.Make)::$($item.Model)") | Out-Null
                         $addedNewCount++
                     }
                 }
 
-                # Sort the combined list and update the master list while preserving its List<> type
+                # Sort the combined list
                 $sortedModels = $combinedModelsList | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
-                $localState.Data.allDriverModels.Clear()
-                $sortedModels.ForEach({ $localState.Data.allDriverModels.Add($_) })
 
-                # Update the UI
+                # Create a new list object from the sorted results. This is safer than modifying the existing list
+                # that the UI is bound to, which can cause inconsistency errors.
+                $newList = [System.Collections.Generic.List[PSCustomObject]]::new()
+                if ($null -ne $sortedModels) {
+                    # Sort-Object can return a single object or an array. Ensure it's always treated as a collection.
+                    foreach ($model in @($sortedModels)) {
+                        $newList.Add($model)
+                    }
+                }
+                $localState.Data.allDriverModels = $newList
+                
+                # Update the UI ItemsSource to point to the new list and clear the filter
                 $localState.Controls.lstDriverModels.ItemsSource = $localState.Data.allDriverModels
                 $localState.Controls.txtModelFilter.Text = ""
 
@@ -540,14 +549,14 @@ function Register-EventHandlers {
                     $localState.Controls.lstDriverModels.Visibility = 'Visible'
                     $localState.Controls.spDriverActionButtons.Visibility = 'Visible'
                     $statusText = "Displaying $($localState.Data.allDriverModels.Count) models."
-                    if ($newlyFetchedStandardizedModels.Count -gt 0 -and $addedNewCount -eq 0 -and $previouslySelectedModels.Count -gt 0) {
+                    if ($newlyFetchedStandardizedModels.Count -gt 0 -and $addedNewCount -eq 0 -and $allPreviouslySelectedModels.Count -gt 0) {
                         $statusText = "Fetched $($newlyFetchedStandardizedModels.Count) models for $selectedMake; all were already in the selected list. Displaying $($localState.Data.allDriverModels.Count) total selected models."
                     }
                     elseif ($addedNewCount -gt 0) {
                         $statusText = "Added $addedNewCount new models for $selectedMake. Displaying $($localState.Data.allDriverModels.Count) total models."
                     }
                     elseif ($newlyFetchedStandardizedModels.Count -eq 0 -and $selectedMake -eq 'Lenovo' ) {
-                        $statusText = if ($previouslySelectedModels.Count -gt 0) { "No new models found for $selectedMake. Displaying $($previouslySelectedModels.Count) previously selected models." } else { "No models found for $selectedMake." }
+                        $statusText = if ($allPreviouslySelectedModels.Count -gt 0) { "No new models found for $selectedMake. Displaying $($allPreviouslySelectedModels.Count) previously selected models." } else { "No models found for $selectedMake." }
                     }
                     elseif ($newlyFetchedStandardizedModels.Count -eq 0) {
                         $statusText = "No new models found for $selectedMake. Displaying $($localState.Data.allDriverModels.Count) previously selected models."
@@ -680,6 +689,30 @@ function Register-EventHandlers {
                 $localState.Controls.txtStatus.Text = "Driver downloads processed with some errors. Check status column and log."
                 [System.Windows.MessageBox]::Show("Driver downloads processed, but some errors occurred. Please check the status column for each driver and the log file for details.", "Download Process Finished with Errors", "OK", "Warning")
             }
+        })
+
+    $State.Controls.btnClearDriverList.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.lstDriverModels.ItemsSource = $null
+            $localState.Data.allDriverModels.Clear()
+            $localState.Controls.txtModelFilter.Text = ""
+            $localState.Controls.txtStatus.Text = "Driver list cleared."
+        })
+
+    $State.Controls.btnSaveDriversJson.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Save-DriversJson -State $localState
+        })
+
+    $State.Controls.btnImportDriversJson.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Import-DriversJson -State $localState
         })
 }
 

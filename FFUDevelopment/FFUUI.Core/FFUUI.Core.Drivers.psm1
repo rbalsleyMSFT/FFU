@@ -124,27 +124,39 @@ function Search-DriverModels {
         return
     }
 
-    WriteLog "Filtering models with text: '$filterText'"
-
-    # Filter the full list based on the Model property (case-insensitive)
-    # Ensure the result is always an array, even if only one item matches
-    $filteredModels = @($State.Data.allDriverModels | Where-Object { $_.Model -like "*$filterText*" })
-
-    # Update the ListView's ItemsSource with the filtered list
-    # Setting ItemsSource directly should work for simple scenarios
-    $State.Controls.lstDriverModels.ItemsSource = $filteredModels
-
-    # Explicitly refresh the ListView's view to reflect the changes in the bound source
-    if ($null -ne $State.Controls.lstDriverModels.ItemsSource -and $State.Controls.lstDriverModels.Items -is [System.ComponentModel.ICollectionView]) {
-        $State.Controls.lstDriverModels.Items.Refresh()
-    }
-    elseif ($null -ne $State.Controls.lstDriverModels.ItemsSource) {
-        # Fallback refresh if not using ICollectionView (less common for direct ItemsSource binding)
-        $State.Controls.lstDriverModels.Items.Refresh()
+    # Ensure the ItemsSource is always the master list. This prevents inconsistency.
+    if ($State.Controls.lstDriverModels.ItemsSource -ne $State.Data.allDriverModels) {
+        $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
     }
 
+    # Get the default view of the items source, which supports filtering.
+    $collectionView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($State.Controls.lstDriverModels.ItemsSource)
+    if ($null -eq $collectionView) {
+        WriteLog "Search-DriverModels: Could not get CollectionView. Filtering may not work."
+        return
+    }
 
-    WriteLog "Filtered list contains $($filteredModels.Count) models."
+    WriteLog "Applying filter with text: '$filterText'"
+
+    if ([string]::IsNullOrWhiteSpace($filterText)) {
+        # If filter is empty, remove any existing filter
+        $collectionView.Filter = $null
+    }
+    else {
+        # Apply a filter predicate. This is the correct WPF way to filter.
+        $collectionView.Filter = {
+            param($item)
+            # $item is the PSCustomObject from the list
+            return $item.Model -like "*$filterText*"
+        }
+    }
+    
+        # The view will automatically refresh. No need to call .Refresh() explicitly for filtering.
+    $filteredCount = 0
+    if ($null -ne $collectionView) {
+        foreach ($item in $collectionView) { $filteredCount++ }
+    }
+    WriteLog "Filter applied. View now contains $filteredCount models."
 }
 
 # Function to save selected driver models to a JSON file
@@ -243,7 +255,7 @@ function Import-DriversJson {
     $ofd = New-Object System.Windows.Forms.OpenFileDialog
     $ofd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
     $ofd.Title = "Import Drivers"
-    $ofd.InitialDirectory = $FFUDevelopmentPath
+    $ofd.InitialDirectory = Join-Path -Path $State.FFUDevelopmentPath -ChildPath "Drivers"
 
     if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
@@ -362,16 +374,29 @@ function Import-DriversJson {
                             Arch           = ""
                             DownloadStatus = "Imported"
                         }
-                        $State.Data.allDriverModels += $newDriverModel
+                        $State.Data.allDriverModels.Add($newDriverModel)
                         $newModelsAdded++
                         WriteLog "Import-DriversJson: Added new model '$($newDriverModel.Make) - $($newDriverModel.Model)' from import. ID: $($newDriverModel.Id), Link: $($newDriverModel.Link)"
                     }
                 }
             }
 
-            $State.Data.allDriverModels = $State.Data.allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
+            # Sort the full list of models
+            $sortedModels = $State.Data.allDriverModels | Sort-Object @{Expression = { $_.IsSelected }; Descending = $true }, Make, Model
 
-            Search-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $script:uiState
+            # Create a new list from the sorted results and assign it to the state.
+            # This prevents the "ItemsControl inconsistent" error by replacing the source instead of modifying it.
+            $newList = [System.Collections.Generic.List[PSCustomObject]]::new()
+            if ($null -ne $sortedModels) {
+                foreach ($model in @($sortedModels)) {
+                    $newList.Add($model)
+                }
+            }
+            $State.Data.allDriverModels = $newList
+            
+            # Update the UI and apply any existing filter
+            $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+            Search-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $State
 
             $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
             [System.Windows.MessageBox]::Show($message, "Import Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
