@@ -3,6 +3,7 @@ function Register-EventHandlers {
     WriteLog "Registering UI event handlers..."
 
     # Build Tab Event Handlers
+    # Build USB Drive Settings Event Handlers
     $State.Controls.btnCheckUSBDrives.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -16,6 +17,49 @@ function Register-EventHandlers {
             if ($localState.Controls.lstUSBDrives.Items.Count -gt 0) {
                 $localState.Controls.lstUSBDrives.SelectedIndex = 0
             }
+        })
+        
+    $State.Controls.chkSelectAllUSBDrives.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            foreach ($item in $localState.Controls.lstUSBDrives.Items) { $item.IsSelected = $true }
+            $localState.Controls.lstUSBDrives.Items.Refresh()
+        })
+    $State.Controls.chkSelectAllUSBDrives.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            # This event also fires for indeterminate state, so only act if it's explicitly false.
+            if ($eventSource.IsChecked -eq $false) {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                foreach ($item in $localState.Controls.lstUSBDrives.Items) { $item.IsSelected = $false }
+                $localState.Controls.lstUSBDrives.Items.Refresh()
+            }
+        })
+    $State.Controls.lstUSBDrives.Add_KeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                $selectedItem = $localState.Controls.lstUSBDrives.SelectedItem
+                if ($selectedItem) {
+                    $selectedItem.IsSelected = -not $selectedItem.IsSelected
+                    $localState.Controls.lstUSBDrives.Items.Refresh()
+                    # After toggling, update the 'Select All' checkbox state
+                    $items = $localState.Controls.lstUSBDrives.Items
+                    $allSelected = $items.Count -gt 0 -and ($items | Where-Object { -not $_.IsSelected }).Count -eq 0
+                    $localState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
+                }
+            }
+        })
+    $State.Controls.lstUSBDrives.Add_SelectionChanged({
+            param($eventSource, $selChangeEvent)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $items = $localState.Controls.lstUSBDrives.Items
+            # Update the 'Select All' checkbox state based on current selections
+            $allSelected = $items.Count -gt 0 -and ($items | Where-Object { -not $_.IsSelected }).Count -eq 0
+            $localState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
         })
 
     # Hyper-V tab event handlers

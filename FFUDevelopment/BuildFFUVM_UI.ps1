@@ -194,31 +194,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.chkLatestCU.IsEnabled = -not $script:uiState.Controls.chkPreviewCU.IsChecked
 
         # USB Drive Detection/Selection logic (Keep existing logic)
-        $script:uiState.Controls.chkSelectAllUSBDrives.Add_Checked({
-                foreach ($item in $script:uiState.Controls.lstUSBDrives.Items) { $item.IsSelected = $true }
-                $script:uiState.Controls.lstUSBDrives.Items.Refresh()
-            })
-        $script:uiState.Controls.chkSelectAllUSBDrives.Add_Unchecked({
-                foreach ($item in $script:uiState.Controls.lstUSBDrives.Items) { $item.IsSelected = $false }
-                $script:uiState.Controls.lstUSBDrives.Items.Refresh()
-            })
-        $script:uiState.Controls.lstUSBDrives.Add_KeyDown({
-                param($eventSource, $keyEvent)
-                if ($keyEvent.Key -eq 'Space') {
-                    $selectedItem = $script:uiState.Controls.lstUSBDrives.SelectedItem
-                    if ($selectedItem) {
-                        $selectedItem.IsSelected = !$selectedItem.IsSelected
-                        $script:uiState.Controls.lstUSBDrives.Items.Refresh()
-                        $allSelected = -not ($script:uiState.Controls.lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
-                        $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
-                    }
-                }
-            })
-        $script:uiState.Controls.lstUSBDrives.Add_SelectionChanged({
-                param($eventSource, $selChangeEvent)
-                $allSelected = -not ($script:uiState.Controls.lstUSBDrives.Items | Where-Object { -not $_.IsSelected })
-                $script:uiState.Controls.chkSelectAllUSBDrives.IsChecked = $allSelected
-            })
         $script:uiState.Controls.usbSection.Visibility = if ($script:uiState.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.usbSelectionPanel.Visibility = if ($script:uiState.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.chkBuildUSBDriveEnable.Add_Checked({
