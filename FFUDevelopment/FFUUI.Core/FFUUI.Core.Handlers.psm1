@@ -2,6 +2,22 @@ function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
 
+    # Build Tab Event Handlers
+    $State.Controls.btnCheckUSBDrives.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $localState.Controls.lstUSBDrives.Items.Clear()
+            $usbDrives = Get-USBDrives
+            foreach ($drive in $usbDrives) {
+                $localState.Controls.lstUSBDrives.Items.Add([PSCustomObject]$drive)
+            }
+            if ($localState.Controls.lstUSBDrives.Items.Count -gt 0) {
+                $localState.Controls.lstUSBDrives.SelectedIndex = 0
+            }
+        })
+
     # Hyper-V tab event handlers
     $State.Controls.cmbVMSwitchName.Add_SelectionChanged({
             param($eventSource, $selectionChangedEventArgs)

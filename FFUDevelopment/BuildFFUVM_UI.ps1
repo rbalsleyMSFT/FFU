@@ -194,16 +194,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.chkLatestCU.IsEnabled = -not $script:uiState.Controls.chkPreviewCU.IsChecked
 
         # USB Drive Detection/Selection logic (Keep existing logic)
-        $script:uiState.Controls.btnCheckUSBDrives.Add_Click({
-                $script:uiState.Controls.lstUSBDrives.Items.Clear()
-                $usbDrives = Get-USBDrives
-                foreach ($drive in $usbDrives) {
-                    $script:uiState.Controls.lstUSBDrives.Items.Add([PSCustomObject]$drive)
-                }
-                if ($script:uiState.Controls.lstUSBDrives.Items.Count -gt 0) {
-                    $script:uiState.Controls.lstUSBDrives.SelectedIndex = 0
-                }
-            })
         $script:uiState.Controls.chkSelectAllUSBDrives.Add_Checked({
                 foreach ($item in $script:uiState.Controls.lstUSBDrives.Items) { $item.IsSelected = $true }
                 $script:uiState.Controls.lstUSBDrives.Items.Refresh()
