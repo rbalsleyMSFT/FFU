@@ -119,23 +119,7 @@ $script:uiState.Data.versionData | Add-Member -MemberType ScriptMethod -Name Not
 $script:uiState.Data.versionData | Add-Member -MemberType NoteProperty -Name PropertyChanged -Value $null
 $script:uiState.Data.versionData | Add-Member -TypeName "System.ComponentModel.INotifyPropertyChanged"
 
-function Update-WingetVersionFields {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$wingetText,
-        [Parameter(Mandatory)]
-        [string]$moduleText
-    )
 
-    # Force UI update on the UI thread
-    $window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
-            $script:uiState.Controls.txtWingetVersion.Text = $wingetText
-            $script:uiState.Controls.txtWingetModuleVersion.Text = $moduleText
-            # Force immediate UI refresh
-            [System.Windows.Forms.Application]::DoEvents()
-        })
-}
 
 $window.Add_Loaded({
         # Pass the state object to all initialization functions
@@ -204,75 +188,8 @@ $window.Add_Loaded({
         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
 
         
-        $script:uiState.Controls.btnCheckWingetModule.Add_Click({
-                param($buttonSender, $clickEventArgs)
-                $buttonSender.IsEnabled = $false
-                $window.Cursor = [System.Windows.Input.Cursors]::Wait
-                # Initial UI update before calling the core function
-                Update-WingetVersionFields -wingetText "Checking..." -moduleText "Checking..."
 
-                $statusResult = $null
-                try {
-                    # Call the Core function to perform checks and potential install/update
-                    # Pass the UI update function as a callback
-                    $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback {
-                        param($wingetText, $moduleText)
-                        Update-WingetVersionFields -wingetText $wingetText -moduleText $moduleText
-                    }
 
-                    # Display appropriate message based on the result
-                    if ($statusResult.Success -and $statusResult.UpdateAttempted) {
-                        # Update attempted and successful
-                        [System.Windows.MessageBox]::Show("Winget components installed/updated successfully.", "Winget Installation Complete", "OK", "Information")
-                    }
-                    elseif (-not $statusResult.Success) {
-                        # Error occurred
-                        $errorMessage = if (-not [string]::IsNullOrWhiteSpace($statusResult.Message)) { $statusResult.Message } else { "An unknown error occurred during Winget check/install." }
-                        [System.Windows.MessageBox]::Show($errorMessage, "Winget Error", "OK", "Error")
-                    }
-                    # If Winget components were already up-to-date ($statusResult.Success -eq $true -and $statusResult.UpdateAttempted -eq $false), no message box is shown.
-
-                    # Show search panel only if the final status is successful and checkbox is still checked
-                    if ($statusResult.Success -and $script:uiState.Controls.chkInstallWingetApps.IsChecked) {
-                        $script:uiState.Controls.wingetSearchPanel.Visibility = 'Visible'
-                    }
-                    else {
-                        $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Hide if not successful or unchecked
-                    }
-                }
-                catch {
-                    # Catch errors from the Confirm-WingetInstallationUI call itself (less likely now)
-                    Update-WingetVersionFields -wingetText "Error" -moduleText "Error"
-                    [System.Windows.MessageBox]::Show("Unexpected error checking/installing Winget components: $($_.Exception.Message)", "Error", "OK", "Error")
-                    $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Ensure search is hidden on error
-                }
-                finally {
-                    $buttonSender.IsEnabled = $true
-                    $window.Cursor = $null
-                }
-            })
-        $script:uiState.Controls.btnWingetSearch.Add_Click({ 
-                Search-WingetApps -State $script:uiState 
-            })
-        $script:uiState.Controls.txtWingetSearch.Add_KeyDown({
-                param($eventSrc, $keyEvent)
-                if ($keyEvent.Key -eq 'Return') { 
-                    Search-WingetApps -State $script:uiState; $keyEvent.Handled = $true 
-                }
-            })
-        $script:uiState.Controls.btnSaveWingetList.Add_Click({ 
-                Save-WingetList -State $script:uiState 
-            })
-        $script:uiState.Controls.btnImportWingetList.Add_Click({ 
-                Import-WingetList -State $script:uiState 
-            })
-        $script:uiState.Controls.btnClearWingetList.Add_Click({
-                $script:uiState.Controls.lstWingetResults.ItemsSource = @() # Set ItemsSource to an empty array
-                $script:uiState.Controls.txtWingetSearch.Text = ""
-                if ($script:uiState.Controls.txtStatus) { 
-                    $script:uiState.Controls.txtStatus.Text = "Cleared all applications from the list" 
-                }
-            })
 
         $script:uiState.Controls.btnDownloadSelected.Add_Click({
                 param($buttonSender, $clickEventArgs)
@@ -371,10 +288,7 @@ $window.Add_Loaded({
                 $openDialog.InitialDirectory = $initialDir
                 if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName -State $script:uiState; Update-CopyButtonState -State $script:uiState }
             })
-        $script:uiState.Controls.btnClearBYOApplications.Add_Click({
-                $result = [System.Windows.MessageBox]::Show("Are you sure you want to clear all applications?", "Clear Applications", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
-                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $script:uiState.Controls.lstApplications.Items.Clear(); Update-CopyButtonState -State $script:uiState }
-            })
+
         $script:uiState.Controls.btnCopyBYOApps.Add_Click({
                 param($buttonSender, $clickEventArgs)
 
@@ -606,14 +520,7 @@ $window.Add_Loaded({
                 }
             })
 
-        $script:uiState.Controls.btnClearAppsScriptVariables.Add_Click({
-                $script:uiState.Data.appsScriptVariablesDataList.Clear()
-                $script:uiState.Controls.lstAppsScriptVariables.ItemsSource = $script:uiState.Data.appsScriptVariablesDataList.ToArray()
-                # Update the header checkbox state
-                if ($null -ne $script:uiState.Controls.chkSelectAllAppsScriptVariables) {
-                    Update-SelectAllHeaderCheckBoxState -ListView $script:uiState.Controls.lstAppsScriptVariables -HeaderCheckBox $script:uiState.Controls.chkSelectAllAppsScriptVariables
-                }
-            })
+
 
         # Initial state for chkDefineAppsScriptVariables based on chkInstallApps
         if ($script:uiState.Controls.chkInstallApps.IsChecked) {

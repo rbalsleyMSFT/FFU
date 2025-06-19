@@ -740,4 +740,80 @@ function Show-ModernFolderPicker {
     return [ModernFolderBrowser]::ShowDialog($Title, [IntPtr]::Zero)
 }
 
+function Clear-ListViewContent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State,
+
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Controls.ListView]$ListViewControl,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ConfirmationTitle,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ConfirmationMessage,
+        
+        [Parameter(Mandatory = $false)]
+        [System.Collections.IList]$BackingDataList,
+
+        [Parameter(Mandatory = $false)]
+        [string]$StatusMessage,
+
+        [Parameter(Mandatory = $false)]
+        [System.Windows.Controls.TextBox[]]$TextBoxesToClear,
+
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$PostClearAction
+    )
+
+    $result = [System.Windows.MessageBox]::Show($ConfirmationMessage, $ConfirmationTitle, [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
+        return
+    }
+
+    try {
+        # If a backing data list is provided, clear it and rebind. This is the preferred method.
+        if ($null -ne $BackingDataList) {
+            $BackingDataList.Clear()
+            $ListViewControl.ItemsSource = $BackingDataList.ToArray()
+        }
+        # If no backing list, determine how to clear the control.
+        else {
+            # If ItemsSource is in use, the only valid way to clear is to set it to null or an empty collection.
+            if ($null -ne $ListViewControl.ItemsSource) {
+                $ListViewControl.ItemsSource = $null
+            }
+            # If ItemsSource is NOT in use, we can safely clear the Items collection directly (for BYO Apps).
+            elseif ($null -ne $ListViewControl.Items) {
+                $ListViewControl.Items.Clear()
+            }
+        }
+        
+        $ListViewControl.Items.Refresh()
+
+        # Clear any specified textboxes
+        if ($null -ne $TextBoxesToClear) {
+            foreach ($textBox in $TextBoxesToClear) {
+                $textBox.Clear()
+            }
+        }
+
+        # Update the status message if provided
+        if (-not [string]::IsNullOrWhiteSpace($StatusMessage) -and $null -ne $State.Controls.txtStatus) {
+            $State.Controls.txtStatus.Text = $StatusMessage
+        }
+
+        # Execute any post-clear custom actions. The scriptblock will have access to the $State and $ListViewControl variables from this function's scope.
+        if ($null -ne $PostClearAction) {
+            & $PostClearAction
+        }
+    }
+    catch {
+        WriteLog "Error in Clear-ListViewContent for $($ListViewControl.Name): $($_.Exception.Message)"
+        [System.Windows.MessageBox]::Show("An error occurred while clearing the list: $($_.Exception.Message)", "Error", "OK", "Error")
+    }
+}
+
 Export-ModuleMember -Function *

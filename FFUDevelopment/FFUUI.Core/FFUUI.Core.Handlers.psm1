@@ -285,7 +285,145 @@ function Register-EventHandlers {
             $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed'
         })
 
-    # M365 Apps/Office tab Event Handlers
+    $State.Controls.btnClearBYOApplications.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            Clear-ListViewContent -State $localState `
+                -ListViewControl $localState.Controls.lstApplications `
+                -ConfirmationTitle "Clear BYO Applications" `
+                -ConfirmationMessage "Are you sure you want to clear all 'Bring Your Own' applications?" `
+                -StatusMessage "BYO application list cleared." `
+                -PostClearAction { Update-CopyButtonState -State $State }
+        })
+
+    $State.Controls.btnClearAppsScriptVariables.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $postClearScriptBlock = {
+                $headerChk = $State.Controls.chkSelectAllAppsScriptVariables
+                if ($null -ne $headerChk) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $ListViewControl -HeaderCheckBox $headerChk
+                }
+            }
+
+            Clear-ListViewContent -State $localState `
+                -ListViewControl $localState.Controls.lstAppsScriptVariables `
+                -BackingDataList $localState.Data.appsScriptVariablesDataList `
+                -ConfirmationTitle "Clear Apps Script Variables" `
+                -ConfirmationMessage "Are you sure you want to clear all Apps Script Variables?" `
+                -StatusMessage "Apps Script Variables list cleared." `
+                -PostClearAction $postClearScriptBlock
+        })
+
+    $State.Controls.btnCheckWingetModule.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $buttonSender = $eventSource
+
+            $buttonSender.IsEnabled = $false
+            $window.Cursor = [System.Windows.Input.Cursors]::Wait
+            # Initial UI update before calling the core function
+            Update-WingetVersionFields -State $localState -wingetText "Checking..." -moduleText "Checking..."
+
+            $statusResult = $null
+            try {
+                # Call the Core function to perform checks and potential install/update
+                # Pass the UI update function as a callback
+                $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback {
+                    param($wingetText, $moduleText)
+                    Update-WingetVersionFields -State $localState -wingetText $wingetText -moduleText $moduleText
+                }
+
+                # Display appropriate message based on the result
+                if ($statusResult.Success -and $statusResult.UpdateAttempted) {
+                    # Update attempted and successful
+                    [System.Windows.MessageBox]::Show("Winget components installed/updated successfully.", "Winget Installation Complete", "OK", "Information")
+                }
+                elseif (-not $statusResult.Success) {
+                    # Error occurred
+                    $errorMessage = if (-not [string]::IsNullOrWhiteSpace($statusResult.Message)) { $statusResult.Message } else { "An unknown error occurred during Winget check/install." }
+                    [System.Windows.MessageBox]::Show($errorMessage, "Winget Error", "OK", "Error")
+                }
+                # If Winget components were already up-to-date ($statusResult.Success -eq $true -and $statusResult.UpdateAttempted -eq $false), no message box is shown.
+
+                # Show search panel only if the final status is successful and checkbox is still checked
+                if ($statusResult.Success -and $localState.Controls.chkInstallWingetApps.IsChecked) {
+                    $localState.Controls.wingetSearchPanel.Visibility = 'Visible'
+                }
+                else {
+                    $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Hide if not successful or unchecked
+                }
+            }
+            catch {
+                # Catch errors from the Confirm-WingetInstallationUI call itself (less likely now)
+                Update-WingetVersionFields -State $localState -wingetText "Error" -moduleText "Error"
+                [System.Windows.MessageBox]::Show("Unexpected error checking/installing Winget components: $($_.Exception.Message)", "Error", "OK", "Error")
+                $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Ensure search is hidden on error
+            }
+            finally {
+                $buttonSender.IsEnabled = $true
+                $window.Cursor = $null
+            }
+        })
+        
+    $State.Controls.btnWingetSearch.Add_Click({ 
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Search-WingetApps -State $localState 
+        })
+        
+    $State.Controls.txtWingetSearch.Add_KeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Return') { 
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Search-WingetApps -State $localState
+                $keyEvent.Handled = $true 
+            }
+        })
+        
+    $State.Controls.btnSaveWingetList.Add_Click({ 
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Save-WingetList -State $localState 
+        })
+        
+    $State.Controls.btnImportWingetList.Add_Click({ 
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Import-WingetList -State $localState 
+        })
+        
+    $State.Controls.btnClearWingetList.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $postClearScriptBlock = {
+                $headerChk = $State.Controls.chkSelectAllWingetResults
+                if ($null -ne $headerChk) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $ListViewControl -HeaderCheckBox $headerChk
+                }
+            }
+
+            Clear-ListViewContent -State $localState `
+                -ListViewControl $localState.Controls.lstWingetResults `
+                -ConfirmationTitle "Clear Winget List" `
+                -ConfirmationMessage "Are you sure you want to clear the Winget application list and search results?" `
+                -StatusMessage "Winget application list cleared." `
+                -TextBoxesToClear @($localState.Controls.txtWingetSearch) `
+                -PostClearAction $postClearScriptBlock
+        })
+        
+    # M365 Apps/Office tab Event
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -555,10 +693,14 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $localState.Controls.lstDriverModels.ItemsSource = $null
-            $localState.Data.allDriverModels.Clear()
-            $localState.Controls.txtModelFilter.Text = ""
-            $localState.Controls.txtStatus.Text = "Driver list cleared."
+            
+            Clear-ListViewContent -State $localState `
+                -ListViewControl $localState.Controls.lstDriverModels `
+                -BackingDataList $localState.Data.allDriverModels `
+                -ConfirmationTitle "Clear Driver List" `
+                -ConfirmationMessage "Are you sure you want to clear the driver list?" `
+                -StatusMessage "Driver list cleared." `
+                -TextBoxesToClear @($localState.Controls.txtModelFilter)
         })
 
     $State.Controls.btnSaveDriversJson.Add_Click({

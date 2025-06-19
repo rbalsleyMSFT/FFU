@@ -686,6 +686,19 @@ function Start-WingetAppDownloadTask {
     return $returnObject
 }
 
+function Update-WingetVersionFields {
+    param(
+        [psobject]$State,
+        [string]$wingetText,
+        [string]$moduleText
+    )
+    $State.Window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
+        $State.Controls.txtWingetVersion.Text = $wingetText
+        $State.Controls.txtWingetModuleVersion.Text = $moduleText
+        [System.Windows.Forms.Application]::DoEvents()
+    })
+}
+
 # --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------
