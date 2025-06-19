@@ -180,6 +180,10 @@ function Initialize-UIDefaults {
     $State.Controls.chkRemoveFFU.IsChecked = $State.Defaults.generalDefaults.RemoveFFU
     $State.Controls.chkRemoveApps.IsChecked = $State.Defaults.generalDefaults.RemoveApps
     $State.Controls.chkRemoveUpdates.IsChecked = $State.Defaults.generalDefaults.RemoveUpdates
+    $State.Controls.usbSection.Visibility = if ($State.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
+    $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
+    $State.Controls.chkSelectSpecificUSBDrives.IsEnabled = $State.Controls.chkBuildUSBDriveEnable.IsChecked
+    $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked
 
     # Hyper-V Settings defaults from General Defaults
     $State.Controls.txtDiskSize.Text = $State.Defaults.generalDefaults.DiskSizeGB
@@ -237,6 +241,7 @@ function Initialize-UIDefaults {
     
     # Set initial state for InstallApps checkbox based on updates
     Update-InstallAppsState -State $State
+
 }
 
 function Initialize-DynamicUIElements {

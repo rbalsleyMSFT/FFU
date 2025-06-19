@@ -4,6 +4,49 @@ function Register-EventHandlers {
 
     # Build Tab Event Handlers
     # Build USB Drive Settings Event Handlers
+    $State.Controls.chkBuildUSBDriveEnable.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.usbSection.Visibility = 'Visible'
+            $localState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $true
+        })
+    $State.Controls.chkBuildUSBDriveEnable.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.usbSection.Visibility = 'Collapsed'
+            $localState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $false
+            $localState.Controls.chkSelectSpecificUSBDrives.IsChecked = $false
+            $localState.Controls.lstUSBDrives.Items.Clear()
+        })
+    $State.Controls.chkSelectSpecificUSBDrives.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.usbSelectionPanel.Visibility = 'Visible'
+        })
+    $State.Controls.chkSelectSpecificUSBDrives.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.usbSelectionPanel.Visibility = 'Collapsed'
+            $localState.Controls.lstUSBDrives.Items.Clear()
+        })
+    $State.Controls.chkAllowExternalHardDiskMedia.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $true
+        })
+    $State.Controls.chkAllowExternalHardDiskMedia.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $false
+            $localState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $false
+        })
+
     $State.Controls.btnCheckUSBDrives.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

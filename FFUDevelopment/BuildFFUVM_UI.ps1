@@ -194,35 +194,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.chkLatestCU.IsEnabled = -not $script:uiState.Controls.chkPreviewCU.IsChecked
 
         # USB Drive Detection/Selection logic (Keep existing logic)
-        $script:uiState.Controls.usbSection.Visibility = if ($script:uiState.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.usbSelectionPanel.Visibility = if ($script:uiState.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.chkBuildUSBDriveEnable.Add_Checked({
-                $script:uiState.Controls.usbSection.Visibility = 'Visible'
-                $script:uiState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $true
-            })
-        $script:uiState.Controls.chkBuildUSBDriveEnable.Add_Unchecked({
-                $script:uiState.Controls.usbSection.Visibility = 'Collapsed'
-                $script:uiState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $false
-                $script:uiState.Controls.chkSelectSpecificUSBDrives.IsChecked = $false
-                $script:uiState.Controls.lstUSBDrives.Items.Clear()
-            })
-        $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Checked({ 
-                $script:uiState.Controls.usbSelectionPanel.Visibility = 'Visible' 
-            })
-        $script:uiState.Controls.chkSelectSpecificUSBDrives.Add_Unchecked({
-                $script:uiState.Controls.usbSelectionPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.lstUSBDrives.Items.Clear()
-            })
-        $script:uiState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $script:uiState.Controls.chkBuildUSBDriveEnable.IsChecked
-        $script:uiState.Controls.chkAllowExternalHardDiskMedia.Add_Checked({ 
-                $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $true 
-            })
-        $script:uiState.Controls.chkAllowExternalHardDiskMedia.Add_Unchecked({
-                $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $false
-                $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $false
-            })
-        # Set initial state based on defaults
-        $script:uiState.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $script:uiState.Controls.chkAllowExternalHardDiskMedia.IsChecked
 
         # APPLICATIONS tab UI logic (Keep existing logic)
         $script:uiState.Controls.chkInstallWingetApps.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
