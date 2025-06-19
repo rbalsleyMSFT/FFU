@@ -28,7 +28,6 @@ function Remove-Application {
     )
 
     $listView = $State.Controls.lstApplications
-
     # Remove the item with the specified priority
     $itemToRemove = $listView.Items | Where-Object { $_.Priority -eq $priority } | Select-Object -First 1
     if ($itemToRemove) {
@@ -38,6 +37,37 @@ function Remove-Application {
         # Update the Copy Apps button state
         Update-CopyButtonState -State $State
     }
+}
+
+# Function to add a new BYO application from the UI
+function Add-BYOApplication {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    $name = $State.Controls.txtAppName.Text
+    $commandLine = $State.Controls.txtAppCommandLine.Text
+    $arguments = $State.Controls.txtAppArguments.Text
+    $source = $State.Controls.txtAppSource.Text
+
+    if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($arguments)) {
+        [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Arguments)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        return
+    }
+    $listView = $State.Controls.lstApplications
+    $priority = 1
+    if ($listView.Items.Count -gt 0) {
+        $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
+    }
+    $application = [PSCustomObject]@{ Priority = $priority; Name = $name; CommandLine = $commandLine; Arguments = $arguments; Source = $source; CopyStatus = "" }
+    $listView.Items.Add($application)
+    $State.Controls.txtAppName.Text = ""
+    $State.Controls.txtAppCommandLine.Text = ""
+    $State.Controls.txtAppArguments.Text = ""
+    $State.Controls.txtAppSource.Text = ""
+    Update-CopyButtonState -State $State
 }
 
 # Function to save BYO applications to JSON
@@ -114,7 +144,54 @@ function Import-BYOApplicationList {
         [System.Windows.MessageBox]::Show("Failed to import applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
     }
 }
-
+        
+# Function to invoke the parallel copy process for BYO apps
+function Invoke-CopyBYOApps {
+    param(
+        [psobject]$State,
+        [System.Windows.Controls.Button]$Button
+    )
+        
+    $appsToCopy = $State.Controls.lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
+    if (-not $appsToCopy) {
+        [System.Windows.MessageBox]::Show("No applications with a source path specified.", "Copy BYO Apps", "OK", "Information")
+        return
+    }
+        
+    $Button.IsEnabled = $false
+    $State.Controls.pbOverallProgress.Visibility = 'Visible'
+    $State.Controls.pbOverallProgress.Value = 0
+    $State.Controls.txtStatus.Text = "Starting BYO app copy..."
+        
+    # Define necessary task-specific variables locally
+    $localAppsPath = $State.Controls.txtApplicationPath.Text
+        
+    # Create hashtable for task-specific arguments
+    $taskArguments = @{
+        AppsPath = $localAppsPath
+    }
+        
+    # Select only necessary properties before passing
+    $itemsToProcess = $appsToCopy | Select-Object Priority, Name, CommandLine, Arguments, Source
+        
+    # Invoke the centralized parallel processing function
+    # Pass task type and task-specific arguments
+    Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
+        -ListViewControl $State.Controls.lstApplications `
+        -IdentifierProperty 'Name' `
+        -StatusProperty 'CopyStatus' `
+        -TaskType 'CopyBYO' `
+        -TaskArguments $taskArguments `
+        -CompletedStatusText "Copied" `
+        -ErrorStatusPrefix "Error: " `
+        -WindowObject $State.Window `
+        -MainThreadLogPath $State.LogFilePath
+        
+    # Final status update (handled by Invoke-ParallelProcessing)
+    $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+    $Button.IsEnabled = $true
+}
+        
 # Function to copy a single BYO application (Modified for ForEach-Object -Parallel)
 function Start-CopyBYOApplicationTask {
     [CmdletBinding()]

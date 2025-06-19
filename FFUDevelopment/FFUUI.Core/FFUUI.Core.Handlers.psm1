@@ -253,6 +253,54 @@ function Register-EventHandlers {
             $ofd.CheckFileExists = $false
             if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtAppListJsonPath.Text = $ofd.FileName }
         })
+
+    $State.Controls.btnBrowseAppSource.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
+            if ($selectedPath) { $localState.Controls.txtAppSource.Text = $selectedPath }
+        })
+
+    $State.Controls.btnAddApplication.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Add-BYOApplication -State $localState
+        })
+
+    $State.Controls.btnSaveBYOApplications.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
+            $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            $saveDialog.DefaultExt = ".json"
+            $saveDialog.Title = "Save Application List"
+            $initialDir = $localState.Controls.txtApplicationPath.Text
+            if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
+            $saveDialog.InitialDirectory = $initialDir
+            $saveDialog.FileName = "UserAppList.json"
+            if ($saveDialog.ShowDialog()) { Save-BYOApplicationList -Path $saveDialog.FileName -State $localState }
+        })
+
+    $State.Controls.btnLoadBYOApplications.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $openDialog = New-Object Microsoft.Win32.OpenFileDialog
+            $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            $openDialog.Title = "Import Application List"
+            $initialDir = $localState.Controls.txtApplicationPath.Text
+            if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
+            $openDialog.InitialDirectory = $initialDir
+            if ($openDialog.ShowDialog()) { 
+                Import-BYOApplicationList -Path $openDialog.FileName -State $localState
+                Update-CopyButtonState -State $localState
+            }
+        })
             
     $State.Controls.chkBringYourOwnApps.Add_Checked({
             param($eventSource, $routedEventArgs)
@@ -297,8 +345,43 @@ function Register-EventHandlers {
                 -StatusMessage "BYO application list cleared." `
                 -PostClearAction { Update-CopyButtonState -State $State }
         })
+            
+    $State.Controls.btnCopyBYOApps.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Invoke-CopyBYOApps -State $localState -Button $eventSource
+        })
 
-    $State.Controls.btnClearAppsScriptVariables.Add_Click({
+    $State.Controls.btnMoveTop.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Move-ListViewItemTop -ListView $localState.Controls.lstApplications
+        })
+
+    $State.Controls.btnMoveUp.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Move-ListViewItemUp -ListView $localState.Controls.lstApplications
+        })
+
+    $State.Controls.btnMoveDown.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Move-ListViewItemDown -ListView $localState.Controls.lstApplications
+        })
+
+    $State.Controls.btnMoveBottom.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Move-ListViewItemBottom -ListView $localState.Controls.lstApplications
+        })
+            
+    $State.Controls.btnCheckWingetModule.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag

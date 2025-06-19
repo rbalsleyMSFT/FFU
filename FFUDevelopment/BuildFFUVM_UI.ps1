@@ -187,121 +187,32 @@ $window.Add_Loaded({
         $script:uiState.Controls.wingetPanel.Visibility = if ($script:uiState.Controls.chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
 
-        # BYO Apps UI logic (Keep existing logic)
-        $script:uiState.Controls.btnBrowseAppSource.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
-                if ($selectedPath) { $script:uiState.Controls.txtAppSource.Text = $selectedPath }
-            })
-        $script:uiState.Controls.btnAddApplication.Add_Click({
-                $name = $script:uiState.Controls.txtAppName.Text
-                $commandLine = $script:uiState.Controls.txtAppCommandLine.Text
-                $arguments = $script:uiState.Controls.txtAppArguments.Text
-                $source = $script:uiState.Controls.txtAppSource.Text
-
-                if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($arguments)) {
-                    [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Arguments)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
-                    return
-                }
-                $listView = $script:uiState.Controls.lstApplications
-                $priority = 1
-                if ($listView.Items.Count -gt 0) {
-                    $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
-                }
-                $application = [PSCustomObject]@{ Priority = $priority; Name = $name; CommandLine = $commandLine; Arguments = $arguments; Source = $source; CopyStatus = "" }
-                $listView.Items.Add($application)
-                $script:uiState.Controls.txtAppName.Text = ""
-                $script:uiState.Controls.txtAppCommandLine.Text = ""
-                $script:uiState.Controls.txtAppArguments.Text = ""
-                $script:uiState.Controls.txtAppSource.Text = ""
-                Update-CopyButtonState -State $script:uiState
-            })
-        $script:uiState.Controls.btnSaveBYOApplications.Add_Click({
-                $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
-                $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-                $saveDialog.DefaultExt = ".json"
-                $saveDialog.Title = "Save Application List"
-                $initialDir = $script:uiState.Controls.txtApplicationPath.Text
-                if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
-                $saveDialog.InitialDirectory = $initialDir
-                $saveDialog.FileName = "UserAppList.json"
-                if ($saveDialog.ShowDialog()) { Save-BYOApplicationList -Path $saveDialog.FileName -State $script:uiState }
-            })
-        $script:uiState.Controls.btnLoadBYOApplications.Add_Click({
-                $openDialog = New-Object Microsoft.Win32.OpenFileDialog
-                $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-                $openDialog.Title = "Import Application List"
-                $initialDir = $script:uiState.Controls.txtApplicationPath.Text
-                if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $PSScriptRoot }
-                $openDialog.InitialDirectory = $initialDir
-                if ($openDialog.ShowDialog()) { Import-BYOApplicationList -Path $openDialog.FileName -State $script:uiState; Update-CopyButtonState -State $script:uiState }
-            })
-
-        $script:uiState.Controls.btnCopyBYOApps.Add_Click({
-                param($buttonSender, $clickEventArgs)
-
-                $appsToCopy = $script:uiState.Controls.lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
-                if (-not $appsToCopy) {
-                    [System.Windows.MessageBox]::Show("No applications with a source path specified.", "Copy BYO Apps", "OK", "Information")
-                    return
-                }
-
-                $buttonSender.IsEnabled = $false
-                $script:uiState.Controls.pbOverallProgress.Visibility = 'Visible'
-                $script:uiState.Controls.pbOverallProgress.Value = 0
-                $script:uiState.Controls.txtStatus.Text = "Starting BYO app copy..."
-
-                # Define necessary task-specific variables locally
-                $localAppsPath = $script:uiState.Controls.txtApplicationPath.Text
-
-                # Create hashtable for task-specific arguments
-                $taskArguments = @{
-                    AppsPath = $localAppsPath
-                }
-
-                # Select only necessary properties before passing
-                $itemsToProcess = $appsToCopy | Select-Object Priority, Name, CommandLine, Arguments, Source
-
-                # Invoke the centralized parallel processing function
-                # Pass task type and task-specific arguments
-                Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
-                    -ListViewControl $script:uiState.Controls.lstApplications `
-                    -IdentifierProperty 'Name' `
-                    -StatusProperty 'CopyStatus' `
-                    -TaskType 'CopyBYO' `
-                    -TaskArguments $taskArguments `
-                    -CompletedStatusText "Copied" `
-                    -ErrorStatusPrefix "Error: " `
-                    -WindowObject $window `
-                    -MainThreadLogPath $script:uiState.LogFilePath
-
-                # Final status update (handled by Invoke-ParallelProcessing)
-                $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
-                $buttonSender.IsEnabled = $true
-            })
-        $script:uiState.Controls.btnMoveTop.Add_Click({ 
-                Move-ListViewItemTop -ListView $script:uiState.Controls.lstApplications 
-            })
-        $script:uiState.Controls.btnMoveUp.Add_Click({ 
-                Move-ListViewItemUp -ListView $script:uiState.Controls.lstApplications 
-            })
-        $script:uiState.Controls.btnMoveDown.Add_Click({ 
-                Move-ListViewItemDown -ListView $script:uiState.Controls.lstApplications 
-            })
-        $script:uiState.Controls.btnMoveBottom.Add_Click({ 
-                Move-ListViewItemBottom -ListView $script:uiState.Controls.lstApplications 
-            })
-
-        # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column is handled)
+        # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column
         $byoGridView = $script:uiState.Controls.lstApplications.View
         if ($byoGridView -is [System.Windows.Controls.GridView]) {
             $copyStatusColumnExists = $false
-            foreach ($col in $byoGridView.Columns) { if ($col.Header -eq "Copy Status") { $copyStatusColumnExists = $true; break } }
+            foreach ($col in $byoGridView.Columns) { 
+                if ($col.Header -eq "Copy Status") {
+                    $copyStatusColumnExists = $true; break 
+                } 
+            }
             if (-not $copyStatusColumnExists) {
                 $actionColumnIndex = -1
-                for ($i = 0; $i -lt $byoGridView.Columns.Count; $i++) { if ($byoGridView.Columns[$i].Header -eq "Action") { $actionColumnIndex = $i; break } }
+                for ($i = 0; $i -lt $byoGridView.Columns.Count; $i++) {
+                    if ($byoGridView.Columns[$i].Header -eq "Action") {
+                        $actionColumnIndex = $i; break 
+                    } 
+                }
                 $copyStatusColumn = New-Object System.Windows.Controls.GridViewColumn
-                $copyStatusColumn.Header = "Copy Status"; $copyStatusColumn.DisplayMemberBinding = New-Object System.Windows.Data.Binding("CopyStatus"); $copyStatusColumn.Width = 150
-                if ($actionColumnIndex -ge 0) { $byoGridView.Columns.Insert($actionColumnIndex, $copyStatusColumn) } else { $byoGridView.Columns.Add($copyStatusColumn) }
+                $copyStatusColumn.Header = "Copy Status"
+                $copyStatusColumn.DisplayMemberBinding = New-Object System.Windows.Data.Binding("CopyStatus") 
+                $copyStatusColumn.Width = 150
+                if ($actionColumnIndex -ge 0) {
+                    $byoGridView.Columns.Insert($actionColumnIndex, $copyStatusColumn) 
+                }
+                else {
+                    $byoGridView.Columns.Add($copyStatusColumn) 
+                }
             }
         }
         Update-CopyButtonState -State $script:uiState # Initial check
@@ -309,23 +220,33 @@ $window.Add_Loaded({
         # General Browse Button Handlers (Keep existing logic)
         $script:uiState.Controls.btnBrowseFFUDevPath.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select FFU Development Path"
-                if ($selectedPath) { $script:uiState.Controls.txtFFUDevPath.Text = $selectedPath }
+                if ($selectedPath) { 
+                    $script:uiState.Controls.txtFFUDevPath.Text = $selectedPath 
+                }
             })
         $script:uiState.Controls.btnBrowseFFUCaptureLocation.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select FFU Capture Location"
-                if ($selectedPath) { $script:uiState.Controls.txtFFUCaptureLocation.Text = $selectedPath }
+                if ($selectedPath) {
+                    $script:uiState.Controls.txtFFUCaptureLocation.Text = $selectedPath 
+                }
             })
         $script:uiState.Controls.btnBrowseOfficePath.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Office Path"
-                if ($selectedPath) { $script:uiState.Controls.txtOfficePath.Text = $selectedPath }
+                if ($selectedPath) { 
+                    $script:uiState.Controls.txtOfficePath.Text = $selectedPath 
+                }
             })
         $script:uiState.Controls.btnBrowseDriversFolder.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Drivers Folder"
-                if ($selectedPath) { $script:uiState.Controls.txtDriversFolder.Text = $selectedPath }
+                if ($selectedPath) { 
+                    $script:uiState.Controls.txtDriversFolder.Text = $selectedPath 
+                }
             })
         $script:uiState.Controls.btnBrowsePEDriversFolder.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
-                if ($selectedPath) { $script:uiState.Controls.txtPEDriversFolder.Text = $selectedPath }
+                if ($selectedPath) {
+                    $script:uiState.Controls.txtPEDriversFolder.Text = $selectedPath
+                }
             })
         $script:uiState.Controls.btnBrowseDriversJsonPath.Add_Click({
                 $sfd = New-Object System.Windows.Forms.SaveFileDialog
