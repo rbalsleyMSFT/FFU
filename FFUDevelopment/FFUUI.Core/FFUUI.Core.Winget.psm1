@@ -686,6 +686,67 @@ function Start-WingetAppDownloadTask {
     return $returnObject
 }
 
+function Invoke-WingetDownload {
+    param(
+        [psobject]$State,
+        [object]$Button
+    )
+    try {
+        $selectedApps = $State.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
+        if (-not $selectedApps) {
+            [System.Windows.MessageBox]::Show("No applications selected to download.", "Download Winget Apps", "OK", "Information")
+            return
+        }
+
+        $Button.IsEnabled = $false
+        $State.Controls.pbOverallProgress.Visibility = 'Visible'
+        $State.Controls.pbOverallProgress.Value = 0
+        $State.Controls.txtStatus.Text = "Starting Winget app downloads..."
+
+        # Define necessary task-specific variables locally
+        $localAppsPath = $State.Controls.txtApplicationPath.Text
+        $localAppListJsonPath = $State.Controls.txtAppListJsonPath.Text
+        $localWindowsArch = $State.Controls.cmbWindowsArch.SelectedItem
+        $localOrchestrationPath = Join-Path -Path $State.Controls.txtApplicationPath.Text -ChildPath "Orchestration"
+
+        # Create hashtable for task-specific arguments to pass to Invoke-ParallelProcessing
+        $taskArguments = @{
+            AppsPath          = $localAppsPath
+            AppListJsonPath   = $localAppListJsonPath
+            WindowsArch       = $localWindowsArch
+            OrchestrationPath = $localOrchestrationPath
+        }
+
+        # Select only necessary properties before passing to Invoke-ParallelProcessing
+        $itemsToProcess = $selectedApps | Select-Object Name, Id, Source, Version # Include Version if needed
+
+        # Invoke the centralized parallel processing function
+        # Pass task type and task-specific arguments
+        Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
+            -ListViewControl $State.Controls.lstWingetResults `
+            -IdentifierProperty 'Id' `
+            -StatusProperty 'DownloadStatus' `
+            -TaskType 'WingetDownload' `
+            -TaskArguments $taskArguments `
+            -CompletedStatusText "Completed" `
+            -ErrorStatusPrefix "Error: " `
+            -WindowObject $State.Window `
+            -MainThreadLogPath $State.LogFilePath
+
+        # Final status update is handled by Invoke-ParallelProcessing, but we need to re-enable the button
+        $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+        $Button.IsEnabled = $true
+    }
+    catch {
+        WriteLog "FATAL Error in Invoke-WingetDownload: $($_.Exception.ToString())"
+        [System.Windows.MessageBox]::Show("A critical error occurred while starting the Winget download: $($_.Exception.Message)", "Error", "OK", "Error")
+        # Reset UI state on error
+        if ($Button) { $Button.IsEnabled = $true }
+        if ($State.Controls.pbOverallProgress) { $State.Controls.pbOverallProgress.Visibility = 'Collapsed' }
+        if ($State.Controls.txtStatus) { $State.Controls.txtStatus.Text = "Winget download failed to start." }
+    }
+}
+
 function Update-WingetVersionFields {
     param(
         [psobject]$State,
@@ -698,9 +759,5 @@ function Update-WingetVersionFields {
         [System.Windows.Forms.Application]::DoEvents()
     })
 }
-
-# --------------------------------------------------------------------------
-# SECTION: Module Export
-# --------------------------------------------------------------------------
 
 Export-ModuleMember -Function *

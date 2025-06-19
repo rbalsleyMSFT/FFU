@@ -423,6 +423,13 @@ function Register-EventHandlers {
                 -PostClearAction $postClearScriptBlock
         })
         
+    $State.Controls.btnDownloadSelected.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Invoke-WingetDownload -State $localState -Button $eventSource
+        })
+        
     # M365 Apps/Office tab Event
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)

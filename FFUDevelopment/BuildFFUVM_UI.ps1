@@ -187,55 +187,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.wingetPanel.Visibility = if ($script:uiState.Controls.chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
 
-        $script:uiState.Controls.btnDownloadSelected.Add_Click({
-                param($buttonSender, $clickEventArgs)
-
-                $selectedApps = $script:uiState.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
-                if (-not $selectedApps) {
-                    [System.Windows.MessageBox]::Show("No applications selected to download.", "Download Winget Apps", "OK", "Information")
-                    return
-                }
-
-                $buttonSender.IsEnabled = $false
-                $script:uiState.Controls.pbOverallProgress.Visibility = 'Visible'
-                $script:uiState.Controls.pbOverallProgress.Value = 0
-                $script:uiState.Controls.txtStatus.Text = "Starting Winget app downloads..."
-
-                # Define necessary task-specific variables locally
-                $localAppsPath = $script:uiState.Controls.txtApplicationPath.Text
-                $localAppListJsonPath = $script:uiState.Controls.txtAppListJsonPath.Text
-                $localWindowsArch = $script:uiState.Controls.cmbWindowsArch.SelectedItem
-                $localOrchestrationPath = Join-Path -Path $script:uiState.Controls.txtApplicationPath.Text -ChildPath "Orchestration"
-
-                # Create hashtable for task-specific arguments to pass to Invoke-ParallelProcessing
-                $taskArguments = @{
-                    AppsPath          = $localAppsPath
-                    AppListJsonPath   = $localAppListJsonPath
-                    WindowsArch       = $localWindowsArch
-                    OrchestrationPath = $localOrchestrationPath
-                }
-
-                # Select only necessary properties before passing to Invoke-ParallelProcessing
-                $itemsToProcess = $selectedApps | Select-Object Name, Id, Source, Version # Include Version if needed
-
-                # Invoke the centralized parallel processing function
-                # Pass task type and task-specific arguments
-                Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
-                    -ListViewControl $script:uiState.Controls.lstWingetResults `
-                    -IdentifierProperty 'Id' `
-                    -StatusProperty 'DownloadStatus' `
-                    -TaskType 'WingetDownload' `
-                    -TaskArguments $taskArguments `
-                    -CompletedStatusText "Completed" `
-                    -ErrorStatusPrefix "Error: " `
-                    -WindowObject $window `
-                    -MainThreadLogPath $script:uiState.LogFilePath
-
-                # Final status update (handled by Invoke-ParallelProcessing)
-                $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
-                $buttonSender.IsEnabled = $true
-            })
-
         # BYO Apps UI logic (Keep existing logic)
         $script:uiState.Controls.btnBrowseAppSource.Add_Click({
                 $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
