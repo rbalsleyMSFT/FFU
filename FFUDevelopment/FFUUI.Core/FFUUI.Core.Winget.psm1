@@ -27,17 +27,10 @@ function Search-WingetApps {
         # Store selected apps from the current view
         $selectedAppsFromView = @($currentItemsInListView | Where-Object { $_.IsSelected })
 
-        # Search for new apps
-        $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery | ForEach-Object {
-            [PSCustomObject]@{
-                IsSelected     = $false # New items are not selected by default
-                Name           = $_.Name
-                Id             = $_.Id
-                Version        = $_.Version
-                Source         = $_.Source
-                DownloadStatus = ""
-            }
-        }
+        # Search for new apps, which are streamed directly as PSCustomObjects
+        # with the required properties for performance.
+        $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery
+        WriteLog "Found $($searchedAppResults.Count) apps matching query '$searchQuery'."
 
         $finalAppList = [System.Collections.Generic.List[object]]::new()
         $addedAppIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -154,17 +147,24 @@ function Search-WingetPackagesPublic {
         [Parameter(Mandatory = $true)]
         [string]$Query
     )
-    
+
     WriteLog "Searching Winget packages with query: '$Query'"
     try {
-        # Call the shared Find-WinGetPackage function
-        $results = Find-WinGetPackage -Query $Query -ErrorAction Stop
-        WriteLog "Found $($results.Count) packages matching query '$Query'."
-        return $results
+        # Stream results directly from Find-WinGetPackage and convert them to simple PSCustomObjects
+        # on the fly using Select-Object with calculated properties. This is significantly faster
+        # for large datasets as it avoids holding complex objects in memory and bypasses the
+        # expensive formatting system for the raw results.
+        Find-WinGetPackage -Query $Query -ErrorAction Stop |
+            Select-Object -Property @{Name = 'IsSelected'; Expression = { $false } },
+            Name,
+            Id,
+            Version,
+            Source,
+            @{Name = 'DownloadStatus'; Expression = { '' } }
     }
     catch {
         WriteLog "Error during Winget search: $($_.Exception.Message)"
-        # Return an empty array or throw, depending on desired UI behavior
+        # Return an empty array or throw, depending on desired UI policy
         return @()
     }
 }
