@@ -3,6 +3,26 @@ function Register-EventHandlers {
     WriteLog "Registering UI event handlers..."
 
     # Build Tab Event Handlers
+    $State.Controls.btnBrowseFFUDevPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select FFU Development Path"
+            if ($selectedPath) {
+                $localState.Controls.txtFFUDevPath.Text = $selectedPath
+            }
+        })
+
+    $State.Controls.btnBrowseFFUCaptureLocation.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select FFU Capture Location"
+            if ($selectedPath) {
+                $localState.Controls.txtFFUCaptureLocation.Text = $selectedPath
+            }
+        })
+
     # Build USB Drive Settings Event Handlers
     $State.Controls.chkBuildUSBDriveEnable.Add_Checked({
             param($eventSource, $routedEventArgs)
@@ -514,6 +534,16 @@ function Register-EventHandlers {
         })
         
     # M365 Apps/Office tab Event
+    $State.Controls.btnBrowseOfficePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select Office Path"
+            if ($selectedPath) {
+                $localState.Controls.txtOfficePath.Text = $selectedPath
+            }
+        })
+
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -553,6 +583,80 @@ function Register-EventHandlers {
         })
             
     # Drivers Tab Event Handlers
+    $State.Controls.btnBrowseDriversFolder.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select Drivers Folder"
+            if ($selectedPath) {
+                $localState.Controls.txtDriversFolder.Text = $selectedPath
+            }
+        })
+
+    $State.Controls.btnBrowsePEDriversFolder.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
+            if ($selectedPath) {
+                $localState.Controls.txtPEDriversFolder.Text = $selectedPath
+            }
+        })
+
+    $State.Controls.btnBrowseDriversJsonPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+
+            $sfd = New-Object System.Windows.Forms.SaveFileDialog
+            $sfd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            $sfd.Title = "Select or Create Drivers.json File"
+            $sfd.FileName = "Drivers.json"
+            $sfd.CheckFileExists = $false # Allow creating a new file or selecting existing
+
+            $currentDriversJsonPath = $localState.Controls.txtDriversJsonPath.Text
+            $dialogInitialDirectory = $null # Initialize to null
+
+            if (-not [string]::IsNullOrWhiteSpace($currentDriversJsonPath)) {
+                WriteLog "Attempting to determine InitialDirectory for Drivers.json SaveFileDialog from txtDriversJsonPath: '$currentDriversJsonPath'"
+                try {
+                    # Attempt to get the parent directory of the path in the textbox
+                    $parentDir = Split-Path -Path $currentDriversJsonPath -Parent -ErrorAction Stop
+
+                    # Check if the parent directory is not null/empty and actually exists as a directory
+                    if (-not ([string]::IsNullOrEmpty($parentDir)) -and (Test-Path -Path $parentDir -PathType Container)) {
+                        $dialogInitialDirectory = $parentDir
+                        WriteLog "Set InitialDirectory for SaveFileDialog to '$parentDir' based on parent of txtDriversJsonPath."
+                    }
+                    else {
+                        # Parent directory is invalid or doesn't exist
+                        WriteLog "Parent directory '$parentDir' from txtDriversJsonPath ('$currentDriversJsonPath') is not a valid existing directory. SaveFileDialog will use default InitialDirectory."
+                        # $dialogInitialDirectory remains $null, so dialog uses its default
+                    }
+                }
+                catch {
+                    # Error occurred trying to split the path (e.g., path is malformed)
+                    WriteLog "Error splitting path from txtDriversJsonPath ('$currentDriversJsonPath'): $($_.Exception.Message). SaveFileDialog will use default InitialDirectory."
+                    # $dialogInitialDirectory remains $null
+                }
+            }
+            else {
+                # TextBox is empty, dialog will use its default initial directory
+                WriteLog "txtDriversJsonPath is empty. SaveFileDialog will use default InitialDirectory."
+                # $dialogInitialDirectory remains $null
+            }
+
+            $sfd.InitialDirectory = $dialogInitialDirectory # Set to $null if no valid directory was found, dialog will use its default
+
+            if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                $localState.Controls.txtDriversJsonPath.Text = $sfd.FileName
+                WriteLog "User selected or created Drivers.json at: $($sfd.FileName)"
+            }
+            else {
+                WriteLog "User cancelled SaveFileDialog for Drivers.json."
+            }
+        })
+
     $State.Controls.chkDownloadDrivers.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
