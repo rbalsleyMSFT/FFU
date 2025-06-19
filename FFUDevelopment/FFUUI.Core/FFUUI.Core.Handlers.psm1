@@ -400,16 +400,45 @@ function Register-EventHandlers {
             $localState = $window.Tag
             Move-ListViewItemBottom -ListView $localState.Controls.lstApplications
         })
-            
-    $State.Controls.btnCheckWingetModule.Add_Click({
+
+    # Apps Script Variables Event Handlers
+    $State.Controls.chkDefineAppsScriptVariables.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.appsScriptVariablesPanel.Visibility = 'Visible'
+        })
+    $State.Controls.chkDefineAppsScriptVariables.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed'
+        })
+    
+    $State.Controls.btnAddAppsScriptVariable.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Add-AppsScriptVariable -State $localState
+        })
+
+    $State.Controls.btnRemoveSelectedAppsScriptVariables.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Remove-SelectedAppsScriptVariable -State $localState
+        })
+
+    $State.Controls.btnClearAppsScriptVariables.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
             $postClearScriptBlock = {
-                $headerChk = $State.Controls.chkSelectAllAppsScriptVariables
+                # This scriptblock inherits the $localState variable from its parent scope.
+                $headerChk = $localState.Controls.chkSelectAllAppsScriptVariables
                 if ($null -ne $headerChk) {
-                    Update-SelectAllHeaderCheckBoxState -ListView $ListViewControl -HeaderCheckBox $headerChk
+                    Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstAppsScriptVariables -HeaderCheckBox $headerChk
                 }
             }
 
@@ -419,6 +448,7 @@ function Register-EventHandlers {
                 -ConfirmationTitle "Clear Apps Script Variables" `
                 -ConfirmationMessage "Are you sure you want to clear all Apps Script Variables?" `
                 -StatusMessage "Apps Script Variables list cleared." `
+                -TextBoxesToClear @($localState.Controls.txtAppsScriptKey, $localState.Controls.txtAppsScriptValue) `
                 -PostClearAction $postClearScriptBlock
         })
 

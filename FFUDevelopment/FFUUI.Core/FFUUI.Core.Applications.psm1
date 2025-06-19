@@ -69,7 +69,69 @@ function Add-BYOApplication {
     $State.Controls.txtAppSource.Text = ""
     Update-CopyButtonState -State $State
 }
+    
+# Function to add a new Apps Script Variable from the UI
+function Add-AppsScriptVariable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+    
+    $key = $State.Controls.txtAppsScriptKey.Text.Trim()
+    $value = $State.Controls.txtAppsScriptValue.Text.Trim()
+    
+    if ([string]::IsNullOrWhiteSpace($key)) {
+        [System.Windows.MessageBox]::Show("Apps Script Variable Key cannot be empty.", "Input Error", "OK", "Warning")
+        return
+    }
+    # Check for duplicate keys
+    $existingKey = $State.Controls.lstAppsScriptVariables.Items | Where-Object { $_.Key -eq $key }
+    if ($existingKey) {
+        [System.Windows.MessageBox]::Show("An Apps Script Variable with the key '$key' already exists.", "Duplicate Key", "OK", "Warning")
+        return
+    }
+    
+    $newItem = [PSCustomObject]@{
+        IsSelected = $false # Add IsSelected property
+        Key        = $key
+        Value      = $value
+    }
+    $State.Data.appsScriptVariablesDataList.Add($newItem)
+    $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    $State.Controls.txtAppsScriptKey.Clear()
+    $State.Controls.txtAppsScriptValue.Clear()
+    # Update the header checkbox state
+    if ($null -ne $State.Controls.chkSelectAllAppsScriptVariables) {
+        Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstAppsScriptVariables -HeaderCheckBox $State.Controls.chkSelectAllAppsScriptVariables
+    }
+}
 
+# Function to remove selected Apps Script Variables from the list
+function Remove-SelectedAppsScriptVariable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    $itemsToRemove = @($State.Data.appsScriptVariablesDataList | Where-Object { $_.IsSelected })
+    if ($itemsToRemove.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
+        return
+    }
+
+    foreach ($itemToRemove in $itemsToRemove) {
+        $State.Data.appsScriptVariablesDataList.Remove($itemToRemove)
+    }
+    $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+
+    # Update the header checkbox state
+    if ($null -ne $State.Controls.chkSelectAllAppsScriptVariables) {
+        Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstAppsScriptVariables -HeaderCheckBox $State.Controls.chkSelectAllAppsScriptVariables
+    }
+}
+    
 # Function to save BYO applications to JSON
 function Save-BYOApplicationList {
     [CmdletBinding()]

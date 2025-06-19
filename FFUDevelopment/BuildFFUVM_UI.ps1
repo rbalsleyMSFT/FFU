@@ -217,65 +217,6 @@ $window.Add_Loaded({
         }
         Update-CopyButtonState -State $script:uiState # Initial check
 
-        # AppsScriptVariables Event Handlers
-        $script:uiState.Controls.chkDefineAppsScriptVariables.Add_Checked({
-                $script:uiState.Controls.appsScriptVariablesPanel.Visibility = 'Visible'
-            })
-        $script:uiState.Controls.chkDefineAppsScriptVariables.Add_Unchecked({
-                $script:uiState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed'
-            })
-
-        $script:uiState.Controls.btnAddAppsScriptVariable.Add_Click({
-                $key = $script:uiState.Controls.txtAppsScriptKey.Text.Trim()
-                $value = $script:uiState.Controls.txtAppsScriptValue.Text.Trim()
-
-                if ([string]::IsNullOrWhiteSpace($key)) {
-                    [System.Windows.MessageBox]::Show("Apps Script Variable Key cannot be empty.", "Input Error", "OK", "Warning")
-                    return
-                }
-                # Check for duplicate keys
-                $existingKey = $script:uiState.Controls.lstAppsScriptVariables.Items | Where-Object { $_.Key -eq $key }
-                if ($existingKey) {
-                    [System.Windows.MessageBox]::Show("An Apps Script Variable with the key '$key' already exists.", "Duplicate Key", "OK", "Warning")
-                    return
-                }
-
-                $newItem = [PSCustomObject]@{
-                    IsSelected = $false # Add IsSelected property
-                    Key        = $key
-                    Value      = $value
-                }
-                $script:uiState.Data.appsScriptVariablesDataList.Add($newItem)
-                $script:uiState.Controls.lstAppsScriptVariables.ItemsSource = $script:uiState.Data.appsScriptVariablesDataList.ToArray()
-                $script:uiState.Controls.txtAppsScriptKey.Clear()
-                $script:uiState.Controls.txtAppsScriptValue.Clear()
-                # Update the header checkbox state
-                if ($null -ne $script:uiState.Controls.chkSelectAllAppsScriptVariables) {
-                    Update-SelectAllHeaderCheckBoxState -ListView $script:uiState.Controls.lstAppsScriptVariables -HeaderCheckBox $script:uiState.Controls.chkSelectAllAppsScriptVariables
-                }
-            })
-
-        $script:uiState.Controls.btnRemoveSelectedAppsScriptVariables.Add_Click({
-                $itemsToRemove = @($script:uiState.Data.appsScriptVariablesDataList | Where-Object { $_.IsSelected })
-                if ($itemsToRemove.Count -eq 0) {
-                    [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
-                    return
-                }
-
-                foreach ($itemToRemove in $itemsToRemove) {
-                    $script:uiState.Data.appsScriptVariablesDataList.Remove($itemToRemove)
-                }
-                $script:uiState.Controls.lstAppsScriptVariables.ItemsSource = $script:uiState.Data.appsScriptVariablesDataList.ToArray()
-
-                # Update the header checkbox state
-                if ($null -ne $script:uiState.Controls.chkSelectAllAppsScriptVariables) {
-                    # Check if variable exists
-                    Update-SelectAllHeaderCheckBoxState -ListView $script:uiState.Controls.lstAppsScriptVariables -HeaderCheckBox $script:uiState.Controls.chkSelectAllAppsScriptVariables
-                }
-            })
-
-
-
         # Initial state for chkDefineAppsScriptVariables based on chkInstallApps
         if ($script:uiState.Controls.chkInstallApps.IsChecked) {
             $script:uiState.Controls.chkDefineAppsScriptVariables.Visibility = 'Visible'
