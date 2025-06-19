@@ -135,26 +135,6 @@ $window.Add_Loaded({
 
         Register-EventHandlers -State $script:uiState
 
-
-
-        # Office interplay (Keep existing logic)
-        $script:uiState.Flags.installAppsCheckedByOffice = $false
-        if ($script:uiState.Controls.chkInstallOffice.IsChecked) {
-            $script:uiState.Controls.OfficePathStackPanel.Visibility = 'Visible'
-            $script:uiState.Controls.OfficePathGrid.Visibility = 'Visible'
-            $script:uiState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
-            # Show/hide XML file path based on checkbox state
-            $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = if ($script:uiState.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
-            $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = if ($script:uiState.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
-        }
-        else {
-            $script:uiState.Controls.OfficePathStackPanel.Visibility = 'Collapsed'
-            $script:uiState.Controls.OfficePathGrid.Visibility = 'Collapsed'
-            $script:uiState.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
-            $script:uiState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
-            $script:uiState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
-        }
-
         # CU interplay (Keep existing logic)
         # Set initial state based on defaults
         $script:uiState.Controls.chkPreviewCU.IsEnabled = -not $script:uiState.Controls.chkLatestCU.IsChecked
