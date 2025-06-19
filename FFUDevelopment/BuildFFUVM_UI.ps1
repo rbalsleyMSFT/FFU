@@ -135,24 +135,7 @@ $window.Add_Loaded({
 
         Register-EventHandlers -State $script:uiState
 
-        # Drivers tab UI logic
-        $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo') 
-        foreach ($m in $makeList) {
-            [void]$script:uiState.Controls.cmbMake.Items.Add($m)
-        }
-        if ($script:uiState.Controls.cmbMake.Items.Count -gt 0) {
-            $script:uiState.Controls.cmbMake.SelectedIndex = 0
-        }
-        $script:uiState.Controls.spMakeSection.Visibility = if ($script:uiState.Controls.chkDownloadDrivers.IsChecked) {
-            'Visible' 
-        } 
-        else { 
-            'Collapsed' 
-        }
-        $script:uiState.Controls.btnGetModels.Visibility = if ($script:uiState.Controls.chkDownloadDrivers.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.spModelFilterSection.Visibility = 'Collapsed'
-        $script:uiState.Controls.lstDriverModels.Visibility = 'Collapsed'
-        $script:uiState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
+
 
         # Office interplay (Keep existing logic)
         $script:uiState.Flags.installAppsCheckedByOffice = $false

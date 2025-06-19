@@ -704,31 +704,16 @@ function Register-EventHandlers {
             }
         })
 
-    $State.Controls.chkDownloadDrivers.Add_Checked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.cmbMake.Visibility = 'Visible'
-            $localState.Controls.btnGetModels.Visibility = 'Visible'
-            $localState.Controls.spMakeSection.Visibility = 'Visible'
-            $localState.Controls.spModelFilterSection.Visibility = 'Visible'
-            $localState.Controls.lstDriverModels.Visibility = 'Visible'
-            $localState.Controls.spDriverActionButtons.Visibility = 'Visible'
-        })
-    $State.Controls.chkDownloadDrivers.Add_Unchecked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.cmbMake.Visibility = 'Collapsed'
-            $localState.Controls.btnGetModels.Visibility = 'Collapsed'
-            $localState.Controls.spMakeSection.Visibility = 'Collapsed'
-            $localState.Controls.spModelFilterSection.Visibility = 'Collapsed'
-            $localState.Controls.lstDriverModels.Visibility = 'Collapsed'
-            $localState.Controls.spDriverActionButtons.Visibility = 'Collapsed'
-            $localState.Controls.lstDriverModels.ItemsSource = $null
-            $localState.Data.allDriverModels.Clear()
-            $localState.Controls.txtModelFilter.Text = ""
-        })
+    # Define a single handler for the Download Drivers checkbox
+    $driverDownloadCheckboxHandler = {
+        param($eventSource, $routedEventArgs)
+        $window = [System.Windows.Window]::GetWindow($eventSource)
+        if ($null -ne $window) {
+            Update-DriverDownloadPanelVisibility -State $window.Tag
+        }
+    }
+    $State.Controls.chkDownloadDrivers.Add_Checked($driverDownloadCheckboxHandler)
+    $State.Controls.chkDownloadDrivers.Add_Unchecked($driverDownloadCheckboxHandler)
 
     $State.Controls.btnGetModels.Add_Click({
             param($eventSource, $routedEventArgs)

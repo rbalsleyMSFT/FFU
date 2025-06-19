@@ -253,6 +253,48 @@ function Update-DriverCheckboxStates {
     }
 }
 
+# Function to manage the visibility of Office UI panels
+function Update-OfficePanelVisibility {
+    param([PSCustomObject]$State)
+
+    if ($State.Controls.chkInstallOffice.IsChecked) {
+        $State.Controls.OfficePathStackPanel.Visibility = 'Visible'
+        $State.Controls.OfficePathGrid.Visibility = 'Visible'
+        $State.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Visible'
+        # Show/hide XML file path based on checkbox state
+        $State.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = if ($State.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
+        $State.Controls.OfficeConfigurationXMLFileGrid.Visibility = if ($State.Controls.chkCopyOfficeConfigXML.IsChecked) { 'Visible' } else { 'Collapsed' }
+    }
+    else {
+        $State.Controls.OfficePathStackPanel.Visibility = 'Collapsed'
+        $State.Controls.OfficePathGrid.Visibility = 'Collapsed'
+        $State.Controls.CopyOfficeConfigXMLStackPanel.Visibility = 'Collapsed'
+        $State.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
+        $State.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
+    }
+}
+
+# Function to manage the visibility of the driver download UI panels
+function Update-DriverDownloadPanelVisibility {
+    param([PSCustomObject]$State)
+
+    if ($State.Controls.chkDownloadDrivers.IsChecked) {
+        $State.Controls.spMakeSection.Visibility = 'Visible'
+        $State.Controls.btnGetModels.Visibility = 'Visible'
+        # The other panels are shown/hidden by the Get Models button click handler
+    }
+    else {
+        $State.Controls.spMakeSection.Visibility = 'Collapsed'
+        $State.Controls.btnGetModels.Visibility = 'Collapsed'
+        $State.Controls.spModelFilterSection.Visibility = 'Collapsed'
+        $State.Controls.lstDriverModels.Visibility = 'Collapsed'
+        $State.Controls.spDriverActionButtons.Visibility = 'Collapsed'
+        $State.Controls.lstDriverModels.ItemsSource = $null
+        $State.Data.allDriverModels.Clear()
+        $State.Controls.txtModelFilter.Text = ""
+    }
+}
+
 # --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------

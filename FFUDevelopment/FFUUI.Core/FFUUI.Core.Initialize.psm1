@@ -239,12 +239,25 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
     $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
     $State.Controls.chkCompressDriversToWIM.IsChecked = $State.Defaults.generalDefaults.CompressDownloadedDriversToWim
+
+    # Drivers tab UI logic
+    $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo')
+    foreach ($m in $makeList) {
+        [void]$State.Controls.cmbMake.Items.Add($m)
+    }
+    if ($State.Controls.cmbMake.Items.Count -gt 0) {
+        $State.Controls.cmbMake.SelectedIndex = 0
+    }
+    Update-DriverDownloadPanelVisibility -State $State
     
     # Set initial state for driver checkbox interplay
     Update-DriverCheckboxStates -State $State
 
     # Set initial state for InstallApps checkbox based on updates
     Update-InstallAppsState -State $State
+
+    # Set initial state for Office panel visibility
+    Update-OfficePanelVisibility -State $State
 
 }
 
