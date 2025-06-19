@@ -206,6 +206,85 @@ function Register-EventHandlers {
             $localState.Controls.chkLatestCU.IsEnabled = $true
         })
 
+    # Applications Tab Event Handlers
+    $State.Controls.chkInstallApps.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkInstallWingetApps.Visibility = 'Visible'
+            $localState.Controls.applicationPathPanel.Visibility = 'Visible'
+            $localState.Controls.appListJsonPathPanel.Visibility = 'Visible'
+            $localState.Controls.chkBringYourOwnApps.Visibility = 'Visible'
+            $localState.Controls.chkDefineAppsScriptVariables.Visibility = 'Visible'
+        })
+    $State.Controls.chkInstallApps.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkInstallWingetApps.IsChecked = $false
+            $localState.Controls.chkBringYourOwnApps.IsChecked = $false
+            $localState.Controls.chkInstallWingetApps.Visibility = 'Collapsed'
+            $localState.Controls.applicationPathPanel.Visibility = 'Collapsed'
+            $localState.Controls.appListJsonPathPanel.Visibility = 'Collapsed'
+            $localState.Controls.chkBringYourOwnApps.Visibility = 'Collapsed'
+            $localState.Controls.wingetPanel.Visibility = 'Collapsed'
+            $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed'
+            $localState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
+            $localState.Controls.chkDefineAppsScriptVariables.IsChecked = $false
+            $localState.Controls.chkDefineAppsScriptVariables.Visibility = 'Collapsed'
+            $localState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed'
+        })
+            
+    $State.Controls.btnBrowseApplicationPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Show-ModernFolderPicker -Title "Select Application Path Folder"
+            if ($selectedPath) { $localState.Controls.txtApplicationPath.Text = $selectedPath }
+        })
+            
+    $State.Controls.btnBrowseAppListJsonPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $ofd = New-Object System.Windows.Forms.OpenFileDialog
+            $ofd.Filter = "JSON files (*.json)|*.json"
+            $ofd.Title = "Select AppList.json File"
+            $ofd.CheckFileExists = $false
+            if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtAppListJsonPath.Text = $ofd.FileName }
+        })
+            
+    $State.Controls.chkBringYourOwnApps.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.byoApplicationPanel.Visibility = 'Visible'
+        })
+    $State.Controls.chkBringYourOwnApps.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
+            $localState.Controls.txtAppName.Text = ''
+            $localState.Controls.txtAppCommandLine.Text = ''
+            $localState.Controls.txtAppArguments.Text = ''
+            $localState.Controls.txtAppSource.Text = ''
+        })
+            
+    $State.Controls.chkInstallWingetApps.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.wingetPanel.Visibility = 'Visible'
+        })
+    $State.Controls.chkInstallWingetApps.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.wingetPanel.Visibility = 'Collapsed'
+            $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed'
+        })
+
     # M365 Apps/Office tab Event Handlers
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)
@@ -488,7 +567,7 @@ function Register-EventHandlers {
             $localState = $window.Tag
             Save-DriversJson -State $localState
         })
-
+            
     $State.Controls.btnImportDriversJson.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

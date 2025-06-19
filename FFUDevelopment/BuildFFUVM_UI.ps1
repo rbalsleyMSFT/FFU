@@ -203,58 +203,7 @@ $window.Add_Loaded({
         $script:uiState.Controls.wingetPanel.Visibility = if ($script:uiState.Controls.chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
 
-        $script:uiState.Controls.chkInstallApps.Add_Checked({
-                $script:uiState.Controls.chkInstallWingetApps.Visibility = 'Visible'
-                $script:uiState.Controls.applicationPathPanel.Visibility = 'Visible'
-                $script:uiState.Controls.appListJsonPathPanel.Visibility = 'Visible'
-                $script:uiState.Controls.chkBringYourOwnApps.Visibility = 'Visible'
-                # New logic for AppsScriptVariables
-                $script:uiState.Controls.chkDefineAppsScriptVariables.Visibility = 'Visible'
-            })
-        $script:uiState.Controls.chkInstallApps.Add_Unchecked({
-                $script:uiState.Controls.chkInstallWingetApps.IsChecked = $false # Uncheck children when parent is unchecked
-                $script:uiState.Controls.chkBringYourOwnApps.IsChecked = $false
-                $script:uiState.Controls.chkInstallWingetApps.Visibility = 'Collapsed'
-                $script:uiState.Controls.applicationPathPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.appListJsonPathPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.chkBringYourOwnApps.Visibility = 'Collapsed'
-                $script:uiState.Controls.wingetPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
-                # New logic for AppsScriptVariables
-                $script:uiState.Controls.chkDefineAppsScriptVariables.IsChecked = $false # Also uncheck it
-                $script:uiState.Controls.chkDefineAppsScriptVariables.Visibility = 'Collapsed'
-                $script:uiState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed' # Ensure panel is hidden
-            })
-        $script:uiState.Controls.btnBrowseApplicationPath.Add_Click({
-                $selectedPath = Show-ModernFolderPicker -Title "Select Application Path Folder"
-                if ($selectedPath) { $script:uiState.Controls.txtApplicationPath.Text = $selectedPath }
-            })
-        $script:uiState.Controls.btnBrowseAppListJsonPath.Add_Click({
-                $ofd = New-Object System.Windows.Forms.OpenFileDialog
-                $ofd.Filter = "JSON files (*.json)|*.json"
-                $ofd.Title = "Select AppList.json File"
-                $ofd.CheckFileExists = $false
-                if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $script:uiState.Controls.txtAppListJsonPath.Text = $ofd.FileName }
-            })
-        $script:uiState.Controls.chkBringYourOwnApps.Add_Checked({ 
-                $script:uiState.Controls.byoApplicationPanel.Visibility = 'Visible' 
-            })
-        $script:uiState.Controls.chkBringYourOwnApps.Add_Unchecked({
-                $script:uiState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
-                # Clear fields when hiding
-                $script:uiState.Controls.txtAppName.Text = ''
-                $script:uiState.Controls.txtAppCommandLine.Text = ''
-                $script:uiState.Controls.txtAppArguments.Text = ''
-                $script:uiState.Controls.txtAppSource.Text = ''
-            })
-        $script:uiState.Controls.chkInstallWingetApps.Add_Checked({ 
-                $script:uiState.Controls.wingetPanel.Visibility = 'Visible' 
-            })
-        $script:uiState.Controls.chkInstallWingetApps.Add_Unchecked({
-                $script:uiState.Controls.wingetPanel.Visibility = 'Collapsed'
-                $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Hide search when unchecked
-            })
+        
         $script:uiState.Controls.btnCheckWingetModule.Add_Click({
                 param($buttonSender, $clickEventArgs)
                 $buttonSender.IsEnabled = $false
