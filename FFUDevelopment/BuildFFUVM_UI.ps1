@@ -217,41 +217,6 @@ $window.Add_Loaded({
         }
         Update-CopyButtonState -State $script:uiState # Initial check
 
-        # General Browse Button Handlers (Keep existing logic)
-
-        # Driver Checkbox Conditional Logic
-        $script:uiState.Controls.chkInstallDrivers.Add_Checked({
-                $script:uiState.Controls.chkCopyDrivers.IsEnabled = $false
-                $script:uiState.Controls.chkCompressDriversToWIM.IsEnabled = $false
-            })
-        $script:uiState.Controls.chkInstallDrivers.Add_Unchecked({
-                # Only re-enable if the other checkboxes are not checked
-                if (-not $script:uiState.Controls.chkCopyDrivers.IsChecked) { 
-                    $script:uiState.Controls.chkCopyDrivers.IsEnabled = $true 
-                }
-                if (-not $script:uiState.Controls.chkCompressDriversToWIM.IsChecked) { 
-                    $script:uiState.Controls.chkCompressDriversToWIM.IsEnabled = $true 
-                }
-            })
-        $script:uiState.Controls.chkCopyDrivers.Add_Checked({
-                $script:uiState.Controls.chkInstallDrivers.IsEnabled = $false
-            })
-        $script:uiState.Controls.chkCopyDrivers.Add_Unchecked({
-                # Only re-enable if InstallDrivers is not checked
-                if (-not $script:uiState.Controls.chkInstallDrivers.IsChecked) { $script:uiState.Controls.chkInstallDrivers.IsEnabled = $true }
-            })
-        $script:uiState.Controls.chkCompressDriversToWIM.Add_Checked({
-                $script:uiState.Controls.chkInstallDrivers.IsEnabled = $false
-            })
-        $script:uiState.Controls.chkCompressDriversToWIM.Add_Unchecked({
-                # Only re-enable if InstallDrivers is not checked
-                if (-not $script:uiState.Controls.chkInstallDrivers.IsChecked) { $script:uiState.Controls.chkInstallDrivers.IsEnabled = $true }
-            })
-        # Set initial state based on defaults (assuming defaults are false)
-        $script:uiState.Controls.chkInstallDrivers.IsEnabled = $true
-        $script:uiState.Controls.chkCopyDrivers.IsEnabled = $true
-        $script:uiState.Controls.chkCompressDriversToWIM.IsEnabled = $true
-
         # AppsScriptVariables Event Handlers
         $script:uiState.Controls.chkDefineAppsScriptVariables.Add_Checked({
                 $script:uiState.Controls.appsScriptVariablesPanel.Visibility = 'Visible'

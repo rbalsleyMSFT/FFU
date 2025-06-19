@@ -238,7 +238,11 @@ function Initialize-UIDefaults {
     $State.Controls.chkInstallDrivers.IsChecked = $State.Defaults.generalDefaults.InstallDrivers
     $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
     $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
+    $State.Controls.chkCompressDriversToWIM.IsChecked = $State.Defaults.generalDefaults.CompressDownloadedDriversToWim
     
+    # Set initial state for driver checkbox interplay
+    Update-DriverCheckboxStates -State $State
+
     # Set initial state for InstallApps checkbox based on updates
     Update-InstallAppsState -State $State
 

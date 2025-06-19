@@ -581,8 +581,25 @@ function Register-EventHandlers {
             $localState.Controls.OfficeConfigurationXMLFileStackPanel.Visibility = 'Collapsed'
             $localState.Controls.OfficeConfigurationXMLFileGrid.Visibility = 'Collapsed'
         })
-            
+
     # Drivers Tab Event Handlers
+    # Define a single handler for interdependent driver checkboxes
+    $driverCheckboxHandler = {
+        param($eventSource, $routedEventArgs)
+        $window = [System.Windows.Window]::GetWindow($eventSource)
+        if ($null -ne $window) {
+            Update-DriverCheckboxStates -State $window.Tag
+        }
+    }
+
+    # Attach the handler to all relevant checkboxes
+    $State.Controls.chkInstallDrivers.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkInstallDrivers.Add_Unchecked($driverCheckboxHandler)
+    $State.Controls.chkCopyDrivers.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkCopyDrivers.Add_Unchecked($driverCheckboxHandler)
+    $State.Controls.chkCompressDriversToWIM.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkCompressDriversToWIM.Add_Unchecked($driverCheckboxHandler)
+
     $State.Controls.btnBrowseDriversFolder.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

@@ -108,66 +108,67 @@ function Get-GeneralDefaults {
 
     return [PSCustomObject]@{
         # Build Tab Defaults
-        CustomFFUNameTemplate       = "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
-        FFUCaptureLocation          = $ffuCapturePath
-        ShareName                   = "FFUCaptureShare"
-        Username                    = "ffu_user"
-        BuildUSBDriveEnable         = $false
-        CompactOS                   = $true
-        Optimize                    = $true
-        AllowVHDXCaching            = $false
-        CreateCaptureMedia          = $true
-        CreateDeploymentMedia       = $true
-        AllowExternalHardDiskMedia  = $false
-        PromptExternalHardDiskMedia = $true
-        SelectSpecificUSBDrives     = $false
-        CopyAutopilot               = $false
-        CopyUnattend                = $false
-        CopyPPKG                    = $false
-        CleanupAppsISO              = $true
-        CleanupCaptureISO           = $true
-        CleanupDeployISO            = $true
-        CleanupDrivers              = $false
-        RemoveFFU                   = $false
-        RemoveApps                  = $false 
-        RemoveUpdates               = $false 
+        CustomFFUNameTemplate          = "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
+        FFUCaptureLocation             = $ffuCapturePath
+        ShareName                      = "FFUCaptureShare"
+        Username                       = "ffu_user"
+        BuildUSBDriveEnable            = $false
+        CompactOS                      = $true
+        Optimize                       = $true
+        AllowVHDXCaching               = $false
+        CreateCaptureMedia             = $true
+        CreateDeploymentMedia          = $true
+        AllowExternalHardDiskMedia     = $false
+        PromptExternalHardDiskMedia    = $true
+        SelectSpecificUSBDrives        = $false
+        CopyAutopilot                  = $false
+        CopyUnattend                   = $false
+        CopyPPKG                       = $false
+        CleanupAppsISO                 = $true
+        CleanupCaptureISO              = $true
+        CleanupDeployISO               = $true
+        CleanupDrivers                 = $false
+        RemoveFFU                      = $false
+        RemoveApps                     = $false 
+        RemoveUpdates                  = $false 
         # Hyper-V Settings Defaults
-        VMHostIPAddress             = ""
-        DiskSizeGB                  = 30
-        MemoryGB                    = 4
-        Processors                  = 4
-        VMLocation                  = $vmLocationPath
-        VMNamePrefix                = "_FFU"
-        LogicalSectorSize           = 512
+        VMHostIPAddress                = ""
+        DiskSizeGB                     = 30
+        MemoryGB                       = 4
+        Processors                     = 4
+        VMLocation                     = $vmLocationPath
+        VMNamePrefix                   = "_FFU"
+        LogicalSectorSize              = 512
         # Updates Tab Defaults
-        UpdateLatestCU              = $true
-        UpdateLatestNet             = $true
-        UpdateLatestDefender        = $true
-        UpdateEdge                  = $true
-        UpdateOneDrive              = $true
-        UpdateLatestMSRT            = $true
-        UpdateLatestMicrocode       = $false
-        UpdatePreviewCU             = $false
+        UpdateLatestCU                 = $true
+        UpdateLatestNet                = $true
+        UpdateLatestDefender           = $true
+        UpdateEdge                     = $true
+        UpdateOneDrive                 = $true
+        UpdateLatestMSRT               = $true
+        UpdateLatestMicrocode          = $false
+        UpdatePreviewCU                = $false
         # Applications Tab Defaults
-        InstallApps                 = $false
-        ApplicationPath             = $appsPath
-        AppListJsonPath             = $appListJsonPath
-        InstallWingetApps           = $false
-        BringYourOwnApps            = $false
+        InstallApps                    = $false
+        ApplicationPath                = $appsPath
+        AppListJsonPath                = $appListJsonPath
+        InstallWingetApps              = $false
+        BringYourOwnApps               = $false
         # M365 Apps/Office Tab Defaults
-        InstallOffice               = $true
-        OfficePath                  = $officePath
-        CopyOfficeConfigXML         = $false
-        OfficeConfigXMLFilePath     = ""
+        InstallOffice                  = $true
+        OfficePath                     = $officePath
+        CopyOfficeConfigXML            = $false
+        OfficeConfigXMLFilePath        = ""
         # Drivers Tab Defaults
-        DriversFolder               = $driversPath
-        PEDriversFolder             = $peDriversPath
-        DriversJsonPath             = $driversJsonPath
-        DownloadDrivers             = $false
-        InstallDrivers              = $false
-        CopyDrivers                 = $false
-        CopyPEDrivers               = $false
-        UpdateADK                   = $true
+        DriversFolder                  = $driversPath
+        PEDriversFolder                = $peDriversPath
+        DriversJsonPath                = $driversJsonPath
+        DownloadDrivers                = $false
+        InstallDrivers                 = $false
+        CopyDrivers                    = $false
+        CopyPEDrivers                  = $false
+        UpdateADK                      = $true
+        CompressDownloadedDriversToWim = $false
     }
 }
 
@@ -197,9 +198,9 @@ function Update-InstallAppsState {
 
     # Determine if any checkbox that forces "Install Apps" is checked
     $anyUpdateChecked = $State.Controls.chkUpdateLatestDefender.IsChecked -or `
-                        $State.Controls.chkUpdateEdge.IsChecked -or `
-                        $State.Controls.chkUpdateOneDrive.IsChecked -or `
-                        $State.Controls.chkUpdateLatestMSRT.IsChecked
+        $State.Controls.chkUpdateEdge.IsChecked -or `
+        $State.Controls.chkUpdateOneDrive.IsChecked -or `
+        $State.Controls.chkUpdateLatestMSRT.IsChecked
     
     $isForced = $anyUpdateChecked -or $installOfficeChk.IsChecked
 
@@ -222,6 +223,33 @@ function Update-InstallAppsState {
             $installAppsChk.IsChecked = $false
         }
         $installAppsChk.IsEnabled = $true
+    }
+}
+
+# Function to manage the enabled state of interdependent driver-related checkboxes
+function Update-DriverCheckboxStates {
+    param([PSCustomObject]$State)
+
+    $installDriversChk = $State.Controls.chkInstallDrivers
+    $copyDriversChk = $State.Controls.chkCopyDrivers
+    $compressWimChk = $State.Controls.chkCompressDriversToWIM
+
+    # Default to enabled, then apply disabling rules
+    $installDriversChk.IsEnabled = $true
+    $copyDriversChk.IsEnabled = $true
+    $compressWimChk.IsEnabled = $true
+
+    if ($installDriversChk.IsChecked) {
+        $copyDriversChk.IsEnabled = $false
+        $compressWimChk.IsEnabled = $false
+    }
+    
+    if ($copyDriversChk.IsChecked) {
+        $installDriversChk.IsEnabled = $false
+    }
+
+    if ($compressWimChk.IsChecked) {
+        $installDriversChk.IsEnabled = $false
     }
 }
 
