@@ -187,10 +187,6 @@ $window.Add_Loaded({
         $script:uiState.Controls.wingetPanel.Visibility = if ($script:uiState.Controls.chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
 
-        
-
-
-
         $script:uiState.Controls.btnDownloadSelected.Add_Click({
                 param($buttonSender, $clickEventArgs)
 
