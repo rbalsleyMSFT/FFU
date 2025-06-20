@@ -134,52 +134,6 @@ $window.Add_Loaded({
         Initialize-VMSwitchData -State $script:uiState
 
         Register-EventHandlers -State $script:uiState
-
-        # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column
-        $byoGridView = $script:uiState.Controls.lstApplications.View
-        if ($byoGridView -is [System.Windows.Controls.GridView]) {
-            $copyStatusColumnExists = $false
-            foreach ($col in $byoGridView.Columns) { 
-                if ($col.Header -eq "Copy Status") {
-                    $copyStatusColumnExists = $true; break 
-                } 
-            }
-            if (-not $copyStatusColumnExists) {
-                $actionColumnIndex = -1
-                for ($i = 0; $i -lt $byoGridView.Columns.Count; $i++) {
-                    if ($byoGridView.Columns[$i].Header -eq "Action") {
-                        $actionColumnIndex = $i; break 
-                    } 
-                }
-                $copyStatusColumn = New-Object System.Windows.Controls.GridViewColumn
-                $copyStatusColumn.Header = "Copy Status"
-                $copyStatusColumn.DisplayMemberBinding = New-Object System.Windows.Data.Binding("CopyStatus") 
-                $copyStatusColumn.Width = 150
-                if ($actionColumnIndex -ge 0) {
-                    $byoGridView.Columns.Insert($actionColumnIndex, $copyStatusColumn) 
-                }
-                else {
-                    $byoGridView.Columns.Add($copyStatusColumn) 
-                }
-            }
-        }
-        Update-CopyButtonState -State $script:uiState # Initial check
-
-        # Initial state for chkDefineAppsScriptVariables based on chkInstallApps
-        if ($script:uiState.Controls.chkInstallApps.IsChecked) {
-            $script:uiState.Controls.chkDefineAppsScriptVariables.Visibility = 'Visible'
-        }
-        else {
-            $script:uiState.Controls.chkDefineAppsScriptVariables.Visibility = 'Collapsed'
-        }
-        # Initial state for appsScriptVariablesPanel based on chkDefineAppsScriptVariables
-        if ($script:uiState.Controls.chkDefineAppsScriptVariables.IsChecked) {
-            $script:uiState.Controls.appsScriptVariablesPanel.Visibility = 'Visible'
-        }
-        else {
-            $script:uiState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed'
-        }
-
     })
 
 

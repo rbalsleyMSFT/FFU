@@ -262,9 +262,12 @@ function Initialize-UIDefaults {
     # Set initial state for Office panel visibility
     Update-OfficePanelVisibility -State $State
     
-    # Set initial state for Application panel visibility
-    Update-ApplicationPanelVisibility -State $State
-}
+        # Set initial state for Application panel visibility
+        Update-ApplicationPanelVisibility -State $State
+    
+        # Set initial state for BYO Apps copy button
+        Update-CopyButtonState -State $State
+    }
 
 function Initialize-DynamicUIElements {
     param([PSCustomObject]$State)
