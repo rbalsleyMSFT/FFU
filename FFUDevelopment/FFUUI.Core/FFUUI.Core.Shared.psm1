@@ -441,6 +441,47 @@ function Update-SelectAllHeaderCheckBoxState {
     }
 }
 
+# Function to toggle the IsSelected state of the currently selected ListView item
+function Invoke-ListViewItemToggle {
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView,
+        [Parameter(Mandatory)]
+        [psobject]$State,
+        [Parameter(Mandatory)]
+        [string]$HeaderCheckBoxKeyName
+    )
+
+    $selectedItem = $ListView.SelectedItem
+    if ($null -eq $selectedItem) { return }
+
+    # Store the current index to restore focus later
+    $currentIndex = $ListView.SelectedIndex
+
+    # Toggle the IsSelected property
+    $selectedItem.IsSelected = -not $selectedItem.IsSelected
+    $ListView.Items.Refresh()
+
+    # Update the 'Select All' header checkbox state
+    $headerChk = $State.Controls[$HeaderCheckBoxKeyName]
+    if ($null -ne $headerChk) {
+        Update-SelectAllHeaderCheckBoxState -ListView $ListView -HeaderCheckBox $headerChk
+    }
+
+    # Restore selection and focus to the item that was just toggled
+    if ($currentIndex -ge 0 -and $ListView.Items.Count -gt $currentIndex) {
+        $ListView.SelectedIndex = $currentIndex
+        
+        # Ensure the UI is updated before trying to find the container
+        $ListView.UpdateLayout()
+        
+        $listViewItem = $ListView.ItemContainerGenerator.ContainerFromIndex($currentIndex)
+        if ($null -ne $listViewItem) {
+            $listViewItem.Focus()
+        }
+    }
+}
+
 # Function to sort ListView items
 function Invoke-ListViewSort {
     param(

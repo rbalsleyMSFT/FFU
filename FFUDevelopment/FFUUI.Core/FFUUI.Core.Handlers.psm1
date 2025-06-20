@@ -92,21 +92,13 @@ function Register-EventHandlers {
         })
         
 
-    $State.Controls.lstUSBDrives.Add_KeyDown({
+    $State.Controls.lstUSBDrives.Add_PreviewKeyDown({
             param($eventSource, $keyEvent)
             if ($keyEvent.Key -eq 'Space') {
                 $window = [System.Windows.Window]::GetWindow($eventSource)
                 $localState = $window.Tag
-                $selectedItem = $localState.Controls.lstUSBDrives.SelectedItem
-                if ($selectedItem) {
-                    $selectedItem.IsSelected = -not $selectedItem.IsSelected
-                    $localState.Controls.lstUSBDrives.Items.Refresh()
-                    # After toggling, update the 'Select All' header checkbox state
-                    $headerChk = $localState.Controls.chkSelectAllUSBDrivesHeader
-                    if ($null -ne $headerChk) {
-                        Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstUSBDrives -HeaderCheckBox $headerChk
-                    }
-                }
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllUSBDrivesHeader'
+                $keyEvent.Handled = $true
             }
         })
     $State.Controls.lstUSBDrives.Add_SelectionChanged({
@@ -401,6 +393,16 @@ function Register-EventHandlers {
                 -PostClearAction $postClearScriptBlock
         })
 
+    $State.Controls.lstAppsScriptVariables.Add_PreviewKeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllAppsScriptVariables'
+                $keyEvent.Handled = $true
+            }
+        })
+
     $State.Controls.btnCheckWingetModule.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -503,6 +505,15 @@ function Register-EventHandlers {
                 -StatusMessage "Winget application list cleared." `
                 -TextBoxesToClear @($localState.Controls.txtWingetSearch) `
                 -PostClearAction $postClearScriptBlock
+        })
+    $State.Controls.lstWingetResults.Add_PreviewKeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllWingetResults'
+                $keyEvent.Handled = $true
+            }
         })
         
     $State.Controls.btnDownloadSelected.Add_Click({
@@ -866,6 +877,16 @@ function Register-EventHandlers {
                 -StatusMessage "Driver list cleared." `
                 -TextBoxesToClear @($localState.Controls.txtModelFilter)`
                 -PostClearAction $postClearScriptBlock
+        })
+
+        $State.Controls.lstDriverModels.Add_PreviewKeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllDriverModels'
+                $keyEvent.Handled = $true
+            }
         })
 
     $State.Controls.btnSaveDriversJson.Add_Click({
