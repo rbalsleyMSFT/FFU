@@ -146,6 +146,37 @@ function Initialize-UIControls {
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
 }
 
+function Initialize-VMSwitchData {
+    param([PSCustomObject]$State)
+
+    WriteLog "Initializing VM Switch data..."
+    
+    # Hyper-V Settings: Populate VM Switch ComboBox
+    $vmSwitchData = Get-VMSwitchData
+    $State.Data.vmSwitchMap = $vmSwitchData.SwitchMap
+    $State.Controls.cmbVMSwitchName.Items.Clear()
+    foreach ($switchName in $vmSwitchData.SwitchNames) {
+        $State.Controls.cmbVMSwitchName.Items.Add($switchName) | Out-Null
+    }
+    $State.Controls.cmbVMSwitchName.Items.Add('Other') | Out-Null
+    if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
+        $State.Controls.cmbVMSwitchName.SelectedIndex = 0
+        $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
+        if ($State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
+            $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
+        }
+        else {
+            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found
+        }
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+    }
+    else {
+        $State.Controls.cmbVMSwitchName.SelectedItem = 'Other'
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
+        $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default
+    }
+}
+
 function Initialize-UIDefaults {
     param([PSCustomObject]$State)
     WriteLog "Initializing UI defaults..."
@@ -186,6 +217,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked
 
     # Hyper-V Settings defaults from General Defaults
+    Initialize-VMSwitchData -State $State
     $State.Controls.txtDiskSize.Text = $State.Defaults.generalDefaults.DiskSizeGB
     $State.Controls.txtMemory.Text = $State.Defaults.generalDefaults.MemoryGB
     $State.Controls.txtProcessors.Text = $State.Defaults.generalDefaults.Processors
@@ -262,12 +294,12 @@ function Initialize-UIDefaults {
     # Set initial state for Office panel visibility
     Update-OfficePanelVisibility -State $State
     
-        # Set initial state for Application panel visibility
-        Update-ApplicationPanelVisibility -State $State
+    # Set initial state for Application panel visibility
+    Update-ApplicationPanelVisibility -State $State
     
-        # Set initial state for BYO Apps copy button
-        Update-CopyButtonState -State $State
-    }
+    # Set initial state for BYO Apps copy button
+    Update-CopyButtonState -State $State
+}
 
 function Initialize-DynamicUIElements {
     param([PSCustomObject]$State)
@@ -470,35 +502,5 @@ function Initialize-DynamicUIElements {
     }
 }
 
-function Initialize-VMSwitchData {
-    param([PSCustomObject]$State)
-
-    WriteLog "Initializing VM Switch data..."
-    
-    # Hyper-V Settings: Populate VM Switch ComboBox
-    $vmSwitchData = Get-VMSwitchData
-    $State.Data.vmSwitchMap = $vmSwitchData.SwitchMap
-    $State.Controls.cmbVMSwitchName.Items.Clear()
-    foreach ($switchName in $vmSwitchData.SwitchNames) {
-        $State.Controls.cmbVMSwitchName.Items.Add($switchName) | Out-Null
-    }
-    $State.Controls.cmbVMSwitchName.Items.Add('Other') | Out-Null
-    if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
-        $State.Controls.cmbVMSwitchName.SelectedIndex = 0
-        $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
-        if ($State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
-        }
-        else {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found
-        }
-        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-    }
-    else {
-        $State.Controls.cmbVMSwitchName.SelectedItem = 'Other'
-        $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-        $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default
-    }
-}
 
 Export-ModuleMember -Function *

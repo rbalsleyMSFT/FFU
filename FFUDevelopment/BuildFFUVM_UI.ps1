@@ -131,8 +131,6 @@ $window.Add_Loaded({
 
         Initialize-DynamicUIElements -State $script:uiState
 
-        Initialize-VMSwitchData -State $script:uiState
-
         Register-EventHandlers -State $script:uiState
     })
 
