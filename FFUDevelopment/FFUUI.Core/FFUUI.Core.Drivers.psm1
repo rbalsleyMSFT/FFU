@@ -512,4 +512,105 @@ function Invoke-GetModels {
     }
 }
 
+# Function to handle the 'Download Selected Drivers' button click logic
+function Invoke-DownloadSelectedDrivers {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State,
+        [Parameter(Mandatory = $true)]
+        [object]$Button
+    )
+
+    $selectedDrivers = @($State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })
+    if (-not $selectedDrivers) {
+        [System.Windows.MessageBox]::Show("No drivers selected to download.", "Download Drivers", "OK", "Information")
+        return
+    }
+
+    $Button.IsEnabled = $false
+    $State.Controls.pbOverallProgress.Visibility = 'Visible'
+    $State.Controls.pbOverallProgress.Value = 0
+    $State.Controls.txtStatus.Text = "Preparing driver downloads..."
+
+    # Define common necessary task-specific variables locally
+    # Ensure required selections are made
+    if ($null -eq $State.Controls.cmbWindowsRelease.SelectedItem) {
+        [System.Windows.MessageBox]::Show("Please select a Windows Release.", "Missing Information", "OK", "Warning")
+        $Button.IsEnabled = $true
+        $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+        $State.Controls.txtStatus.Text = "Driver download cancelled."
+        return
+    }
+    if ($null -eq $State.Controls.cmbWindowsArch.SelectedItem) {
+        [System.Windows.MessageBox]::Show("Please select a Windows Architecture.", "Missing Information", "OK", "Warning")
+        $Button.IsEnabled = $true
+        $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+        $State.Controls.txtStatus.Text = "Driver download cancelled."
+        return
+    }
+    if (($selectedDrivers | Where-Object { $_.Make -eq 'HP' }) -and $null -ne $State.Controls.cmbWindowsVersion -and $null -eq $State.Controls.cmbWindowsVersion.SelectedItem) {
+        [System.Windows.MessageBox]::Show("HP drivers are selected. Please select a Windows Version.", "Missing Information", "OK", "Warning")
+        $Button.IsEnabled = $true
+        $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+        $State.Controls.txtStatus.Text = "Driver download cancelled."
+        return
+    }
+
+    $localDriversFolder = $State.Controls.txtDriversFolder.Text
+    $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
+    $localWindowsArch = $State.Controls.cmbWindowsArch.SelectedItem
+    $localWindowsVersion = if ($null -ne $State.Controls.cmbWindowsVersion -and $null -ne $State.Controls.cmbWindowsVersion.SelectedItem) { $State.Controls.cmbWindowsVersion.SelectedItem } else { $null }
+    $coreStaticVars = Get-CoreStaticVariables
+    $localHeaders = $coreStaticVars.Headers
+    $localUserAgent = $coreStaticVars.UserAgent
+    $compressDrivers = $State.Controls.chkCompressDriversToWIM.IsChecked
+
+    $State.Controls.txtStatus.Text = "Processing all selected drivers..."
+    WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
+
+    $taskArguments = @{
+        DriversFolder  = $localDriversFolder
+        WindowsRelease = $localWindowsRelease
+        WindowsArch    = $localWindowsArch
+        WindowsVersion = $localWindowsVersion
+        Headers        = $localHeaders
+        UserAgent      = $localUserAgent
+        CompressToWim  = $compressDrivers
+    }
+
+    Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
+        -ListViewControl $State.Controls.lstDriverModels `
+        -IdentifierProperty 'Model' `
+        -StatusProperty 'DownloadStatus' `
+        -TaskType 'DownloadDriverByMake' `
+        -TaskArguments $taskArguments `
+        -CompletedStatusText 'Completed' `
+        -ErrorStatusPrefix 'Error: ' `
+        -WindowObject $State.Window `
+        -MainThreadLogPath $State.LogFilePath
+
+    $overallSuccess = $true
+    # Check if any item has an error status after processing
+    # We iterate over $State.Controls.lstDriverModels.Items because their DownloadStatus property was updated by Invoke-ParallelProcessing
+    foreach ($item in ($State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })) {
+        # Check only originally selected items
+        if ($item.DownloadStatus -like 'Error:*') {
+            $overallSuccess = $false
+            WriteLog "Error detected for model $($item.Model) (Make: $($item.Make)): $($item.DownloadStatus)"
+            # No break here, log all errors
+        }
+    }
+
+    $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+    $Button.IsEnabled = $true
+    if ($overallSuccess) {
+        $State.Controls.txtStatus.Text = "All selected driver downloads processed."
+        [System.Windows.MessageBox]::Show("All selected driver downloads processed. Check status column for details.", "Download Process Finished", "OK", "Information")
+    }
+    else {
+        $State.Controls.txtStatus.Text = "Driver downloads processed with some errors. Check status column and log."
+        [System.Windows.MessageBox]::Show("Driver downloads processed, but some errors occurred. Please check the status column for each driver and the log file for details.", "Download Process Finished with Errors", "OK", "Warning")
+    }
+}
+
 Export-ModuleMember -Function *
