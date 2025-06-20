@@ -167,9 +167,9 @@ $window.Add_Closed({
             }
         }
 
-        # Garbage collection
-        [System.GC]::Collect()
-        [System.GC]::WaitForPendingFinalizers()
+        # # Garbage collection
+        # [System.GC]::Collect()
+        # [System.GC]::WaitForPendingFinalizers()
     })
 
 [void]$window.ShowDialog()

@@ -568,6 +568,52 @@ function Invoke-DownloadSelectedDrivers {
     $State.Controls.txtStatus.Text = "Processing all selected drivers..."
     WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
 
+    # Pre-process Dell Catalog if needed, so it's not done in parallel
+    if ($selectedDrivers | Where-Object { $_.Make -eq 'Dell' }) {
+        WriteLog "Dell drivers selected. Ensuring Dell Catalog is up-to-date..."
+        try {
+            $dellDriversFolder = Join-Path -Path $localDriversFolder -ChildPath "Dell"
+            $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+            $dellCabFile = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).cab"
+            $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
+            $catalogUrl = if ($localWindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+
+            $downloadCatalog = $true
+            if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
+                if (((Get-Date) - (Get-Item $dellCatalogXML).CreationTime).TotalDays -lt 7) {
+                    WriteLog "Using existing Dell Catalog XML (less than 7 days old): $dellCatalogXML"
+                    $downloadCatalog = $false
+                }
+                else { WriteLog "Existing Dell Catalog XML is older than 7 days: $dellCatalogXML" }
+            }
+            else { WriteLog "Dell Catalog XML not found: $dellCatalogXML" }
+
+            if ($downloadCatalog) {
+                WriteLog "Downloading and extracting Dell Catalog for driver download process..."
+                if (-not (Test-Path -Path $dellDriversFolder -PathType Container)) {
+                    New-Item -Path $dellDriversFolder -ItemType Directory -Force | Out-Null
+                }
+                
+                if (Test-Path -Path $dellCabFile) { Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue }
+                if (Test-Path -Path $dellCatalogXML) { Remove-Item -Path $dellCatalogXML -Force -ErrorAction SilentlyContinue }
+
+                Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFile
+                Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFile"" ""$dellCatalogXML""" | Out-Null
+                Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue
+                WriteLog "Dell Catalog prepared successfully."
+            }
+        }
+        catch {
+            $errorMessage = "Failed to prepare Dell Catalog: $($_.Exception.Message)"
+            WriteLog $errorMessage
+            [System.Windows.MessageBox]::Show($errorMessage, "Dell Catalog Error", "OK", "Error")
+            $Button.IsEnabled = $true
+            $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+            $State.Controls.txtStatus.Text = "Driver download cancelled due to Dell Catalog error."
+            return
+        }
+    }
+
     $taskArguments = @{
         DriversFolder  = $localDriversFolder
         WindowsRelease = $localWindowsRelease

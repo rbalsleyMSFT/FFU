@@ -178,41 +178,10 @@ function Save-DellDriversTask {
     $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
 
     try {
-        # --- Dell Catalog Handling ---
+        # Define paths for Dell catalog. The catalog is assumed to be prepared by the calling function.
         $dellDriversFolder = Join-Path -Path $DriversFolder -ChildPath "Dell"
         $catalogBaseName = if ($WindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
-        $dellCabFile = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).cab"
         $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
-        $catalogUrl = if ($WindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
-
-        $downloadCatalog = $true
-        if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
-            if (((Get-Date) - (Get-Item $dellCatalogXML).LastWriteTime).TotalDays -lt 7) {
-                WriteLog "Using existing Dell Catalog XML (less than 7 days old): $dellCatalogXML"
-                $downloadCatalog = $false
-            }
-            else { WriteLog "Existing Dell Catalog XML is older than 7 days: $dellCatalogXML" }
-        }
-        else { WriteLog "Dell Catalog XML not found: $dellCatalogXML" }
-
-        if ($downloadCatalog) {
-            WriteLog "Downloading and extracting Dell Catalog for task..."
-            if (-not (Test-Path -Path $dellDriversFolder -PathType Container)) {
-                New-Item -Path $dellDriversFolder -ItemType Directory -Force | Out-Null
-            }
-            try {
-                $request = [System.Net.WebRequest]::Create($catalogUrl); $request.Method = 'HEAD'; $response = $request.GetResponse(); $response.Close()
-            }
-            catch { throw "Dell Catalog URL '$catalogUrl' not accessible: $($_.Exception.Message)" }
-
-            if (Test-Path -Path $dellCabFile) { Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue }
-            if (Test-Path -Path $dellCatalogXML) { Remove-Item -Path $dellCatalogXML -Force -ErrorAction SilentlyContinue }
-
-            Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFile
-            Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFile"" ""$dellCatalogXML""" | Out-Null
-            Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue
-        }
-        # --- End Dell Catalog Handling ---
 
         # 1. Check if drivers already exist for this model (final destination)
         if (Test-Path -Path $modelPath -PathType Container) {
@@ -567,7 +536,6 @@ function Save-DellDriversTask {
         # Ensure return object is created even on error
         return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
     }
-    # REMOVED: Finally block that cleaned up temp catalog files
 
     # Enqueue the final status (success or error) before returning
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
