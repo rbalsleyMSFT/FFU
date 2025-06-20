@@ -7,7 +7,7 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select FFU Development Path"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select FFU Development Path"
             if ($selectedPath) {
                 $localState.Controls.txtFFUDevPath.Text = $selectedPath
             }
@@ -17,7 +17,7 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select FFU Capture Location"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select FFU Capture Location"
             if ($selectedPath) {
                 $localState.Controls.txtFFUCaptureLocation.Text = $selectedPath
             }
@@ -169,10 +169,10 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $ofd = New-Object System.Windows.Forms.OpenFileDialog
-            $ofd.Filter = "ISO files (*.iso)|*.iso"
-            $ofd.Title = "Select Windows ISO File"
-            if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtISOPath.Text = $ofd.FileName }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select Windows ISO File" -Filter "ISO files (*.iso)|*.iso"
+            if ($selectedPath) {
+                $localState.Controls.txtISOPath.Text = $selectedPath
+            }
         })
 
     # Updates Tab Event Handlers
@@ -248,7 +248,7 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select Application Path Folder"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Application Path Folder"
             if ($selectedPath) { $localState.Controls.txtApplicationPath.Text = $selectedPath }
         })
             
@@ -256,18 +256,15 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $ofd = New-Object System.Windows.Forms.OpenFileDialog
-            $ofd.Filter = "JSON files (*.json)|*.json"
-            $ofd.Title = "Select AppList.json File"
-            $ofd.CheckFileExists = $false
-            if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $localState.Controls.txtAppListJsonPath.Text = $ofd.FileName }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select AppList.json File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
+            if ($selectedPath) { $localState.Controls.txtAppListJsonPath.Text = $selectedPath }
         })
 
     $State.Controls.btnBrowseAppSource.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select Application Source Folder"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Application Source Folder"
             if ($selectedPath) { $localState.Controls.txtAppSource.Text = $selectedPath }
         })
 
@@ -283,15 +280,17 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $saveDialog = New-Object Microsoft.Win32.SaveFileDialog
-            $saveDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-            $saveDialog.DefaultExt = ".json"
-            $saveDialog.Title = "Save Application List"
             $initialDir = $localState.Controls.txtApplicationPath.Text
             if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
-            $saveDialog.InitialDirectory = $initialDir
-            $saveDialog.FileName = "UserAppList.json"
-            if ($saveDialog.ShowDialog()) { Save-BYOApplicationList -Path $saveDialog.FileName -State $localState }
+            
+            $savePath = Invoke-BrowseAction -Type 'SaveFile' `
+                -Title "Save Application List" `
+                -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
+                -InitialDirectory $initialDir `
+                -FileName "UserAppList.json" `
+                -DefaultExt ".json"
+
+            if ($savePath) { Save-BYOApplicationList -Path $savePath -State $localState }
         })
 
     $State.Controls.btnLoadBYOApplications.Add_Click({
@@ -299,14 +298,16 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $openDialog = New-Object Microsoft.Win32.OpenFileDialog
-            $openDialog.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-            $openDialog.Title = "Import Application List"
             $initialDir = $localState.Controls.txtApplicationPath.Text
             if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
-            $openDialog.InitialDirectory = $initialDir
-            if ($openDialog.ShowDialog()) { 
-                Import-BYOApplicationList -Path $openDialog.FileName -State $localState
+            
+            $loadPath = Invoke-BrowseAction -Type 'OpenFile' `
+                -Title "Import Application List" `
+                -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
+                -InitialDirectory $initialDir
+
+            if ($loadPath) { 
+                Import-BYOApplicationList -Path $loadPath -State $localState
                 Update-CopyButtonState -State $localState
             }
         })
@@ -516,7 +517,7 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select Office Path"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Office Path"
             if ($selectedPath) {
                 $localState.Controls.txtOfficePath.Text = $selectedPath
             }
@@ -582,7 +583,7 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select Drivers Folder"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Drivers Folder"
             if ($selectedPath) {
                 $localState.Controls.txtDriversFolder.Text = $selectedPath
             }
@@ -592,7 +593,7 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Show-ModernFolderPicker -Title "Select PE Drivers Folder"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select PE Drivers Folder"
             if ($selectedPath) {
                 $localState.Controls.txtPEDriversFolder.Text = $selectedPath
             }
@@ -602,50 +603,31 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-
-            $sfd = New-Object System.Windows.Forms.SaveFileDialog
-            $sfd.Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
-            $sfd.Title = "Select or Create Drivers.json File"
-            $sfd.FileName = "Drivers.json"
-            $sfd.CheckFileExists = $false # Allow creating a new file or selecting existing
-
+            
+            $dialogInitialDirectory = $null
             $currentDriversJsonPath = $localState.Controls.txtDriversJsonPath.Text
-            $dialogInitialDirectory = $null # Initialize to null
-
             if (-not [string]::IsNullOrWhiteSpace($currentDriversJsonPath)) {
-                WriteLog "Attempting to determine InitialDirectory for Drivers.json SaveFileDialog from txtDriversJsonPath: '$currentDriversJsonPath'"
                 try {
-                    # Attempt to get the parent directory of the path in the textbox
                     $parentDir = Split-Path -Path $currentDriversJsonPath -Parent -ErrorAction Stop
-
-                    # Check if the parent directory is not null/empty and actually exists as a directory
-                    if (-not ([string]::IsNullOrEmpty($parentDir)) -and (Test-Path -Path $parentDir -PathType Container)) {
+                    if (Test-Path -Path $parentDir -PathType Container) {
                         $dialogInitialDirectory = $parentDir
-                        WriteLog "Set InitialDirectory for SaveFileDialog to '$parentDir' based on parent of txtDriversJsonPath."
-                    }
-                    else {
-                        # Parent directory is invalid or doesn't exist
-                        WriteLog "Parent directory '$parentDir' from txtDriversJsonPath ('$currentDriversJsonPath') is not a valid existing directory. SaveFileDialog will use default InitialDirectory."
-                        # $dialogInitialDirectory remains $null, so dialog uses its default
                     }
                 }
                 catch {
-                    # Error occurred trying to split the path (e.g., path is malformed)
-                    WriteLog "Error splitting path from txtDriversJsonPath ('$currentDriversJsonPath'): $($_.Exception.Message). SaveFileDialog will use default InitialDirectory."
-                    # $dialogInitialDirectory remains $null
+                    WriteLog "Could not determine initial directory from '$currentDriversJsonPath'. Using default."
                 }
             }
-            else {
-                # TextBox is empty, dialog will use its default initial directory
-                WriteLog "txtDriversJsonPath is empty. SaveFileDialog will use default InitialDirectory."
-                # $dialogInitialDirectory remains $null
-            }
 
-            $sfd.InitialDirectory = $dialogInitialDirectory # Set to $null if no valid directory was found, dialog will use its default
+            $selectedPath = Invoke-BrowseAction -Type 'SaveFile' `
+                -Title "Select or Create Drivers.json File" `
+                -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
+                -FileName "Drivers.json" `
+                -InitialDirectory $dialogInitialDirectory `
+                -AllowNewFile
 
-            if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-                $localState.Controls.txtDriversJsonPath.Text = $sfd.FileName
-                WriteLog "User selected or created Drivers.json at: $($sfd.FileName)"
+            if ($selectedPath) {
+                $localState.Controls.txtDriversJsonPath.Text = $selectedPath
+                WriteLog "User selected or created Drivers.json at: $selectedPath"
             }
             else {
                 WriteLog "User cancelled SaveFileDialog for Drivers.json."

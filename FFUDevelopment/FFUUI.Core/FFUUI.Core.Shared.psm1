@@ -740,6 +740,59 @@ function Show-ModernFolderPicker {
     return [ModernFolderBrowser]::ShowDialog($Title, [IntPtr]::Zero)
 }
 
+function Invoke-BrowseAction {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Folder', 'OpenFile', 'SaveFile')]
+        [string]$Type,
+
+        [string]$Title,
+        [string]$Filter,
+        [string]$InitialDirectory,
+        [string]$FileName,
+        [string]$DefaultExt,
+        [switch]$AllowNewFile
+    )
+
+    switch ($Type) {
+        'Folder' {
+            # Show-ModernFolderPicker does not currently support setting an initial directory.
+            return Show-ModernFolderPicker -Title $Title
+        }
+        'OpenFile' {
+            $dialog = New-Object Microsoft.Win32.OpenFileDialog
+            $dialog.Title = $Title
+            if (-not [string]::IsNullOrWhiteSpace($Filter)) { $dialog.Filter = $Filter }
+            if ($AllowNewFile) { $dialog.CheckFileExists = $false }
+            if (-not [string]::IsNullOrWhiteSpace($InitialDirectory)) {
+                $dialog.InitialDirectory = $InitialDirectory
+            }
+            if ($dialog.ShowDialog()) {
+                return $dialog.FileName
+            }
+        }
+        'SaveFile' {
+            $dialog = New-Object Microsoft.Win32.SaveFileDialog
+            $dialog.Title = $Title
+            if (-not [string]::IsNullOrWhiteSpace($Filter)) { $dialog.Filter = $Filter }
+            if ($AllowNewFile) { $dialog.CheckFileExists = $false } # This property is obsolete but used in existing code.
+            if (-not [string]::IsNullOrWhiteSpace($InitialDirectory)) {
+                $dialog.InitialDirectory = $InitialDirectory
+            }
+            if (-not [string]::IsNullOrWhiteSpace($FileName)) {
+                $dialog.FileName = $FileName
+            }
+            if (-not [string]::IsNullOrWhiteSpace($DefaultExt)) {
+                $dialog.DefaultExt = $DefaultExt
+            }
+            if ($dialog.ShowDialog()) {
+                return $dialog.FileName
+            }
+        }
+    }
+    return $null
+}
+
 function Clear-ListViewContent {
     [CmdletBinding()]
     param(
