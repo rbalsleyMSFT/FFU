@@ -723,5 +723,18 @@ function Register-EventHandlers {
             $localState = $window.Tag
             Import-DriversJson -State $localState
         })
+
+    $State.Controls.btnLoadConfig.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Invoke-LoadConfiguration -State $localState
+        })
+    $State.Controls.btnBuildConfig.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Invoke-SaveConfiguration -State $localState
+        })
 }
 Export-ModuleMember -Function *

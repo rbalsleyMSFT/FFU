@@ -144,6 +144,8 @@ function Initialize-UIControls {
     $State.Controls.txtDriversJsonPath = $window.FindName('txtDriversJsonPath')
     $State.Controls.btnBrowseDriversJsonPath = $window.FindName('btnBrowseDriversJsonPath')
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
+    $State.Controls.btnLoadConfig = $window.FindName('btnLoadConfig')
+    $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
 }
 
 function Initialize-VMSwitchData {
