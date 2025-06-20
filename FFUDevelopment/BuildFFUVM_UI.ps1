@@ -135,12 +135,6 @@ $window.Add_Loaded({
 
         Register-EventHandlers -State $script:uiState
 
-        # CU interplay (Keep existing logic)
-        # Set initial state based on defaults
-        $script:uiState.Controls.chkPreviewCU.IsEnabled = -not $script:uiState.Controls.chkLatestCU.IsChecked
-        $script:uiState.Controls.chkLatestCU.IsEnabled = -not $script:uiState.Controls.chkPreviewCU.IsChecked
-
-
         # APPLICATIONS tab UI logic (Keep existing logic)
         $script:uiState.Controls.chkInstallWingetApps.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
         $script:uiState.Controls.applicationPathPanel.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }

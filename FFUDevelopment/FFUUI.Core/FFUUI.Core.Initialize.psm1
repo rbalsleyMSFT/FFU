@@ -216,6 +216,9 @@ function Initialize-UIDefaults {
     $State.Controls.chkUpdateLatestMSRT.IsChecked = $State.Defaults.generalDefaults.UpdateLatestMSRT
     $State.Controls.chkUpdateLatestMicrocode.IsChecked = $State.Defaults.generalDefaults.UpdateLatestMicrocode
     $State.Controls.chkUpdatePreviewCU.IsChecked = $State.Defaults.generalDefaults.UpdatePreviewCU
+    # Set initial state for CU checkbox interplay
+    $State.Controls.chkPreviewCU.IsEnabled = -not $State.Controls.chkLatestCU.IsChecked
+    $State.Controls.chkLatestCU.IsEnabled = -not $State.Controls.chkPreviewCU.IsChecked
 
     # Applications tab defaults from General Defaults
     $State.Controls.chkInstallApps.IsChecked = $State.Defaults.generalDefaults.InstallApps
@@ -249,7 +252,7 @@ function Initialize-UIDefaults {
         $State.Controls.cmbMake.SelectedIndex = 0
     }
     Update-DriverDownloadPanelVisibility -State $State
-    
+
     # Set initial state for driver checkbox interplay
     Update-DriverCheckboxStates -State $State
 
