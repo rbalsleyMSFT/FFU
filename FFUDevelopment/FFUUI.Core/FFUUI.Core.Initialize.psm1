@@ -261,7 +261,9 @@ function Initialize-UIDefaults {
 
     # Set initial state for Office panel visibility
     Update-OfficePanelVisibility -State $State
-
+    
+    # Set initial state for Application panel visibility
+    Update-ApplicationPanelVisibility -State $State
 }
 
 function Initialize-DynamicUIElements {

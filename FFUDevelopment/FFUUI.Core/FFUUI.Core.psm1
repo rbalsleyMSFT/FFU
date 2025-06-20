@@ -189,6 +189,46 @@ function Get-USBDrives {
     }
 }
 
+# Function to manage the visibility of the application UI panels
+function Update-ApplicationPanelVisibility {
+    param(
+        [PSCustomObject]$State,
+        [string]$TriggeringControlName # Optional: to know which control initiated the change
+    )
+
+    $installAppsChecked = $State.Controls.chkInstallApps.IsChecked
+    
+    # If the main 'Install Apps' is unchecked, everything below it gets hidden and reset.
+    if ($TriggeringControlName -eq 'chkInstallApps' -and -not $installAppsChecked) {
+        $State.Controls.chkInstallWingetApps.IsChecked = $false
+        $State.Controls.chkBringYourOwnApps.IsChecked = $false
+        $State.Controls.chkDefineAppsScriptVariables.IsChecked = $false
+    }
+
+    $byoAppsChecked = $State.Controls.chkBringYourOwnApps.IsChecked
+    $wingetAppsChecked = $State.Controls.chkInstallWingetApps.IsChecked
+    $defineVarsChecked = $State.Controls.chkDefineAppsScriptVariables.IsChecked
+
+    # Visibility of primary sub-options
+    $subOptionVisibility = if ($installAppsChecked) { 'Visible' } else { 'Collapsed' }
+    $State.Controls.applicationPathPanel.Visibility = $subOptionVisibility
+    $State.Controls.appListJsonPathPanel.Visibility = $subOptionVisibility
+    $State.Controls.chkInstallWingetApps.Visibility = $subOptionVisibility
+    $State.Controls.chkBringYourOwnApps.Visibility = $subOptionVisibility
+    $State.Controls.chkDefineAppsScriptVariables.Visibility = $subOptionVisibility
+
+    # Visibility of panels dependent on sub-options
+    $State.Controls.byoApplicationPanel.Visibility = if ($installAppsChecked -and $byoAppsChecked) { 'Visible' } else { 'Collapsed' }
+    $State.Controls.wingetPanel.Visibility = if ($installAppsChecked -and $wingetAppsChecked) { 'Visible' } else { 'Collapsed' }
+    $State.Controls.appsScriptVariablesPanel.Visibility = if ($installAppsChecked -and $defineVarsChecked) { 'Visible' } else { 'Collapsed' }
+
+    # Special handling for wingetSearchPanel, which is shown by another button.
+    # We only collapse it if its parent becomes invisible.
+    if (-not ($installAppsChecked -and $wingetAppsChecked)) {
+        $State.Controls.wingetSearchPanel.Visibility = 'Collapsed'
+    }
+}
+
 # Function to manage the state of the main "Install Apps" checkbox based on selections in Updates/Office
 function Update-InstallAppsState {
     param([PSCustomObject]$State)

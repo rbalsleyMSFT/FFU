@@ -135,15 +135,6 @@ $window.Add_Loaded({
 
         Register-EventHandlers -State $script:uiState
 
-        # APPLICATIONS tab UI logic (Keep existing logic)
-        $script:uiState.Controls.chkInstallWingetApps.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.applicationPathPanel.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.appListJsonPathPanel.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.chkBringYourOwnApps.Visibility = if ($script:uiState.Controls.chkInstallApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.byoApplicationPanel.Visibility = if ($script:uiState.Controls.chkBringYourOwnApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.wingetPanel.Visibility = if ($script:uiState.Controls.chkInstallWingetApps.IsChecked) { 'Visible' } else { 'Collapsed' }
-        $script:uiState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Keep search hidden initially
-
         # BYO Apps ListView setup (Keep existing logic, ensure CopyStatus column
         $byoGridView = $script:uiState.Controls.lstApplications.View
         if ($byoGridView -is [System.Windows.Controls.GridView]) {

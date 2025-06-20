@@ -227,33 +227,22 @@ function Register-EventHandlers {
         })
 
     # Applications Tab Event Handlers
-    $State.Controls.chkInstallApps.Add_Checked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.chkInstallWingetApps.Visibility = 'Visible'
-            $localState.Controls.applicationPathPanel.Visibility = 'Visible'
-            $localState.Controls.appListJsonPathPanel.Visibility = 'Visible'
-            $localState.Controls.chkBringYourOwnApps.Visibility = 'Visible'
-            $localState.Controls.chkDefineAppsScriptVariables.Visibility = 'Visible'
-        })
-    $State.Controls.chkInstallApps.Add_Unchecked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.chkInstallWingetApps.IsChecked = $false
-            $localState.Controls.chkBringYourOwnApps.IsChecked = $false
-            $localState.Controls.chkInstallWingetApps.Visibility = 'Collapsed'
-            $localState.Controls.applicationPathPanel.Visibility = 'Collapsed'
-            $localState.Controls.appListJsonPathPanel.Visibility = 'Collapsed'
-            $localState.Controls.chkBringYourOwnApps.Visibility = 'Collapsed'
-            $localState.Controls.wingetPanel.Visibility = 'Collapsed'
-            $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed'
-            $localState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
-            $localState.Controls.chkDefineAppsScriptVariables.IsChecked = $false
-            $localState.Controls.chkDefineAppsScriptVariables.Visibility = 'Collapsed'
-            $localState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed'
-        })
+    # Define a single handler for interdependent application panel checkboxes
+    $appPanelUpdateHandler = {
+        param($eventSource, $routedEventArgs)
+        $window = [System.Windows.Window]::GetWindow($eventSource)
+        if ($null -ne $window) {
+            Update-ApplicationPanelVisibility -State $window.Tag -TriggeringControlName $eventSource.Name
+        }
+    }
+
+    # Attach the handler to all relevant checkboxes
+    $State.Controls.chkInstallApps.Add_Checked($appPanelUpdateHandler)
+    $State.Controls.chkInstallApps.Add_Unchecked($appPanelUpdateHandler)
+    $State.Controls.chkBringYourOwnApps.Add_Checked($appPanelUpdateHandler)
+    $State.Controls.chkBringYourOwnApps.Add_Unchecked($appPanelUpdateHandler)
+    $State.Controls.chkInstallWingetApps.Add_Checked($appPanelUpdateHandler)
+    $State.Controls.chkInstallWingetApps.Add_Unchecked($appPanelUpdateHandler)
             
     $State.Controls.btnBrowseApplicationPath.Add_Click({
             param($eventSource, $routedEventArgs)
@@ -321,37 +310,6 @@ function Register-EventHandlers {
                 Update-CopyButtonState -State $localState
             }
         })
-            
-    $State.Controls.chkBringYourOwnApps.Add_Checked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.byoApplicationPanel.Visibility = 'Visible'
-        })
-    $State.Controls.chkBringYourOwnApps.Add_Unchecked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.byoApplicationPanel.Visibility = 'Collapsed'
-            $localState.Controls.txtAppName.Text = ''
-            $localState.Controls.txtAppCommandLine.Text = ''
-            $localState.Controls.txtAppArguments.Text = ''
-            $localState.Controls.txtAppSource.Text = ''
-        })
-            
-    $State.Controls.chkInstallWingetApps.Add_Checked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.wingetPanel.Visibility = 'Visible'
-        })
-    $State.Controls.chkInstallWingetApps.Add_Unchecked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.wingetPanel.Visibility = 'Collapsed'
-            $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed'
-        })
 
     $State.Controls.btnClearBYOApplications.Add_Click({
             param($eventSource, $routedEventArgs)
@@ -402,18 +360,9 @@ function Register-EventHandlers {
         })
 
     # Apps Script Variables Event Handlers
-    $State.Controls.chkDefineAppsScriptVariables.Add_Checked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.appsScriptVariablesPanel.Visibility = 'Visible'
-        })
-    $State.Controls.chkDefineAppsScriptVariables.Add_Unchecked({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            $localState.Controls.appsScriptVariablesPanel.Visibility = 'Collapsed'
-        })
+    # Attach the handler to the script variables checkbox
+    $State.Controls.chkDefineAppsScriptVariables.Add_Checked($appPanelUpdateHandler)
+    $State.Controls.chkDefineAppsScriptVariables.Add_Unchecked($appPanelUpdateHandler)
     
     $State.Controls.btnAddAppsScriptVariable.Add_Click({
             param($eventSource, $routedEventArgs)
@@ -435,7 +384,6 @@ function Register-EventHandlers {
             $localState = $window.Tag
 
             $postClearScriptBlock = {
-                # This scriptblock inherits the $localState variable from its parent scope.
                 $headerChk = $localState.Controls.chkSelectAllAppsScriptVariables
                 if ($null -ne $headerChk) {
                     Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstAppsScriptVariables -HeaderCheckBox $headerChk
@@ -541,9 +489,9 @@ function Register-EventHandlers {
             $localState = $window.Tag
 
             $postClearScriptBlock = {
-                $headerChk = $State.Controls.chkSelectAllWingetResults
+                $headerChk = $localState.Controls.chkSelectAllWingetResults
                 if ($null -ne $headerChk) {
-                    Update-SelectAllHeaderCheckBoxState -ListView $ListViewControl -HeaderCheckBox $headerChk
+                    Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstWingetResults -HeaderCheckBox $headerChk
                 }
             }
 
@@ -919,6 +867,14 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
+
+            $postClearScriptBlock = {
+                # This scriptblock inherits the $localState variable from its parent scope.
+                $headerChk = $localState.Controls.chkSelectAllDriverModels
+                if ($null -ne $headerChk) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstDriverModels -HeaderCheckBox $headerChk
+                }
+            }
             
             Clear-ListViewContent -State $localState `
                 -ListViewControl $localState.Controls.lstDriverModels `
@@ -926,7 +882,8 @@ function Register-EventHandlers {
                 -ConfirmationTitle "Clear Driver List" `
                 -ConfirmationMessage "Are you sure you want to clear the driver list?" `
                 -StatusMessage "Driver list cleared." `
-                -TextBoxesToClear @($localState.Controls.txtModelFilter)
+                -TextBoxesToClear @($localState.Controls.txtModelFilter)`
+                -PostClearAction $postClearScriptBlock
         })
 
     $State.Controls.btnSaveDriversJson.Add_Click({
