@@ -151,7 +151,7 @@ function Search-DriverModels {
         }
     }
     
-        # The view will automatically refresh. No need to call .Refresh() explicitly for filtering.
+    # The view will automatically refresh. No need to call .Refresh() explicitly for filtering.
     $filteredCount = 0
     if ($null -ne $collectionView) {
         foreach ($item in $collectionView) { $filteredCount++ }
@@ -521,7 +521,7 @@ function Invoke-DownloadSelectedDrivers {
         [object]$Button
     )
 
-    $selectedDrivers = @($State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })
+    $selectedDrivers = @($State.Data.allDriverModels | Where-Object { $_.IsSelected })
     if (-not $selectedDrivers) {
         [System.Windows.MessageBox]::Show("No drivers selected to download.", "Download Drivers", "OK", "Information")
         return
