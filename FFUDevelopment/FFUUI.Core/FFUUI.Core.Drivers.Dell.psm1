@@ -207,17 +207,150 @@ function Save-DellDriversTask {
         }
 
         WriteLog "Parsing existing Dell Catalog XML for model '$modelName' from: $dellCatalogXML"
-        [xml]$xmlContent = Get-Content -Path $dellCatalogXML
-        # Check if manifest and baseLocation exist before accessing
-        if ($null -eq $xmlContent.manifest -or $null -eq $xmlContent.manifest.baseLocation) {
-            throw "Invalid Dell Catalog XML format: Missing 'manifest' or 'baseLocation' element in '$DellCatalogXmlPath'."
-        }
-        $baseLocation = "https://" + $xmlContent.manifest.baseLocation + "/"
+        
+        # Initialize variables
+        $baseLocation = $null
         $latestDrivers = @{} # Hashtable to store latest drivers for this model
-
-        # Ensure SoftwareComponent is iterable
-        $softwareComponents = @($xmlContent.Manifest.SoftwareComponent | Where-Object { $_.ComponentType.value -eq "DRVR" })
         $modelSpecificDriversFound = $false
+        
+        # Create XML reader settings
+        $settings = New-Object System.Xml.XmlReaderSettings
+        $settings.IgnoreWhitespace = $true
+        $settings.IgnoreComments = $true
+        
+        # Create XML reader
+        $reader = $null
+        try {
+            $reader = [System.Xml.XmlReader]::Create($dellCatalogXML, $settings)
+            
+            # First pass - get baseLocation from manifest
+            while ($reader.Read()) {
+                if ($reader.NodeType -eq [System.Xml.XmlNodeType]::Element -and $reader.Name -eq "Manifest") {
+                    $baseLocationAttr = $reader.GetAttribute("baseLocation")
+                    if ($null -ne $baseLocationAttr) {
+                        $baseLocation = "https://" + $baseLocationAttr + "/"
+                        break
+                    }
+                }
+            }
+            
+            if ($null -eq $baseLocation) {
+                throw "Invalid Dell Catalog XML format: Missing 'baseLocation' attribute in Manifest element."
+            }
+            
+            # Reset reader for second pass
+            $reader.Dispose()
+            $reader = [System.Xml.XmlReader]::Create($dellCatalogXML, $settings)
+            
+            # Process SoftwareComponents
+            while ($reader.Read()) {
+                if ($reader.NodeType -eq [System.Xml.XmlNodeType]::Element -and $reader.Name -eq "SoftwareComponent") {
+                    # Read the entire SoftwareComponent subtree
+                    $componentXml = $reader.ReadSubtree()
+                    $component = New-Object System.Xml.XmlDocument
+                    $component.Load($componentXml)
+                    $componentXml.Dispose()
+                    
+                    # Check if it's a driver component
+                    $componentTypeNode = $component.SelectSingleNode("//ComponentType[@value='DRVR']")
+                    if ($null -eq $componentTypeNode) {
+                        continue
+                    }
+                    
+                    # Check if component supports the model
+                    $modelNodes = $component.SelectNodes("//SupportedSystems/Brand/Model")
+                    $modelMatch = $false
+                    
+                    foreach ($modelNode in $modelNodes) {
+                        $displayNode = $modelNode.SelectSingleNode("Display")
+                        if ($null -ne $displayNode -and $displayNode.InnerText.Trim() -eq $modelName) {
+                            $modelMatch = $true
+                            break
+                        }
+                    }
+                    
+                    if ($modelMatch) {
+                        # Check OS compatibility
+                        $validOS = $null
+                        $osNodes = $component.SelectNodes("//SupportedOperatingSystems/OperatingSystem")
+                        
+                        if ($null -ne $osNodes) {
+                            foreach ($osNode in $osNodes) {
+                                $osArch = $osNode.GetAttribute("osArch")
+                                
+                                if ($WindowsRelease -le 11) {
+                                    # Client OS check
+                                    if ($osArch -eq $WindowsArch) {
+                                        $validOS = $osNode
+                                        break
+                                    }
+                                }
+                                else {
+                                    # Server OS check
+                                    $osCode = $osNode.GetAttribute("osCode")
+                                    $osCodePattern = switch ($WindowsRelease) {
+                                        2016 { "W14" }
+                                        2019 { "W19" }
+                                        2022 { "W22" }
+                                        2025 { "W25" }
+                                        default { "W22" }
+                                    }
+                                    if ($osArch -eq $WindowsArch -and $osCode -match $osCodePattern) {
+                                        $validOS = $osNode
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if ($validOS) {
+                            $modelSpecificDriversFound = $true
+                            
+                            # Extract driver information
+                            $driverPath = $component.SoftwareComponent.GetAttribute("path")
+                            $downloadUrl = $baseLocation + $driverPath
+                            $driverFileName = [System.IO.Path]::GetFileName($driverPath)
+                            
+                            # Get name
+                            $nameNode = $component.SelectSingleNode("//Name/Display")
+                            $name = if ($null -ne $nameNode) { $nameNode.InnerText } else { "UnknownDriver" }
+                            $name = $name -replace '[\\\/\:\*\?\"\<\>\| ]', '_' -replace '[\,]', '-'
+                            
+                            # Get category
+                            $categoryNode = $component.SelectSingleNode("//Category/Display")
+                            $category = if ($null -ne $categoryNode) { $categoryNode.InnerText } else { "Uncategorized" }
+                            $category = $category -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
+                            
+                            # Get version
+                            $version = [version]"0.0"
+                            $vendorVersion = $component.SoftwareComponent.GetAttribute("vendorVersion")
+                            if ($null -ne $vendorVersion) {
+                                try { $version = [version]$vendorVersion } catch { WriteLog "Warning: Could not parse version '$vendorVersion' for driver '$name'. Using 0.0." }
+                            }
+                            
+                            $namePrefix = ($name -split '-')[0]
+                            
+                            # Store the latest version for each category/prefix combination
+                            if (-not $latestDrivers.ContainsKey($category)) { $latestDrivers[$category] = @{} }
+                            if (-not $latestDrivers[$category].ContainsKey($namePrefix) -or $latestDrivers[$category][$namePrefix].Version -lt $version) {
+                                $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
+                                    Name           = $name
+                                    DownloadUrl    = $downloadUrl
+                                    DriverFileName = $driverFileName
+                                    Version        = $version
+                                    Category       = $category
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        finally {
+            if ($null -ne $reader) {
+                $reader.Dispose()
+            }
+        }
 
         WriteLog "Searching $($softwareComponents.Count) DRVR components in '$dellCatalogXML' for model '$modelName'..."
 
