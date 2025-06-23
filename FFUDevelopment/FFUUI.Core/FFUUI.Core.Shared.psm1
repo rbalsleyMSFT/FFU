@@ -113,7 +113,7 @@ function Update-ListViewItemStatus {
     if ($WindowObject -is [System.Windows.Window] -and $ListView -is [System.Windows.Controls.ListView]) {
         # Directly update UI elements as this function is now called on the UI thread
         try {
-            $itemToUpdate = $ListView.Items | Where-Object { $_.$IdentifierProperty -eq $IdentifierValue } | Select-Object -First 1
+            $itemToUpdate = $ListView.ItemsSource | Where-Object { $_.$IdentifierProperty -eq $IdentifierValue } | Select-Object -First 1
             if ($null -ne $itemToUpdate) {
                 $itemToUpdate.$StatusProperty = $StatusValue
                 $ListView.Items.Refresh() # Refresh the view to show the change
