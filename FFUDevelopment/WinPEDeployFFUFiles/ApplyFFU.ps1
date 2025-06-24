@@ -409,46 +409,82 @@ else {
 }
 
 #Find Drivers
-$Drivers = $USBDrive + "Drivers"
-If (Test-Path -Path $Drivers)
+$DriversPath = $USBDrive + "Drivers"
+$WimToInstall = $null
+$DriverFolderToInstall = $null
+If (Test-Path -Path $DriversPath)
 {
-    #Check if multiple driver folders found, if so, just select one folder to save time/space
-    $DriverFolders = Get-ChildItem -Path $Drivers -directory
-    $DriverFoldersCount = $DriverFolders.count
-    If ($DriverFoldersCount -gt 1)
-    {
-        WriteLog "Found $DriverFoldersCount driver folders"
-        $array = @()
+    WriteLog "Searching for driver WIMs in $DriversPath"
+    $WimFiles = Get-ChildItem -Path $DriversPath -Filter *.wim -Recurse
+    $WimFilesCount = $WimFiles.Count
 
-        for($i=0; $i -le $DriverFoldersCount -1; $i++){
-        $Properties = [ordered]@{Number = $i + 1; Drivers = $DriverFolders[$i].FullName}
-        $array += New-Object PSObject -Property $Properties
+    if ($WimFilesCount -gt 0) {
+        WriteLog "Found $WimFilesCount driver WIM file(s)."
+        if ($WimFilesCount -eq 1) {
+            $WimToInstall = $WimFiles[0].FullName
+            WriteLog "Single driver WIM found, will install: $WimToInstall"
+        } else {
+            # Multiple WIMs found, prompt user
+            WriteLog "Multiple driver WIMs found. Prompting for selection."
+            $array = @()
+            for($i=0; $i -le $WimFilesCount -1; $i++){
+                $Properties = [ordered]@{Number = $i + 1; WimFile = $WimFiles[$i].FullName}
+                $array += New-Object PSObject -Property $Properties
+            }
+            $array | Format-Table -AutoSize -Property Number, WimFile
+            do {
+                try {
+                    $var = $true
+                    [int]$WimSelected = Read-Host 'Enter the number of the driver WIM to install'
+                    $WimSelected = $WimSelected - 1
+                } catch {
+                    Write-Host 'Input was not in correct format. Please enter a valid number.'
+                    $var = $false
+                }
+            } until (($WimSelected -ge 0) -and ($WimSelected -le ($WimFilesCount -1)) -and $var)
+            
+            $WimToInstall = $array[$WimSelected].WimFile
+            WriteLog "$WimToInstall was selected."
         }
-    $array | Format-Table -AutoSize -Property Number, Drivers
-    do {
-        try {
-            $var = $true
-            [int]$DriversSelected = Read-Host 'Enter the set of drivers to install'
-            $DriversSelected = $DriversSelected - 1
-        }
+    } else {
+        WriteLog "No driver WIMs found. Searching for driver folders."
+        # Fallback to folder logic
+        $DriverFolders = Get-ChildItem -Path $DriversPath -Directory
+        $DriverFoldersCount = $DriverFolders.Count
+        If ($DriverFoldersCount -gt 1)
+        {
+            WriteLog "Found $DriverFoldersCount driver folders"
+            $array = @()
+            for($i=0; $i -le $DriverFoldersCount -1; $i++){
+                $Properties = [ordered]@{Number = $i + 1; Drivers = $DriverFolders[$i].FullName}
+                $array += New-Object PSObject -Property $Properties
+            }
+            $array | Format-Table -AutoSize -Property Number, Drivers
+            do {
+                try {
+                    $var = $true
+                    [int]$DriversSelected = Read-Host 'Enter the set of drivers to install'
+                    $DriversSelected = $DriversSelected - 1
+                } catch {
+                    Write-Host 'Input was not in correct format. Please enter a valid driver folder number'
+                    $var = $false
+                }
+            } until (($DriversSelected -ge 0) -and ($DriversSelected -le ($DriverFoldersCount -1)) -and $var) 
 
-        catch {
-            Write-Host 'Input was not in correct format. Please enter a valid driver folder number'
-            $var = $false
+            $DriverFolderToInstall = $array[$DriversSelected].Drivers
+            WriteLog "$DriverFolderToInstall was selected"
         }
-    } until (($DriversSelected -le $DriverFoldersCount -1) -and $var) 
-
-    $Drivers = $array[$DriversSelected].Drivers
-    WriteLog "$Drivers was selected"
+        elseif ($DriverFoldersCount -eq 1) {
+            WriteLog "Found $DriverFoldersCount driver folder"
+            $DriverFolderToInstall = $DriverFolders[0].FullName
+            WriteLog "$DriverFolderToInstall will be installed"
+        } 
+        else {
+            Writelog 'No driver WIMs or folders found in Drivers directory.'
+        }
     }
-    elseif ($DriverFoldersCount -eq 1) {
-        WriteLog "Found $DriverFoldersCount driver folder"
-        $Drivers = $DriverFolders.FullName
-        WriteLog "$Drivers will be installed"
-    } 
-    else {
-        Writelog 'No driver folders found'
-    }
+} else {
+    WriteLog "Drivers folder not found at $DriversPath. Skipping driver installation."
 }
 #Partition drive
 Writelog 'Clean Disk'
@@ -577,21 +613,50 @@ If ($computername){
 }
 
 #Add Drivers
-#Some drivers can sometimes fail to copy and dism ends up with a non-zero error code. Invoke-process will throw and terminate in these instances. 
-If (Test-Path -Path $Drivers)
-{
-    WriteLog 'Copying drivers'
+if ($null -ne $WimToInstall) {
+    WriteLog "Installing drivers from WIM: $WimToInstall"
+    $TempDriverDir = "W:\TempDrivers"
+    try {
+        WriteLog "Creating temporary directory for drivers at $TempDriverDir"
+        New-Item -Path $TempDriverDir -ItemType Directory -Force | Out-Null
+        
+        WriteLog "Extracting WIM contents to $TempDriverDir"
+        Write-Warning 'Extracting Drivers from WIM - dism will pop a window with no progress. This can take a few minutes to complete. Please be patient.'
+        Invoke-Process dism.exe "/Apply-Image /ImageFile:""$WimToInstall"" /Index:1 /ApplyDir:""$TempDriverDir"""
+        WriteLog "WIM extraction successful."
+
+        WriteLog "Injecting drivers from $TempDriverDir"
+        Write-Warning 'Injecting Drivers from WIM - dism will pop a window with no progress. This can take a few minutes to complete. Please be patient.'
+        Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$TempDriverDir"" /Recurse"
+        WriteLog "Driver injection from WIM succeeded."
+
+    } catch {
+        WriteLog "An error occurred during WIM driver installation: $_"
+        # Copy DISM log to USBDrive for debugging
+        invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
+        throw $_
+    } finally {
+        if (Test-Path -Path $TempDriverDir) {
+            WriteLog "Cleaning up temporary driver directory: $TempDriverDir"
+            Remove-Item -Path $TempDriverDir -Recurse -Force
+            WriteLog "Cleanup successful."
+        }
+    }
+} elseif ($null -ne $DriverFolderToInstall) {
+    WriteLog "Injecting drivers from folder: $DriverFolderToInstall"
     Write-Warning 'Copying Drivers - dism will pop a window with no progress. This can take a few minutes to complete. This is done so drivers are logged to the scriptlog.txt file. Please be patient.'
-    Invoke-process dism.exe "/image:W:\ /Add-Driver /Driver:""$Drivers"" /Recurse"
-    WriteLog 'Copying drivers succeeded'
+    Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$DriverFolderToInstall"" /Recurse"
+    WriteLog "Driver injection from folder succeeded."
+} else {
+    WriteLog "No drivers to install."
 }
 
-WriteLog "Setting Windows Boot Manager to be first in the display order."
+WriteLog "Setting Windows Boot Manager to be first in the firmware display order."
 Invoke-Process bcdedit.exe "/set {fwbootmgr} displayorder {bootmgr} /addfirst"
-WriteLog "Windows Boot Manager has been set to be first in the display order."
-WriteLog "Setting default Windows boot loader to be first in the display order."
+WriteLog "Windows Boot Manager has been set to be first in the firmware display order."
+WriteLog "Setting Windows Boot Manager to be first in the default display order."
 Invoke-Process bcdedit.exe "/set {bootmgr} displayorder {default} /addfirst"
-WriteLog "The default Windows boot loader has been set to be first in the display order."
+WriteLog "Windows Boot Manager has been set to be first in the default display order."
 #Copy DISM log to USBDrive
 WriteLog "Copying dism log to $USBDrive"
 invoke-process xcopy "X:\Windows\logs\dism\dism.log $USBDrive /Y" 
