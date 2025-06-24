@@ -232,69 +232,98 @@ function Save-MicrosoftDriversTask {
 
                 ### EXTRACT
                 if ($fileExtension -eq ".msi") {
-                    $status = "Extracting MSI..." # Set initial status
+                    $status = "Waiting for MSI lock..." # Set initial status
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
-                    # Loop indefinitely to wait for mutex and handle MSIExec exit codes by catching errors
-                    while ($true) {
-                        $mutexClear = $false
+                    # Use a named mutex to ensure only one MSI extraction happens at a time across all parallel tasks
+                    $msiMutexName = "Global\FFUDevelopmentMSIExtractionMutex"
+                    $msiMutex = New-Object System.Threading.Mutex($false, $msiMutexName)
 
-                        # 1. Check Mutex
-                        try {
-                            $Mutex = [System.Threading.Mutex]::OpenExisting("Global\_MSIExecute")
-                            $Mutex.Dispose()
-                            $status = "Waiting for MSIExec..."
-                            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                            WriteLog "Another MSIExec installer is running (Mutex Held). Waiting 5 seconds before rechecking for $modelName..."
-                            Start-Sleep -Seconds 5
-                            continue # Go back to start of while loop to re-check mutex
-                        }
-                        catch [System.Threading.WaitHandleCannotBeOpenedException] {
-                            # Mutex is clear, proceed to extraction attempt
-                            WriteLog "Mutex clear. Proceeding with MSI extraction attempt for $modelName."
-                            $status = "Extracting MSI..."
-                            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                            $mutexClear = $true
-                        }
-                        catch {
-                            # Handle other potential errors when checking the mutex
-                            WriteLog "Warning: Error checking MSIExec mutex for $($modelName): $_. Proceeding with caution."
-                            $status = "Extracting MSI (Mutex Error)..."
-                            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                            $mutexClear = $true # Proceed despite mutex error
-                        }
+                    try {
+                        WriteLog "Waiting to acquire global MSI extraction lock for '$modelName'..."
+                        $msiMutex.WaitOne() | Out-Null
+                        WriteLog "Acquired global MSI extraction lock for '$modelName'."
 
-                        # 2. Attempt Extraction (only if mutex was clear or error occurred during check)
-                        if ($mutexClear) {
-                            WriteLog "Extracting MSI file to $modelPath"
-                            $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
+                        # Loop indefinitely to wait for system mutex and handle MSIExec exit codes
+                        while ($true) {
+                            $mutexClear = $false
+
+                            # 1. Check System-level MSI Mutex
                             try {
-                                # Use Invoke-Process. It will throw an error for any non-zero exit code.
-                                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait $true -ErrorAction Stop | Out-Null
-                                
-                                # If Invoke-Process succeeded (didn't throw), extraction is complete.
-                                WriteLog "Extraction complete for $modelName (Exit Code 0)."
-                                break # Success, exit the while loop
+                                $sysMutex = [System.Threading.Mutex]::OpenExisting("Global\_MSIExecute")
+                                $sysMutex.Dispose()
+                                $status = "Waiting for MSIExec..."
+                                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                                WriteLog "Another MSIExec installer is running (System Mutex Held). Waiting 5 seconds before rechecking for $modelName..."
+                                Start-Sleep -Seconds 5
+                                continue # Go back to start of while loop to re-check mutex
+                            }
+                            catch [System.Threading.WaitHandleCannotBeOpenedException] {
+                                # Mutex is clear, proceed to extraction attempt
+                                WriteLog "System MSI mutex clear. Proceeding with MSI extraction attempt for $modelName."
+                                $status = "Extracting MSI..."
+                                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                                $mutexClear = $true
                             }
                             catch {
-                                # Catch errors thrown by Invoke-Process
-                                $errorMessage = $_.Exception.Message
-                                if ($errorMessage -match 'Process exited with code 1618') {
-                                    # Specific handling for MSIExec busy error (1618)
-                                    WriteLog "MSIExec collision detected (Exit Code 1618) for $modelName. Retrying after wait..."
-                                    $status = "Waiting (MSI Collision)..."
-                                    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                                    Start-Sleep -Seconds 5 # Wait before retrying
-                                    continue # Go back to start of while loop to re-check mutex/retry
-                                }
-                                else {
-                                    # Handle other errors from Invoke-Process (e.g., file not found, permissions, other exit codes)
-                                    WriteLog "Error during MSI extraction process for $($modelName): $errorMessage"
-                                    throw # Re-throw the original exception to be caught by the outer try/catch
-                                }
+                                # Handle other potential errors when checking the mutex
+                                WriteLog "Warning: Error checking system MSI mutex for $($modelName): $_. Proceeding with caution."
+                                $status = "Extracting MSI (Mutex Error)..."
+                                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                                $mutexClear = $true # Proceed despite mutex error
                             }
-                        } # End if ($mutexClear)
-                    } # End while ($true) - Loop runs until break or throw
+
+                            # 2. Attempt Extraction (only if mutex was clear)
+                            if ($mutexClear) {
+                                WriteLog "Extracting MSI file to $modelPath"
+                                $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
+                                try {
+                                    # Use Invoke-Process. It will throw an error for any non-zero exit code.
+                                    Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait $true -ErrorAction Stop | Out-Null
+                                    
+                                    # If Invoke-Process succeeded (didn't throw), extraction is complete.
+                                    WriteLog "Extraction complete for $modelName (Exit Code 0)."
+                                    
+                                    # Verification Step: Ensure the target folder is not empty.
+                                    $itemsInDest = Get-ChildItem -Path $modelPath -Recurse
+                                    if ($itemsInDest.Count -eq 0) {
+                                        WriteLog "VERIFICATION FAILED: MSI extraction for '$modelName' produced an empty folder. Retrying..."
+                                        $status = "Retrying (Empty Folder)"
+                                        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                                        Start-Sleep -Seconds 5
+                                        continue # Retry the whole process
+                                    }
+                                    
+                                    WriteLog "VERIFICATION PASSED: Target folder for '$modelName' is not empty."
+                                    break # Success, exit the while loop
+                                }
+                                catch {
+                                    # Catch errors thrown by Invoke-Process
+                                    $errorMessage = $_.Exception.Message
+                                    if ($errorMessage -match 'Process exited with code 1618') {
+                                        # Specific handling for MSIExec busy error (1618)
+                                        WriteLog "MSIExec collision detected (Exit Code 1618) for $modelName. Retrying after wait..."
+                                        $status = "Waiting (MSI Collision)..."
+                                        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+                                        Start-Sleep -Seconds 5 # Wait before retrying
+                                        continue # Go back to start of while loop to re-check mutex/retry
+                                    }
+                                    else {
+                                        # Handle other errors from Invoke-Process (e.g., file not found, permissions, other exit codes)
+                                        WriteLog "Error during MSI extraction process for $($modelName): $errorMessage"
+                                        throw # Re-throw the original exception to be caught by the outer try/catch
+                                    }
+                                }
+                            } # End if ($mutexClear)
+                        } # End while ($true)
+                    }
+                    finally {
+                        if ($null -ne $msiMutex) {
+                            $msiMutex.ReleaseMutex()
+                            $msiMutex.Dispose()
+                            WriteLog "Released global MSI extraction lock for '$modelName'."
+                        }
+                    }
                 }
                 elseif ($fileExtension -eq ".zip") {
                     $status = "Extracting ZIP..." # Set status before extraction
