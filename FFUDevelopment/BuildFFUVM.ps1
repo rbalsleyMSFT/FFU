@@ -153,9 +153,6 @@ When set to $true, will download and install the latest Microsoft Edge for Windo
 .PARAMETER UpdateLatestCU
 When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false.
 
-.PARAMETER UpdatePreviewCU
-When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false.
-
 .PARAMETER UpdateLatestDefender
 When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false.
 
@@ -3346,9 +3343,11 @@ Function New-DeploymentUSB {
                 if ($CopyDrivers) {
                     WriteLog "Copying drivers to $DeployPartitionDriveLetter\Drivers"
                     if ($Make) {
+                        WriteLog "Copying drivers for make: $Make"
                         robocopy "$DriversFolder\$Make" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
                     }
                     else {
+                        WriteLog "No make specified, copying all drivers"
                         robocopy "$DriversFolder" "$DeployPartitionDriveLetter\Drivers" /E /R:5 /W:5 /J
                     }
                     
@@ -4000,10 +3999,10 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
 
                 if ($resultCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($driverPath)) {
                     # The task was successful and returned a driver path.
-                    $make = $makeLookup[$modelName]
-                    if ($make) {
+                    $makeJson = $makeLookup[$modelName]
+                    if ($makeJson) {
                         $successfullyDownloaded.Add([PSCustomObject]@{
-                            Make       = $make
+                            Make       = $makeJson
                             Model      = $modelName
                             DriverPath = $driverPath
                         })
@@ -4051,11 +4050,11 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                         $modelName = if ($result.PSObject.Properties.Name -contains 'Identifier') { $result.Identifier } else { $result.Model }
                                 
                         # Find the 'Make' from the original list
-                        $make = $makeLookup[$modelName]
-        
-                        if ($make) {
+                        $makeJson = $makeLookup[$modelName]
+
+                        if ($makeJson) {
                             $successfullyDownloaded.Add([PSCustomObject]@{
-                                    Make       = $make
+                                    Make       = $makeJson
                                     Model      = $modelName
                                     DriverPath = $result.DriverPath
                                 })

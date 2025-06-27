@@ -351,7 +351,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkInstallDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InstallDrivers' -State $State
     Set-UIValue -ControlName 'chkDownloadDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'DownloadDrivers' -State $State
     Set-UIValue -ControlName 'chkCopyDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyDrivers' -State $State
-    Set-UIValue -ControlName 'cmbMake' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'Make' -State $State
+    # Set-UIValue -ControlName 'cmbMake' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'Make' -State $State
     Set-UIValue -ControlName 'txtDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversFolder' -State $State
     Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'PEDriversFolder' -State $State
     Set-UIValue -ControlName 'txtDriversJsonPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversJsonPath' -State $State
