@@ -4978,7 +4978,7 @@ try {
     }
     else {
         #Use cached vhdx file
-        WriteLog 'Using cached VHDX file to speed up build proces'
+        WriteLog 'Using cached VHDX file to speed up build process'
         WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
 
         Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J

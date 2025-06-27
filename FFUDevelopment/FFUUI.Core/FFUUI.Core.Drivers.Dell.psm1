@@ -179,12 +179,16 @@ function Save-DellDriversTask {
     $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
 
     try {
-        # Define paths for Dell catalog. The catalog is assumed to be prepared by the calling function.
-        $dellDriversFolder = Join-Path -Path $DriversFolder -ChildPath "Dell"
-        $catalogBaseName = if ($WindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
-        $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
+        # Check if WIM file or driver folder already exist
+        $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($modelName).wim"
+        if (Test-Path -Path $wimFilePath -PathType Leaf) {
+            $status = "Already downloaded (WIM)"
+            WriteLog "Driver WIM for '$modelName' already exists at '$wimFilePath'."
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+            $wimRelativePath = Join-Path -Path $make -ChildPath "$($modelName).wim"
+            return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $wimRelativePath }
+        }
 
-        # 1. Check if drivers already exist for this model (final destination)
         if (Test-Path -Path $modelPath -PathType Container) {
             $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
             if ($folderSize -gt 1MB) {
@@ -197,6 +201,11 @@ function Save-DellDriversTask {
                 WriteLog "Driver folder '$modelPath' for '$modelName' exists but is empty/small. Re-downloading."
             }
         }
+
+        # Define paths for Dell catalog. The catalog is assumed to be prepared by the calling function.
+        $dellDriversFolder = Join-Path -Path $DriversFolder -ChildPath "Dell"
+        $catalogBaseName = if ($WindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+        $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
 
         # 3. Parse the *EXISTING* XML and Find Drivers for *this specific model*
         $status = "Finding drivers..."

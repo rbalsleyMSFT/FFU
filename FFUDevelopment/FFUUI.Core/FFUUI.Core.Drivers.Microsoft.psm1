@@ -102,23 +102,28 @@ function Save-MicrosoftDriversTask {
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Checking..." }
     
     try {
-        # Check if drivers already exist for this model
+        # Check if WIM file or driver folder already exist
         $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
+        $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($modelName).wim"
+        if (Test-Path -Path $wimFilePath -PathType Leaf) {
+            $status = "Already downloaded (WIM)"
+            WriteLog "Driver WIM for '$modelName' already exists at '$wimFilePath'."
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+            $wimRelativePath = Join-Path -Path $make -ChildPath "$($modelName).wim"
+            return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $wimRelativePath }
+        }
+
         $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
         if (Test-Path -Path $modelPath -PathType Container) {
             $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
             if ($folderSize -gt 1MB) {
                 $status = "Already downloaded"
                 WriteLog "Drivers for '$modelName' already exist in '$modelPath'."
-                # Enqueue this status before returning
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                # Return success immediately
                 return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $driverRelativePath }
             }
             else {
-                # Status is not set to error here, just log and continue
                 WriteLog "Driver folder '$modelPath' for '$modelName' exists but is empty or very small. Re-downloading."
-                # Allow the process to continue to re-download
             }
         }
 

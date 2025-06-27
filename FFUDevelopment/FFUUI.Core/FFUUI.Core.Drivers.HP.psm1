@@ -121,6 +121,16 @@ function Save-HPDriversTask {
     
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking HP drivers for $modelName..." }
     
+    # Check if WIM file already exists
+    $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim"
+    if (Test-Path -Path $wimFilePath -PathType Leaf) {
+        $finalStatus = "Already downloaded (WIM)"
+        WriteLog "Driver WIM for '$identifier' already exists at '$wimFilePath'."
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
+        $wimRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim"
+        return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $true; DriverPath = $wimRelativePath }
+    }
+
     # Ensure the base HP folder exists
     if (-not (Test-Path -Path $hpDriversBaseFolder -PathType Container)) {
         try {
@@ -142,25 +152,19 @@ function Save-HPDriversTask {
         
         if ($CompressToWim) {
             $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim" # WIM in base HP folder, next to model folder
-
-            if (Test-Path -Path $wimFilePath -PathType Leaf) {
-                $finalStatus = "Already downloaded (WIM exists)"
-                WriteLog "WIM file $wimFilePath already exists for $identifier."
+            WriteLog "Attempting compression of existing folder '$modelSpecificFolder' to '$wimFilePath'."
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing HP drivers for $identifier..." }
+            try {
+                Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                $finalStatus = "Already downloaded & Compressed"
+                WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
+                $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim"
             }
-            else {
-                WriteLog "WIM file $wimFilePath not found for $identifier. Attempting compression of existing folder '$modelSpecificFolder'."
-                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing HP drivers for $identifier..." }
-                try {
-                    Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
-                    $finalStatus = "Already downloaded & Compressed"
-                    WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
-                }
-                catch {
-                    $errMsgForLog = "Error compressing existing drivers for $($identifier): $($_.Exception.Message)"
-                    WriteLog $errMsgForLog
-                    $finalStatus = "Already downloaded (Compression failed: $($_.Exception.Message.Split([Environment]::NewLine)[0]))"
-                    # $successState = false # Keep true if folder exists, compression is secondary
-                }
+            catch {
+                $errMsgForLog = "Error compressing existing drivers for $($identifier): $($_.Exception.Message)"
+                WriteLog $errMsgForLog
+                $finalStatus = "Already downloaded (Compression failed: $($_.Exception.Message.Split([Environment]::NewLine)[0]))"
+                # $successState = false # Keep true if folder exists, compression is secondary
             }
         }
         else {
@@ -168,9 +172,6 @@ function Save-HPDriversTask {
             $finalStatus = "Already downloaded"
         }
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
-        if ($CompressToWim) {
-            $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim"
-        }
         return [PSCustomObject]@{
             Identifier = $identifier
             Status     = $finalStatus

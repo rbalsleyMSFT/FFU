@@ -116,7 +116,10 @@ function Update-DriverMappingJson {
             $existingJson = Get-Content -Path $mappingFilePath -Raw | ConvertFrom-Json
             # Ensure it's a collection before adding to the list
             if ($existingJson -is [array]) {
-                $mappingList.AddRange($existingJson)
+                # Iterate through the array to avoid type conversion issues with AddRange
+                foreach ($item in $existingJson) {
+                    $mappingList.Add($item)
+                }
             }
             else {
                 $mappingList.Add($existingJson)

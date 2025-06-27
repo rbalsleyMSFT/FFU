@@ -96,6 +96,17 @@ function Save-LenovoDriversTask {
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking..." }
     
     try {
+        # Check if WIM file or driver folder already exist
+        $sanitizedIdentifier = $identifier -replace '[\\/:"*?<>|]', '_'
+        $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($sanitizedIdentifier).wim"
+        if (Test-Path -Path $wimFilePath -PathType Leaf) {
+            $status = "Already downloaded (WIM)"
+            WriteLog "Driver WIM for '$identifier' already exists at '$wimFilePath'."
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
+            $wimRelativePath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
+            return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $true; DriverPath = $wimRelativePath }
+        }
+
         # 1. Check if drivers already exist for this model (final destination)
         if (Test-Path -Path $modelPath -PathType Container) {
             $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
@@ -379,7 +390,7 @@ function Save-LenovoDriversTask {
         if ($CompressToWim) {
             $status = "Compressing..."
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-            $wimFileName = "$($identifier).wim" # Use sanitized identifier for filename
+            $wimFileName = "$($sanitizedIdentifier).wim" # Use sanitized identifier for filename
             $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName
             $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
             WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
