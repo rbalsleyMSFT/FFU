@@ -620,165 +620,192 @@ function Invoke-ListViewSort {
 
 # 1) Define a C# class that uses the correct GUIDs for IFileDialog, IFileOpenDialog, and FileOpenDialog,
 #    while omitting conflicting "GetResults/GetSelectedItems" from IFileDialog.
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
+if (-not ("ModernFolderBrowser" -as [type])) {
+    $modernFolderBrowserCode = @"
+    using System;
+    using System.Runtime.InteropServices;
 
-public static class ModernFolderBrowser
-{
-    // Flags for IFileDialog
-    [Flags]
-    private enum FileDialogOptions : uint
+    public static class ModernFolderBrowser
     {
-        OverwritePrompt      = 0x00000002,
-        StrictFileTypes      = 0x00000004,
-        NoChangeDir          = 0x00000008,
-        PickFolders          = 0x00000020,
-        ForceFileSystem      = 0x00000040,
-        AllNonStorageItems   = 0x00000080,
-        NoValidate           = 0x00000100,
-        AllowMultiSelect     = 0x00000200,
-        PathMustExist        = 0x00000800,
-        FileMustExist        = 0x00001000,
-        CreatePrompt         = 0x00002000,
-        ShareAware           = 0x00004000,
-        NoReadOnlyReturn     = 0x00008000,
-        NoTestFileCreate     = 0x00010000,
-        DontAddToRecent      = 0x02000000,
-        ForceShowHidden      = 0x10000000
-    }
-
-    // IFileDialog (GUID from Windows SDK)
-    //  - Omitting GetResults / GetSelectedItems to avoid overshadow.
-    [ComImport]
-    [Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileDialog
-    {
-        [PreserveSig]
-        int Show(IntPtr parent);
-
-        void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
-        void SetFileTypeIndex(uint iFileType);
-        void GetFileTypeIndex(out uint piFileType);
-        void Advise(IntPtr pfde, out uint pdwCookie);
-        void Unadvise(uint dwCookie);
-        void SetOptions(FileDialogOptions fos);
-        void GetOptions(out FileDialogOptions pfos);
-        void SetDefaultFolder(IShellItem psi);
-        void SetFolder(IShellItem psi);
-        void GetFolder(out IShellItem ppsi);
-        void GetCurrentSelection(out IShellItem ppsi);
-        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
-        void GetFileName(out IntPtr pszName);
-        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
-        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
-        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
-        void GetResult(out IShellItem ppsi);
-        void AddPlace(IShellItem psi, int fdap);
-        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
-        void Close(int hr);
-        void SetClientGuid(ref Guid guid);
-        void ClearClientData();
-        void SetFilter(IntPtr pFilter);
-
-        // NOTE: We intentionally do NOT define GetResults and GetSelectedItems here,
-        // because they cause overshadow warnings in IFileOpenDialog.
-    }
-
-    // IFileOpenDialog extends IFileDialog by adding 2 new methods with the same name,
-    // which otherwise cause overshadow warnings. We'll define them only here.
-    [ComImport]
-    [Guid("D57C7288-D4AD-4768-BE02-9D969532D960")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IFileOpenDialog : IFileDialog
-    {
-        // These two come after the parent's vtable:
-        void GetResults(out IntPtr ppenum);
-        void GetSelectedItems(out IntPtr ppsai);
-    }
-
-    // The coclass for creating an IFileOpenDialog
-    [ComImport]
-    [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
-    private class FileOpenDialog
-    {
-    }
-
-    // IShellItem
-    [ComImport]
-    [Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellItem
-    {
-        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
-        void GetParent(out IShellItem ppsi);
-        void GetDisplayName(uint sigdnName, out IntPtr ppszName);
-        void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
-        void Compare(IShellItem psi, uint hint, out int piOrder);
-    }
-
-    private const uint SIGDN_FILESYSPATH = 0x80058000;
-
-    public static string ShowDialog(string title, IntPtr parentHandle)
-    {
-        // Create COM dialog instance
-        IFileOpenDialog dialog = (IFileOpenDialog)(new FileOpenDialog());
-
-        // Get current options
-        FileDialogOptions opts;
-        dialog.GetOptions(out opts);
-
-        // Add flags for picking folders
-        opts |= FileDialogOptions.PickFolders | FileDialogOptions.PathMustExist | FileDialogOptions.ForceFileSystem;
-        dialog.SetOptions(opts);
-
-        // Set title
-        if (!string.IsNullOrEmpty(title))
+        // Flags for IFileDialog
+        [Flags]
+        private enum FileDialogOptions : uint
+        
         {
-            dialog.SetTitle(title);
+            OverwritePrompt      = 0x00000002,
+            StrictFileTypes      = 0x00000004,
+            NoChangeDir          = 0x00000008,
+            PickFolders          = 0x00000020,
+            ForceFileSystem      = 0x00000040,
+            AllNonStorageItems   = 0x00000080,
+            NoValidate           = 0x00000100,
+            AllowMultiSelect     = 0x00000200,
+            PathMustExist        = 0x00000800,
+            FileMustExist        = 0x00001000,
+            CreatePrompt         = 0x00002000,
+            ShareAware           = 0x00004000,
+            NoReadOnlyReturn     = 0x00008000,
+            NoTestFileCreate     = 0x00010000,
+            DontAddToRecent      = 0x02000000,
+            ForceShowHidden      = 0x10000000
         }
 
-        // Show the dialog
-        int hr = dialog.Show(parentHandle);
-        // 0 = S_OK. 1 or 0x800704C7 often means user canceled. Return null if so.
-        if (hr != 0)
+        // IFileDialog (GUID from Windows SDK)
+        //  - Omitting GetResults / GetSelectedItems to avoid overshadow.
+        [ComImport]
+        [Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IFileDialog
         {
-            if ((uint)hr == 0x800704C7 || hr == 1)
-            {
-                return null; // Canceled
-            }
-            else
-            {
-                Marshal.ThrowExceptionForHR(hr);
-            }
+            [PreserveSig]
+            int Show(IntPtr parent);
+
+            void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
+            void SetFileTypeIndex(uint iFileType);
+            void GetFileTypeIndex(out uint piFileType);
+            void Advise(IntPtr pfde, out uint pdwCookie);
+            void Unadvise(uint dwCookie);
+            void SetOptions(FileDialogOptions fos);
+            void GetOptions(out FileDialogOptions pfos);
+            void SetDefaultFolder(IShellItem psi);
+            void SetFolder(IShellItem psi);
+            void GetFolder(out IShellItem ppsi);
+            void GetCurrentSelection(out IShellItem ppsi);
+            void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetFileName(out IntPtr pszName);
+            void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+            void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+            void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+            void GetResult(out IShellItem ppsi);
+            void AddPlace(IShellItem psi, int fdap);
+            void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+            void Close(int hr);
+            void SetClientGuid(ref Guid guid);
+            void ClearClientData();
+            void SetFilter(IntPtr pFilter);
+
+            // NOTE: We intentionally do NOT define GetResults and GetSelectedItems here,
+            // because they cause overshadow warnings in IFileOpenDialog.
         }
 
-        // Retrieve the selection (IShellItem)
-        IShellItem shellItem;
-        dialog.GetResult(out shellItem);
-        if (shellItem == null) return null;
+        // IFileOpenDialog extends IFileDialog by adding 2 new methods with the same name,
+        // which otherwise cause overshadow warnings. We'll define them only here.
+        [ComImport]
+        [Guid("D57C7288-D4AD-4768-BE02-9D969532D960")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IFileOpenDialog : IFileDialog
+        {
+            // These two come after the parent's vtable:
+            void GetResults(out IntPtr ppenum);
+            void GetSelectedItems(out IntPtr ppsai);
+        }
 
-        // Convert to file system path
-        IntPtr pszPath = IntPtr.Zero;
-        shellItem.GetDisplayName(SIGDN_FILESYSPATH, out pszPath);
-        if (pszPath == IntPtr.Zero) return null;
+        // The coclass for creating an IFileOpenDialog
+        [ComImport]
+        [Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
+        private class FileOpenDialog
+        {
+        }
 
-        string folderPath = Marshal.PtrToStringAuto(pszPath);
-        Marshal.FreeCoTaskMem(pszPath);
+        // IShellItem
+        [ComImport]
+        [Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        private interface IShellItem
+        {
+            void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+            void GetParent(out IShellItem ppsi);
+            void GetDisplayName(uint sigdnName, out IntPtr ppszName);
+            void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
+            void Compare(IShellItem psi, uint hint, out int piOrder);
+        }
 
-        return folderPath;
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int SHCreateItemFromParsingName([MarshalAs(UnmanagedType.LPWStr)] string pszPath, IntPtr pbc, ref Guid riid, [MarshalAs(UnmanagedType.Interface, IidParameterIndex = 2)] out IShellItem ppv);
+
+        private const uint SIGDN_FILESYSPATH = 0x80058000;
+        private static readonly Guid IID_IShellItem = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
+
+        public static string ShowDialog(string title, IntPtr parentHandle, string initialDirectory)
+        {
+            // Create COM dialog instance
+            IFileOpenDialog dialog = (IFileOpenDialog)(new FileOpenDialog());
+
+            // Get current options
+            FileDialogOptions opts;
+            dialog.GetOptions(out opts);
+
+            // Add flags for picking folders
+            opts |= FileDialogOptions.PickFolders | FileDialogOptions.PathMustExist | FileDialogOptions.ForceFileSystem;
+            dialog.SetOptions(opts);
+
+            // Set initial directory if provided
+            if (!string.IsNullOrEmpty(initialDirectory))
+            {
+                try
+                {
+                    Guid iid = IID_IShellItem; // Create a local copy to pass by ref
+                    if (SHCreateItemFromParsingName(initialDirectory, IntPtr.Zero, ref iid, out IShellItem initialFolder) == 0)
+                    {
+                        dialog.SetFolder(initialFolder);
+                        Marshal.ReleaseComObject(initialFolder);
+                    }
+                }
+                catch
+                {
+                    // Ignore errors in setting initial directory (e.g., path doesn't exist)
+                }
+            }
+
+            // Set title
+            if (!string.IsNullOrEmpty(title))
+            {
+                dialog.SetTitle(title);
+            }
+
+            // Show the dialog
+            int hr = dialog.Show(parentHandle);
+            // 0 = S_OK. 1 or 0x800704C7 often means user canceled. Return null if so.
+            if (hr != 0)
+            {
+                if ((uint)hr == 0x800704C7 || hr == 1)
+                {
+                    return null; // Canceled
+                }
+                else
+                {
+                    Marshal.ThrowExceptionForHR(hr);
+                }
+            }
+
+            // Retrieve the selection (IShellItem)
+            IShellItem shellItem;
+            dialog.GetResult(out shellItem);
+            if (shellItem == null) return null;
+
+            // Convert to file system path
+            IntPtr pszPath = IntPtr.Zero;
+            shellItem.GetDisplayName(SIGDN_FILESYSPATH, out pszPath);
+            if (pszPath == IntPtr.Zero) return null;
+
+            string folderPath = Marshal.PtrToStringAuto(pszPath);
+            Marshal.FreeCoTaskMem(pszPath);
+
+            return folderPath;
+        }
     }
+"@
+    Add-Type -TypeDefinition $modernFolderBrowserCode -Language CSharp
 }
-"@ -Language CSharp
 
 # 2) Define a PowerShell function that invokes our C# wrapper
 function Show-ModernFolderPicker {
     param(
-        [string]$Title = "Select a folder"
+        [string]$Title = "Select a folder",
+        [string]$InitialDirectory
     )
     # For a simple test, pass IntPtr.Zero as the parent window handle
-    return [ModernFolderBrowser]::ShowDialog($Title, [IntPtr]::Zero)
+    return [ModernFolderBrowser]::ShowDialog($Title, [IntPtr]::Zero, $InitialDirectory)
 }
 
 function Invoke-BrowseAction {
@@ -797,8 +824,7 @@ function Invoke-BrowseAction {
 
     switch ($Type) {
         'Folder' {
-            # Show-ModernFolderPicker does not currently support setting an initial directory.
-            return Show-ModernFolderPicker -Title $Title
+            return Show-ModernFolderPicker -Title $Title -InitialDirectory $InitialDirectory
         }
         'OpenFile' {
             $dialog = New-Object Microsoft.Win32.OpenFileDialog

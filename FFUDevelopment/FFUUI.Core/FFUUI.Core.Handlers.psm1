@@ -594,7 +594,8 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Drivers Folder"
+            $initialDir = Join-Path -Path $localState.FFUDevelopmentPath -ChildPath "Drivers"
+            $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Drivers Folder" -InitialDirectory $initialDir
             if ($selectedPath) {
                 $localState.Controls.txtDriversFolder.Text = $selectedPath
             }
