@@ -276,11 +276,17 @@ function Invoke-ParallelProcessing {
                 $localProgressQueue.Enqueue(@{ Identifier = $resultIdentifier; Status = $resultStatus })
             }
 
+            $driverPathValue = $null
+            if ($null -ne $taskResult -and $taskResult.PSObject.Properties.Name -contains 'DriverPath') {
+                $driverPathValue = $taskResult.DriverPath
+            }
+
             # Return a consistent hashtable structure (final result)
             return @{
                 Identifier = $resultIdentifier
                 Status     = $resultStatus # Return the final status
                 ResultCode = $resultCode
+                DriverPath = $driverPathValue
             }
 
         } -ThrottleLimit 5 -AsJob
@@ -383,10 +389,9 @@ function Invoke-ParallelProcessing {
                             $finalStatus = "$ErrorStatusPrefix Invalid Result Format"
                             $processedCount++ # Count as processed to avoid loop issues
                         }
-                        # Add the received result (even if format was unexpected, for logging)
-                        if ($null -ne $result) { $resultsCollection.Add($result) }
-                        break # Only process first result from this job
-                    }
+                            # Add the received result (even if format was unexpected, for logging)
+                            if ($null -ne $result) { $resultsCollection.Add($result) }
+                        }
                 }
                 else {
                     # Job completed but had no data

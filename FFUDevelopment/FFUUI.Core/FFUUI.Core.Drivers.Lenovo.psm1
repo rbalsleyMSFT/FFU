@@ -89,7 +89,8 @@ function Save-LenovoDriversTask {
     # Define paths
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
     # Use the identifier (which contains the model name and machine type) and sanitize it for the path
-    $modelPath = Join-Path -Path $makeDriversPath -ChildPath ($identifier -replace '[\\/:"*?<>|]', '_') 
+    $modelPath = Join-Path -Path $makeDriversPath -ChildPath ($identifier -replace '[\\/:"*?<>|]', '_')
+    $driverRelativePath = Join-Path -Path $make -ChildPath ($identifier -replace '[\\/:"*?<>|]', '_') # Relative path for the driver folder
     $tempDownloadPath = Join-Path -Path $makeDriversPath -ChildPath "_TEMP_$($machineType)_$($PID)" # Temp folder for catalog/package XMLs
     
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking..." }
@@ -102,7 +103,7 @@ function Save-LenovoDriversTask {
                 $status = "Already downloaded"
                 WriteLog "Drivers for '$identifier' already exist in '$modelPath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-                return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $true }
+                return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $true; DriverPath = $driverRelativePath }
             }
             else {
                 WriteLog "Driver folder '$modelPath' for '$identifier' exists but is empty/small. Re-downloading."
@@ -380,6 +381,7 @@ function Save-LenovoDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
             $wimFileName = "$($identifier).wim" # Use sanitized identifier for filename
             $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName
+            $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
             WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
             try {
                 $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $identifier -WimDescription $identifier -ErrorAction Stop
@@ -412,7 +414,7 @@ function Save-LenovoDriversTask {
         # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
         # Ensure return object is created even on error
-        return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success }
+        return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null }
     }
     finally {
         # Clean up the main catalog XML and temp folder
@@ -424,7 +426,7 @@ function Save-LenovoDriversTask {
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
 
     # Return the final status
-    return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success }
+    return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $driverRelativePath }
 }
 
 Export-ModuleMember -Function *

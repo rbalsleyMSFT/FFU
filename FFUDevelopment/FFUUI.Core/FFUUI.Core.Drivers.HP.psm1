@@ -115,6 +115,7 @@ function Save-HPDriversTask {
     $hpDriversBaseFolder = Join-Path -Path $DriversFolder -ChildPath $make # Changed variable name for clarity
     $platformListXml = Join-Path -Path $hpDriversBaseFolder -ChildPath "PlatformList.xml"
     $modelSpecificFolder = Join-Path -Path $hpDriversBaseFolder -ChildPath ($modelName -replace '[\\/:"*?<>|]', '_') # Sanitize model name for folder path
+    $driverRelativePath = Join-Path -Path $make -ChildPath ($modelName -replace '[\\/:"*?<>|]', '_') # Relative path for the driver folder
     $finalStatus = "" # Initialize final status
     $successState = $true # Assume success unless an operation fails
     
@@ -130,7 +131,7 @@ function Save-HPDriversTask {
             $errMsg = "Failed to create base HP driver folder '$hpDriversBaseFolder': $($_.Exception.Message)"
             WriteLog $errMsg
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Error: Create HP dir failed" }
-            return [PSCustomObject]@{ Identifier = $identifier; Status = "Error: Create HP dir failed"; Success = $false }
+            return [PSCustomObject]@{ Identifier = $identifier; Status = "Error: Create HP dir failed"; Success = $false; DriverPath = $null }
         }
     }
 
@@ -167,10 +168,14 @@ function Save-HPDriversTask {
             $finalStatus = "Already downloaded"
         }
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
+        if ($CompressToWim) {
+            $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim"
+        }
         return [PSCustomObject]@{
             Identifier = $identifier
             Status     = $finalStatus
-            Success    = $successState 
+            Success    = $successState
+            DriverPath = $driverRelativePath
         }
     }
 
@@ -376,6 +381,7 @@ function Save-HPDriversTask {
                 Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
                 WriteLog "Compression successful for '$identifier'."
                 $finalStatus = "Completed & Compressed"
+                $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim" # Update relative path to the WIM
             }
             catch {
                 WriteLog "Error during compression for '$identifier': $($_.Exception.Message)"
@@ -389,6 +395,7 @@ function Save-HPDriversTask {
         WriteLog $errorMessage
         $finalStatus = "Error: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
         $successState = $false
+        $driverRelativePath = $null # Ensure path is null on error
         if (Test-Path -Path $modelSpecificFolder -PathType Container) {
             WriteLog "Attempting to remove partially created folder $modelSpecificFolder due to error."
             Remove-Item -Path $modelSpecificFolder -Recurse -Force -ErrorAction SilentlyContinue
@@ -396,7 +403,7 @@ function Save-HPDriversTask {
     }
             
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
-    return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $successState }
+    return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $successState; DriverPath = $driverRelativePath }
 }
 
 Export-ModuleMember -Function *

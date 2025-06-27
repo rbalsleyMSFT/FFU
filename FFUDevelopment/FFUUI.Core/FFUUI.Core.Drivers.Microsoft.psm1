@@ -94,6 +94,7 @@ function Save-MicrosoftDriversTask {
     $modelName = $DriverItemData.Model
     $modelLink = $DriverItemData.Link
     $make = $DriverItemData.Make
+    $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
     $status = "Getting download link..." # Initial local status
     $success = $false
     
@@ -112,7 +113,7 @@ function Save-MicrosoftDriversTask {
                 # Enqueue this status before returning
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
                 # Return success immediately
-                return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true }
+                return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $driverRelativePath }
             }
             else {
                 # Status is not set to error here, just log and continue
@@ -351,7 +352,8 @@ function Save-MicrosoftDriversTask {
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
                     $wimFileName = "$($modelName).wim"
                     # Corrected WIM path: WIM file should be next to the model folder, not inside it.
-                    $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName 
+                    $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName
+                    $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
                     WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
                     try {
                         # Use the function from the imported common module
@@ -398,14 +400,14 @@ function Save-MicrosoftDriversTask {
         # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
         # Ensure return object is created even on error
-        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
+        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $null }
     }
     
     # Enqueue the final status (success or error) before returning
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
     
     # Return the final status (this is still used by Receive-Job for final confirmation)
-    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
+    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $driverRelativePath }
 }
 
 Export-ModuleMember -Function *

@@ -176,6 +176,7 @@ function Save-DellDriversTask {
     
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
     $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
+    $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
 
     try {
         # Define paths for Dell catalog. The catalog is assumed to be prepared by the calling function.
@@ -190,7 +191,7 @@ function Save-DellDriversTask {
                 $status = "Already downloaded"
                 WriteLog "Drivers for '$modelName' already exist in '$modelPath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true }
+                return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $driverRelativePath }
             }
             else {
                 WriteLog "Driver folder '$modelPath' for '$modelName' exists but is empty/small. Re-downloading."
@@ -635,6 +636,7 @@ function Save-DellDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
             $wimFileName = "$($modelName).wim"
             $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName
+            $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
             WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
             try {
                 $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $modelName -WimDescription $modelName -ErrorAction Stop
@@ -667,14 +669,14 @@ function Save-DellDriversTask {
         # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
         # Ensure return object is created even on error
-        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
+        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $null }
     }
 
     # Enqueue the final status (success or error) before returning
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
     # Return the final status
-    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success }
+    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $driverRelativePath }
 }
 
 Export-ModuleMember -Function *
