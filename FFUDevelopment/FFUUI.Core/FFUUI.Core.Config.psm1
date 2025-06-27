@@ -49,21 +49,21 @@ function Get-UIConfig {
         InstallWingetApps              = $State.Controls.chkInstallWingetApps.IsChecked
         ISOPath                        = $State.Controls.txtISOPath.Text
         LogicalSectorSizeBytes         = [int]$State.Controls.cmbLogicalSectorSize.SelectedItem.Content
-        Make                           = $State.Controls.cmbMake.SelectedItem
+        # Make                           = $null
         MediaType                      = $State.Controls.cmbMediaType.SelectedItem
         Memory                         = [int64]$State.Controls.txtMemory.Text * 1GB
-        Model                          = if ($State.Controls.chkDownloadDrivers.IsChecked) {
-            $selectedModels = $State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected }
-            if ($selectedModels.Count -ge 1) {
-                $selectedModels[0].Model
-            }
-            else {
-                $null
-            }
-        }
-        else {
-            $null
-        }
+        # Model                          = if ($State.Controls.chkDownloadDrivers.IsChecked) {
+        #     $selectedModels = $State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected }
+        #     if ($selectedModels.Count -ge 1) {
+        #         $selectedModels[0].Model
+        #     }
+        #     else {
+        #         $null
+        #     }
+        # }
+        # else {
+        #     $null
+        # }
         OfficeConfigXMLFile            = $State.Controls.txtOfficeConfigXMLFilePath.Text
         OfficePath                     = $State.Controls.txtOfficePath.Text
         Optimize                       = $State.Controls.chkOptimize.IsChecked

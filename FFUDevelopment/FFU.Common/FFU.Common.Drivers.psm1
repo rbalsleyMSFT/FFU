@@ -61,6 +61,18 @@ function Compress-DriverFolderToWim {
             Invoke-Process -FilePath "dism.exe" -ArgumentList $dismArgs -Wait $true
             
             WriteLog "Successfully compressed '$SourceFolderPath' to '$DestinationWimPath' using dism.exe."
+            
+            # Remove the source folder after successful compression
+            WriteLog "Removing source driver folder: $SourceFolderPath"
+            try {
+                Remove-Item -Path $SourceFolderPath -Recurse -Force -ErrorAction Stop
+                WriteLog "Successfully removed source folder '$SourceFolderPath'."
+            }
+            catch {
+                WriteLog "Warning: Failed to remove source folder '$SourceFolderPath'. Error: $($_.Exception.Message)"
+                # Do not fail the whole operation, just log a warning.
+            }
+
             return $true # Indicate success
         }
         catch {
