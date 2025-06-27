@@ -436,14 +436,24 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
         # Load and parse the mapping file
         $driverMappings = Get-Content -Path $driverMappingPath -Raw | ConvertFrom-Json
 
-        # Find a matching rule
-        $matchedRule = $null
+        # Find all matching rules and select the most specific one
+        $matchingRules = @()
         foreach ($rule in $driverMappings) {
             # Use -like for wildcard matching
             if ($systemManufacturer -like "$($rule.Manufacturer)*" -and $systemModel -like "$($rule.Model)*") {
-                $matchedRule = $rule
-                break
+                $matchingRules += $rule
             }
+        }
+
+        # Select the best match
+        $matchedRule = $null
+        if ($matchingRules.Count -gt 0) {
+            WriteLog "Found $($matchingRules.Count) potential driver mapping rule(s)."
+            foreach ($rule in $matchingRules) {
+                WriteLog "  - Potential Match: Manufacturer='$($rule.Manufacturer)', Model='$($rule.Model)', Path='$($rule.DriverPath)'"
+            }
+            # Sort by model name length, descending, to find the most specific match
+            $matchedRule = $matchingRules | Sort-Object -Property @{Expression = { $_.Model.Length } } -Descending | Select-Object -First 1
         }
 
         if ($null -ne $matchedRule) {
