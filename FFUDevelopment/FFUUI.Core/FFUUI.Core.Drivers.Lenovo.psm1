@@ -126,11 +126,6 @@ function Save-LenovoDriversTask {
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $existingDriver.Status }
             }
 
-            # Ensure the Success property exists on the object being returned.
-            if (-not $existingDriver.PSObject.Properties.Name -contains 'Success') {
-                $existingDriver | Add-Member -MemberType NoteProperty -Name 'Success' -Value $true
-            }
-
             return $existingDriver
         }
 
