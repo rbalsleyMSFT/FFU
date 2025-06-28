@@ -186,6 +186,33 @@ function Save-DellDriversTask {
             if (-not $existingDriver.PSObject.Properties['Model']) {
                 $existingDriver | Add-Member -MemberType NoteProperty -Name 'Model' -Value $modelName
             }
+
+            # Special handling for existing folders that need compression
+            if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
+                $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($modelName).wim"
+                $sourceFolderPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
+                WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Compressing existing..." }
+                try {
+                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $modelName -WimDescription "Drivers for $modelName" -ErrorAction Stop
+                    $existingDriver.Status = "Already downloaded & Compressed"
+                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($modelName).wim"
+                    $existingDriver.Success = $true
+                    WriteLog "Successfully compressed existing drivers for $modelName to $wimFilePath."
+                }
+                catch {
+                    WriteLog "Error compressing existing drivers for $($modelName): $($_.Exception.Message)"
+                    $existingDriver.Status = "Already downloaded (Compression failed)"
+                    $existingDriver.Success = $false
+                }
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $existingDriver.Status }
+            }
+
+            # Ensure the Success property exists on the object being returned.
+            if (-not $existingDriver.PSObject.Properties.Name -contains 'Success') {
+                $existingDriver | Add-Member -MemberType NoteProperty -Name 'Success' -Value $true
+            }
+
             return $existingDriver
         }
 

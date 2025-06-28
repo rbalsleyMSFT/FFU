@@ -218,22 +218,19 @@ function Invoke-ParallelProcessing {
                             elseif ($taskResult.PSObject.Properties.Name -contains 'Identifier') { $taskSpecificIdentifier = $taskResult.Identifier }
 
                             $resultStatus = $taskResult.Status
+                            # Simplified success check. All driver tasks should now return a 'Success' property.
                             if ($taskResult.PSObject.Properties.Name -contains 'Success') {
-                                # Dell, Microsoft, Lenovo
                                 $resultCode = if ($taskResult.Success) { 0 } else { 1 }
                             }
-                            elseif ($taskResult.Status -like 'Completed*') {
-                                # HP success
-                                $resultCode = 0
-                            }
-                            elseif ($taskResult.Status -like 'Error*') {
-                                # HP error
-                                $resultCode = 1
-                            }
                             else {
-                                # Default for HP if status is unexpected, or if 'Success' property is missing but status isn't 'Completed*' or 'Error*'
-                                WriteLog "Unexpected status or missing 'Success' property from task for '$taskSpecificIdentifier': $($taskResult.Status)"
-                                $resultCode = 1 # Assume error
+                                # Fallback for any task that *still* doesn't return 'Success'. This is now the exceptional case.
+                                WriteLog "Warning: Task for '$taskSpecificIdentifier' did not return a 'Success' property. Inferring from status: '$($taskResult.Status)'"
+                                if ($taskResult.Status -like 'Completed*' -or $taskResult.Status -like 'Already downloaded*') {
+                                    $resultCode = 0 # Treat as success
+                                }
+                                else {
+                                    $resultCode = 1 # Treat as error
+                                }
                             }
                         }
                         elseif ($make -in ('Microsoft', 'Dell', 'HP', 'Lenovo')) {

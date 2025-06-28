@@ -141,14 +141,22 @@ function Save-HPDriversTask {
                     Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
                     $existingDriver.Status = "Already downloaded & Compressed"
                     $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedModelName).wim"
+                    $existingDriver.Success = $true
                     WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
                 }
                 catch {
                     WriteLog "Error compressing existing drivers for $($identifier): $($_.Exception.Message)"
                     $existingDriver.Status = "Already downloaded (Compression failed)"
+                    $existingDriver.Success = $false
                 }
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $existingDriver.Status }
             }
+
+            # Ensure the Success property exists on the object being returned.
+            if (-not $existingDriver.PSObject.Properties.Name -contains 'Success') {
+                $existingDriver | Add-Member -MemberType NoteProperty -Name 'Success' -Value $true
+            }
+
             return $existingDriver
         }
 

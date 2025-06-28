@@ -104,6 +104,33 @@ function Save-LenovoDriversTask {
             # We need to return 'Identifier' for Lenovo's logic.
             $existingDriver | Add-Member -MemberType NoteProperty -Name 'Identifier' -Value $identifier -Force
             $existingDriver.PSObject.Properties.Remove('Model')
+
+            # Special handling for existing folders that need compression
+            if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
+                $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($sanitizedIdentifier).wim"
+                $sourceFolderPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedIdentifier
+                WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
+                try {
+                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                    $existingDriver.Status = "Already downloaded & Compressed"
+                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
+                    $existingDriver.Success = $true
+                    WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
+                }
+                catch {
+                    WriteLog "Error compressing existing drivers for $($identifier): $($_.Exception.Message)"
+                    $existingDriver.Status = "Already downloaded (Compression failed)"
+                    $existingDriver.Success = $false
+                }
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $existingDriver.Status }
+            }
+
+            # Ensure the Success property exists on the object being returned.
+            if (-not $existingDriver.PSObject.Properties.Name -contains 'Success') {
+                $existingDriver | Add-Member -MemberType NoteProperty -Name 'Success' -Value $true
+            }
+
             return $existingDriver
         }
 
