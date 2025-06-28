@@ -183,7 +183,71 @@ function Update-DriverMappingJson {
 }
 
 # --------------------------------------------------------------------------
+# SECTION: Driver Existence Check Function
+# --------------------------------------------------------------------------
+function Test-ExistingDriver {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Make,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Model,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Identifier,
+
+        [Parameter()]
+        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null
+    )
+
+    $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
+    $modelPath = Join-Path -Path $makeDriversPath -ChildPath $Model
+    $driverRelativePath = Join-Path -Path $Make -ChildPath $Model
+
+    # Check for WIM file first
+    $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($Model).wim"
+    if (Test-Path -Path $wimFilePath -PathType Leaf) {
+        $status = "Already downloaded (WIM)"
+        WriteLog "Driver WIM for '$Identifier' already exists at '$wimFilePath'."
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $Identifier -Status $status }
+        $wimRelativePath = Join-Path -Path $Make -ChildPath "$($Model).wim"
+        return [PSCustomObject]@{
+            Model      = $Identifier # Return original identifier
+            Status     = $status
+            Success    = $true
+            DriverPath = $wimRelativePath
+        }
+    }
+
+    # Check for existing driver folder
+    if (Test-Path -Path $modelPath -PathType Container) {
+        $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+        if ($folderSize -gt 1MB) {
+            $status = "Already downloaded"
+            WriteLog "Drivers for '$Identifier' already exist in '$modelPath'."
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $Identifier -Status $status }
+            return [PSCustomObject]@{
+                Model      = $Identifier # Return original identifier
+                Status     = $status
+                Success    = $true
+                DriverPath = $driverRelativePath
+            }
+        }
+        else {
+            WriteLog "Driver folder '$modelPath' for '$Identifier' exists but is empty or very small. Re-downloading."
+        }
+    }
+
+    # If neither WIM nor a valid folder exists, return null
+    return $null
+}
+
+# --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 
-Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson
+Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson, Test-ExistingDriver

@@ -83,42 +83,28 @@ function Save-LenovoDriversTask {
     $identifier = $DriverItemData.Model
     $machineType = $DriverItemData.MachineType 
     $make = "Lenovo"
+    $sanitizedIdentifier = $identifier -replace '[\\/:"*?<>|]', '_'
     $status = "Starting..."
     $success = $false
     
     # Define paths
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
     # Use the identifier (which contains the model name and machine type) and sanitize it for the path
-    $modelPath = Join-Path -Path $makeDriversPath -ChildPath ($identifier -replace '[\\/:"*?<>|]', '_')
-    $driverRelativePath = Join-Path -Path $make -ChildPath ($identifier -replace '[\\/:"*?<>|]', '_') # Relative path for the driver folder
+    $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedIdentifier
+    $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedIdentifier # Relative path for the driver folder
     $tempDownloadPath = Join-Path -Path $makeDriversPath -ChildPath "_TEMP_$($machineType)_$($PID)" # Temp folder for catalog/package XMLs
     
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking..." }
     
     try {
-        # Check if WIM file or driver folder already exist
-        $sanitizedIdentifier = $identifier -replace '[\\/:"*?<>|]', '_'
-        $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($sanitizedIdentifier).wim"
-        if (Test-Path -Path $wimFilePath -PathType Leaf) {
-            $status = "Already downloaded (WIM)"
-            WriteLog "Driver WIM for '$identifier' already exists at '$wimFilePath'."
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-            $wimRelativePath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
-            return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $true; DriverPath = $wimRelativePath }
-        }
-
-        # 1. Check if drivers already exist for this model (final destination)
-        if (Test-Path -Path $modelPath -PathType Container) {
-            $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-            if ($folderSize -gt 1MB) {
-                $status = "Already downloaded"
-                WriteLog "Drivers for '$identifier' already exist in '$modelPath'."
-                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-                return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $true; DriverPath = $driverRelativePath }
-            }
-            else {
-                WriteLog "Driver folder '$modelPath' for '$identifier' exists but is empty/small. Re-downloading."
-            }
+        # Check for existing drivers
+        $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedIdentifier -DriversFolder $DriversFolder -Identifier $identifier -ProgressQueue $ProgressQueue
+        if ($null -ne $existingDriver) {
+            # The return object from Test-ExistingDriver uses 'Model' as the identifier key.
+            # We need to return 'Identifier' for Lenovo's logic.
+            $existingDriver | Add-Member -MemberType NoteProperty -Name 'Identifier' -Value $identifier -Force
+            $existingDriver.PSObject.Properties.Remove('Model')
+            return $existingDriver
         }
 
         # Ensure base directories exist

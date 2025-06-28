@@ -112,79 +112,50 @@ function Save-HPDriversTask {
     $modelName = $DriverItemData.Model
     $make = $DriverItemData.Make # Should be 'HP'
     $identifier = $modelName # Unique identifier for progress updates
+    $sanitizedModelName = $modelName -replace '[\\/:"*?<>|]', '_'
     $hpDriversBaseFolder = Join-Path -Path $DriversFolder -ChildPath $make # Changed variable name for clarity
     $platformListXml = Join-Path -Path $hpDriversBaseFolder -ChildPath "PlatformList.xml"
-    $modelSpecificFolder = Join-Path -Path $hpDriversBaseFolder -ChildPath ($modelName -replace '[\\/:"*?<>|]', '_') # Sanitize model name for folder path
-    $driverRelativePath = Join-Path -Path $make -ChildPath ($modelName -replace '[\\/:"*?<>|]', '_') # Relative path for the driver folder
+    $modelSpecificFolder = Join-Path -Path $hpDriversBaseFolder -ChildPath $sanitizedModelName # Sanitize model name for folder path
+    $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedModelName # Relative path for the driver folder
     $finalStatus = "" # Initialize final status
     $successState = $true # Assume success unless an operation fails
     
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking HP drivers for $modelName..." }
     
-    # Check if WIM file already exists
-    $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim"
-    if (Test-Path -Path $wimFilePath -PathType Leaf) {
-        $finalStatus = "Already downloaded (WIM)"
-        WriteLog "Driver WIM for '$identifier' already exists at '$wimFilePath'."
-        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
-        $wimRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim"
-        return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $true; DriverPath = $wimRelativePath }
-    }
-
-    # Ensure the base HP folder exists
-    if (-not (Test-Path -Path $hpDriversBaseFolder -PathType Container)) {
-        try {
-            New-Item -Path $hpDriversBaseFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
-            WriteLog "Created base HP driver folder: $hpDriversBaseFolder"
-        }
-        catch {
-            $errMsg = "Failed to create base HP driver folder '$hpDriversBaseFolder': $($_.Exception.Message)"
-            WriteLog $errMsg
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Error: Create HP dir failed" }
-            return [PSCustomObject]@{ Identifier = $identifier; Status = "Error: Create HP dir failed"; Success = $false; DriverPath = $null }
-        }
-    }
-
-    # Check if drivers already exist for this model
-    if (Test-Path -Path $modelSpecificFolder -PathType Container) {
-        WriteLog "HP drivers for '$identifier' already exist in '$modelSpecificFolder'."
-        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Found existing HP drivers for $identifier. Verifying..." }
-        
-        if ($CompressToWim) {
-            $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim" # WIM in base HP folder, next to model folder
-            WriteLog "Attempting compression of existing folder '$modelSpecificFolder' to '$wimFilePath'."
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing HP drivers for $identifier..." }
-            try {
-                Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
-                $finalStatus = "Already downloaded & Compressed"
-                WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
-                $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim"
-            }
-            catch {
-                $errMsgForLog = "Error compressing existing drivers for $($identifier): $($_.Exception.Message)"
-                WriteLog $errMsgForLog
-                $finalStatus = "Already downloaded (Compression failed: $($_.Exception.Message.Split([Environment]::NewLine)[0]))"
-                # $successState = false # Keep true if folder exists, compression is secondary
-            }
-        }
-        else {
-            # Not compressing
-            $finalStatus = "Already downloaded"
-        }
-        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
-        return [PSCustomObject]@{
-            Identifier = $identifier
-            Status     = $finalStatus
-            Success    = $successState
-            DriverPath = $driverRelativePath
-        }
-    }
-
-    # If folder does not exist, proceed with download and extraction
-    WriteLog "HP drivers for '$identifier' not found locally. Starting download process..."
-    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Downloading HP drivers for $identifier..." }
-
     try {
+        # Check for existing drivers
+        $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedModelName -DriversFolder $DriversFolder -Identifier $identifier -ProgressQueue $ProgressQueue
+        if ($null -ne $existingDriver) {
+            # The return object from Test-ExistingDriver uses 'Model' as the identifier key.
+            # We need to return 'Identifier' for HP's logic.
+            $existingDriver | Add-Member -MemberType NoteProperty -Name 'Identifier' -Value $identifier -Force
+            $existingDriver.PSObject.Properties.Remove('Model')
+            
+            # Special handling for existing folders that need compression
+            if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
+                $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($sanitizedModelName).wim"
+                $sourceFolderPath = Join-Path -Path $hpDriversBaseFolder -ChildPath $sanitizedModelName
+                WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
+                try {
+                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                    $existingDriver.Status = "Already downloaded & Compressed"
+                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedModelName).wim"
+                    WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
+                }
+                catch {
+                    WriteLog "Error compressing existing drivers for $($identifier): $($_.Exception.Message)"
+                    $existingDriver.Status = "Already downloaded (Compression failed)"
+                }
+                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $existingDriver.Status }
+            }
+            return $existingDriver
+        }
+
+        # If folder does not exist, proceed with download and extraction
+        WriteLog "HP drivers for '$identifier' not found locally. Starting download process..."
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Downloading..." }
+
         # Ensure PlatformList.xml exists (it should have been downloaded by Get-HPDriversModelList)
         if (-not (Test-Path -Path $platformListXml)) {
             # Attempt to download/extract it again if missing

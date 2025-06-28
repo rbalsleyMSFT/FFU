@@ -179,27 +179,14 @@ function Save-DellDriversTask {
     $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
 
     try {
-        # Check if WIM file or driver folder already exist
-        $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($modelName).wim"
-        if (Test-Path -Path $wimFilePath -PathType Leaf) {
-            $status = "Already downloaded (WIM)"
-            WriteLog "Driver WIM for '$modelName' already exists at '$wimFilePath'."
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-            $wimRelativePath = Join-Path -Path $make -ChildPath "$($modelName).wim"
-            return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $wimRelativePath }
-        }
-
-        if (Test-Path -Path $modelPath -PathType Container) {
-            $folderSize = (Get-ChildItem -Path $modelPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-            if ($folderSize -gt 1MB) {
-                $status = "Already downloaded"
-                WriteLog "Drivers for '$modelName' already exist in '$modelPath'."
-                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $true; DriverPath = $driverRelativePath }
+        # Check for existing drivers
+        $existingDriver = Test-ExistingDriver -Make $make -Model $modelName -DriversFolder $DriversFolder -Identifier $modelName -ProgressQueue $ProgressQueue
+        if ($null -ne $existingDriver) {
+            # Add the 'Model' property to the return object for consistency if it's not there
+            if (-not $existingDriver.PSObject.Properties['Model']) {
+                $existingDriver | Add-Member -MemberType NoteProperty -Name 'Model' -Value $modelName
             }
-            else {
-                WriteLog "Driver folder '$modelPath' for '$modelName' exists but is empty/small. Re-downloading."
-            }
+            return $existingDriver
         }
 
         # Define paths for Dell catalog. The catalog is assumed to be prepared by the calling function.
