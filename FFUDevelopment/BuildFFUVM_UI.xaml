@@ -345,7 +345,7 @@
                         </StackPanel>
                         <ComboBox x:Name="cmbWindowsArch" Grid.Row="3" Grid.Column="1" Margin="5" Width="120" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
                         <!-- (4) Windows Lang -->
-                        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <StackPanel x:Name="WindowsLangStackPanel" Grid.Row="4" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                             <TextBlock Text="Windows Language" VerticalAlignment="Center" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
                         </StackPanel>
                         <ComboBox x:Name="cmbWindowsLang" Grid.Row="4" Grid.Column="1" Margin="5" Width="120" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
@@ -355,7 +355,7 @@
                         </StackPanel>
                         <ComboBox x:Name="cmbWindowsSKU" Grid.Row="5" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'."/>
                         <!-- (6) Media Type -->
-                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
+                        <StackPanel x:Name="MediaTypeStackPanel" Grid.Row="6" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
                             <TextBlock Text="Media Type" VerticalAlignment="Center" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
                         </StackPanel>
                         <ComboBox x:Name="cmbMediaType" Grid.Row="6" Grid.Column="1" Margin="5" Width="120" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>

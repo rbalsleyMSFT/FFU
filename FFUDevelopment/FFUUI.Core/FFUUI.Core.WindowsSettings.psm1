@@ -564,6 +564,20 @@ function Get-WindowsSettingsCombos {
         [psobject]$State
     )
 
+    # Determine visibility for download-specific controls based on ISO path
+    $visibility = if (-not [string]::IsNullOrEmpty($isoPath) -and $isoPath.EndsWith('.iso', [System.StringComparison]::OrdinalIgnoreCase)) {
+        'Collapsed'
+    }
+    else {
+        'Visible'
+    }
+
+    # Set visibility for Language and Media Type controls
+    $State.Controls.WindowsLangStackPanel.Visibility = $visibility
+    $State.Controls.cmbWindowsLang.Visibility = $visibility
+    $State.Controls.MediaTypeStackPanel.Visibility = $visibility
+    $State.Controls.cmbMediaType.Visibility = $visibility
+
     # Update Release combo first
     Update-WindowsReleaseCombo -isoPath $isoPath -State $State
 
