@@ -118,6 +118,7 @@ function Get-GeneralDefaults {
         AllowVHDXCaching               = $false
         CreateCaptureMedia             = $true
         CreateDeploymentMedia          = $true
+        Verbose                        = $false
         AllowExternalHardDiskMedia     = $false
         PromptExternalHardDiskMedia    = $true
         SelectSpecificUSBDrives        = $false

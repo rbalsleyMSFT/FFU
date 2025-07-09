@@ -89,6 +89,7 @@ function Get-UIConfig {
         UserAppListPath                = "$($State.Controls.txtApplicationPath.Text)\UserAppList.json"
         USBDriveList                   = @{}
         Username                       = $State.Controls.txtUsername.Text
+        Verbose                        = $State.Controls.chkVerbose.IsChecked
         VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
         VMLocation                     = $State.Controls.txtVMLocation.Text
         VMSwitchName                   = if ($State.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
@@ -280,6 +281,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'PromptExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateCaptureMedia' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
+    Set-UIValue -ControlName 'chkVerbose' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'Verbose' -State $State
 
     # USB Drive Modification group (Build Tab)
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State

@@ -121,7 +121,17 @@ $btnRun.Add_Click({
                 $txtStatus.Text = "Office Configuration XML file copied successfully."
             }
             $txtStatus.Text = "Executing BuildFFUVM script with config file..."
-            & "$PSScriptRoot\BuildFFUVM.ps1" -ConfigFile $configFilePath
+            
+            # Prepare parameters for splatting
+            $buildParams = @{
+                ConfigFile = $configFilePath
+            }
+            if ($config.Verbose) {
+                $buildParams['Verbose'] = $true
+            }
+
+            & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
+            
             $txtStatus.Text = "FFU build completed successfully."
         }
         catch {

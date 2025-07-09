@@ -98,6 +98,7 @@ function Initialize-UIControls {
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
     $State.Controls.chkCreateCaptureMedia = $window.FindName('chkCreateCaptureMedia')
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
+    $State.Controls.chkVerbose = $window.FindName('chkVerbose')
     $State.Controls.chkCopyAutopilot = $window.FindName('chkCopyAutopilot')
     $State.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
     $State.Controls.chkCopyPPKG = $window.FindName('chkCopyPPKG')
@@ -146,6 +147,7 @@ function Initialize-UIControls {
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
     $State.Controls.btnLoadConfig = $window.FindName('btnLoadConfig')
     $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
+
 }
 
 function Initialize-VMSwitchData {
@@ -213,6 +215,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkRemoveFFU.IsChecked = $State.Defaults.generalDefaults.RemoveFFU
     $State.Controls.chkRemoveApps.IsChecked = $State.Defaults.generalDefaults.RemoveApps
     $State.Controls.chkRemoveUpdates.IsChecked = $State.Defaults.generalDefaults.RemoveUpdates
+    $State.Controls.chkVerbose.IsChecked = $State.Defaults.generalDefaults.Verbose
     $State.Controls.usbSection.Visibility = if ($State.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.chkSelectSpecificUSBDrives.IsEnabled = $State.Controls.chkBuildUSBDriveEnable.IsChecked
