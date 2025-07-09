@@ -112,7 +112,7 @@ $script:allWindowsReleases = @(
     [PSCustomObject]@{ Display = "Windows 10 LTSB 2016"; Value = 2016 }, # Changed Value from 1607
     [PSCustomObject]@{ Display = "Windows 10 LTSC 2019"; Value = 2019 }, # Changed Value from 1809
     [PSCustomObject]@{ Display = "Windows 10 LTSC 2021"; Value = 2021 },
-    [PSCustomObject]@{ Display = "Windows 10 LTSC 2024"; Value = 2024 }
+    [PSCustomObject]@{ Display = "Windows 11 LTSC 2024"; Value = 2024 }
 )
 
 $script:mctWindowsReleases = @(
