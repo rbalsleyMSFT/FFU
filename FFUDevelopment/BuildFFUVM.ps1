@@ -3229,7 +3229,7 @@ Function New-DeploymentUSB {
                 }
                 $output += New-Object PSObject -Property $Properties
             }
-            $output | Format-Table -AutoSize -Property 'FFU Number', 'FFU Name', 'Last Modified'
+            $output | Format-Table -AutoSize -Property 'FFU Number', 'FFU Name', 'Last Modified' | Out-String | Write-Host
             
             # Loop until a valid FFU file is selected
             do {
