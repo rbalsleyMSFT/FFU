@@ -234,11 +234,8 @@ function Initialize-UIDefaults {
     Get-WindowsSettingsCombos -isoPath $State.Defaults.windowsSettingsDefaults.DefaultISOPath -State $State
     
     # Windows Settings tab defaults
-    $State.Controls.cmbWindowsArch.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedArchitectures
-    $State.Controls.cmbWindowsArch.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsArch
     $State.Controls.cmbWindowsLang.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedLanguages
     $State.Controls.cmbWindowsLang.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsLang
-    $State.Controls.cmbWindowsSKU.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsSKU
     $State.Controls.cmbMediaType.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedMediaTypes
     $State.Controls.cmbMediaType.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultMediaType
     $State.Controls.txtOptionalFeatures.Text = $State.Defaults.windowsSettingsDefaults.DefaultOptionalFeatures

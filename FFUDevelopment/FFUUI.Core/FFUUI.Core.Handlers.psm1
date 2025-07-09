@@ -151,10 +151,29 @@ function Register-EventHandlers {
             if ($null -ne $localState.Controls.cmbWindowsRelease.SelectedItem) {
                 $selectedReleaseValue = $localState.Controls.cmbWindowsRelease.SelectedItem.Value
             }
-            # Only need to update the Version combo when Release changes
             Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $localState.Controls.txtISOPath.Text -State $localState
-            # Also update the SKU combo (now derives values internally)
             Update-WindowsSkuCombo -State $localState
+            Update-WindowsArchCombo -State $localState
+        })
+
+    $State.Controls.cmbWindowsVersion.Add_SelectionChanged({
+            param($eventSource, $selectionChangedEventArgs)
+            # This event should only fire on user interaction or after Update-WindowsVersionCombo runs.
+            # We only need to update the architecture, as SKU is dependent only on Release.
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            if ($null -eq $window) { return } # Window might be closing
+            $localState = $window.Tag
+            Update-WindowsArchCombo -State $localState
+        })
+
+    $State.Controls.cmbWindowsSKU.Add_SelectionChanged({
+            param($eventSource, $selectionChangedEventArgs)
+            # This event should only fire on user interaction or after Update-WindowsSkuCombo runs.
+            # We only need to update the architecture.
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            if ($null -eq $window) { return } # Window might be closing
+            $localState = $window.Tag
+            Update-WindowsArchCombo -State $localState
         })
 
     $State.Controls.btnBrowseISO.Add_Click({

@@ -461,7 +461,99 @@ function Update-WindowsSkuCombo {
         WriteLog "Update-WindowsSkuCombo: No SKUs available for Release '$selectedReleaseValue' (Display: '$selectedReleaseDisplayName')."
     }
 }
-
+    
+# Function to refresh the Windows Architecture ComboBox based on selected release, version, and SKU
+function Update-WindowsArchCombo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
+    
+    $archCombo = $State.Controls.cmbWindowsArch
+    if (-not $archCombo) {
+        WriteLog "Update-WindowsArchCombo: Architecture ComboBox not found."
+        return
+    }
+    
+    $previousSelectedArch = $archCombo.SelectedItem
+    
+    # Start with a safe, common default
+    $availableArchitectures = @('x64') 
+    
+    $releaseItem = $State.Controls.cmbWindowsRelease.SelectedItem
+    $versionItem = $State.Controls.cmbWindowsVersion.SelectedItem
+    $skuItem = $State.Controls.cmbWindowsSKU.SelectedItem
+    
+    if ($null -eq $releaseItem) {
+        WriteLog "Update-WindowsArchCombo: No release selected. Defaulting to x64."
+        $archCombo.ItemsSource = $availableArchitectures
+        $archCombo.SelectedItem = 'x64'
+        return
+    }
+    
+    $releaseDisplay = $releaseItem.Display
+    $versionValue = if ($null -ne $versionItem) { $versionItem } else { "" }
+    $skuValue = if ($null -ne $skuItem) { $skuItem } else { "" }
+    
+    if ($releaseDisplay -like 'Windows Server*') {
+        # All servers are x64 only
+        $availableArchitectures = @('x64')
+    }
+    elseif ($releaseDisplay -like 'Windows 11*') {
+        if ($releaseDisplay -like '*LTSC*') {
+            # Windows 11 LTSC 2024
+            if ($skuValue -like 'IoT*') {
+                $availableArchitectures = @('x64', 'arm64')
+            }
+            else {
+                $availableArchitectures = @('x64')
+            }
+        }
+        else {
+            # Standard Windows 11
+            if ($versionValue -eq '24H2') {
+                $availableArchitectures = @('x64', 'arm64')
+            }
+            else {
+                # 22H2, 23H2
+                $availableArchitectures = @('x64')
+            }
+        }
+    }
+    elseif ($releaseDisplay -like 'Windows 10*') {
+        if ($releaseDisplay -like '*LTSB*' -or $releaseDisplay -like '*LTSC*') {
+            # Windows 10 LTSB 2016, LTSC 2019, LTSC 2021
+            if ($releaseDisplay -like '*2021*' -and $skuValue -like 'IoT*') {
+                $availableArchitectures = @('x64', 'arm64')
+            }
+            else {
+                # LTSB 2016, LTSC 2019, LTSC 2021 (non-IoT)
+                $availableArchitectures = @('x86', 'x64')
+            }
+        }
+        else {
+            # Standard Windows 10 (22H2)
+            $availableArchitectures = @('x86', 'x64')
+        }
+    }
+    
+    $archCombo.ItemsSource = $availableArchitectures
+    
+    if ($availableArchitectures -contains $previousSelectedArch) {
+        $archCombo.SelectedItem = $previousSelectedArch
+    }
+    elseif ($availableArchitectures -contains 'x64') {
+        $archCombo.SelectedItem = 'x64'
+    }
+    elseif ($availableArchitectures.Count -gt 0) {
+        $archCombo.SelectedIndex = 0
+    }
+    else {
+        $archCombo.SelectedIndex = -1
+    }
+    WriteLog "Update-WindowsArchCombo: Updated available architectures to ($($availableArchitectures -join ', ')). Selected: $($archCombo.SelectedItem)"
+}
+    
 # Combined function to initialize the Release, Version, and SKU combos
 function Get-WindowsSettingsCombos {
     param(
@@ -484,6 +576,9 @@ function Get-WindowsSettingsCombos {
 
     # Update SKU combo based on the selected release (now derives values internally)
     Update-WindowsSkuCombo -State $State
+    
+    # Finally, update the Architecture combo to match the initial state
+    Update-WindowsArchCombo -State $State
 }
 
 # Dynamic checkboxes for optional features in Windows Settings tab
