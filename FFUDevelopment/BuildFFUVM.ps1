@@ -418,6 +418,12 @@ if (Get-Module -Name 'FFU.Common.Drivers' -ErrorAction SilentlyContinue) {
 # Import the required modules
 Import-Module "$PSScriptRoot\FFU.Common" -Force
 
+# Set the module's verbose preference to match the script's - allows logging verbose output to console.
+$moduleInfo = Get-Module -Name 'FFU.Common'
+if ($moduleInfo) {
+    & $moduleInfo { $script:VerbosePreference = $args[0] } $VerbosePreference
+}
+
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     $configData = Get-Content $ConfigFile -Raw | ConvertFrom-Json
