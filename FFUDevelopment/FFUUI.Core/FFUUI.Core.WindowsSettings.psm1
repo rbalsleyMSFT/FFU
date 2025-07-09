@@ -230,11 +230,11 @@ function Get-AvailableWindowsReleases {
         [psobject]$State
     )
 
-    if ([string]::IsNullOrEmpty($IsoPath)) {
-        return $State.Defaults.WindowsSettingsDefaults.MctWindowsReleases
+    if (-not [string]::IsNullOrEmpty($IsoPath) -and $IsoPath.EndsWith('.iso', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $State.Defaults.WindowsSettingsDefaults.AllWindowsReleases
     }
     else {
-        return $State.Defaults.WindowsSettingsDefaults.AllWindowsReleases
+        return $State.Defaults.WindowsSettingsDefaults.MctWindowsReleases
     }
 }
 
@@ -257,27 +257,12 @@ function Get-AvailableWindowsVersions {
     }
 
     if (-not $State.Defaults.WindowsSettingsDefaults.WindowsVersionMap.ContainsKey($SelectedRelease)) {
-        return $result 
+        return $result
     }
 
     $validVersions = $State.Defaults.WindowsSettingsDefaults.WindowsVersionMap[$SelectedRelease]
 
-    if ([string]::IsNullOrEmpty($IsoPath)) {
-        # Logic for when no ISO is specified (MCT scenario)
-        switch ($SelectedRelease) {
-            10 { $result.DefaultVersion = "22H2" }
-            11 { $result.DefaultVersion = "24H2" }
-            # Server versions typically require an ISO, but handle just in case
-            2016 { $result.DefaultVersion = "1607" }
-            2019 { $result.DefaultVersion = "1809" }
-            2022 { $result.DefaultVersion = "21H2" }
-            2025 { $result.DefaultVersion = "24H2" }
-            default { $result.DefaultVersion = $validVersions[0] }
-        }
-        $result.Versions = @($result.DefaultVersion) # Only the default is available/relevant
-        $result.IsEnabled = $false # Combo should be disabled
-    }
-    else {
+    if (-not [string]::IsNullOrEmpty($IsoPath) -and $IsoPath.EndsWith('.iso', [System.StringComparison]::OrdinalIgnoreCase)) {
         # Logic for when an ISO is specified
         $result.Versions = $validVersions
         # Set default selection logic (e.g., latest for Win11)
@@ -287,7 +272,24 @@ function Get-AvailableWindowsVersions {
         elseif ($validVersions.Count -gt 0) {
             $result.DefaultVersion = $validVersions[0]
         }
-        $result.IsEnabled = $true 
+        $result.IsEnabled = $true
+    }
+    else {
+        # Logic for when no ISO is specified (MCT scenario)
+        switch ($SelectedRelease) {
+            10 { $result.DefaultVersion = "22H2" }
+            11 { $result.DefaultVersion = "24H2" }
+            # Server versions typically require an ISO, but handle just in case
+            2016 { $result.DefaultVersion = "1607" }
+            2019 { $result.DefaultVersion = "1809" }
+            2022 { $result.DefaultVersion = "21H2" }
+            2025 { $result.DefaultVersion = "24H2" }
+            default {
+                if ($validVersions.Count -gt 0) { $result.DefaultVersion = $validVersions[0] }
+            }
+        }
+        $result.Versions = @($result.DefaultVersion) # Only the default is available/relevant
+        $result.IsEnabled = $false # Combo should be disabled
     }
 
     return $result
