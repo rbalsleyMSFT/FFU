@@ -1,4 +1,4 @@
-function Get-USBDrive() {
+﻿function Get-USBDrive() {
     $USBDriveLetter = (Get-Volume | Where-Object { $_.DriveType -eq 'Removable' -and $_.FileSystemType -eq 'NTFS' }).DriveLetter
     if ($null -eq $USBDriveLetter) {
         #Must be using a fixed USB drive - difficult to grab drive letter from win32_diskdrive. Assume user followed instructions and used Deploy as the friendly name for partition
@@ -15,15 +15,13 @@ function Get-USBDrive() {
 }
 
 function Get-HardDrive() {
-    $SystemInfo = Get-WmiObject -Class 'Win32_ComputerSystem'
-    $Manufacturer = $SystemInfo.Manufacturer
-    $Model = $SystemInfo.Model
-    WriteLog "Device Manufacturer: $Manufacturer"
-    WriteLog "Device Model: $Model"
+    $systemInfo = Get-CimInstance -Class 'Win32_ComputerSystem'
+    $manufacturer = $systemInfo.Manufacturer
+    $model = $systemInfo.Model
     WriteLog 'Getting Hard Drive info'
-    if ($Manufacturer -eq 'Microsoft Corporation' -and $Model -eq 'Virtual Machine') {
+    if ($manufacturer -eq 'Microsoft Corporation' -and $model -eq 'Virtual Machine') {
         WriteLog 'Running in a Hyper-V VM. Getting virtual disk on Index 0 and SCSILogicalUnit 0'
-        $DiskDrive = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' `
+        $diskDrive = Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' `
                 -and $_.Model -eq 'Microsoft Virtual Disk' `
                 -and $_.Index -eq 0 `
                 -and $_.SCSILogicalUnit -eq 0
@@ -31,15 +29,17 @@ function Get-HardDrive() {
     }
     else {
         WriteLog 'Not running in a VM. Getting physical disk drive'
-        $DiskDrive = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk' }
+        $diskDrive = Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk' }
     }
-    $DeviceID = $DiskDrive.DeviceID
-    $BytesPerSector = $Diskdrive.BytesPerSector
+    $deviceID = $diskDrive.DeviceID
+    $bytesPerSector = $diskDrive.BytesPerSector
+    $diskSize = $diskDrive.Size
 
-    # Create a custom object to return both values
-    $result = New-Object PSObject -Property @{
-        DeviceID       = $DeviceID
-        BytesPerSector = $BytesPerSector
+    # Create a custom object to return values
+    $result = [PSCustomObject]@{
+        DeviceID       = $deviceID
+        BytesPerSector = $bytesPerSector
+        DiskSize       = $diskSize
     }
 
     return $result
@@ -133,6 +133,51 @@ function Invoke-Process {
 	
 }
 
+function Write-SystemInformation($hardDrive) {
+    # Gather all information first
+    $systemManufacturer = (Get-CimInstance -Class Win32_ComputerSystem).Manufacturer
+    $systemModel = if ($systemManufacturer -like '*LENOVO*') {
+        (Get-CimInstance -Class Win32_ComputerSystemProduct).Version
+    }
+    else {
+        (Get-CimInstance -Class Win32_ComputerSystem).Model
+    }
+    $biosInfo = Get-CimInstance -Class Win32_Bios
+    $processor = (Get-CimInstance -Class Win32_Processor).Name
+    $totalMemory = (Get-CimInstance -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum).Sum
+    $totalMemoryGB = [math]::Round($totalMemory / 1GB, 2)
+    $diskSizeGB = [math]::Round($hardDrive.DiskSize / 1GB, 2)
+
+    # Create a custom object for structured data
+    $sysInfoObject = [PSCustomObject]@{
+        "Manufacturer"        = $systemManufacturer
+        "Model"               = $systemModel
+        "BIOS Version"        = $biosInfo.Version
+        "Serial Number"       = $biosInfo.SerialNumber
+        "Processor"           = $processor
+        "Memory"              = "$($totalMemoryGB) GB"
+        "Disk Size"           = "$($diskSizeGB) GB"
+        "Logical Sector Size" = "$($hardDrive.BytesPerSector) Bytes"
+    }
+
+    # Log information line-by-line
+    WriteLog "--- System Information ---"
+    $sysInfoObject.psobject.Properties | ForEach-Object {
+        WriteLog "$($_.Name): $($_.Value)"
+    }
+    WriteLog "--- End System Information ---"
+
+    # Console output
+    Write-Host "`n" # Add a newline for spacing
+    Write-Host "---------------------------------------------------" -ForegroundColor Yellow
+    Write-Host "             System Information                    " -ForegroundColor Yellow
+    Write-Host "---------------------------------------------------" -ForegroundColor Yellow
+    
+    # Format for console using Format-List for better readability
+    $consoleOutput = $sysInfoObject | Format-List | Out-String
+    Write-Host $consoleOutput.Trim()
+    Write-Host # Adds a blank line for spacing after the block 
+}
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
@@ -141,6 +186,20 @@ $LogFile = $USBDrive + $LogFilename
 $version = '2505.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
+
+# Display banner and version
+$banner = @"
+
+███████╗███████╗██╗   ██╗    ██████╗ ██╗   ██╗██╗██╗     ██████╗ ███████╗██████╗ 
+██╔════╝██╔════╝██║   ██║    ██╔══██╗██║   ██║██║██║     ██╔══██╗██╔════╝██╔══██╗
+█████╗  █████╗  ██║   ██║    ██████╔╝██║   ██║██║██║     ██║  ██║█████╗  ██████╔╝
+██╔══╝  ██╔══╝  ██║   ██║    ██╔══██╗██║   ██║██║██║     ██║  ██║██╔══╝  ██╔══██╗
+██║     ██║     ╚██████╔╝    ██████╔╝╚██████╔╝██║███████╗██████╔╝███████╗██║  ██║
+╚═╝     ╚═╝      ╚═════╝     ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+                                                                                                                                                                
+"@
+Write-Host $banner -ForegroundColor Cyan
+Write-Host "Version $version" -ForegroundColor Cyan
 
 #Find PhysicalDrive
 # $PhysicalDeviceID = Get-HardDrive
@@ -152,12 +211,14 @@ if ($null -eq $hardDrive) {
 }
 $PhysicalDeviceID = $hardDrive.DeviceID
 $BytesPerSector = $hardDrive.BytesPerSector
-WriteLog "Physical BytesPerSector is $BytesPerSector"
 WriteLog "Physical DeviceID is $PhysicalDeviceID"
 
 #Parse DiskID Number
 $DiskID = $PhysicalDeviceID.substring($PhysicalDeviceID.length - 1, 1)
 WriteLog "DiskID is $DiskID"
+
+# Write System Information to console and log
+Write-SystemInformation -hardDrive $hardDrive
 
 #Find FFU Files
 [array]$FFUFiles = @(Get-ChildItem -Path $USBDrive*.ffu)
@@ -562,7 +623,9 @@ if ($null -eq $DriverSourcePath) {
 }
 #Partition drive
 Writelog 'Clean Disk'
+$originalProgressPreference = $ProgressPreference
 try {
+    $ProgressPreference = 'SilentlyContinue'
     $Disk = Get-Disk -Number $DiskID
     if ($Disk.PartitionStyle -ne "RAW") {
         $Disk | clear-disk -RemoveData -RemoveOEM -Confirm:$false
@@ -571,6 +634,9 @@ try {
 catch {
     WriteLog 'Cleaning disk failed. Exiting'
     throw $_
+}
+finally {
+    $ProgressPreference = $originalProgressPreference
 }
 
 Writelog 'Cleaning Disk succeeded'
