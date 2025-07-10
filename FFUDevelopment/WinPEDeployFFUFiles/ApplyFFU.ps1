@@ -5,8 +5,9 @@
         $USBDriveLetter = (Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.FileSystemType -eq 'NTFS' -and $_.FileSystemLabel -eq 'Deploy' }).DriveLetter
         #If we didn't get the drive letter, stop the script.
         if ($null -eq $USBDriveLetter) {
-            WriteLog 'Cannot find USB drive letter - most likely using a fixed USB drive. Name the 2nd partition with the FFU files as Deploy so the script can grab the drive letter. Exiting'
-            Exit
+            $errorMessage = 'Cannot find USB drive letter. If using a fixed USB drive, name the deployment partition "Deploy".'
+            WriteLog ($errorMessage + ' Exiting.')
+            Stop-Script -Message $errorMessage
         }
 
     }
@@ -187,12 +188,27 @@ function Write-SystemInformation($hardDrive) {
     Write-Host $consoleOutput.Trim()
     Write-Host # Adds a blank line for spacing after the block 
 }
+
+function Stop-Script {
+    param(
+        [string]$Message
+    )
+    Write-Host "`n"
+    if (-not [string]::IsNullOrWhiteSpace($Message)) {
+        Write-Error -Message $Message
+    }
+    WriteLog "Copying dism log to $USBDrive"
+    Invoke-Process xcopy "X:\Windows\logs\dism\dism.log $USBDrive /Y" 
+    WriteLog "Copying dism log to $USBDrive succeeded"
+    Read-Host "Press Enter to exit"
+    Exit
+}
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2505.1'
+$version = '2507.1'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 
@@ -214,9 +230,10 @@ Write-Host "Version $version" -ForegroundColor Cyan
 # $PhysicalDeviceID = Get-HardDrive
 $hardDrive = Get-HardDrive
 if ($null -eq $hardDrive) {
-    WriteLog 'No hard drive found. Exiting'
-    WriteLog 'Try adding storage drivers to the PE boot image (you can re-create your FFU and USB drive and add the PE drivers to the PEDrivers folder and add -CopyPEDrivers $true to the command line, or manually add them via DISM)'
-    Exit
+    $errorMessage = 'No hard drive found. You may need to add storage drivers to the WinPE image.'
+    WriteLog ($errorMessage + ' Exiting.')
+    WriteLog 'To add drivers, place them in the PEDrivers folder and re-run the creation script with -CopyPEDrivers $true, or add them manually via DISM.'
+    Stop-Script -Message $errorMessage
 }
 $PhysicalDeviceID = $hardDrive.DeviceID
 $BytesPerSector = $hardDrive.BytesPerSector
@@ -269,9 +286,9 @@ elseif ($FFUCount -eq 1) {
     Write-Host "$FFUFileToInstall will be installed"
 } 
 else {
-    Writelog 'No FFU files found'
-    Write-Host 'No FFU files found'
-    Exit
+    $errorMessage = 'No FFU files found.'
+    Writelog $errorMessage
+    Stop-Script -Message $errorMessage
 }
 
 #FindAP
@@ -491,7 +508,7 @@ If ($PPKGFilesCount -gt 1 -and $PPKG -eq $true) {
     Write-Host "`n$PPKGFileToInstall will be used"
 }
 elseif ($PPKGFilesCount -eq 1 -and $PPKG -eq $true) {
-    Write-SectionHeader -Title 'Select Provisioning Package'
+    Write-SectionHeader -Title 'Provisioning Package Selection'
     WriteLog "Found $PPKGFilesCount PPKG File"
     Write-Host "Found $PPKGFilesCount PPKG File"
     $PPKGFileToInstall = $PPKGFiles[0].FullName
@@ -693,42 +710,63 @@ WriteLog "Applying FFU to $PhysicalDeviceID"
 WriteLog "Running command dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID"
 #In order for Applying Image progress bar to show up, need to call dism directly. Might be a better way to handle, but must have progress bar show up on screen.
 dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID
-$recoveryPartition = Get-Partition -Disk $Disk | Where-Object PartitionNumber -eq 4
+$dismExitCode = $LASTEXITCODE
+
+if ($dismExitCode -ne 0) {
+    $errorMessage = "Failed to apply FFU. LastExitCode = $dismExitCode."
+    if ($dismExitCode -eq 1393) {
+        WriteLog "Failed to apply FFU - LastExitCode = $dismExitCode"
+        WriteLog "This is likely due to a mismatched LogicalSectorByteSize"
+        WriteLog "BytesPerSector value from Win32_Diskdrive is $BytesPerSector"
+        if ($BytesPerSector -eq 4096) {
+            WriteLog "The FFU build process by default uses a 512 LogicalSectorByteSize. Rebuild the FFU by adding -LogicalSectorByteSize 4096 to the command line"
+        }
+        elseif ($BytesPerSector -eq 512) {
+            WriteLog "This FFU was likely built with a LogicalSectorByteSize of 4096. Rebuild the FFU by adding -LogicalSectorByteSize 512 to the command line"
+        }
+        $errorMessage += " This is likely due to a mismatched logical sector size. Check logs for details."
+    }
+    else {
+        Writelog "Failed to apply FFU - LastExitCode = $dismExitCode also check dism.log on the USB drive for more info"
+        $errorMessage += " Check dism.log on the USB drive for more info."
+    }
+    Stop-Script -Message $errorMessage
+}
+
+WriteLog 'Successfully applied FFU'
+
+# Verify Windows partition exists and assign drive letter
+$windowsPartition = Get-Partition -DiskNumber $DiskID | Where-Object { $_.PartitionNumber -eq 3 }
+if ($null -eq $windowsPartition) {
+    $errorMessage = "Windows partition (Partition 3) not found after applying FFU, even though DISM reported success."
+    WriteLog $errorMessage
+    Stop-Script -Message $errorMessage
+}
+
+WriteLog "Assigning drive letter 'W' to Windows partition."
+Set-Partition -InputObject $windowsPartition -NewDriveLetter W
+
+# Verify the drive letter was set
+$windowsVolume = Get-Volume -DriveLetter W -ErrorAction SilentlyContinue
+if ($null -eq $windowsVolume) {
+    $errorMessage = "Failed to assign drive letter 'W' to the Windows partition after applying FFU."
+    WriteLog $errorMessage
+    Stop-Script -Message $errorMessage
+}
+WriteLog "Successfully assigned drive letter 'W'."
+
+$recoveryPartition = Get-Partition -DiskNumber $DiskID | Where-Object PartitionNumber -eq 4
 if ($recoveryPartition) {
     WriteLog 'Setting recovery partition attributes'
     $diskpartScript = @(
-        "SELECT DISK $($Disk.Number)", 
-        "SELECT PARTITION $($recoveryPartition.PartitionNumber)", 
-        "GPT ATTRIBUTES=0x8000000000000001", 
+        "SELECT DISK $($Disk.Number)",
+        "SELECT PARTITION $($recoveryPartition.PartitionNumber)",
+        "GPT ATTRIBUTES=0x8000000000000001",
         "EXIT"
     )
     $diskpartScript | diskpart.exe | Out-Null
     WriteLog 'Setting recovery partition attributes complete'
 }
-if ($LASTEXITCODE -eq 0) {
-    WriteLog 'Successfully applied FFU'
-}
-elseif ($LASTEXITCODE -eq 1393) {
-    WriteLog "Failed to apply FFU - LastExitCode = $LastExitCode"
-    WriteLog "This is likely due to a mismatched LogicalSectorByteSize"
-    WriteLog "BytesPerSector value from Win32_Diskdrive is $BytesPerSector"
-    if ($BytesPerSector -eq 4096) {
-        WriteLog "The FFU build process by default uses a 512 LogicalSectorByteSize. Rebuild the FFU by adding -LogicalSectorByteSize 4096 to the command line"
-    }
-    elseif ($BytesPerSector -eq 512) {
-        WriteLog "This FFU was likely built with a LogicalSectorByteSize of 4096. Rebuild the FFU by adding -LogicalSectorByteSize 512 to the command line"
-    }
-    #Copy DISM log to USBDrive
-    invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
-    exit
-}
-else {
-    Writelog "Failed to apply FFU - LastExitCode = $LASTEXITCODE also check dism.log on the USB drive for more info"
-    #Copy DISM log to USBDrive
-    invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
-    exit
-}
-Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
 
 #Copy modified WinRE if folder exists, else copy inbox WinRE
 $WinRE = $USBDrive + "WinRE\winre.wim"
@@ -804,7 +842,7 @@ If ($computername) {
     }
     catch {
         WriteLog "Copying Unattend.xml to name device failed"
-        throw $_
+        Stop-Script -Message "Copying Unattend.xml to name device failed with error: $_"
     }   
 }
 
