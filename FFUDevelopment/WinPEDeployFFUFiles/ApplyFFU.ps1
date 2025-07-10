@@ -47,6 +47,7 @@ function Get-HardDrive() {
 
 function WriteLog($LogText) { 
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText"
+    Write-Host $LogText
 }
 
 function Set-DiskpartAnswerFiles($DiskpartFile, $DiskID) {
@@ -760,10 +761,10 @@ if ($null -ne $DriverSourcePath) {
             WriteLog "Creating temporary directory for drivers at $TempDriverDir"
             New-Item -Path $TempDriverDir -ItemType Directory -Force | Out-Null
             
-            WriteLog "Extracting WIM contents to $TempDriverDir"
-            Write-Warning 'Extracting Drivers from WIM - dism will pop a window with no progress. This can take a few minutes to complete. Please be patient.'
-            Invoke-Process dism.exe "/Apply-Image /ImageFile:""$DriverSourcePath"" /Index:1 /ApplyDir:""$TempDriverDir"""
-            WriteLog "WIM extraction successful."
+            WriteLog "Mounting WIM contents to $TempDriverDir"
+            # For some reason can't use /mount-image with invoke-process, so using dism.exe directly
+            dism.exe /Mount-Image /ImageFile:$DriverSourcePath /Index:1 /MountDir:$TempDriverDir /ReadOnly /optimize
+            WriteLog "WIM mount successful."
 
             WriteLog "Injecting drivers from $TempDriverDir"
             Write-Warning 'Injecting Drivers from WIM - dism will pop a window with no progress. This can take a few minutes to complete. Please be patient.'
@@ -779,6 +780,9 @@ if ($null -ne $DriverSourcePath) {
         }
         finally {
             if (Test-Path -Path $TempDriverDir) {
+                WriteLog "Unmounting WIM from $TempDriverDir"
+                Invoke-Process dism.exe "/Unmount-Image /MountDir:""$TempDriverDir"" /Discard"
+                WriteLog "Unmount successful."
                 WriteLog "Cleaning up temporary driver directory: $TempDriverDir"
                 Remove-Item -Path $TempDriverDir -Recurse -Force
                 WriteLog "Cleanup successful."
