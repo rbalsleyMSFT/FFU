@@ -47,7 +47,6 @@ function Get-HardDrive() {
 
 function WriteLog($LogText) { 
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText"
-    Write-Host $LogText
 }
 
 function Set-DiskpartAnswerFiles($DiskpartFile, $DiskID) {
@@ -99,7 +98,7 @@ function Invoke-Process {
             RedirectStandardOutput = $stdOutTempFile
             Wait                   = $true;
             PassThru               = $true;
-            NoNewWindow            = $false;
+            NoNewWindow            = $true;
         }
         if ($PSCmdlet.ShouldProcess("Process [$($FilePath)]", "Run with args: [$($ArgumentList)]")) {
             $cmd = Start-Process @startProcessParams
@@ -129,9 +128,21 @@ function Invoke-Process {
     }
     finally {
         Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
-		
+        
     }
-	
+    
+}
+
+function Write-SectionHeader($Title) {
+    $width = 51
+    $leftPad = [math]::Floor(($width - $Title.Length) / 2)
+    $rightPad = $width - $Title.Length - $leftPad
+    $centeredTitle = (' ' * $leftPad) + $Title + (' ' * $rightPad)
+
+    Write-Host "`n" # Add a newline for spacing
+    Write-Host ('-' * $width) -ForegroundColor Yellow
+    Write-Host $centeredTitle -ForegroundColor Yellow
+    Write-Host ('-' * $width) -ForegroundColor Yellow
 }
 
 function Write-SystemInformation($hardDrive) {
@@ -169,10 +180,7 @@ function Write-SystemInformation($hardDrive) {
     WriteLog "--- End System Information ---"
 
     # Console output
-    Write-Host "`n" # Add a newline for spacing
-    Write-Host "---------------------------------------------------" -ForegroundColor Yellow
-    Write-Host "             System Information                    " -ForegroundColor Yellow
-    Write-Host "---------------------------------------------------" -ForegroundColor Yellow
+    Write-SectionHeader -Title 'System Information'
     
     # Format for console using Format-List for better readability
     $consoleOutput = $sysInfoObject | Format-List | Out-String
@@ -222,12 +230,14 @@ WriteLog "DiskID is $DiskID"
 Write-SystemInformation -hardDrive $hardDrive
 
 #Find FFU Files
+Write-SectionHeader 'FFU File Selection'
 [array]$FFUFiles = @(Get-ChildItem -Path $USBDrive*.ffu)
 $FFUCount = $FFUFiles.Count
 
 #If multiple FFUs found, ask which to install
 If ($FFUCount -gt 1) {
     WriteLog "Found $FFUCount FFU Files"
+    Write-Host "Found $FFUCount FFU Files"
     $array = @()
 
     for ($i = 0; $i -le $FFUCount - 1; $i++) {
@@ -253,8 +263,10 @@ If ($FFUCount -gt 1) {
 }
 elseif ($FFUCount -eq 1) {
     WriteLog "Found $FFUCount FFU File"
+    Write-Host "Found $FFUCount FFU File"
     $FFUFileToInstall = $FFUFiles[0].FullName
     WriteLog "$FFUFileToInstall will be installed"
+    Write-Host "$FFUFileToInstall will be installed"
 } 
 else {
     Writelog 'No FFU files found'
@@ -309,6 +321,7 @@ If (Test-Path -Path $UnattendComputerNamePath) {
 
 #Ask for device name if unattend exists
 if ($Unattend -and $UnattendPrefix) {
+    Write-SectionHeader 'Device Name Selection'
     Writelog 'Unattend file found with prefixes.txt. Getting prefixes.'
     $UnattendPrefixes = @(Get-content $UnattendPrefixFile)
     $UnattendPrefixCount = $UnattendPrefixes.Count
@@ -333,11 +346,14 @@ if ($Unattend -and $UnattendPrefix) {
         } until (($PrefixSelected -le $UnattendPrefixCount - 1) -and $var) 
         $PrefixToUse = $array[$PrefixSelected].DeviceNamePrefix
         WriteLog "$PrefixToUse was selected"
+        Write-Host "`n$PrefixToUse was selected as device name prefix"
     }
     elseif ($UnattendPrefixCount -eq 1) {
         WriteLog "Found $UnattendPrefixCount Prefix"
+        Write-Host "Found $UnattendPrefixCount Prefix"
         $PrefixToUse = $UnattendPrefixes[0]
         WriteLog "Will use $PrefixToUse as device name prefix"
+        Write-Host "Will use $PrefixToUse as device name prefix"
     }
     #Get serial number to append. This can make names longer than 15 characters. Trim any leading or trailing whitespace
     $serial = (Get-CimInstance -ClassName win32_bios).SerialNumber.Trim()
@@ -349,8 +365,10 @@ if ($Unattend -and $UnattendPrefix) {
     }
     $computername = Set-Computername($computername)
     Writelog "Computer name set to $computername"
+    Write-Host "Computer name set to $computername"
 }
 elseif ($Unattend -and $UnattendComputerName) {
+    Write-SectionHeader 'Device Name Selection'
     Writelog 'Unattend file found with SerialComputerNames.csv. Getting name for current computer.'
     $SerialComputerNames = Import-Csv -Path $UnattendComputerNameFile.FullName -Delimiter ","
 
@@ -361,19 +379,24 @@ elseif ($Unattend -and $UnattendComputerName) {
         [string]$computername = $SCName.ComputerName
         $computername = Set-Computername($computername)
         Writelog "Computer name set to $computername"
+        Write-Host "Computer name set to $computername"
     }
     else {
         Writelog 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
+        Write-Host 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
         [string]$computername = ("FFU-" + ( -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 11 | ForEach-Object { [char]$_ })))
         $computername = Set-Computername($computername)
         Writelog "Computer name set to $computername"
+        Write-Host "Computer name set to $computername"
     }
 }
 elseif ($Unattend) {
     Writelog 'Unattend file found with no prefixes.txt, asking for name'
+    Write-Host 'Unattend file found but no prefixes.txt. Please enter a device name.'
     [string]$computername = Read-Host 'Enter device name'
     Set-Computername($computername)
     Writelog "Computer name set to $computername"
+    Write-Host "Computer name set to $computername"
 }
 else {
     WriteLog 'No unattend folder found. Device name will be set via PPKG, AP JSON, or default OS name.'
@@ -441,6 +464,7 @@ else {
 
 #If multiple PPKG files found, ask which to install
 If ($PPKGFilesCount -gt 1 -and $PPKG -eq $true) {
+    Write-SectionHeader -Title 'Provisioning Package Selection'
     WriteLog "Found $PPKGFilesCount PPKG Files"
     $array = @()
 
@@ -464,11 +488,15 @@ If ($PPKGFilesCount -gt 1 -and $PPKG -eq $true) {
 
     $PPKGFileToInstall = $array[$PPKGFileSelected].PPKGFile
     WriteLog "$PPKGFileToInstall was selected"
+    Write-Host "`n$PPKGFileToInstall will be used"
 }
 elseif ($PPKGFilesCount -eq 1 -and $PPKG -eq $true) {
+    Write-SectionHeader -Title 'Select Provisioning Package'
     WriteLog "Found $PPKGFilesCount PPKG File"
+    Write-Host "Found $PPKGFilesCount PPKG File"
     $PPKGFileToInstall = $PPKGFiles[0].FullName
     WriteLog "$PPKGFileToInstall will be used"
+    Write-Host "`n$PPKGFileToInstall will be used"
 } 
 else {
     Writelog 'No PPKG files found or PPKG not selected.'
@@ -480,9 +508,14 @@ $DriverSourcePath = $null
 $DriverSourceType = $null # Will be 'WIM' or 'Folder'
 $driverMappingPath = Join-Path -Path $DriversPath -ChildPath "DriverMapping.json"
 
+If (Test-Path -Path $DriversPath) {
+    Write-SectionHeader -Title 'Drivers Selection'
+}
+
 # --- Automatic Driver Detection using DriverMapping.json ---
 if (Test-Path -Path $driverMappingPath -PathType Leaf) {
     WriteLog "DriverMapping.json found at $driverMappingPath. Attempting automatic driver selection."
+    Write-Host "DriverMapping.json found. Attempting automatic driver selection."
     try {
         # Get system information
         $systemManufacturer = (Get-CimInstance -Class Win32_ComputerSystem).Manufacturer
@@ -511,8 +544,11 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
         $matchedRule = $null
         if ($matchingRules.Count -gt 0) {
             WriteLog "Found $($matchingRules.Count) potential driver mapping rule(s)."
+            Write-Host "Found $($matchingRules.Count) potential driver mapping rule(s)."
             foreach ($rule in $matchingRules) {
                 WriteLog "  - Potential Match: Manufacturer='$($rule.Manufacturer)', Model='$($rule.Model)', Path='$($rule.DriverPath)'"
+                Write-Host "  - Potential Match: Manufacturer='$($rule.Manufacturer)', Model='$($rule.Model)', Path='$($rule.DriverPath)'"
+            
             }
             # Sort by model name length, descending, to find the most specific match
             $matchedRule = $matchingRules | Sort-Object -Property @{Expression = { $_.Model.Length } } -Descending | Select-Object -First 1
@@ -520,6 +556,7 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
 
         if ($null -ne $matchedRule) {
             WriteLog "Automatic match found: Manufacturer='$($matchedRule.Manufacturer)', Model='$($matchedRule.Model)'"
+            Write-Host "Automatic match found: Manufacturer='$($matchedRule.Manufacturer)', Model='$($matchedRule.Model)'"
             $potentialDriverPath = Join-Path -Path $DriversPath -ChildPath $matchedRule.DriverPath
             
             if (Test-Path -Path $potentialDriverPath) {
@@ -532,17 +569,21 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
                     $DriverSourceType = 'Folder'
                 }
                 WriteLog "Automatically selected driver source. Type: $DriverSourceType, Path: $DriverSourcePath"
+                Write-Host "Automatically selected driver source. Type: $DriverSourceType, Path: $DriverSourcePath"
             }
             else {
                 WriteLog "Matched driver path '$potentialDriverPath' not found. Falling back to manual selection."
+                Write-Host "Matched driver path '$potentialDriverPath' not found. Falling back to manual selection."
             }
         }
         else {
             WriteLog "No matching driver rule found in DriverMapping.json for this system. Falling back to manual selection."
+            Write-Host "No matching driver rule found in DriverMapping.json for this system. Falling back to manual selection."
         }
     }
     catch {
         WriteLog "An error occurred during automatic driver detection: $($_.Exception.Message). Falling back to manual selection."
+        Write-Host "An error occurred during automatic driver detection: $($_.Exception.Message). Falling back to manual selection."
     }
 }
 else {
@@ -583,6 +624,7 @@ if ($null -eq $DriverSourcePath) {
                 $DriverSourcePath = $DriverSources[0].Path
                 $DriverSourceType = $DriverSources[0].Type
                 WriteLog "Single driver source found. Type: $DriverSourceType, Path: $DriverSourcePath"
+                Write-Host "Single driver source found. Type: $DriverSourceType, Path: $DriverSourcePath"
             }
             else {
                 # Multiple sources found, prompt user
@@ -612,14 +654,17 @@ if ($null -eq $DriverSourcePath) {
                 $DriverSourcePath = $DriverSources[$DriverSelected].Path
                 $DriverSourceType = $DriverSources[$DriverSelected].Type
                 WriteLog "User selected Type: $DriverSourceType, Path: $DriverSourcePath"
+                Write-Host "`nUser selected Type: $DriverSourceType, Path: $DriverSourcePath"
             }
         }
         else {
             WriteLog "No driver WIMs or folders found in Drivers directory."
+            Write-Host "No driver WIMs or folders found in Drivers directory."
         }
     }
     else {
         WriteLog "Drivers folder not found at $DriversPath. Skipping driver installation."
+        Write-Host "Drivers folder not found at $DriversPath. Skipping driver installation."
     }
 }
 #Partition drive
@@ -643,6 +688,7 @@ finally {
 Writelog 'Cleaning Disk succeeded'
 
 #Apply FFU
+Write-SectionHeader -Title 'Applying FFU'
 WriteLog "Applying FFU to $PhysicalDeviceID"
 WriteLog "Running command dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID"
 #In order for Applying Image progress bar to show up, need to call dism directly. Might be a better way to handle, but must have progress bar show up on screen.
@@ -698,6 +744,7 @@ If (Test-Path -Path $WinRE) {
 }
 #Autopilot JSON
 If ($APFileToInstall) {
+    Write-SectionHeader -Title 'Applying Autopilot Configuration'
     WriteLog "Copying $APFileToInstall to W:\windows\provisioning\autopilot"
     Invoke-process xcopy.exe "$APFileToInstall W:\Windows\provisioning\autopilot\"
     WriteLog "Copying $APFileToInstall to W:\windows\provisioning\autopilot succeeded"
@@ -714,36 +761,45 @@ If ($APFileToInstall) {
 }
 #Apply PPKG
 If ($PPKGFileToInstall) {
+    Write-SectionHeader -Title 'Applying Provisioning Package'
     try {
         #Make sure to delete any existing PPKG on the USB drive
         Get-Childitem -Path $USBDrive\*.ppkg | ForEach-Object {
             Remove-item -Path $_.FullName
         }
         WriteLog "Copying $PPKGFileToInstall to $USBDrive"
+        Write-Host "Copying $PPKGFileToInstall to $USBDrive"
         Invoke-process xcopy.exe "$PPKGFileToInstall $USBDrive"
         WriteLog "Copying $PPKGFileToInstall to $USBDrive succeeded"
+        Write-Host "Copying $PPKGFileToInstall to $USBDrive succeeded"
     }
 
     catch {
         Writelog "Copying $PPKGFileToInstall to $USBDrive failed with error: $_"
+        Write-Host "Copying $PPKGFileToInstall to $USBDrive failed with error: $_"
         throw $_
     }
 }
 #Set DeviceName
 If ($computername) {
+    Write-SectionHeader -Title 'Applying Computer Name and Unattend Configuration'
     try {
         $PantherDir = 'w:\windows\panther'
         If (Test-Path -Path $PantherDir) {
             Writelog "Copying $UnattendFile to $PantherDir"
+            Write-Host "Copying $UnattendFile to $PantherDir"
             Invoke-process xcopy "$UnattendFile $PantherDir /Y"
             WriteLog "Copying $UnattendFile to $PantherDir succeeded"
+            Write-Host "Copying $UnattendFile to $PantherDir succeeded"
         }
         else {
             Writelog "$PantherDir doesn't exist, creating it"
             New-Item -Path $PantherDir -ItemType Directory -Force
             Writelog "Copying $UnattendFile to $PantherDir"
+            Write-Host "Copying $UnattendFile to $PantherDir"
             Invoke-Process xcopy.exe "$UnattendFile $PantherDir"
             WriteLog "Copying $UnattendFile to $PantherDir succeeded"
+            Write-Host "Copying $UnattendFile to $PantherDir succeeded"
         }
     }
     catch {
@@ -754,22 +810,26 @@ If ($computername) {
 
 #Add Drivers
 if ($null -ne $DriverSourcePath) {
+    Write-SectionHeader -Title 'Installing Drivers'
     if ($DriverSourceType -eq 'WIM') {
         WriteLog "Installing drivers from WIM: $DriverSourcePath"
+        Write-Host "Installing drivers from WIM: $DriverSourcePath"
         $TempDriverDir = "W:\TempDrivers"
         try {
             WriteLog "Creating temporary directory for drivers at $TempDriverDir"
             New-Item -Path $TempDriverDir -ItemType Directory -Force | Out-Null
             
             WriteLog "Mounting WIM contents to $TempDriverDir"
+            Write-Host "Mounting WIM contents to $TempDriverDir"
             # For some reason can't use /mount-image with invoke-process, so using dism.exe directly
             dism.exe /Mount-Image /ImageFile:$DriverSourcePath /Index:1 /MountDir:$TempDriverDir /ReadOnly /optimize
             WriteLog "WIM mount successful."
 
             WriteLog "Injecting drivers from $TempDriverDir"
-            Write-Warning 'Injecting Drivers from WIM - dism will pop a window with no progress. This can take a few minutes to complete. Please be patient.'
+            Write-Host "Injecting drivers from $TempDriverDir"
             Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$TempDriverDir"" /Recurse"
             WriteLog "Driver injection from WIM succeeded."
+            Write-Host "Driver injection from WIM succeeded."
 
         }
         catch {
@@ -781,17 +841,20 @@ if ($null -ne $DriverSourcePath) {
         finally {
             if (Test-Path -Path $TempDriverDir) {
                 WriteLog "Unmounting WIM from $TempDriverDir"
+                Write-Host "Unmounting WIM from $TempDriverDir"
                 Invoke-Process dism.exe "/Unmount-Image /MountDir:""$TempDriverDir"" /Discard"
                 WriteLog "Unmount successful."
+                Write-Host "Unmount successful."
                 WriteLog "Cleaning up temporary driver directory: $TempDriverDir"
+                Write-Host "Cleaning up temporary driver directory: $TempDriverDir"
                 Remove-Item -Path $TempDriverDir -Recurse -Force
                 WriteLog "Cleanup successful."
+                Write-Host "Cleanup successful."
             }
         }
     }
     elseif ($DriverSourceType -eq 'Folder') {
         WriteLog "Injecting drivers from folder: $DriverSourcePath"
-        Write-Warning 'Copying Drivers - dism will pop a window with no progress. This can take a few minutes to complete. This is done so drivers are logged to the scriptlog.txt file. Please be patient.'
         Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$DriverSourcePath"" /Recurse"
         WriteLog "Driver injection from folder succeeded."
     }
@@ -799,10 +862,12 @@ if ($null -ne $DriverSourcePath) {
 else {
     WriteLog "No drivers to install."
 }
-
+Write-SectionHeader -Title 'Setting Boot Configuration'
 WriteLog "Setting Windows Boot Manager to be first in the firmware display order."
+Write-Host "Setting Windows Boot Manager to be first in the firmware display order."
 Invoke-Process bcdedit.exe "/set {fwbootmgr} displayorder {bootmgr} /addfirst"
 WriteLog "Setting Windows Boot Manager to be first in the default display order."
+Write-Host "Setting Windows Boot Manager to be first in the default display order."
 Invoke-Process bcdedit.exe "/set {bootmgr} displayorder {default} /addfirst"
 #Copy DISM log to USBDrive
 WriteLog "Copying dism log to $USBDrive"
