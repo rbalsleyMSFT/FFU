@@ -756,5 +756,27 @@ function Register-EventHandlers {
             $localState = $window.Tag
             Invoke-SaveConfiguration -State $localState
         })
+
+    # Monitor Tab Event Handlers
+    $State.Controls.lstLogOutput.Add_KeyDown({
+            param($eventSource, $keyEventArgs)
+            # Check for Ctrl+C
+            if ($keyEventArgs.Key -eq 'C' -and ($keyEventArgs.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control)) {
+                $listBox = $eventSource
+                if ($listBox.SelectedItems.Count -gt 0) {
+                    $selectedLines = $listBox.SelectedItems | ForEach-Object { $_.ToString() }
+                    $clipboardText = $selectedLines -join [System.Environment]::NewLine
+                    
+                    try {
+                        [System.Windows.Clipboard]::SetText($clipboardText)
+                        WriteLog "Copied $($listBox.SelectedItems.Count) log lines to clipboard."
+                    }
+                    catch {
+                        WriteLog "Error copying to clipboard: $($_.Exception.Message)"
+                    }
+                }
+                $keyEventArgs.Handled = $true
+            }
+        })
 }
 Export-ModuleMember -Function *

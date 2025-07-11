@@ -72,7 +72,7 @@
         </Grid.RowDefinitions>
 
         <!-- TabControl with multiple tabs -->
-        <TabControl TabStripPlacement="Left" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" FontSize="14" Padding="10" Grid.Row="0">
+        <TabControl x:Name="MainTabControl" TabStripPlacement="Left" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" FontSize="14" Padding="10" Grid.Row="0">
             <!-- TAB: Home -->
             <TabItem Header="Home" Padding="20">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -793,6 +793,13 @@
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
+            </TabItem>
+
+            <!-- TAB: Monitor -->
+            <TabItem Header="Monitor" x:Name="MonitorTab" Padding="20">
+                <Grid Margin="10">
+                    <ListBox x:Name="lstLogOutput" SelectionMode="Extended" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch"/>
+                </Grid>
             </TabItem>
         </TabControl>
 

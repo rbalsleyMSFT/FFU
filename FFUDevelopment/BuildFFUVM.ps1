@@ -421,7 +421,7 @@ Import-Module "$PSScriptRoot\FFU.Common" -Force
 # Set the module's verbose preference to match the script's - allows logging verbose output to console.
 $moduleInfo = Get-Module -Name 'FFU.Common'
 if ($moduleInfo) {
-    & $moduleInfo { $script:VerbosePreference = $args[0] } $VerbosePreference
+    & $moduleInfo { $script:VerbosePreference = $args[0] } $VerbosePreference | Out-Null
 }
 
 # If a config file is specified and it exists, load it

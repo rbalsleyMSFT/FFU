@@ -22,7 +22,10 @@ $script:uiState = [PSCustomObject]@{
         allDriverModels             = [System.Collections.Generic.List[PSCustomObject]]::new();
         appsScriptVariablesDataList = [System.Collections.Generic.List[PSCustomObject]]::new();
         versionData                 = $null; 
-        vmSwitchMap                 = @{}   
+        vmSwitchMap                 = @{};
+        logData                     = $null;
+        logStreamReader             = $null;
+        pollTimer                   = $null
     };
     Flags              = @{
         installAppsForcedByUpdates        = $false;
@@ -36,8 +39,8 @@ $script:uiState = [PSCustomObject]@{
 }
 
 # Remove any existing modules to avoid conflicts
-if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
-    Remove-Module -Name 'FFU.Common.Core' -Force
+if (Get-Module -Name 'FFU.Common' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFU.Common' -Force
 }
 if (Get-Module -Name 'FFUUI.Core' -ErrorAction SilentlyContinue) {
     Remove-Module -Name 'FFUUI.Core' -Force
@@ -114,6 +117,14 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Disable button to prevent multiple clicks
             $btnRun.IsEnabled = $false
 
+            # Switch to Monitor Tab
+            $script:uiState.Controls.MainTabControl.SelectedItem = $script:uiState.Controls.MonitorTab
+            
+            # Clear previous log data
+            if ($null -ne $script:uiState.Data.logData) {
+                $script:uiState.Data.logData.Clear()
+            }
+
             $progressBar = $script:uiState.Controls.pbOverallProgress
             $txtStatus = $script:uiState.Controls.txtStatus
             $progressBar.Visibility = 'Visible'
@@ -151,25 +162,63 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Start the job and store it in the shared state object
             $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
 
+            # Open a stream reader to the main log file
+            $mainLogPath = "$($config.FFUDevelopmentPath)\FFUDevelopment.log"
+            # Wait a moment for the file to be created by the new process
+            Start-Sleep -Seconds 1
+            if (Test-Path $mainLogPath) {
+                $fileStream = [System.IO.File]::Open($mainLogPath, 'Open', 'Read', 'ReadWrite')
+                $script:uiState.Data.logStreamReader = [System.IO.StreamReader]::new($fileStream)
+            }
+            else {
+                WriteLog "Warning: Main log file not found at $mainLogPath. Monitor tab will not update."
+            }
+
             # Create a timer to poll the job status from the UI thread
-            $timer = New-Object System.Windows.Threading.DispatcherTimer
-            $timer.Interval = [TimeSpan]::FromSeconds(1)
+            $script:uiState.Data.pollTimer = New-Object System.Windows.Threading.DispatcherTimer
+            $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromSeconds(1)
             
             # Add the Tick event handler
-            $timer.Add_Tick({
+            $script:uiState.Data.pollTimer.Add_Tick({
+                    param($sender, $e)
                     # This scriptblock runs on the UI thread, so it can safely access script-scoped variables
                     $currentJob = $script:uiState.Data.currentBuildJob
                     
-                    # If job is somehow null, stop the timer
-                    if ($null -eq $currentJob) {
-                        $timer.Stop()
+                    # Read from log stream
+                    if ($null -ne $script:uiState.Data.logStreamReader) {
+                        while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
+                            $script:uiState.Data.logData.Add($line)
+                            # Auto-scroll to the new item
+                            $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
+                        }
+                    }
+
+                    # If job is somehow null or the timer has been nulled out, stop the timer
+                    if ($null -eq $currentJob -or $null -eq $script:uiState.Data.pollTimer) {
+                        if ($null -ne $sender) {
+                            $sender.Stop()
+                        }
+                        $script:uiState.Data.pollTimer = $null
                         return
                     }
 
                     # Check if the job has reached a terminal state
                     if ($currentJob.State -in 'Completed', 'Failed', 'Stopped') {
                         # Stop the timer, we're done polling
-                        $timer.Stop()
+                        if ($null -ne $sender) {
+                            $sender.Stop()
+                        }
+                        $script:uiState.Data.pollTimer = $null
+                        
+                        # Final read of the log stream
+                        if ($null -ne $script:uiState.Data.logStreamReader) {
+                            while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
+                                $script:uiState.Data.logData.Add($line)
+                            }
+                            $script:uiState.Data.logStreamReader.Close()
+                            $script:uiState.Data.logStreamReader.Dispose()
+                            $script:uiState.Data.logStreamReader = $null
+                        }
 
                         $finalStatusText = "FFU build completed successfully."
                         if ($currentJob.State -eq 'Failed') {
@@ -197,7 +246,7 @@ $script:uiState.Controls.btnRun.Add_Click({
                 })
             
             # Start the timer
-            $timer.Start()
+            $script:uiState.Data.pollTimer.Start()
         }
         catch {
             # This catch block handles errors during the setup of the job (e.g., Get-UIConfig fails)
@@ -205,6 +254,13 @@ $script:uiState.Controls.btnRun.Add_Click({
             WriteLog $errorMessage
             [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
             
+            # Clean up stream reader if it was opened
+            if ($null -ne $script:uiState.Data.logStreamReader) {
+                $script:uiState.Data.logStreamReader.Close()
+                $script:uiState.Data.logStreamReader.Dispose()
+                $script:uiState.Data.logStreamReader = $null
+            }
+
             # Re-enable UI elements
             $script:uiState.Controls.txtStatus.Text = "FFU build failed to start."
             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'

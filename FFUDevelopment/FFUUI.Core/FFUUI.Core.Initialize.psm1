@@ -150,6 +150,14 @@ function Initialize-UIControls {
     $State.Controls.btnLoadConfig = $window.FindName('btnLoadConfig')
     $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
 
+    # Monitor Tab
+    $State.Controls.MainTabControl = $window.FindName('MainTabControl')
+    $State.Controls.MonitorTab = $window.FindName('MonitorTab')
+    $State.Controls.lstLogOutput = $window.FindName('lstLogOutput')
+
+    # Initialize and bind the log data collection
+    $State.Data.logData = New-Object System.Collections.ObjectModel.ObservableCollection[string]
+    $State.Controls.lstLogOutput.ItemsSource = $State.Data.logData
 }
 
 function Initialize-VMSwitchData {
