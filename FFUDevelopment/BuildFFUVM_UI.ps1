@@ -159,19 +159,31 @@ $script:uiState.Controls.btnRun.Add_Click({
                 & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
             }
 
+            # Delete the old log file before starting the build job to ensure we don't read stale content.
+            $mainLogPath = Join-Path $config.FFUDevelopmentPath "FFUDevelopment.log"
+            if (Test-Path $mainLogPath) {
+                WriteLog "Removing old FFUDevelopment.log file."
+                Remove-Item -Path $mainLogPath -Force
+            }
+
             # Start the job and store it in the shared state object
             $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
 
+            # Wait for the new log file to be created by the background job.
+            $logWaitTimeout = 15 # seconds
+            $watch = [System.Diagnostics.Stopwatch]::StartNew()
+            while (-not (Test-Path $mainLogPath) -and $watch.Elapsed.TotalSeconds -lt $logWaitTimeout) {
+                Start-Sleep -Milliseconds 250
+            }
+            $watch.Stop()
+
             # Open a stream reader to the main log file
-            $mainLogPath = "$($config.FFUDevelopmentPath)\FFUDevelopment.log"
-            # Wait a moment for the file to be created by the new process
-            Start-Sleep -Seconds 1
             if (Test-Path $mainLogPath) {
                 $fileStream = [System.IO.File]::Open($mainLogPath, 'Open', 'Read', 'ReadWrite')
                 $script:uiState.Data.logStreamReader = [System.IO.StreamReader]::new($fileStream)
             }
             else {
-                WriteLog "Warning: Main log file not found at $mainLogPath. Monitor tab will not update."
+                WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Monitor tab will not update."
             }
 
             # Create a timer to poll the job status from the UI thread
