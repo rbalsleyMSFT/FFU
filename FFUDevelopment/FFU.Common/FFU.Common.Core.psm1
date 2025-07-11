@@ -245,5 +245,16 @@ function Start-BitsTransferWithRetry {
     WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)" 
     throw $lastError 
 }
-
+    
+function Set-Progress {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [int]$Percentage,
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
+    WriteLog "[PROGRESS] $Percentage | $Message"
+}
+    
 Export-ModuleMember -Function *

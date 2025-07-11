@@ -716,13 +716,13 @@ if ($dismExitCode -ne 0) {
     $errorMessage = "Failed to apply FFU. LastExitCode = $dismExitCode."
     if ($dismExitCode -eq 1393) {
         WriteLog "Failed to apply FFU - LastExitCode = $dismExitCode"
-        WriteLog "This is likely due to a mismatched LogicalSectorByteSize"
+        WriteLog "This is likely due to a mismatched LogicalSectorSizeBytes"
         WriteLog "BytesPerSector value from Win32_Diskdrive is $BytesPerSector"
         if ($BytesPerSector -eq 4096) {
-            WriteLog "The FFU build process by default uses a 512 LogicalSectorByteSize. Rebuild the FFU by adding -LogicalSectorByteSize 4096 to the command line"
+            WriteLog "The FFU build process by default uses a 512 LogicalSectorSizeBytes. Rebuild the FFU by adding -LogicalSectorSizeBytes 4096 to the command line"
         }
         elseif ($BytesPerSector -eq 512) {
-            WriteLog "This FFU was likely built with a LogicalSectorByteSize of 4096. Rebuild the FFU by adding -LogicalSectorByteSize 512 to the command line"
+            WriteLog "This FFU was likely built with a LogicalSectorSizeBytes of 4096. Rebuild the FFU by adding -LogicalSectorSizeBytes 512 to the command line"
         }
         $errorMessage += " This is likely due to a mismatched logical sector size. Check logs for details."
     }

@@ -2807,6 +2807,7 @@ function New-FFU {
         WriteLog "Configuring VM complete"
 
         #Start VM
+        Set-Progress -Percentage 68 -Message "Capturing FFU from VM..."
         WriteLog "Starting VM"
         Start-VM -Name $VMName
 
@@ -2843,12 +2844,13 @@ function New-FFU {
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Capture the FFU
-        WriteLog 'Capturing FFU'
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
-        WriteLog 'FFU Capture complete'
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
-    }
+            #Capture the FFU
+            Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
+            WriteLog 'Capturing FFU'
+            Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
+            WriteLog 'FFU Capture complete'
+            Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        }
     elseif (-not $InstallApps -and $AllowVHDXCaching) {
         # Make $FFUFileName based on values in the config.json file
         WriteLog 'Creating FFU File Name'
@@ -2883,6 +2885,7 @@ function New-FFU {
 
     #Add drivers
     If ($InstallDrivers) {
+        Set-Progress -Percentage 75 -Message "Injecting drivers into FFU..."
         WriteLog 'Adding drivers'
         WriteLog "Creating $FFUDevelopmentPath\Mount directory"
         New-Item -Path "$FFUDevelopmentPath\Mount" -ItemType Directory -Force | Out-Null
@@ -2907,12 +2910,14 @@ function New-FFU {
     }
     #Optimize FFU
     if ($Optimize -eq $true) {
+        Set-Progress -Percentage 85 -Message "Optimizing FFU..."
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
         #Need to use ADK version of DISM to address bug in DISM - perhaps Windows 11 24H2 will fix this
         Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
-        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
-        WriteLog 'Optimizing FFU complete'
-    }
+            #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
+            WriteLog 'Optimizing FFU complete'
+            Set-Progress -Percentage 90 -Message "FFU post-processing complete."
+        }
     
 
 }
@@ -3692,6 +3697,7 @@ Write-Host "This process can take 20 minutes or more. Please do not close this w
 Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
 
 WriteLog 'Begin Logging'
+Set-Progress -Percentage 1 -Message "FFU build process started..."
 
 ####### Generate Config File #######
 
@@ -3727,6 +3733,7 @@ if ($LongPathsEnabled -ne 1) {
 }
 
 
+Set-Progress -Percentage 2 -Message "Validating parameters..."
 ###PARAMETER VALIDATION
 
 #Validate drivers folder
@@ -3930,6 +3937,7 @@ WriteLog 'Creating dirty.txt file'
 New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
 #Get drivers first since user could be prompted for additional info
+Set-Progress -Percentage 3 -Message "Processing drivers..."
 if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or $CopyDrivers)) {
     WriteLog "Processing drivers from JSON file: $driversJsonPath"
     Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
@@ -4008,10 +4016,10 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                     $makeJson = $makeLookup[$modelName]
                     if ($makeJson) {
                         $successfullyDownloaded.Add([PSCustomObject]@{
-                            Make       = $makeJson
-                            Model      = $modelName
-                            DriverPath = $driverPath
-                        })
+                                Make       = $makeJson
+                                Model      = $modelName
+                                DriverPath = $driverPath
+                            })
                     }
                     else {
                         WriteLog "Warning: Could not find 'Make' for successful download of model '$modelName'. Skipping from DriverMapping.json."
@@ -4117,9 +4125,9 @@ elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
         throw $_
     }
 }
-
-
+            
 #Get Windows ADK
+Set-Progress -Percentage 5 -Message "Validating ADK installation..."
 try {
     $adkPath = Get-ADK
     #Need to use the Deployment and Imaging tools environment to use dism from the Sept 2023 ADK to optimize FFU 
@@ -4130,9 +4138,10 @@ catch {
     WriteLog 'ADK not found'
     throw $_
 }
-
+            
 #Create apps ISO for Office and/or 3rd party apps
 if ($InstallApps) {
+    Set-Progress -Percentage 6 -Message "Downloading and preparing applications..."
     if (Test-Path -Path $AppsISO) {
         WriteLog "Apps ISO exists at: $AppsISO"
         WriteLog "Will use existing ISO"
@@ -4517,6 +4526,7 @@ if ($InstallApps) {
             }
         
             #Create Apps ISO
+            Set-Progress -Percentage 10 -Message "Creating Apps ISO..."
             WriteLog "Creating $AppsISO file"
             New-AppsISO
             WriteLog "$AppsISO created successfully"
@@ -4531,7 +4541,7 @@ if ($InstallApps) {
 
 #Create VHDX
 try {
-
+    Set-Progress -Percentage 11 -Message "Downloading Windows Updates for VHDX..."
     #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
     #Changed to use MU Catalog instead of using Get-LatestWindowsKB
     #The Windows release info page is updated later than the MU Catalog
@@ -4789,6 +4799,7 @@ try {
     if ($AllowVHDXCaching) {
         WriteLog 'AllowVHDXCaching is true, checking for cached VHDX file'
         if (Test-Path -Path $VHDXCacheFolder) {
+            Set-Progress -Percentage 40 -Message "Windows Update download complete."
             WriteLog "Found $VHDXCacheFolder"
             $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
             WriteLog "Found $($vhdxJsons.Count) cached VHDX files"
@@ -4857,6 +4868,7 @@ try {
     }
     
     if (-Not $cachedVHDXFileFound) {
+        Set-Progress -Percentage 15 -Message "Creating VHDX and applying base Windows image..."
         if ($ISOPath) {
             $wimPath = Get-WimFromISO
         }
@@ -4874,6 +4886,7 @@ try {
     
         New-MSRPartition -VhdxDisk $vhdxDisk
     
+        Set-Progress -Percentage 16 -Message "Applying base Windows image to VHDX..."
         $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
         $osPartitionDriveLetter = $osPartition[1].DriveLetter
         $WindowsPartition = $osPartitionDriveLetter + ':\'
@@ -4888,6 +4901,7 @@ try {
         #Add Windows packages
         if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
             try {
+                Set-Progress -Percentage 25 -Message "Applying Windows Updates to VHDX..."
                 WriteLog "Adding KBs to $WindowsPartition"
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 # If WindowsRelease is 2016, we need to add the SSU first
@@ -5017,6 +5031,7 @@ try {
         WriteLog 'Copy completed'
     }
 
+    Set-Progress -Percentage 40 -Message "Finalizing VHDX..."
     if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
         WriteLog 'Caching VHDX file'
 
@@ -5082,6 +5097,7 @@ catch {
 
 #If installing apps (Office or 3rd party), we need to build a VM and capture that FFU, if not, just cut the FFU from the VHDX file
 if ($InstallApps) {
+    Set-Progress -Percentage 41 -Message "Starting VM for app installation..."
     #Create VM and attach VHDX
     try {
         WriteLog 'Creating new FFU VM'
@@ -5109,6 +5125,7 @@ if ($InstallApps) {
     If ($CreateCaptureMedia) {
         #Create Capture Media
         try {
+            Set-Progress -Percentage 45 -Message "Creating WinPE capture media..."
             #This should happen while the FFUVM is building
             New-PEMedia -Capture $true
         }
@@ -5131,17 +5148,20 @@ try {
     }
     #Check if VM is done provisioning
     If ($InstallApps) {
+        Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
         do {
             $FFUVM = Get-VM -Name $FFUVM.Name
             Start-Sleep -Seconds 10
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
+        Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
         New-FFU $FFUVM.Name
     }
     else {
+        Set-Progress -Percentage 81 -Message "Starting FFU capture from VHDX..."
         #Shorten Windows SKU for use in FFU file name to remove spaces and long names
         WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
         $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
@@ -5213,6 +5233,7 @@ catch {
 
 #Create Deployment Media
 If ($CreateDeploymentMedia) {
+    Set-Progress -Percentage 91 -Message "Creating deployment media..."
     try {
         New-PEMedia -Deploy $true
     }
@@ -5224,6 +5245,7 @@ If ($CreateDeploymentMedia) {
     }
 }
 If ($BuildUSBDrive) {
+    Set-Progress -Percentage 95 -Message "Building USB drive..."
     try {
         If (Test-Path -Path $DeployISO) {
             New-DeploymentUSB -CopyFFU
@@ -5248,8 +5270,9 @@ If ($RemoveFFU) {
         Writelog "Removing FFU files failed with error $_"
         throw $_
     }
-   
+       
 }
+Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 If ($CleanupCaptureISO) {
     try {
         If (Test-Path -Path $CaptureISO) {
@@ -5329,6 +5352,7 @@ Remove-Item -Path .\dirty.txt -Force | out-null
 if ($VerbosePreference -ne 'Continue') {
     Write-Host 'Script complete'
 }
+Set-Progress -Percentage 100 -Message "Build process complete."
 # Record the end time
 $endTime = Get-Date
 Write-Host "FFU build process completed at" $endTime

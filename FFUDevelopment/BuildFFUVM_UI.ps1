@@ -199,9 +199,19 @@ $script:uiState.Controls.btnRun.Add_Click({
                     # Read from log stream
                     if ($null -ne $script:uiState.Data.logStreamReader) {
                         while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
+                            # Add the full line to the log view first to maintain consistency
                             $script:uiState.Data.logData.Add($line)
-                            # Auto-scroll to the new item
                             $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
+
+                            # Now, check if it's a progress line and update the UI accordingly
+                            if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
+                                $percentage = [double]$matches[1]
+                                $message = $matches[2]
+                                
+                                # Update progress bar and status text
+                                $script:uiState.Controls.pbOverallProgress.Value = $percentage
+                                $script:uiState.Controls.txtStatus.Text = $message
+                            }
                         }
                     }
 
@@ -225,7 +235,17 @@ $script:uiState.Controls.btnRun.Add_Click({
                         # Final read of the log stream
                         if ($null -ne $script:uiState.Data.logStreamReader) {
                             while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
+                                # Add the full line to the log view first
                                 $script:uiState.Data.logData.Add($line)
+
+                                # Now, check if it's a progress line and update the UI accordingly
+                                if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
+                                    $percentage = [double]$matches[1]
+                                    $message = $matches[2]
+                                    
+                                    $script:uiState.Controls.pbOverallProgress.Value = $percentage
+                                    $script:uiState.Controls.txtStatus.Text = $message
+                                }
                             }
                             $script:uiState.Data.logStreamReader.Close()
                             $script:uiState.Data.logStreamReader.Dispose()
@@ -234,18 +254,37 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                         $finalStatusText = "FFU build completed successfully."
                         if ($currentJob.State -eq 'Failed') {
-                            $reason = $currentJob.JobStateInfo.Reason.Message
+                            # Try to get a detailed error message.
+                            $reason = $null
+                            if ($currentJob.JobStateInfo.Reason) {
+                                $reason = $currentJob.JobStateInfo.Reason.Message
+                            }
+
+                            # If the primary reason is empty, check the child job's error stream for more details.
+                            if ([string]::IsNullOrWhiteSpace($reason) -and $currentJob.ChildJobs.Count -gt 0) {
+                                $errorMessages = $currentJob.ChildJobs[0].Error | ForEach-Object { $_.ToString() }
+                                if ($errorMessages) {
+                                    $reason = $errorMessages -join [System.Environment]::NewLine
+                                }
+                            }
+
+                            # Fallback if no specific reason is found
+                            if ([string]::IsNullOrWhiteSpace($reason)) {
+                                $reason = "An unknown error occurred. The job failed without a specific reason."
+                            }
+
                             $finalStatusText = "FFU build failed. Check FFUDevelopment.log for details."
                             WriteLog "BuildFFUVM.ps1 job failed. Reason: $reason"
                             [System.Windows.MessageBox]::Show("The build process failed. Please check the log file for details.`n`nError: $reason", "Build Error", "OK", "Error") | Out-Null
+                            $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                         }
                         else {
                             WriteLog "BuildFFUVM.ps1 job completed successfully."
+                            $script:uiState.Controls.pbOverallProgress.Value = 100
                         }
 
                         # Update UI elements
                         $script:uiState.Controls.txtStatus.Text = $finalStatusText
-                        $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                         $script:uiState.Controls.btnRun.IsEnabled = $true
 
                         # Clean up the job object
