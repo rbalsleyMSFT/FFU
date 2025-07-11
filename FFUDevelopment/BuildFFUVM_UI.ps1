@@ -106,22 +106,32 @@ $window.Add_Loaded({
 
 
 # Button: Build FFU
-$btnRun = $window.FindName('btnRun')
-$btnRun.Add_Click({
+$script:uiState.Controls.btnRun = $window.FindName('btnRun')
+$script:uiState.Controls.btnRun.Add_Click({
+        # Get a local reference to the button for convenience in this handler
+        $btnRun = $script:uiState.Controls.btnRun
         try {
+            # Disable button to prevent multiple clicks
+            $btnRun.IsEnabled = $false
+
             $progressBar = $script:uiState.Controls.pbOverallProgress
             $txtStatus = $script:uiState.Controls.txtStatus
             $progressBar.Visibility = 'Visible'
             $txtStatus.Text = "Starting FFU build..."
+            
+            # Gather config on the UI thread before starting the job
             $config = Get-UIConfig -State $script:uiState
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
-            $config | ConvertTo-Json -Depth 10 | Set-Content $configFilePath -Encoding UTF8
+            $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
+            
             if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {
                 Copy-Item -Path $config.OfficeConfigXMLFile -Destination $config.OfficePath -Force
-                $txtStatus.Text = "Office Configuration XML file copied successfully."
+                WriteLog "Office Configuration XML file copied successfully."
             }
-            $txtStatus.Text = "Executing BuildFFUVM script with config file..."
             
+            $txtStatus.Text = "Executing BuildFFUVM.ps1 in the background..."
+            WriteLog "Executing BuildFFUVM.ps1 in the background..."
+
             # Prepare parameters for splatting
             $buildParams = @{
                 ConfigFile = $configFilePath
@@ -130,16 +140,77 @@ $btnRun.Add_Click({
                 $buildParams['Verbose'] = $true
             }
 
-            & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
+            # Define the script block to run in the background job
+            $scriptBlock = {
+                param($buildParams, $PSScriptRoot)
+                
+                # This script runs in a new process. BuildFFUVM.ps1 is expected to handle its own module imports.
+                & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
+            }
+
+            # Start the job and store it in the shared state object
+            $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
+
+            # Create a timer to poll the job status from the UI thread
+            $timer = New-Object System.Windows.Threading.DispatcherTimer
+            $timer.Interval = [TimeSpan]::FromSeconds(1)
             
-            $txtStatus.Text = "FFU build completed successfully."
+            # Add the Tick event handler
+            $timer.Add_Tick({
+                    # This scriptblock runs on the UI thread, so it can safely access script-scoped variables
+                    $currentJob = $script:uiState.Data.currentBuildJob
+                    
+                    # If job is somehow null, stop the timer
+                    if ($null -eq $currentJob) {
+                        $timer.Stop()
+                        return
+                    }
+
+                    # Check if the job has reached a terminal state
+                    if ($currentJob.State -in 'Completed', 'Failed', 'Stopped') {
+                        # Stop the timer, we're done polling
+                        $timer.Stop()
+
+                        $finalStatusText = "FFU build completed successfully."
+                        if ($currentJob.State -eq 'Failed') {
+                            $reason = $currentJob.JobStateInfo.Reason.Message
+                            $finalStatusText = "FFU build failed. Check FFUDevelopment.log for details."
+                            WriteLog "BuildFFUVM.ps1 job failed. Reason: $reason"
+                            [System.Windows.MessageBox]::Show("The build process failed. Please check the log file for details.`n`nError: $reason", "Build Error", "OK", "Error") | Out-Null
+                        }
+                        else {
+                            WriteLog "BuildFFUVM.ps1 job completed successfully."
+                        }
+
+                        # Update UI elements
+                        $script:uiState.Controls.txtStatus.Text = $finalStatusText
+                        $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
+                        $script:uiState.Controls.btnRun.IsEnabled = $true
+
+                        # Clean up the job object
+                        $currentJob | Receive-Job -ErrorAction SilentlyContinue | Out-Null
+                        Remove-Job -Job $currentJob -Force
+                        
+                        # Clear the job from the state
+                        $script:uiState.Data.currentBuildJob = $null
+                    }
+                })
+            
+            # Start the timer
+            $timer.Start()
         }
         catch {
-            [System.Windows.MessageBox]::Show("An error occurred: $_", "Error", "OK", "Error")
-            $script:uiState.Controls.txtStatus.Text = "FFU build failed."
-        }
-        finally {
+            # This catch block handles errors during the setup of the job (e.g., Get-UIConfig fails)
+            $errorMessage = "An error occurred before starting the build job: $_"
+            WriteLog $errorMessage
+            [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
+            
+            # Re-enable UI elements
+            $script:uiState.Controls.txtStatus.Text = "FFU build failed to start."
             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
+            if ($null -ne $script:uiState.Controls.btnRun) {
+                $script:uiState.Controls.btnRun.IsEnabled = $true
+            }
         }
     })
 
