@@ -695,6 +695,71 @@ function Invoke-DownloadSelectedDrivers {
         }
     }
 
+    # Automatically save the selected drivers to the specified Drivers.json path
+    $driversJsonPath = $State.Controls.txtDriversJsonPath.Text
+    if (-not [string]::IsNullOrWhiteSpace($driversJsonPath) -and $selectedDrivers.Count -gt 0) {
+        WriteLog "Attempting to automatically save selected drivers list to $driversJsonPath"
+        try {
+            $outputJson = @{} # Use a Hashtable for the desired structure
+
+            $selectedDrivers | Group-Object -Property Make | ForEach-Object {
+                $makeName = $_.Name
+                $modelsForThisMake = @() # Initialize an array to hold model objects
+
+                foreach ($driverItem in $_.Group) {
+                    $modelObject = $null
+                    switch ($makeName) {
+                        'Microsoft' {
+                            $modelObject = @{
+                                Name = $driverItem.Model # Model is the display name
+                                Link = $driverItem.Link
+                            }
+                        }
+                        'Dell' {
+                            $modelObject = @{
+                                Name = $driverItem.Model # Model is the display name
+                            }
+                        }
+                        'HP' {
+                            $modelObject = @{
+                                Name        = $driverItem.Model
+                            }
+                        }
+                        'Lenovo' {
+                            $modelObject = @{
+                                Name        = $driverItem.Model
+                                ProductName = $driverItem.ProductName
+                                MachineType = $driverItem.MachineType
+                            }
+                        }
+                        default {
+                            WriteLog "Auto-Save Drivers.json: Unrecognized Make '$makeName' for driver '$($driverItem.Model)'. Skipping."
+                        }
+                    }
+                    if ($null -ne $modelObject) {
+                        $modelsForThisMake += $modelObject
+                    }
+                }
+                # Add the models array to the make-specific object
+                $outputJson[$makeName] = @{ Models = $modelsForThisMake }
+            }
+
+            # Ensure directory exists
+            $parentDir = Split-Path -Path $driversJsonPath -Parent
+            if (-not (Test-Path -Path $parentDir -PathType Container)) {
+                WriteLog "Creating directory for Drivers.json: $parentDir"
+                New-Item -Path $parentDir -ItemType Directory -Force | Out-Null
+            }
+
+            $outputJson | ConvertTo-Json -Depth 5 | Set-Content -Path $driversJsonPath -Encoding UTF8
+            WriteLog "Successfully auto-saved selected drivers to $driversJsonPath"
+        }
+        catch {
+            WriteLog "Failed to automatically save selected drivers to $driversJsonPath. Error: $($_.Exception.Message)"
+            # This is a best-effort operation, so we only log the error and don't bother the user with a popup.
+        }
+    }
+
     $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
     $Button.IsEnabled = $true
     if ($overallSuccess) {

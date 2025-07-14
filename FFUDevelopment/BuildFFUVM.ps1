@@ -403,6 +403,7 @@ param(
     [string]$orchestrationPath,
     [bool]$UpdateADK = $true
 )
+$ProgressPreference = 'SilentlyContinue'
 $version = '2505.1'
 
 # Remove any existing modules to avoid conflicts
@@ -704,40 +705,40 @@ function Test-Url {
 }
 
 # Function to download a file using BITS with retry and error handling
-function Start-BitsTransferWithRetry {
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$Source,
-        [Parameter(Mandatory = $true)]
-        [string]$Destination,
-        [int]$Retries = 3
-    )
+# function Start-BitsTransferWithRetry {
+#     param (
+#         [Parameter(Mandatory = $true)]
+#         [string]$Source,
+#         [Parameter(Mandatory = $true)]
+#         [string]$Destination,
+#         [int]$Retries = 3
+#     )
 
-    $attempt = 0
-    $lastError = $null
+#     $attempt = 0
+#     $lastError = $null
 
-    while ($attempt -lt $Retries) {
-        try {
-            $OriginalVerbosePreference = $VerbosePreference
-            $VerbosePreference = 'SilentlyContinue'
-            $ProgressPreference = 'SilentlyContinue'
-            Start-BitsTransfer -Source $Source -Destination $Destination -ErrorAction Stop
-            $ProgressPreference = 'Continue'
-            $VerbosePreference = $OriginalVerbosePreference
-            return
-        }
-        catch {
-            # Capture the error that occurred during the failed download attempt
-            $lastError = $_
-            $attempt++
-            WriteLog "Attempt $attempt of $Retries failed to download $Source with error: $($lastError.Exception.Message). Retrying..."
-            Start-Sleep -Seconds 5
-        }
-    }
+#     while ($attempt -lt $Retries) {
+#         try {
+#             $OriginalVerbosePreference = $VerbosePreference
+#             $VerbosePreference = 'SilentlyContinue'
+#             # $ProgressPreference = 'SilentlyContinue'
+#             Start-BitsTransfer -Source $Source -Destination $Destination -ErrorAction Stop
+#             # $ProgressPreference = 'Continue'
+#             $VerbosePreference = $OriginalVerbosePreference
+#             return
+#         }
+#         catch {
+#             # Capture the error that occurred during the failed download attempt
+#             $lastError = $_
+#             $attempt++
+#             WriteLog "Attempt $attempt of $Retries failed to download $Source with error: $($lastError.Exception.Message). Retrying..."
+#             Start-Sleep -Seconds 5
+#         }
+#     }
     
-    WriteLog "Failed to download $Source after $Retries attempts. Error: $($lastError.Exception.Message)"
-    throw $lastError
-}
+#     WriteLog "Failed to download $Source after $Retries attempts. Error: $($lastError.Exception.Message)"
+#     throw $lastError
+# }
 
 function Get-MicrosoftDrivers {
     param (
@@ -925,9 +926,9 @@ function Get-MicrosoftDrivers {
             elseif ($fileExtension -eq ".zip") {
                 # Extract the ZIP file
                 WriteLog "Extracting ZIP file to $modelPath"
-                $ProgressPreference = 'SilentlyContinue'
+                # $ProgressPreference = 'SilentlyContinue'
                 Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
-                $ProgressPreference = 'Continue'
+                # $ProgressPreference = 'Continue'
                 WriteLog "Extraction complete"
             }
             else {
@@ -1946,7 +1947,7 @@ function Get-WindowsESD {
             #Download if ESD file doesn't already exist
             If (-not (Test-Path $esdFilePath)) {
                 #Required to fix slow downloads
-                $ProgressPreference = 'SilentlyContinue'
+                # $ProgressPreference = 'SilentlyContinue'
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
@@ -1954,7 +1955,7 @@ function Get-WindowsESD {
                 $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Download succeeded"
                 #Set back to show progress
-                $ProgressPreference = 'Continue'
+                # $ProgressPreference = 'Continue'
                 WriteLog "Cleanup cab and xml file"
                 Remove-Item -Path $cabFilePath -Force
                 Remove-Item -Path $xmlFilePath -Force
@@ -2279,11 +2280,11 @@ function New-ScratchVhdx {
 
     WriteLog "Creating new Scratch VHDX..."
 
-    $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
+    $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent) 
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
-    remove-partition $toreturn.DiskNumber -PartitionNumber 1 -Confirm:$False
+    remove-partition $toreturn.DiskNumber -PartitionNumber 1 -Confirm:$False 
 
     Writelog "Done."
     return $toReturn
@@ -2298,8 +2299,8 @@ function New-SystemPartition {
 
     WriteLog "Creating System partition..."
 
-    $sysPartition = $VhdxDisk | New-Partition -DriveLetter 'S' -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden
-    $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System"
+    $sysPartition = $VhdxDisk | New-Partition -DriveLetter 'S' -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden 
+    $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System" 
 
     WriteLog 'Done.'
     return $sysPartition.DriveLetter
@@ -2334,13 +2335,13 @@ function New-OSPartition {
     WriteLog "Creating OS partition..."
 
     if ($OSPartitionSize -gt 0) {
-        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" 
     }
     else {
-        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" 
     }
 
-    $osPartition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel "Windows"
+    $osPartition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel "Windows" 
     WriteLog 'Done'
     Writelog "OS partition at drive $($osPartition.DriveLetter):"
 
@@ -2404,7 +2405,7 @@ function New-RecoveryPartition {
             }
 
             $recoveryPartition = $VhdxDisk | New-Partition -DriveLetter 'R' -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}" `
-            | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery'
+            | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery' 
 
             WriteLog "Done. Recovery partition at drive $($recoveryPartition.DriveLetter):"
         }
@@ -2895,7 +2896,7 @@ function New-FFU {
         WriteLog 'Mounting complete'
         WriteLog 'Adding drivers - This will take a few minutes, please be patient'
         try {
-            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$DriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
+            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$DriversFolder" -Recurse -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-null
         }
         catch {
             WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -3317,8 +3318,8 @@ Function New-DeploymentUSB {
             # Get-Disk $DiskNumber | Get-Partition | Remove-Partition            
             $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
             $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
-            Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false
-            Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false
+            Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false 
+            Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false 
         }
 
         WriteLog 'Partitioning USB Drive'
@@ -5036,9 +5037,9 @@ try {
         WriteLog 'Caching VHDX file'
 
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority 
         WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
+        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority 
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
 

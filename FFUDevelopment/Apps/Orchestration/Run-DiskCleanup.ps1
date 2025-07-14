@@ -11,7 +11,7 @@ Get-ChildItem -Path $rootKey | ForEach-Object {
 }
 
 # Run the disk cleanup tool with the specified flags
-Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:0"
+Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:0" -Wait
 
 # Remove the StateFlags0000 registry values that were added
 Get-ChildItem -Path $rootKey | ForEach-Object {

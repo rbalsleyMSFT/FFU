@@ -257,4 +257,7 @@ function Set-Progress {
     WriteLog "[PROGRESS] $Percentage | $Message"
 }
     
+# Suppress the default progress bar for a cleaner console output for any script importing this module.
+# $ProgressPreference = 'SilentlyContinue'
+    
 Export-ModuleMember -Function *
