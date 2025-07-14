@@ -704,42 +704,6 @@ function Test-Url {
     }
 }
 
-# Function to download a file using BITS with retry and error handling
-# function Start-BitsTransferWithRetry {
-#     param (
-#         [Parameter(Mandatory = $true)]
-#         [string]$Source,
-#         [Parameter(Mandatory = $true)]
-#         [string]$Destination,
-#         [int]$Retries = 3
-#     )
-
-#     $attempt = 0
-#     $lastError = $null
-
-#     while ($attempt -lt $Retries) {
-#         try {
-#             $OriginalVerbosePreference = $VerbosePreference
-#             $VerbosePreference = 'SilentlyContinue'
-#             # $ProgressPreference = 'SilentlyContinue'
-#             Start-BitsTransfer -Source $Source -Destination $Destination -ErrorAction Stop
-#             # $ProgressPreference = 'Continue'
-#             $VerbosePreference = $OriginalVerbosePreference
-#             return
-#         }
-#         catch {
-#             # Capture the error that occurred during the failed download attempt
-#             $lastError = $_
-#             $attempt++
-#             WriteLog "Attempt $attempt of $Retries failed to download $Source with error: $($lastError.Exception.Message). Retrying..."
-#             Start-Sleep -Seconds 5
-#         }
-#     }
-    
-#     WriteLog "Failed to download $Source after $Retries attempts. Error: $($lastError.Exception.Message)"
-#     throw $lastError
-# }
-
 function Get-MicrosoftDrivers {
     param (
         [string]$Make,
