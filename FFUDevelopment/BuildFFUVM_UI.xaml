@@ -82,154 +82,6 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- TAB: Build -->
-            <TabItem Header="Build" Padding="20">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="10">
-                        <!-- Define 10 rows for the Build tab -->
-                        <Grid.RowDefinitions>
-                            <!-- Row 0: Header -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 1: FFU Development Path -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 2: Custom FFU Name Template -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 3: FFU Capture Location -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 4: Share Name -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 5: Username -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 6: General Build Options Header -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 7: General Build Options Checkboxes -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 8: Build USB Drive Header -->
-                            <RowDefinition Height="Auto"/>
-                            <!-- Row 9: Build USB Drive Options Grid -->
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <!-- Row 0: Header -->
-                        <TextBlock Grid.Row="0" Text="FFU Build Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
-                        <!-- Row 1: FFU Development Path -->
-                        <Grid Grid.Row="1" Margin="0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="FFU Development Path" VerticalAlignment="Center" ToolTip="Path to the FFU development folder."/>
-                            <TextBox x:Name="txtFFUDevPath" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Path to the FFU development folder."/>
-                            <Button x:Name="btnBrowseFFUDevPath" Grid.Column="2" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
-                        </Grid>
-                        <!-- Row 2: Custom FFU Name Template -->
-                        <Grid Grid.Row="2" Margin="0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Custom FFU Name Template" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
-                            <TextBox x:Name="txtCustomFFUNameTemplate" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
-                        </Grid>
-                        <!-- Row 3: FFU Capture Location -->
-                        <Grid Grid.Row="3" Margin="0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="FFU Capture Location" VerticalAlignment="Center" ToolTip="Path to the folder where the captured FFU will be stored."/>
-                            <TextBox x:Name="txtFFUCaptureLocation" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Path to the folder where the captured FFU will be stored."/>
-                            <Button x:Name="btnBrowseFFUCaptureLocation" Grid.Column="2" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
-                        </Grid>
-                        <!-- Row 4: Share Name -->
-                        <Grid Grid.Row="4" Margin="0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Share Name" VerticalAlignment="Center" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
-                            <TextBox x:Name="txtShareName" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
-                        </Grid>
-                        <!-- Row 5: Username -->
-                        <Grid Grid.Row="5" Margin="0,5">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Username" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
-                            <TextBox x:Name="txtUsername" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
-                        </Grid>
-                        <!-- Row 6: General Build Options Header -->
-                        <TextBlock Grid.Row="6" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
-
-                        <!-- Row 7: General Build Options Checkboxes -->
-                        <WrapPanel Grid.Row="7" Margin="0,5">
-                            <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
-                            <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
-                            <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="5" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
-                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
-                            <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
-                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
-                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
-                            <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
-                        </WrapPanel>
-
-                        <!-- Row 8: Build USB Drive Section -->
-                        <StackPanel Grid.Row="8" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
-                            <TextBlock Text="Build USB Drive Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
-                            <StackPanel Margin="5,0,0,10">
-                                <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
-                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="5,5,5,5" IsEnabled="False" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
-                                <CheckBox x:Name="chkSelectSpecificUSBDrives" Content="Select Specific USB Drives" Margin="5" VerticalAlignment="Center" Tag="Enable to select specific USB drives for building"/>
-                                <!-- Added Missing Checkboxes -->
-                                <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
-                                <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
-                                <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
-
-                                <!-- USB Drive Selection Section -->
-                                <Grid x:Name="usbDriveSelectionPanel" Margin="5,0,0,0">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*"/>
-                                    </Grid.RowDefinitions>
-                                    <!-- Button and Select All row -->
-                                    <DockPanel Grid.Row="0" Margin="0,5" LastChildFill="False">
-                                        <Button x:Name="btnCheckUSBDrives" Content="Check USB drives" DockPanel.Dock="Left" Padding="10,5"/>
-                                    </DockPanel>
-                                    <!-- ListView row -->
-                                    <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0,5" Height="150">
-                                        <ListView.View>
-                                            <GridView>
-
-                                                <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
-                                                <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
-                                                <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
-                                            </GridView>
-                                        </ListView.View>
-                                    </ListView>
-                                </Grid>
-                            </StackPanel>
-                        </StackPanel>
-
-                        <!-- Row 9: Post-Build Cleanup -->
-                        <StackPanel Grid.Row="9" Margin="0,10,0,5">
-                            <TextBlock Text="Post-Build Cleanup" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
-                            <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="5" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
-                            <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
-                            <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
-                            <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="5" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
-                            <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="5" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>
-                            <CheckBox x:Name="chkRemoveApps" Content="Remove Apps Folder Content" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will remove the application content in the Apps folder after the FFU has been captured."/>
-                            <CheckBox x:Name="chkRemoveUpdates" Content="Remove Downloaded Update Files" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded CU, .NET, MSRT, Defender, Edge, and OneDrive files after being applied/included."/>
-                        </StackPanel>
-                    </Grid>
-                </ScrollViewer>
-            </TabItem>
-
             <!-- TAB: Hyper-V Settings -->
             <TabItem Header="Hyper-V Settings" Padding="20">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -790,6 +642,154 @@
                         <!-- Row 12: Copy PE Drivers Checkbox -->
                         <StackPanel Grid.Row="12" Orientation="Horizontal" Margin="5">
                             <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- TAB: Build -->
+            <TabItem Header="Build" Padding="20">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10">
+                        <!-- Define 10 rows for the Build tab -->
+                        <Grid.RowDefinitions>
+                            <!-- Row 0: Header -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 1: FFU Development Path -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 2: Custom FFU Name Template -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 3: FFU Capture Location -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 4: Share Name -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 5: Username -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 6: General Build Options Header -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 7: General Build Options Checkboxes -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 8: Build USB Drive Header -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 9: Build USB Drive Options Grid -->
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- Row 0: Header -->
+                        <TextBlock Grid.Row="0" Text="FFU Build Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                        <!-- Row 1: FFU Development Path -->
+                        <Grid Grid.Row="1" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="FFU Development Path" VerticalAlignment="Center" ToolTip="Path to the FFU development folder."/>
+                            <TextBox x:Name="txtFFUDevPath" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Path to the FFU development folder."/>
+                            <Button x:Name="btnBrowseFFUDevPath" Grid.Column="2" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <!-- Row 2: Custom FFU Name Template -->
+                        <Grid Grid.Row="2" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Custom FFU Name Template" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                            <TextBox x:Name="txtCustomFFUNameTemplate" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                        </Grid>
+                        <!-- Row 3: FFU Capture Location -->
+                        <Grid Grid.Row="3" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="FFU Capture Location" VerticalAlignment="Center" ToolTip="Path to the folder where the captured FFU will be stored."/>
+                            <TextBox x:Name="txtFFUCaptureLocation" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Path to the folder where the captured FFU will be stored."/>
+                            <Button x:Name="btnBrowseFFUCaptureLocation" Grid.Column="2" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <!-- Row 4: Share Name -->
+                        <Grid Grid.Row="4" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Share Name" VerticalAlignment="Center" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
+                            <TextBox x:Name="txtShareName" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
+                        </Grid>
+                        <!-- Row 5: Username -->
+                        <Grid Grid.Row="5" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Username" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
+                            <TextBox x:Name="txtUsername" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
+                        </Grid>
+                        <!-- Row 6: General Build Options Header -->
+                        <TextBlock Grid.Row="6" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
+
+                        <!-- Row 7: General Build Options Checkboxes -->
+                        <WrapPanel Grid.Row="7" Margin="0,5">
+                            <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
+                            <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
+                            <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="5" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
+                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
+                            <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
+                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
+                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
+                            <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
+                        </WrapPanel>
+
+                        <!-- Row 8: Build USB Drive Section -->
+                        <StackPanel Grid.Row="8" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
+                            <TextBlock Text="Build USB Drive Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                            <StackPanel Margin="5,0,0,10">
+                                <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
+                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="5,5,5,5" IsEnabled="False" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
+                                <CheckBox x:Name="chkSelectSpecificUSBDrives" Content="Select Specific USB Drives" Margin="5" VerticalAlignment="Center" Tag="Enable to select specific USB drives for building"/>
+                                <!-- Added Missing Checkboxes -->
+                                <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
+                                <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
+                                <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
+
+                                <!-- USB Drive Selection Section -->
+                                <Grid x:Name="usbDriveSelectionPanel" Margin="5,0,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <!-- Button and Select All row -->
+                                    <DockPanel Grid.Row="0" Margin="0,5" LastChildFill="False">
+                                        <Button x:Name="btnCheckUSBDrives" Content="Check USB drives" DockPanel.Dock="Left" Padding="10,5"/>
+                                    </DockPanel>
+                                    <!-- ListView row -->
+                                    <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0,5" Height="150">
+                                        <ListView.View>
+                                            <GridView>
+
+                                                <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
+                                                <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
+                                                <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Row 9: Post-Build Cleanup -->
+                        <StackPanel Grid.Row="9" Margin="0,10,0,5">
+                            <TextBlock Text="Post-Build Cleanup" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+                            <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="5" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
+                            <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
+                            <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
+                            <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="5" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
+                            <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="5" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>
+                            <CheckBox x:Name="chkRemoveApps" Content="Remove Apps Folder Content" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will remove the application content in the Apps folder after the FFU has been captured."/>
+                            <CheckBox x:Name="chkRemoveUpdates" Content="Remove Downloaded Update Files" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded CU, .NET, MSRT, Defender, Edge, and OneDrive files after being applied/included."/>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
