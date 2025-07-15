@@ -778,5 +778,30 @@ function Register-EventHandlers {
                 $keyEventArgs.Handled = $true
             }
         })
+
+    $State.Controls.lstLogOutput.Add_SelectionChanged({
+            param($eventSource, $selectionChangedEventArgs)
+            $listBox = $eventSource
+            $window = [System.Windows.Window]::GetWindow($listBox)
+            if ($null -eq $window) { return }
+            $localState = $window.Tag
+
+            # If nothing is selected or the list is empty, do nothing.
+            if ($listBox.SelectedIndex -eq -1 -or $listBox.Items.Count -eq 0) {
+                return
+            }
+
+            # Check if the last item is selected
+            $isLastItemSelected = ($listBox.SelectedIndex -eq ($listBox.Items.Count - 1))
+
+            # Update the flag
+            $localState.Flags.autoScrollLog = $isLastItemSelected
+            if ($isLastItemSelected) {
+                WriteLog "Monitor tab autoscroll enabled (last item selected)."
+            }
+            else {
+                WriteLog "Monitor tab autoscroll disabled (user selected item #$($listBox.SelectedIndex))."
+            }
+        })
 }
 Export-ModuleMember -Function *

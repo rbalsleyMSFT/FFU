@@ -120,9 +120,10 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Switch to Monitor Tab
             $script:uiState.Controls.MainTabControl.SelectedItem = $script:uiState.Controls.MonitorTab
             
-            # Clear previous log data
+            # Clear previous log data and reset autoscroll
             if ($null -ne $script:uiState.Data.logData) {
                 $script:uiState.Data.logData.Clear()
+                $script:uiState.Flags.autoScrollLog = $true
             }
 
             $progressBar = $script:uiState.Controls.pbOverallProgress
@@ -201,7 +202,10 @@ $script:uiState.Controls.btnRun.Add_Click({
                         while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
                             # Add the full line to the log view first to maintain consistency
                             $script:uiState.Data.logData.Add($line)
-                            $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
+                            if ($script:uiState.Flags.autoScrollLog) {
+                                $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
+                                $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
+                            }
 
                             # Now, check if it's a progress line and update the UI accordingly
                             if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
@@ -234,9 +238,11 @@ $script:uiState.Controls.btnRun.Add_Click({
                         
                         # Final read of the log stream
                         if ($null -ne $script:uiState.Data.logStreamReader) {
+                            $lastLine = $null
                             while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
                                 # Add the full line to the log view first
                                 $script:uiState.Data.logData.Add($line)
+                                $lastLine = $line
 
                                 # Now, check if it's a progress line and update the UI accordingly
                                 if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
@@ -247,6 +253,13 @@ $script:uiState.Controls.btnRun.Add_Click({
                                     $script:uiState.Controls.txtStatus.Text = $message
                                 }
                             }
+                            
+                            # After the final read, scroll to the last line if autoscroll is enabled
+                            if ($script:uiState.Flags.autoScrollLog -and $null -ne $lastLine) {
+                                $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
+                                $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
+                            }
+
                             $script:uiState.Data.logStreamReader.Close()
                             $script:uiState.Data.logStreamReader.Dispose()
                             $script:uiState.Data.logStreamReader = $null
