@@ -118,6 +118,7 @@ function Initialize-UIControls {
     $State.Controls.txtProductKey = $window.FindName('txtProductKey')
     $State.Controls.txtOfficePath = $window.FindName('txtOfficePath')
     $State.Controls.txtOfficeConfigXMLFilePath = $window.FindName('txtOfficeConfigXMLFilePath')
+    $State.Controls.btnBrowseOfficeConfigXMLFile = $window.FindName('btnBrowseOfficeConfigXMLFile')
     $State.Controls.txtDriversFolder = $window.FindName('txtDriversFolder')
     $State.Controls.txtPEDriversFolder = $window.FindName('txtPEDriversFolder')
     $State.Controls.chkCopyPEDrivers = $window.FindName('chkCopyPEDrivers')

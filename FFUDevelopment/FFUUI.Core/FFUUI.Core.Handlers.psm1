@@ -553,6 +553,16 @@ function Register-EventHandlers {
             }
         })
 
+    $State.Controls.btnBrowseOfficeConfigXMLFile.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select Office Configuration XML File" -Filter "XML files (*.xml)|*.xml"
+            if ($selectedPath) {
+                $localState.Controls.txtOfficeConfigXMLFilePath.Text = $selectedPath
+            }
+        })
+
     $State.Controls.chkInstallOffice.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
