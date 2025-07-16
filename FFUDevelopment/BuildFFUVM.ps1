@@ -4651,7 +4651,13 @@ try {
             $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
             WriteLog "Found $($vhdxJsons.Count) cached VHDX config files"
             
-            $requiredUpdateNames = $requiredUpdates.Name | Sort-Object
+            # Extract file names from URLs for comparison
+            $requiredUpdateFileNames = @()
+            foreach ($update in $requiredUpdates) {
+                $fileName = ($update.Url -split '/')[-1]
+                $requiredUpdateFileNames += $fileName
+            }
+            $requiredUpdateFileNames = $requiredUpdateFileNames | Sort-Object
 
             foreach ($vhdxJson in $vhdxJsons) {
                 try {
@@ -4669,7 +4675,7 @@ try {
                         $cachedUpdateNames = $vhdxCacheItem.IncludedUpdates.Name | Sort-Object
                     }
                     
-                    if ((Compare-Object -ReferenceObject $requiredUpdateNames -DifferenceObject $cachedUpdateNames).Length -gt 0) {
+                    if ((Compare-Object -ReferenceObject $requiredUpdateFileNames -DifferenceObject $cachedUpdateNames).Length -gt 0) {
                         WriteLog 'IncludedUpdates mismatch, continuing'
                         continue
                     }
@@ -4722,30 +4728,30 @@ try {
             WriteLog "Latest SSU identified as $SSUFilePath"
         }
         if ($cuUpdateInfos.Count -gt 0) {
-            $CUFileName = (Get-ChildItem -Path $KBPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).Name
-            if (-not $CUFileName) {
-                WriteLog "Could not find CU file containing '$cuKbArticleId'. This can happen with Checkpoint CUs. Will try to find the most likely candidate from the update info list."
-                $CUFileName = ($cuUpdateInfos | Where-Object { $_.Name -match $cuKbArticleId } | Select-Object -First 1).Name
-                if (-not $CUFileName) {
-                    WriteLog "Could not determine correct CU file from update info list. Using first in list as fallback."
-                    $CUFileName = $cuUpdateInfos[0].Name
+            # Use the actual downloaded file name from the update info
+            $CUFileName = $cuUpdateInfos[0].Name
+            $CUPath = (Get-ChildItem -Path $KBPath -Filter $CUFileName -Recurse).FullName
+            if (-not $CUPath) {
+                # If exact match fails, try to find by KB article ID
+                $CUPath = (Get-ChildItem -Path $KBPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).FullName
+                if ($CUPath) {
+                    $CUFileName = Split-Path $CUPath -Leaf
                 }
             }
-            $CUPath = (Get-ChildItem -Path $KBPath -Filter $CUFileName -Recurse).FullName
             WriteLog "Latest CU identified as $CUPath"
         }
         if ($cupUpdateInfos.Count -gt 0) {
-            $CUPFileName = (Get-ChildItem -Path $KBPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).Name
-            if (-not $CUPFileName) {
-                WriteLog "Could not find CU file containing '$cupKbArticleId'. This can happen with Checkpoint CUs. Will try to find the most likely candidate from the update info list."
-                $CUPFileName = ($cupUpdateInfos | Where-Object { $_.Name -match $cupKbArticleId } | Select-Object -First 1).Name
-                if (-not $CUPFileName) {
-                    WriteLog "Could not determine correct CU file from update info list. Using first in list as fallback."
-                    $CUPFileName = $cupUpdateInfos[0].Name
+            # Use the actual downloaded file name from the update info
+            $CUPFileName = $cupUpdateInfos[0].Name
+            $CUPPath = (Get-ChildItem -Path $KBPath -Filter $CUPFileName -Recurse).FullName
+            if (-not $CUPPath) {
+                # If exact match fails, try to find by KB article ID
+                $CUPPath = (Get-ChildItem -Path $KBPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).FullName
+                if ($CUPPath) {
+                    $CUPFileName = Split-Path $CUPPath -Leaf
                 }
             }
-            $CUPPath = (Get-ChildItem -Path $KBPath -Filter $CUPFileName -Recurse).FullName
-            WriteLog "Latest CU identified as $CUPPath"
+            WriteLog "Latest Preview CU identified as $CUPPath"
         }
         if ($netUpdateInfos.Count -gt 0 -or $netFeatureUpdateInfos.Count -gt 0) {
             if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
@@ -4753,13 +4759,16 @@ try {
                 WriteLog ".NET updates for LTSC are in $NETPath"
             }
             else {
-                $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).Name
-                if (-not $NETFileName) {
-                    WriteLog "Could not find .NET file containing '$netKbArticleId'. Using first in list as fallback."
-                    $NETFileName = ($netUpdateInfos | Where-Object { $_.Name -match $netKbArticleId } | Select-Object -First 1).Name
-                    if (-not $NETFileName) { $NETFileName = $netUpdateInfos[0].Name }
-                }
+                # Use the actual downloaded file name from the update info
+                $NETFileName = $netUpdateInfos[0].Name
                 $NETPath = (Get-ChildItem -Path $KBPath -Filter $NETFileName -Recurse).FullName
+                if (-not $NETPath) {
+                    # If exact match fails, try to find by KB article ID
+                    $NETPath = (Get-ChildItem -Path $KBPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).FullName
+                    if ($NETPath) {
+                        $NETFileName = Split-Path $NETPath -Leaf
+                    }
+                }
                 WriteLog "Latest .NET Framework identified as $NETPath"
             }
         }
@@ -4815,18 +4824,18 @@ try {
                     # Seems to be because of the registry being mounted per dism.log
                     Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
-                    WriteLog "Removing $SSUFilePath"
-                    Remove-Item -Path $SSUFilePath -Force | Out-Null
-                    WriteLog 'SSU removed'
+                    # WriteLog "Removing $SSUFilePath"
+                    # Remove-Item -Path $SSUFilePath -Force | Out-Null
+                    # WriteLog 'SSU removed'
                 }
                 if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                     WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
                     WriteLog "Adding SSU to $WindowsPartition"
                     Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
-                    WriteLog "Removing $SSUFilePath"
-                    Remove-Item -Path $SSUFilePath -Force | Out-Null
-                    WriteLog 'SSU removed'
+                    # WriteLog "Removing $SSUFilePath"
+                    # Remove-Item -Path $SSUFilePath -Force | Out-Null
+                    # WriteLog 'SSU removed'
                 }
                 # Break out CU and NET updates to be added separately to abide by Checkpoint Update recommendations
                 if ($UpdateLatestCU) {
