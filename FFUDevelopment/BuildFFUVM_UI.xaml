@@ -487,14 +487,14 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Office installation files."/>
+                            <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to Office installation files."/>
                             <Button x:Name="btnBrowseOfficePath" Grid.Column="1" Content="Browse..." Width="80" VerticalAlignment="Center"/>
                         </Grid>
                         <StackPanel x:Name="CopyOfficeConfigXMLStackPanel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">
-                            <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" Margin="0,0,5,0" ToolTip="Enable to copy the Office configuration XML file to the Office folder."/>
+                            <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" Margin="0,0,5,0" ToolTip="Enable to copy an Office configuration XML file to the Office folder."/>
                         </StackPanel>
                         <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel" Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
-                            <TextBlock Text="Office Configuration XML File" ToolTip="Specify the path to the Office configuration XML file."/>
+                            <TextBlock Text="Office Configuration XML File" ToolTip="Specify the path to an Office configuration XML file. This file will be copied into the Office folder and used for the deployment of Office."/>
                         </StackPanel>
                         <Grid x:Name="OfficeConfigurationXMLFileGrid" Grid.Row="3" Grid.Column="1" Margin="5" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
