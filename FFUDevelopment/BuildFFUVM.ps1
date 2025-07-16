@@ -2069,6 +2069,49 @@ function Get-KBLink {
 }
 
 
+function Get-UpdateFileInfo {
+    [CmdletBinding()]
+    param(
+        [string[]]$Name
+    )
+    $updateFileInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    foreach ($kb in $Name) {
+        $links = Get-KBLink -Name $kb
+        foreach ($link in $links) {
+            $fileName = ($link -split '/')[-1]
+            # $url = $link
+
+            $architectureMatch = $false
+            if ($link -match 'x64' -or $link -match 'amd64') {
+                if ($WindowsArch -eq 'x64') { $architectureMatch = $true }
+            }
+            elseif ($link -match 'arm64') {
+                if ($WindowsArch -eq 'arm64') { $architectureMatch = $true }
+            }
+            elseif ($link -match 'x86') {
+                if ($WindowsArch -eq 'x86') { $architectureMatch = $true }
+            }
+            else {
+                # If no architecture is specified in the URL, we assume the search query was specific enough.
+                # The alternative is to download the file to check, which defeats the purpose of this function.
+                $architectureMatch = $true
+            }
+
+            if ($architectureMatch) {
+                # Check for duplicates before adding
+                if (-not ($updateFileInfos.Name -contains $fileName)) {
+                    $updateFileInfos.Add([pscustomobject]@{
+                            Name = $fileName
+                            Url  = $link
+                        })
+                }
+            }
+        }
+    }
+    return $updateFileInfos
+}
+
 function Save-KB {
     [CmdletBinding()]
     param(
@@ -2809,13 +2852,13 @@ function New-FFU {
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-            #Capture the FFU
-            Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
-            WriteLog 'Capturing FFU'
-            Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
-            WriteLog 'FFU Capture complete'
-            Dismount-ScratchVhdx -VhdxPath $VHDXPath
-        }
+        #Capture the FFU
+        Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
+        WriteLog 'Capturing FFU'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
+        WriteLog 'FFU Capture complete'
+        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+    }
     elseif (-not $InstallApps -and $AllowVHDXCaching) {
         # Make $FFUFileName based on values in the config.json file
         WriteLog 'Creating FFU File Name'
@@ -2879,10 +2922,10 @@ function New-FFU {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
         #Need to use ADK version of DISM to address bug in DISM - perhaps Windows 11 24H2 will fix this
         Invoke-Process cmd "/c ""$DandIEnv"" && dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
-            #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
-            WriteLog 'Optimizing FFU complete'
-            Set-Progress -Percentage 90 -Message "FFU post-processing complete."
-        }
+        #Invoke-Process cmd "/c dism /optimize-ffu /imagefile:$FFUFile" | Out-Null
+        WriteLog 'Optimizing FFU complete'
+        Set-Progress -Percentage 90 -Message "FFU post-processing complete."
+    }
     
 
 }
@@ -4506,316 +4549,127 @@ if ($InstallApps) {
 
 #Create VHDX
 try {
-    Set-Progress -Percentage 11 -Message "Downloading Windows Updates for VHDX..."
-    #Update latest Cumulative Update if both $UpdateLatestCU is $true and $UpdatePreviewCU is $false
-    #Changed to use MU Catalog instead of using Get-LatestWindowsKB
-    #The Windows release info page is updated later than the MU Catalog
-    if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
-        Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        if ($WindowsRelease -in 10, 11) {
-            $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
-        }
-        if ($WindowsRelease -eq 2025) {
-            $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch"""
-        }
-        if ($WindowsRelease -eq 2022) {
-            $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch"""
-        } 
-        if ($WindowsRelease -in 2016, 2019 -and $installationType -eq "Server") {
-            $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch"""
-        }
-        if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
-            $today = Get-Date
-            $firstDayOfMonth = Get-Date -Year $today.Year -Month $today.Month -Day 1
-            $secondTuesday = $firstDayOfMonth.AddDays(((2 - [int]$firstDayOfMonth.DayOfWeek + 7) % 7) + 7)
-            $updateDate = if ($today -gt $secondTuesday) { $today } else { $today.AddMonths(-1) }
-            # More precise search to prevent Dynamic cumulative update from being chosen.
-            $Name = """$($updateDate.ToString('yyyy-MM')) Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
-        }
-        if ($WindowsRelease -eq 2024 -and $isLTSC) {
-            $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch""" 
-        }
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
-        #Get latest Servicing Stack Update for Windows Server 2016
-        if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
-            $SSUName = """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch"""
-            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
-            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
-            $SSUFilePath = "$KBPath\$SSUFile"
-            WriteLog "Latest SSU saved to $SSUFilePath"
-        }
-        if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
-            $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
-            WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
-            $SSUFile = Save-KB -Name $SSUName -Path $KBPath
-            $SSUFilePath = "$KBPath\$SSUFile"
-            WriteLog "Latest SSU saved to $SSUFilePath"
-        }
-        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $CUFileName = Save-KB -Name $Name -Path $KBPath
-        # Check if $CUFileName contains the string in $global:LastKBArticleID
-        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
-        # and set that as the $CUFileName
-        # This is because checkpoint CUs download indeterministically
-        WriteLog "Checking if $CUFileName contains $global:LastKBArticleID"
-        if ($CUFileName -notmatch $global:LastKBArticleID) {
-            WriteLog "$CUFileName does not contain $global:LastKBArticleID, searching for file that contains it"
-            $CUFileName = $null
-            # Get the file that contains the string in $global:LastKBArticleID
-            $CUFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
-            if ($null -ne $CUFileName) {
-                WriteLog "Found $CUFileName"
-            }
-            else {
-                WriteLog "Could not find file that contains $global:LastKBArticleID"
-                throw "Could not find file that contains $global:LastKBArticleID"
-            }
-        }
-        $CUPath = "$KBPath\$CUFileName"
-        WriteLog "Latest CU saved to $CUPath"
-    }
+    Set-Progress -Percentage 11 -Message "Checking for required Windows Updates..."
+    $requiredUpdates = [System.Collections.Generic.List[pscustomobject]]::new()
+    $ssuUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+    $cuUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+    $cupUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+    $netUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+    $netFeatureUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+    $microcodeUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
 
-    #Update Latest Preview Cumlative Update for Client OS only
-    #will take Precendence over $UpdateLatestCU if both were set to $true
-    if ($UpdatePreviewCU -and $installationType -eq 'Client' -and $WindowsSKU -notlike "*LTSC") {
-        Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
-        $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
-        #Check if $KBPath exists, if not, create it
-        If (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
-        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-        $CUPFileName = Save-KB -Name $Name -Path $KBPath
-        # Check if $CUPFileName contains the string in $global:LastKBArticleID
-        # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
-        # and set that as the $CUPFileName
-        # This is because checkpoint CUs download indeterministically
-        WriteLog "Checking if $CUPFileName contains $global:LastKBArticleID"
-        if ($CUPFileName -notmatch $global:LastKBArticleID) {
-            WriteLog "$CUPFileName does not contain $global:LastKBArticleID, searching for file that contains it"
-            $CUPFileName = $null
-            # Get the file that contains the string in $global:LastKBArticleID
-            $CUPFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
-            if ($null -ne $CUPFileName) {
-                WriteLog "Found $CUPFileName"
-            }
-            else {
-                WriteLog "Could not find file that contains $global:LastKBArticleID"
-                throw "Could not find file that contains $global:LastKBArticleID"
-            }
-        }
-        $CUPPath = "$KBPath\$CUPFileName"
-        WriteLog "Latest CU saved to $CUPPath"
-    }
+    if ($UpdateLatestCU -or $UpdatePreviewCU -or $UpdateLatestNet -or $UpdateLatestMicrocode) {
+        # Determine required updates without downloading them yet
+        $cuKbArticleId = $null
+        $cupKbArticleId = $null
+        $netKbArticleId = $null
 
-    #Update Latest .NET Framework
-    if ($UpdateLatestNet) {
-        Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        #Check if $KBPath exists, if not, create it
-        if (-not (Test-Path -Path $KBPath)) {
-            WriteLog "Creating $KBPath"
-            New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
-        }
-
-        ######
-        #LTSC#
-        ######
-
-        # For Windows 10 LTSC editions (2016, 2019, 2021), download and save the latest Servicing Stack Update (SSU) and .NET Framework cumulative update(s)
-        if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
-            # SSU likely was downloaded via CU, but still needed here if .net is being updated, no need to download twice though
-            if ($null -eq $SSUFile) {
-                $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
-                WriteLog "Searching for $SSUName from Microsoft Update Catalog and saving to $KBPath"
-                $SSUFile = Save-KB -Name $SSUName -Path $KBPath
-                $SSUFilePath = "$KBPath\$SSUFile"
-                WriteLog "Latest SSU saved to $SSUFilePath"
+        if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
+            Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
+            if ($WindowsRelease -in 10, 11) { $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch""" }
+            if ($WindowsRelease -eq 2025) { $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch""" }
+            if ($WindowsRelease -eq 2022) { $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch""" }
+            if ($WindowsRelease -in 2016, 2019 -and $installationType -eq "Server") { $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch""" }
+            if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
+                $today = Get-Date; $firstDayOfMonth = Get-Date -Year $today.Year -Month $today.Month -Day 1; $secondTuesday = $firstDayOfMonth.AddDays(((2 - [int]$firstDayOfMonth.DayOfWeek + 7) % 7) + 7); $updateDate = if ($today -gt $secondTuesday) { $today } else { $today.AddMonths(-1) }
+                $Name = """$($updateDate.ToString('yyyy-MM')) Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
             }
-
-            # For Windows 10 LTSC editions (2016, 2019, 2021), download and save the latest .NET Framework cumulative update(s)
-            # to a dedicated NET subdirectory, as these editions may include multiple .NET updates that need to be installed together.
-            if ($WindowsRelease -in 2016) {
-                $name = """Cumulative Update for .NET Framework 4.8 for Windows 10 version $WindowsVersion for $WindowsArch"""
-            }
-            if ($WindowsRelease -eq 2019) {
-                $name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows 10 Version $WindowsVersion for $WindowsArch"""
-            }
-            if ($WindowsRelease -eq 2021) {
-                $name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1 for Windows 10 Version $WindowsVersion for $WindowsArch"""
-            }
+            if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch""" }
             
-            $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
-            if (-not (Test-Path -Path $NETPath)) {
-                WriteLog "Creating $NETPath"
-                New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
+            if (($WindowsRelease -eq 2016 -and $installationType -eq "Server") -or ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC)) {
+                $SSUName = if ($isLTSC) { """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch""" } else { """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch""" }
+                WriteLog "Searching for $SSUName from Microsoft Update Catalog"
+                (Get-UpdateFileInfo -Name $SSUName) | ForEach-Object { $ssuUpdateInfos.Add($_) }
             }
-            WriteLog "Searching for $name from Microsoft Update Catalog and saving to $NETPath"
-            $NETFileName = Save-KB -Name $name -Path $NETPath
-            WriteLog "Latest .NET Framework cumulative update saved to $NETPath\$NETFileName"
+            WriteLog "Searching for $Name from Microsoft Update Catalog"
+            (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $cuUpdateInfos.Add($_) }
+            $cuKbArticleId = $global:LastKBArticleID
         }
 
-        # For Windows 11 LTSC 2024, set the update name to search for the latest .NET Framework cumulative update in the Microsoft Update Catalog
-        if ($WindowsRelease -eq 2024 -and $isLTSC) {
-            $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch -preview"
+        if ($UpdatePreviewCU -and $installationType -eq 'Client' -and $WindowsSKU -notlike "*LTSC") {
+            Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
+            $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+            WriteLog "Searching for $Name from Microsoft Update Catalog"
+            (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $cupUpdateInfos.Add($_) }
+            $cupKbArticleId = $global:LastKBArticleID
         }
 
-        # For Windows 10 LTSC 2021, download and save the latest .NET Framework 4.8.1 feature pack to the NET subdirectory.
-        if ($WindowsRelease -eq 2021 -and $isLTSC) {
-            WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
-            $NETFeatureName = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64"""
-            $NETFeaturePackFile = Save-KB -Name $NETFeatureName -Path $NETPath
-            WriteLog "Latest .NET Framework Feature pack saved to $NETPath\$NETFeaturePackFile"
+        if ($UpdateLatestNet) {
+            Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
+            if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
+                if ($ssuUpdateInfos.Count -eq 0) {
+                    $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+                    WriteLog "Searching for $SSUName from Microsoft Update Catalog"
+                    (Get-UpdateFileInfo -Name $SSUName) | ForEach-Object { $ssuUpdateInfos.Add($_) }
+                }
+                if ($WindowsRelease -in 2016) { $name = """Cumulative Update for .NET Framework 4.8 for Windows 10 version $WindowsVersion for $WindowsArch""" }
+                if ($WindowsRelease -eq 2019) { $name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows 10 Version $WindowsVersion for $WindowsArch""" }
+                if ($WindowsRelease -eq 2021) { $name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1 for Windows 10 Version $WindowsVersion for $WindowsArch""" }
+                WriteLog "Searching for $name from Microsoft Update Catalog"
+                (Get-UpdateFileInfo -Name $name) | ForEach-Object { $netUpdateInfos.Add($_) }
+                $netKbArticleId = $global:LastKBArticleID
+
+                if ($WindowsRelease -eq 2021) { $NETFeatureName = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64""" }
+                if ($WindowsRelease -in 2016, 2019) { $NETFeatureName = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64""" }
+                WriteLog "Checking for latest .NET Framework feature pack: $NETFeatureName"
+                (Get-UpdateFileInfo -Name $NETFeatureName) | ForEach-Object { $netFeatureUpdateInfos.Add($_) }
+            }
+            else {
+                if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch -preview" }
+                if ($WindowsRelease -in 10, 11) { $Name = "Cumulative update for .NET framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview" }
+                if ($WindowsRelease -eq 2025 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64 -preview" }
+                if ($WindowsRelease -eq 2022 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" ""operating system version 21H2 for x64""" }
+                if ($WindowsRelease -eq 2019 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64""" }
+                if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64""" }
+                WriteLog "Searching for $Name from Microsoft Update Catalog"
+                (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $netUpdateInfos.Add($_) }
+                $netKbArticleId = $global:LastKBArticleID
+            }
         }
-        # For Windows 10 LTSC 2016 and 2019, download and save the latest .NET Framework 4.8 feature pack to the NET subdirectory.
-        if ($WindowsRelease -in 2016, 2019 -and $isLTSC) {
-            WriteLog "Checking for latest .NET Framework feature pack for Windows $WindowsRelease $WindowsSKU"
-            $NETFeatureName = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64"""
-            $NETFeaturePackFile = Save-KB -Name $NETFeatureName -Path $NETPath
-            WriteLog "Latest .NET Framework Feature pack saved to $NETPath\$NETFeaturePackFile"
-        }
 
-        ########
-        #CLIENT#
-        ########
-
-        # For Windows 10 and 11, set the update name to search for the latest .NET Framework cumulative update (excluding preview) in the Microsoft Update Catalog
-        if ($WindowsRelease -in 10, 11) {
-            $Name = "Cumulative update for .NET framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
-        }
-
-        ########
-        #SERVER#
-        ########
-
-        # For Windows Server 2025, set the update name to search for the latest .NET Framework cumulative update (excluding preview) in the Microsoft Update Catalog
-        if ($WindowsRelease -eq 2025 -and $installationType -eq "Server") {
-            $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64 -preview"
+        if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
+            WriteLog "`$UpdateLatestMicrocode is set to true, checking for latest Microcode"
+            if ($WindowsRelease -eq 2016) { $name = "KB4589210 $windowsArch" }
+            if ($WindowsRelease -eq 2019) { $name = "KB4589208 $windowsArch" }
+            WriteLog "Searching for $name from Microsoft Update Catalog"
+            (Get-UpdateFileInfo -Name $name) | ForEach-Object { $microcodeUpdateInfos.Add($_) }
         }
         
-        # For Windows Server 2022, set the update name to search for the latest .NET Framework cumulative update (3.5, 4.8, and 4.8.1) for OS version 21H2 x64
-        if ($WindowsRelease -eq 2022 -and $installationType -eq "Server") {
-            $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" ""operating system version 21H2 for x64"""
-        }
-        # For Windows Server 2019, set the update name to search for the latest .NET Framework cumulative update (3.5, 4.7.2, and 4.8) for x64
-        if ($WindowsRelease -eq 2019 -and $installationType -eq "Server") {
-            $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64"""
-        }
-
-        # For Windows Server 2016, set the update name to search for the latest .NET Framework 4.8 cumulative update for x64
-        if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
-            $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64"""
-        }
-
-        # For all editions except Windows 10 LTSC (2016, 2019, 2021), search for the latest .NET Framework cumulative update in the Microsoft Update Catalog,
-        # download it to $KBPath, and verify the correct file was downloaded by matching the KB article ID. If not found, search for the file by KB article ID.
-        if (-not ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC)) {
-            WriteLog "Searching for $name from Microsoft Update Catalog and saving to $KBPath"
-            $NETFileName = Save-KB -Name $Name -Path $KBPath
-            # Check if $NETFileName contains the string in $global:LastKBArticleID
-            # If it does not, look in $KBPath for the file that contains the string in $global:LastKBArticleID
-            # and set that as the $NETFileName
-            WriteLog "Checking if $NETFileName contains $global:LastKBArticleID"
-            if ($NETFileName -notmatch $global:LastKBArticleID) {
-                WriteLog "$NETFileName does not contain $global:LastKBArticleID, searching for file that contains it"
-                $NETFileName = $null
-                # Get the file that contains the string in $global:LastKBArticleID
-                $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$global:LastKBArticleID*" | Select-Object -First 1).Name
-                if ($null -ne $NETFileName) {
-                    WriteLog "Found $NETFileName"
-                }
-                else {
-                    WriteLog "Could not find file that contains $global:LastKBArticleID"
-                    throw "Could not find file that contains $global:LastKBArticleID"
-                }
-            }
-            $NETPath = "$KBPath\$NETFileName"
-            WriteLog "Latest .NET Framework saved to $NETPath"
-        }
-    }
-    # Update latest Microcode
-    if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
-        WriteLog "`$UpdateLatestMicrocode is set to true, checking for latest Microcode"
-        #Check if $MicrocodePath exists, if not, create it
-        If (-not (Test-Path -Path $MicrocodePath)) {
-            WriteLog "Creating $MicrocodePath"
-            New-Item -Path $MicrocodePath -ItemType Directory -Force | Out-Null
-        }
-
-        # Windows 10 LTSC 2016 (1607) and Windows Server 2016
-        if ($WindowsRelease -eq 2016) {
-            $name = "KB4589210 $windowsArch"
-        }
-
-        # Windows 10 LTSC 2019 (1809) and Windows Server 2019
-        if ($WindowsRelease -eq 2019) {
-            $name = "KB4589208 $windowsArch"
-        }
-        WriteLog "Searching for $name from Microsoft Update Catalog and saving to $MicrocodePath"
-        $MicrocodeFileName = Save-KB -Name $name -Path $MicrocodePath
-        WriteLog "Latest Microcode saved to $MicrocodePath\$MicrocodeFileName"
+        $requiredUpdates.AddRange($ssuUpdateInfos)
+        $requiredUpdates.AddRange($cuUpdateInfos)
+        $requiredUpdates.AddRange($cupUpdateInfos)
+        $requiredUpdates.AddRange($netUpdateInfos)
+        $requiredUpdates.AddRange($netFeatureUpdateInfos)
+        $requiredUpdates.AddRange($microcodeUpdateInfos)
     }
 
     #Search for cached VHDX and skip VHDX creation if there's a cached version
     if ($AllowVHDXCaching) {
         WriteLog 'AllowVHDXCaching is true, checking for cached VHDX file'
         if (Test-Path -Path $VHDXCacheFolder) {
-            Set-Progress -Percentage 40 -Message "Windows Update download complete."
             WriteLog "Found $VHDXCacheFolder"
             $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
-            WriteLog "Found $($vhdxJsons.Count) cached VHDX files"
-            if (Test-Path -Path $KBPath) {
-                $downloadedKBs = @(Get-ChildItem -File -Path $KBPath -Recurse)
-            }
-            else {
-                $downloadedKBs = @()
-            }
-            #$jsonDeserializer = [System.Web.Script.Serialization.JavaScriptSerializer]::new()
+            WriteLog "Found $($vhdxJsons.Count) cached VHDX config files"
+            
+            $requiredUpdateNames = $requiredUpdates.Name | Sort-Object
 
             foreach ($vhdxJson in $vhdxJsons) {
                 try {
                     WriteLog "Processing $($vhdxJson.FullName)"
-                    #$vhdxCacheItem = $jsonDeserializer.Deserialize((Get-Content -Path $vhdxJson.FullName -Raw), [VhdxCacheItem])
                     $vhdxCacheItem = Get-Content -Path $vhdxJson.FullName -Raw | ConvertFrom-Json
 
-                    if ((($vhdxCacheItem.WindowsSKU -ne $WindowsSKU) -or
-                            ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsSKU) -xor [string]::IsNullOrEmpty($WindowsSKU)))) {
-                        WriteLog 'WindowsSKU mismatch, continuing'
-                        continue
-                    }
+                    if ($vhdxCacheItem.WindowsSKU -ne $WindowsSKU) { WriteLog 'WindowsSKU mismatch, continuing'; continue }
+                    if ($vhdxCacheItem.LogicalSectorSizeBytes -ne $LogicalSectorSizeBytes) { WriteLog 'LogicalSectorSizeBytes mismatch, continuing'; continue }
+                    if ($vhdxCacheItem.WindowsRelease -ne $WindowsRelease) { WriteLog 'WindowsRelease mismatch, continuing'; continue }
+                    if ($vhdxCacheItem.WindowsVersion -ne $WindowsVersion) { WriteLog 'WindowsVersion mismatch, continuing'; continue }
+                    if ($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) { WriteLog 'OptionalFeatures mismatch, continuing'; continue }
 
-                    if ((($vhdxCacheItem.LogicalSectorSizeBytes -ne $LogicalSectorSizeBytes) -or
-                            ([string]::IsNullOrEmpty($vhdxCacheItem.LogicalSectorSizeBytes) -xor [string]::IsNullOrEmpty($LogicalSectorSizeBytes)))) {
-                        WriteLog 'LogicalSectorSizeBytes mismatch, continuing'
-                        continue
+                    $cachedUpdateNames = @()
+                    if ($vhdxCacheItem.IncludedUpdates) {
+                        $cachedUpdateNames = $vhdxCacheItem.IncludedUpdates.Name | Sort-Object
                     }
-
-                    if ((($vhdxCacheItem.WindowsRelease -ne $WindowsRelease) -or
-                            ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsRelease) -xor [string]::IsNullOrEmpty($WindowsRelease)))) {
-                        WriteLog 'WindowsRelease mismatch, continuing'
-                        continue
-                    }
-
-                    if ((($vhdxCacheItem.WindowsVersion -ne $WindowsVersion) -or
-                            ([string]::IsNullOrEmpty($vhdxCacheItem.WindowsVersion) -xor [string]::IsNullOrEmpty($WindowsVersion)))) {
-                        Writelog 'WindowsVersion mismatch, continuing'
-                        continue
-                    }
-
-                    if ((($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) -or
-                            ([string]::IsNullOrEmpty($vhdxCacheItem.OptionalFeatures) -xor [string]::IsNullOrEmpty($OptionalFeatures)))) {
-                        WriteLog 'OptionalFeatures mismatch, continuing'
-                        continue
-                    }
-
-                    if ((Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name).Length -gt 0) {
-                        # (Compare-Object -ReferenceObject $downloadedKBs -DifferenceObject $vhdxCacheItem.IncludedUpdates -Property Name)
-                        # $downloadedKBs.Name
-                        # $vhdxCacheItem.IncludedUpdates.Name
+                    
+                    if ((Compare-Object -ReferenceObject $requiredUpdateNames -DifferenceObject $cachedUpdateNames).Length -gt 0) {
                         WriteLog 'IncludedUpdates mismatch, continuing'
                         continue
                     }
@@ -4829,6 +4683,89 @@ try {
                     WriteLog "Reading $vhdxJson Failed with error $_"
                 }
             }
+        }
+    }
+
+    # If no cached VHDX is found, download the required updates now
+    if (-Not $cachedVHDXFileFound -and $requiredUpdates.Count -gt 0) {
+        Set-Progress -Percentage 12 -Message "Downloading Windows Updates..."
+        WriteLog "No suitable VHDX cache found. Downloading $($requiredUpdates.Count) update(s)."
+        
+        If (-not (Test-Path -Path $KBPath)) {
+            WriteLog "Creating $KBPath"; New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
+        }
+
+        foreach ($update in $requiredUpdates) {
+            $destinationPath = $KBPath
+            if (($netUpdateInfos -and ($netUpdateInfos.Name -contains $update.Name)) -or `
+                ($netFeatureUpdateInfos -and ($netFeatureUpdateInfos.Name -contains $update.Name))) {
+                if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
+                    $destinationPath = Join-Path -Path $KBPath -ChildPath "NET"
+                }
+            }
+            if ($microcodeUpdateInfos -and ($microcodeUpdateInfos.Name -contains $update.Name)) {
+                $destinationPath = Join-Path -Path $KBPath -ChildPath "Microcode"
+            }
+
+            if (-not (Test-Path -Path $destinationPath)) {
+                New-Item -Path $destinationPath -ItemType Directory -Force | Out-Null
+            }
+            WriteLog "Downloading $($update.Name) to $destinationPath"
+            Start-BitsTransferWithRetry -Source $update.Url -Destination $destinationPath
+        }
+    
+
+        # Set file path variables for the patching process
+        if ($ssuUpdateInfos.Count -gt 0) {
+            $SSUFile = $ssuUpdateInfos[0].Name
+            $SSUFilePath = "$KBPath\$SSUFile"
+            WriteLog "Latest SSU identified as $SSUFilePath"
+        }
+        if ($cuUpdateInfos.Count -gt 0) {
+            $CUFileName = (Get-ChildItem -Path $KBPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).Name
+            if (-not $CUFileName) {
+                WriteLog "Could not find CU file containing '$cuKbArticleId'. This can happen with Checkpoint CUs. Will try to find the most likely candidate from the update info list."
+                $CUFileName = ($cuUpdateInfos | Where-Object { $_.Name -match $cuKbArticleId } | Select-Object -First 1).Name
+                if (-not $CUFileName) {
+                    WriteLog "Could not determine correct CU file from update info list. Using first in list as fallback."
+                    $CUFileName = $cuUpdateInfos[0].Name
+                }
+            }
+            $CUPath = (Get-ChildItem -Path $KBPath -Filter $CUFileName -Recurse).FullName
+            WriteLog "Latest CU identified as $CUPath"
+        }
+        if ($cupUpdateInfos.Count -gt 0) {
+            $CUPFileName = (Get-ChildItem -Path $KBPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).Name
+            if (-not $CUPFileName) {
+                WriteLog "Could not find CU file containing '$cupKbArticleId'. This can happen with Checkpoint CUs. Will try to find the most likely candidate from the update info list."
+                $CUPFileName = ($cupUpdateInfos | Where-Object { $_.Name -match $cupKbArticleId } | Select-Object -First 1).Name
+                if (-not $CUPFileName) {
+                    WriteLog "Could not determine correct CU file from update info list. Using first in list as fallback."
+                    $CUPFileName = $cupUpdateInfos[0].Name
+                }
+            }
+            $CUPPath = (Get-ChildItem -Path $KBPath -Filter $CUPFileName -Recurse).FullName
+            WriteLog "Latest CU identified as $CUPPath"
+        }
+        if ($netUpdateInfos.Count -gt 0 -or $netFeatureUpdateInfos.Count -gt 0) {
+            if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
+                $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+                WriteLog ".NET updates for LTSC are in $NETPath"
+            }
+            else {
+                $NETFileName = (Get-ChildItem -Path $KBPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).Name
+                if (-not $NETFileName) {
+                    WriteLog "Could not find .NET file containing '$netKbArticleId'. Using first in list as fallback."
+                    $NETFileName = ($netUpdateInfos | Where-Object { $_.Name -match $netKbArticleId } | Select-Object -First 1).Name
+                    if (-not $NETFileName) { $NETFileName = $netUpdateInfos[0].Name }
+                }
+                $NETPath = (Get-ChildItem -Path $KBPath -Filter $NETFileName -Recurse).FullName
+                WriteLog "Latest .NET Framework identified as $NETPath"
+            }
+        }
+        if ($microcodeUpdateInfos.Count -gt 0) {
+            $MicrocodePath = "$KBPath\Microcode"
+            WriteLog "Microcode updates are in $MicrocodePath"
         }
     }
     
