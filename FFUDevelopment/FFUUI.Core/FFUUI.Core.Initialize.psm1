@@ -332,7 +332,7 @@ function Initialize-DynamicUIElements {
     # Add other sortable columns with left-aligned headers
     Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $driverModelsGridView -header "Model" -binding "Model" -width 200 -headerHorizontalAlignment Left
-    Add-SortableColumn -gridView $driverModelsGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $driverModelsGridView -header "Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
     $State.Controls.lstDriverModels.AddHandler(
         [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
         [System.Windows.RoutedEventHandler] {
