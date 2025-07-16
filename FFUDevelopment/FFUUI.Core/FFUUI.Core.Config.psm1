@@ -309,7 +309,49 @@ function Update-UIFromConfig {
 
     # Windows Settings
     Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ISOPath' -State $State
-    Set-UIValue -ControlName 'cmbWindowsRelease' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'WindowsRelease' -State $State
+    
+    # Special handling for Windows Release and SKU due to value collision (e.g., 2019 for Server and LTSC)
+    if (($null -ne $ConfigContent.PSObject.Properties.Item('WindowsRelease')) -and ($null -ne $ConfigContent.PSObject.Properties.Item('WindowsSKU'))) {
+        $configReleaseValue = $ConfigContent.WindowsRelease
+        $configSkuValue = $ConfigContent.WindowsSKU
+        WriteLog "LoadConfig: Handling Windows Release/SKU selection. Release: '$configReleaseValue', SKU: '$configSkuValue'."
+
+        $releaseCombo = $State.Controls.cmbWindowsRelease
+        # The items in the combobox are PSCustomObjects with Display and Value properties
+        $possibleReleases = $releaseCombo.Items | Where-Object { $_.Value -eq $configReleaseValue }
+
+        $releaseToSelect = $null
+        if ($possibleReleases.Count -gt 1) {
+            WriteLog "LoadConfig: Ambiguous release value '$configReleaseValue' found. Using SKU to disambiguate."
+            if ($configSkuValue -like '*LTS*') {
+                $releaseToSelect = $possibleReleases | Where-Object { $_.Display -like '*LTS*' } | Select-Object -First 1
+                WriteLog "LoadConfig: SKU contains 'LTS'. Selecting LTSC-related release: '$($releaseToSelect.Display)'."
+            }
+            else {
+                $releaseToSelect = $possibleReleases | Where-Object { $_.Display -notlike '*LTS*' } | Select-Object -First 1
+                WriteLog "LoadConfig: SKU does not contain 'LTS'. Selecting non-LTSC (Server) release: '$($releaseToSelect.Display)'."
+            }
+        }
+        else {
+            $releaseToSelect = $possibleReleases | Select-Object -First 1
+            if ($null -ne $releaseToSelect) {
+                WriteLog "LoadConfig: Found unique release match: '$($releaseToSelect.Display)'."
+            }
+        }
+
+        if ($null -ne $releaseToSelect) {
+            $releaseCombo.SelectedItem = $releaseToSelect
+        }
+        else {
+            WriteLog "LoadConfig: Could not determine a specific Windows Release to select for value '$configReleaseValue'. Skipping."
+        }
+    }
+    else {
+        # Fallback to individual setting if only one key exists
+        WriteLog "LoadConfig: WindowsRelease or WindowsSKU key not found in config. Falling back to simple assignment for WindowsRelease."
+        Set-UIValue -ControlName 'cmbWindowsRelease' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'WindowsRelease' -State $State
+    }
+
     Set-UIValue -ControlName 'cmbWindowsVersion' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'WindowsVersion' -State $State
     Set-UIValue -ControlName 'cmbWindowsArch' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'WindowsArch' -State $State
     Set-UIValue -ControlName 'cmbWindowsLang' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'WindowsLang' -State $State
