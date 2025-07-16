@@ -3771,6 +3771,20 @@ if ($CopyUnattend) {
     WriteLog 'Unattend validation complete'
 }
 
+# If InstallApps is true, we need capture media.
+if ($InstallApps) {
+    if (-not $CreateCaptureMedia) {
+        if (-not (Test-Path -Path $CaptureISO)) {
+            WriteLog "InstallApps is true, but CreateCaptureMedia is false and the capture ISO does not exist at $CaptureISO."
+            WriteLog "Forcing CreateCaptureMedia to true to build the required capture media."
+            $CreateCaptureMedia = $true
+        }
+        else {
+            WriteLog "InstallApps is true. Using existing capture media found at $CaptureISO."
+        }
+    }
+}
+
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
 #from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
 #This behavior doesn't happen with WIM files.
