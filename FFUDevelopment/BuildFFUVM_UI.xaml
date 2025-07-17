@@ -480,14 +480,14 @@
                             <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,5,0" ToolTip="Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM."/>
                         </StackPanel>
                         <StackPanel x:Name="OfficePathStackPanel" Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                            <TextBlock Text="Office Path" ToolTip="Path to the Office installation files."/>
+                            <TextBlock Text="Office Path" ToolTip="Path to the Office directory that contains the DownloadFFU.xml and DeployFFU.xml files. This is where Office will be downloaded to from the ODT."/>
                         </StackPanel>
                         <Grid x:Name="OfficePathGrid" Grid.Row="1" Grid.Column="1" Margin="5">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to Office installation files."/>
+                            <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Office directory that contains the DownloadFFU.xml and DeployFFU.xml files. This is where Office will be downloaded to from the ODT."/>
                             <Button x:Name="btnBrowseOfficePath" Grid.Column="1" Content="Browse..." Width="80" VerticalAlignment="Center"/>
                         </Grid>
                         <StackPanel x:Name="CopyOfficeConfigXMLStackPanel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,5">

@@ -277,6 +277,7 @@ param(
 
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
+    [string]$OfficeConfigXMLFile,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
     [string]$Model,
@@ -1962,9 +1963,15 @@ function Get-ODTURL {
 }
 
 function Get-Office {
+    # If a custom Office Config XML is provided via config file, use its filename for the installation.
+    # The UI script is responsible for copying the file itself to the OfficePath.
+    if ((Get-Variable -Name 'OfficeConfigXMLFile' -ErrorAction SilentlyContinue) -and -not([string]::IsNullOrEmpty($OfficeConfigXMLFile))) {
+        $script:OfficeInstallXML = Split-Path -Path $OfficeConfigXMLFile -Leaf
+        WriteLog "A custom Office configuration file was specified. Using '$($script:OfficeInstallXML)' for installation."
+    }
     #Download ODT
     $ODTUrl = Get-ODTURL
-    $ODTInstallFile = "$FFUDevelopmentPath\odtsetup.exe"
+    $ODTInstallFile = "$OfficePath\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
