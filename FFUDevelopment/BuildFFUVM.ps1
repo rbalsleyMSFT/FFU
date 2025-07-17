@@ -3781,14 +3781,8 @@ if ($CopyUnattend) {
 # If InstallApps is true, we need capture media.
 if ($InstallApps) {
     if (-not $CreateCaptureMedia) {
-        if (-not (Test-Path -Path $CaptureISO)) {
-            WriteLog "InstallApps is true, but CreateCaptureMedia is false and the capture ISO does not exist at $CaptureISO."
-            WriteLog "Forcing CreateCaptureMedia to true to build the required capture media."
-            $CreateCaptureMedia = $true
-        }
-        else {
-            WriteLog "InstallApps is true. Using existing capture media found at $CaptureISO."
-        }
+        WriteLog "InstallApps is true, but CreateCaptureMedia is false. Forcing to true to allow for VM capture to FFU."
+        $CreateCaptureMedia = $true
     }
 }
 
