@@ -52,8 +52,8 @@ function Add-BYOApplication {
     $arguments = $State.Controls.txtAppArguments.Text
     $source = $State.Controls.txtAppSource.Text
 
-    if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine) -or [string]::IsNullOrWhiteSpace($arguments)) {
-        [System.Windows.MessageBox]::Show("Please fill in all fields (Name, Command Line, and Arguments)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+    if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine)) {
+        [System.Windows.MessageBox]::Show("Please fill in all fields (Name and Command Line)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         return
     }
     $listView = $State.Controls.lstApplications
@@ -150,8 +150,8 @@ function Save-BYOApplicationList {
 
     try {
         # Ensure items are sorted by current priority before saving
-        # Exclude CopyStatus when saving
-        $applications = $listView.Items | Sort-Object Priority | Select-Object Priority, Name, CommandLine, Arguments, Source
+        # Exclude CopyStatus when saving and ensure Priority is an integer
+        $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source
         $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Force -Encoding UTF8
         [System.Windows.MessageBox]::Show("Applications saved successfully to `"$Path`".", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
@@ -343,7 +343,7 @@ function Start-CopyBYOApplicationTask {
 
             # Build the new entry
             $newEntry = [pscustomobject]@{
-                Priority    = $priority
+                Priority    = [int]$priority
                 Name        = $appName
                 CommandLine = $commandLine
                 Arguments   = $arguments

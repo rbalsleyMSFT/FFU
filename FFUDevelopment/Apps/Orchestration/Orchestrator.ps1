@@ -39,10 +39,31 @@ $scriptList = @(
     "Install-StoreApps.ps1",
     "Install-UserApps.ps1"    
 )
-# Check if each script exists and run it if it does 
+# Check if each script exists and has content to process, then run it
 foreach ($script in $scriptList) {
     $scriptFile = Join-Path -Path $scriptPath -ChildPath $script
-    if (Test-Path -Path $scriptFile) {
+    if (-not (Test-Path -Path $scriptFile)) {
+        continue
+    }
+
+    $shouldRun = $true # Default to run if script exists
+    switch ($script) {
+        "Install-Win32Apps.ps1" {
+            $wingetAppsJsonFile = Join-Path -Path $scriptPath -ChildPath "WinGetWin32Apps.json"
+            $userAppsJsonFile = Join-Path -Path (Split-Path -Parent $scriptPath) -ChildPath "UserAppList.json"
+            if (-not (Test-Path -Path $wingetAppsJsonFile) -and -not (Test-Path -Path $userAppsJsonFile)) {
+                $shouldRun = $false
+            }
+        }
+        "Install-StoreApps.ps1" {
+            $msStorePath = "D:\MSStore"
+            if (-not (Test-Path -Path $msStorePath) -or -not (Get-ChildItem -Path $msStorePath)) {
+                $shouldRun = $false
+            }
+        }
+    }
+
+    if ($shouldRun) {
         Write-Host "`n" # Add a newline for spacing
         Write-Host "---------------------------------------------------" -ForegroundColor Yellow
         Write-Host " Running script: $script                           " -ForegroundColor Yellow

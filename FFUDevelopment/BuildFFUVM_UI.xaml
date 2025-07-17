@@ -356,7 +356,7 @@
 
                                 <!-- Command Line -->
                                 <TextBlock Text="Command Line:" Margin="0,0,0,5"/>
-                                <TextBox x:Name="txtAppCommandLine" Margin="0,0,0,10" ToolTip="Enter the full path to the command line to install the application. This should start with D:\ for exe, cmd, etc types of deployments (e.g. D:\Win32\Mozilla FireFox\setup.exe). For MSI installs, use msiexec and then fill in the rest of the arguments in the arguments field."/>
+                                <TextBox x:Name="txtAppCommandLine" Margin="0,0,0,10" ToolTip="Enter the full path to the command line to install the application. This should start with D:\Win32 for exe, cmd, etc types of deployments (e.g. D:\Win32\Mozilla FireFox\setup.exe). For MSI installs, use msiexec and then fill in the rest of the arguments in the arguments field."/>
 
                                 <!-- Arguments -->
                                 <TextBlock Text="Arguments:" Margin="0,0,0,5"/>
