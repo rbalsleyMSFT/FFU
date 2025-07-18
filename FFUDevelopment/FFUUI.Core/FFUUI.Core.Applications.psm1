@@ -214,9 +214,59 @@ function Invoke-CopyBYOApps {
         [System.Windows.Controls.Button]$Button
     )
         
-    $appsToCopy = $State.Controls.lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
-    if (-not $appsToCopy) {
-        [System.Windows.MessageBox]::Show("No applications with a source path specified.", "Copy BYO Apps", "OK", "Information")
+    $localAppsPath = $State.Controls.txtApplicationPath.Text
+    $userAppListPath = Join-Path -Path $localAppsPath -ChildPath 'UserAppList.json'
+    $listView = $State.Controls.lstApplications
+
+    try {
+        # Ensure items are sorted by current priority before saving
+        # Exclude CopyStatus when saving and ensure Priority is an integer
+        $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source
+        $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $userAppListPath -Force -Encoding UTF8
+        WriteLog "Successfully updated UserAppList.json with all applications from the UI."
+    }
+    catch {
+        $errorMessage = "Failed to update UserAppList.json: $_"
+        WriteLog $errorMessage
+        [System.Windows.MessageBox]::Show($errorMessage, "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        return
+    }
+
+    $allAppsWithSource = $State.Controls.lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
+    if (-not $allAppsWithSource) {
+        [System.Windows.MessageBox]::Show("UserAppList.json has been updated. No applications with a source path were found to copy.", "Copy BYO Apps", "OK", "Information")
+        return
+    }
+        
+    $win32BasePath = Join-Path -Path $localAppsPath -ChildPath "Win32"
+    
+    $appsToProcess = [System.Collections.Generic.List[object]]::new()
+    $appsThatExist = [System.Collections.Generic.List[string]]::new()
+    $appsToConfirm = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($app in $allAppsWithSource) {
+        $destinationPath = Join-Path -Path $win32BasePath -ChildPath $app.Name
+        if (Test-Path -Path $destinationPath -PathType Container) {
+            $appsThatExist.Add($app.Name)
+            $appsToConfirm.Add($app)
+        }
+        else {
+            $appsToProcess.Add($app)
+        }
+    }
+
+    if ($appsThatExist.Count -gt 0) {
+        $message = "The following application folders already exist in the destination and will be overwritten:`n`n$($appsThatExist -join "`n")`n`nDo you want to proceed with copying and overwriting them?"
+        $result = [System.Windows.MessageBox]::Show($message, "Confirm Overwrite", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
+        
+        if ($result -eq 'Yes') {
+            $appsToProcess.AddRange($appsToConfirm)
+        }
+    }
+
+    if ($appsToProcess.Count -eq 0) {
+        # This message can be suppressed if you prefer no notification when the user clicks "No"
+        # [System.Windows.MessageBox]::Show("No applications selected for copying.", "Copy BYO Apps", "OK", "Information")
         return
     }
         
@@ -225,16 +275,13 @@ function Invoke-CopyBYOApps {
     $State.Controls.pbOverallProgress.Value = 0
     $State.Controls.txtStatus.Text = "Starting BYO app copy..."
         
-    # Define necessary task-specific variables locally
-    $localAppsPath = $State.Controls.txtApplicationPath.Text
-        
     # Create hashtable for task-specific arguments
     $taskArguments = @{
         AppsPath = $localAppsPath
     }
         
     # Select only necessary properties before passing
-    $itemsToProcess = $appsToCopy | Select-Object Priority, Name, CommandLine, Arguments, Source
+    $itemsToProcess = $appsToProcess | Select-Object Priority, Name, CommandLine, Arguments, Source
         
     # Invoke the centralized parallel processing function
     # Pass task type and task-specific arguments
@@ -304,25 +351,16 @@ function Start-CopyBYOApplicationTask {
     $destinationPath = Join-Path -Path $win32BasePath -ChildPath $appName
 
     try {
-        # Check destination
-        if (Test-Path -Path $destinationPath -PathType Container) {
-            $folderSize = (Get-ChildItem -Path $destinationPath -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-            if ($folderSize -gt 1MB) {
-                $status = "Already copied"
-                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
-                WriteLog "Skipping copy for $($appName): Destination '$destinationPath' exists and has content."
-                $success = $true
-                return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
-            }
-            else {
-                WriteLog "Destination '$destinationPath' exists but is empty/small. Proceeding with copy."
-            }
-        }
-
         # Ensure base directory exists
         if (-not (Test-Path -Path $win32BasePath -PathType Container)) {
             New-Item -Path $win32BasePath -ItemType Directory -Force | Out-Null
             WriteLog "Created directory: $win32BasePath"
+        }
+
+        # If destination exists, remove it to ensure a clean copy and prevent nesting.
+        if (Test-Path -Path $destinationPath -PathType Container) {
+            WriteLog "Removing existing destination folder: $destinationPath"
+            Remove-Item -Path $destinationPath -Recurse -Force -ErrorAction Stop
         }
 
         # Perform the copy
@@ -333,60 +371,6 @@ function Start-CopyBYOApplicationTask {
         $status = "Copied successfully"
         $success = $true
         WriteLog "Successfully copied '$appName' to '$destinationPath'."
-
-        # ------------------------------------------------------------------
-        # Update (or create) UserAppList.json with the copied application
-        # ------------------------------------------------------------------
-        try {
-            WriteLog "Updating UserAppList.json for '$appName'..."
-            $userAppListPath = Join-Path -Path $AppsPath -ChildPath 'UserAppList.json'
-
-            # Build the new entry
-            $newEntry = [pscustomobject]@{
-                Priority    = [int]$priority
-                Name        = $appName
-                CommandLine = $commandLine
-                Arguments   = $arguments
-                Source      = $sourcePath
-            }
-
-            # Load existing list if present, ensuring it's always an array
-            if (Test-Path -Path $userAppListPath) {
-                try {
-                    # Attempt to load and ensure it's an array
-                    $appList = @(Get-Content -Path $userAppListPath -Raw | ConvertFrom-Json -ErrorAction Stop)
-                }
-                catch {
-                    WriteLog "Warning: Could not parse '$userAppListPath' or it's not a valid JSON array. Initializing as empty array. Error: $($_.Exception.Message)"
-                    $appList = @() # Initialize as empty array on error
-                }
-            }
-            else {
-                $appList = @() # Initialize as empty array if file doesn't exist
-            }
-
-            # Ensure $appList is an array even if ConvertFrom-Json returned $null or a single object somehow
-            if ($null -eq $appList -or $appList -isnot [array]) {
-                # If it was a single object, wrap it in an array. Otherwise, start fresh.
-                $appList = if ($null -ne $appList) { @($appList) } else { @() }
-            }
-
-            # Skip adding if an entry with the same Name already exists
-            if (-not ($appList | Where-Object { $_.Name -eq $newEntry.Name })) {
-                # Now $appList is guaranteed to be an array, so += is safe
-                $appList += $newEntry
-                # Sort by Priority before saving
-                $sortedAppList = $appList | Sort-Object Priority
-                $sortedAppList | ConvertTo-Json -Depth 10 | Set-Content -Path $userAppListPath -Encoding UTF8
-                WriteLog "Added '$($newEntry.Name)' to '$userAppListPath'."
-            }
-            else {
-                WriteLog "'$appName' already exists in '$userAppListPath'."
-            }
-        }
-        catch {
-            WriteLog "Failed to update UserAppList.json for '$appName': $($_.Exception.Message)"
-        }
 
     }
     catch {
