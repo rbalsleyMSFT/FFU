@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+    Provides functions for discovering, downloading, and processing Lenovo drivers.
+.DESCRIPTION
+    This module contains the logic specific to handling Lenovo drivers for the FFU Builder UI. It includes functions to query the Lenovo PSREF (Product Specification Reference) API to find and list available system models based on user search terms. It also provides the core background task for downloading all relevant driver packages for a selected model and Windows release. The download process involves parsing XML catalogs, downloading individual driver executables, silently extracting their contents, and organizing them into a structured folder. The module includes robust error handling, long path mitigation by using temporary extraction locations, and an option to compress the final driver set into a WIM archive.
+#>
+
 # Function to get the list of Lenovo models using the PSREF API
 function Get-LenovoDriversModelList {
     [CmdletBinding()]

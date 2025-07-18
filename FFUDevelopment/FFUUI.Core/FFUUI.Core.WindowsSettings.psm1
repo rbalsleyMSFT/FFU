@@ -1,5 +1,9 @@
-# FFU UI Core Windows Settings Logic Module
-# Contains UI helper functions, data retrieval, and core processing logic for the Windows Settings tab.
+<#
+.SYNOPSIS
+    Manages the business logic for the 'Windows Settings' tab in the FFU Builder UI.
+.DESCRIPTION
+    This module contains all the functions and data required to populate and manage the controls on the 'Windows Settings' tab. It handles dynamic updates for Windows Release, Version, SKU, and Architecture ComboBoxes based on user input, such as specifying an ISO path. It also includes logic for populating available languages, media types, and the grid of optional Windows features.
+#>
 
 # --------------------------------------------------------------------------
 # SECTION: Module Variables (Static Data)
@@ -170,8 +174,6 @@ $script:ltscGenericSKUs = @( # For LTSC 2019, 2021, 2024
 $script:iotLtscSKUs = @(
     'IoT Enterprise LTSC',
     'IoT Enterprise N LTSC'
-    # Note: IoT SKUs are often specialized and might have different edition IDs.
-    # This list is a general representation. Actual ISOs might be needed for specific IoT LTSC editions.
 )
 
 # Map Windows Release Values to their corresponding SKU lists

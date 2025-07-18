@@ -1,3 +1,21 @@
+<#
+.SYNOPSIS
+    Launches the FFU Development UI, a WPF application for configuring and running the FFU build process.
+.DESCRIPTION
+    The BuildFFUVM_UI.ps1 script is the main entry point for the FFU Development user interface. It initializes and displays a WPF-based graphical interface defined in BuildFFUVM_UI.xaml.
+
+    The script is responsible for:
+    - Initializing a global state object to manage UI controls, data, and application flags.
+    - Importing the required FFU.Common and FFUUI.Core modules which contain the business logic.
+    - Ensuring system prerequisites, such as PowerShell 7 and Long Path Support, are met.
+    - Loading the XAML window, initializing UI controls with default values, and registering all event handlers.
+    - Launching the core build script (BuildFFUVM.ps1) in a background job when the user initiates a build.
+    - Providing real-time feedback by monitoring the build log file and updating the UI's progress bar and log viewer.
+    - Handling cleanup operations, such as reverting system settings, when the application is closed.
+
+    This script acts as the primary host for the UI, connecting the user interface with the underlying build and logic modules.
+#>
+
 [CmdletBinding()]
 [System.STAThread()]
 param()

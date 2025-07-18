@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+    Provides functions for discovering, downloading, and processing Dell device drivers.
+.DESCRIPTION
+    This module contains the logic specific to handling Dell drivers for the FFU Builder UI. It includes functions to parse Dell's large XML driver catalog to retrieve a list of supported models (Get-DellDriversModelList). It also provides a parallel-capable task function (Save-DellDriversTask) that finds, downloads, extracts, and optionally compresses all the latest driver packages for a specified Dell model and operating system.
+#>
+
 # Function to get the list of Dell models from the catalog using XML streaming
 function Get-DellDriversModelList {
     [CmdletBinding()]

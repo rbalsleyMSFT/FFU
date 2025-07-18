@@ -39,6 +39,9 @@ When set to $true, will remove the drivers folder after the FFU has been capture
 .PARAMETER CompactOS
 When set to $true, will compact the OS when building the FFU. Default is $true.
 
+.PARAMETER CompressDownloadedDriversToWim
+When set to $true, compresses downloaded drivers into a WIM file. Default is $false.
+
 .PARAMETER ConfigFile
 Path to a JSON file containing parameters to use for the script. Default is $null.
 
@@ -71,6 +74,9 @@ Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic
 
 .PARAMETER DriversFolder
 Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
+
+.PARAMETER DriversJsonPath
+Path to a JSON file that specifies which drivers to download.
 
 .PARAMETER ExportConfigFile
 Path to a JSON file to export the parameters used for the script.
@@ -114,11 +120,17 @@ Amount of memory to allocate for the virtual machine. Recommended to use 8GB if 
 .PARAMETER Model
 Model of the device to download drivers. This is required if Make is set.
 
+.PARAMETER OfficeConfigXMLFile
+Path to a custom Office configuration XML file to use for installation.
+
 .PARAMETER Optimize
 When set to $true, will optimize the FFU file. Default is $true.
 
 .PARAMETER OptionalFeatures
 Provide a semicolon-separated list of Windows optional features you want to include in the FFU (e.g., netfx3;TFTP).
+
+.PARAMETER orchestrationPath
+Path to the orchestration folder containing scripts that run inside the VM. Default is $FFUDevelopmentPath\Apps\Orchestration.
 
 .PARAMETER PEDriversFolder
 Path to the folder containing drivers to be injected into the WinPE deployment media. Default is $FFUDevelopmentPath\PEDrivers.
@@ -132,11 +144,11 @@ Product key for the Windows edition specified in WindowsSKU. This will overwrite
 .PARAMETER PromptExternalHardDiskMedia
 When set to $true, will prompt the user to confirm the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is $true.
 
-.PARAMETER RemoveFFU
-When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false.
-
 .PARAMETER RemoveApps
 When set to $true, will remove the application content in the Apps folder after the FFU has been captured. Default is $true.
+
+.PARAMETER RemoveFFU
+When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false.
 
 .PARAMETER RemoveUpdates
 When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive, and .NET files downloaded. Default is $true.
@@ -148,10 +160,10 @@ Name of the shared folder for FFU capture. The default is FFUCaptureShare. This 
 When set to $true, the script will check for and install the latest Windows ADK and WinPE add-on if they are not already installed or up-to-date. Default is $true.
 
 .PARAMETER UpdateEdge
-When set to $true, will download and install the latest Microsoft Edge for Windows 10/11. Default is $false.
+When set to $true, will download and install the latest Microsoft Edge. Default is $false.
 
 .PARAMETER UpdateLatestCU
-When set to $true, will download and install the latest cumulative update for Windows 10/11. Default is $false.
+When set to $true, will download and install the latest cumulative update. Default is $false.
 
 .PARAMETER UpdateLatestDefender
 When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false.
@@ -163,13 +175,16 @@ When set to $true, will download and install the latest microcode updates for ap
 When set to $true, will download and install the latest Windows Malicious Software Removal Tool. Default is $false.
 
 .PARAMETER UpdateLatestNet
-When set to $true, will download and install the latest .NET Framework for Windows 10/11. Default is $false.
+When set to $true, will download and install the latest .NET Framework. Default is $false.
 
 .PARAMETER UpdateOneDrive
-When set to $true, will download and install the latest OneDrive for Windows 10/11 and install it as a per-machine installation instead of per-user. Default is $false.
+When set to $true, will download and install the latest OneDrive and install it as a per-machine installation instead of per-user. Default is $false.
 
 .PARAMETER UpdatePreviewCU
-When set to $true, will download and install the latest Preview cumulative update for Windows 10/11. Default is $false.
+When set to $true, will download and install the latest Preview cumulative update. Default is $false.
+
+.PARAMETER UserAppListPath
+Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json.
 
 .PARAMETER USBDriveList
 A hashtable containing USB drives from win32_diskdrive where:
@@ -185,7 +200,7 @@ User agent string to use when downloading files.
 Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account.
 
 .PARAMETER VMHostIPAddress
-IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP).
+IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this, or use the UI to auto-detect.
 
 .PARAMETER VMLocation
 Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.
@@ -405,7 +420,7 @@ param(
     [bool]$UpdateADK = $true
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2505.1'
+$version = '2507.1'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {

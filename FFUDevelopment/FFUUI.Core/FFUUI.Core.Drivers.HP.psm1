@@ -1,3 +1,15 @@
+<#
+.SYNOPSIS
+    Provides functions to retrieve HP model lists and download corresponding driver packs.
+.DESCRIPTION
+    This module contains the logic specific to handling HP drivers for the FFU Builder UI. It includes functions to:
+    - Download and parse the HP PlatformList.xml to generate a list of supported HP computer models.
+    - For a selected model, find the most appropriate driver pack based on the specified Windows release and version, with intelligent fallback logic.
+    - Download the driver pack, extract all individual driver installers, and then extract the driver files from each installer.
+    - Optionally, compress the final extracted drivers into a single WIM file for easier deployment.
+    These functions are designed to be called by the main UI logic, often in parallel, to efficiently manage driver acquisition.
+#>
+
 # Function to get the list of HP models from the PlatformList.xml
 function Get-HPDriversModelList {
     [CmdletBinding()]

@@ -1,10 +1,13 @@
-# FFU Common Drivers Module
-# Contains shared functions related to driver handling.
+<#
+.SYNOPSIS
+    Provides common functions for driver management, including compression, mapping, and existence checks.
 
-# --------------------------------------------------------------------------
-# SECTION: Driver Compression Function
-# --------------------------------------------------------------------------
-
+.DESCRIPTION
+    The FFU.Common.Drivers module contains a set of shared functions used across the FFU project for handling driver packages.
+    This includes compressing driver folders into WIM files for efficient storage and deployment, maintaining a JSON-based mapping
+    of downloaded drivers to their respective makes and models, and checking for the pre-existence of driver packages to avoid
+    redundant downloads.
+#>
 function Compress-DriverFolderToWim {
     [CmdletBinding(SupportsShouldProcess)]
     param(

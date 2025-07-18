@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+    Contains the function for registering all WPF UI event handlers for the FFU Builder application.
+.DESCRIPTION
+    This module is dedicated to managing user interactions within the FFU Builder UI. It contains the Register-EventHandlers function, which connects UI controls defined in the XAML to their corresponding actions in the PowerShell backend. This includes handling button clicks, text input validation, checkbox state changes, and list view interactions across all tabs, effectively wiring up the application's front-end to its core logic.
+#>
+
 function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."

@@ -1,5 +1,9 @@
-# FFU UI Core Logic Module
-# Contains non-UI specific helper functions, data retrieval, and core processing logic.
+<#
+.SYNOPSIS
+    Core logic module for the FFU Builder UI, providing helper functions, data retrieval, and UI state management.
+.DESCRIPTION
+    This module serves as the central logic hub for the FFU Builder UI. It contains functions for retrieving system information (like Hyper-V switches and USB drives), providing default application settings, and dynamically managing the visibility and state of various UI controls across different tabs based on user selections. It orchestrates the interactions between different parts of the UI to ensure a consistent and logical user experience.
+#>
 
 # --------------------------------------------------------------------------
 # SECTION: Module Variables (Static Data & State)

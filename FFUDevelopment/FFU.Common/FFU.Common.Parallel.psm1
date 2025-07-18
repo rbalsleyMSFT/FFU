@@ -1,10 +1,57 @@
+<#
+.SYNOPSIS
+    Manages and executes multiple background tasks in parallel, with support for updating a WPF UI with progress.
+.DESCRIPTION
+    This function provides a generic framework for running tasks in parallel using PowerShell's ForEach-Object -Parallel. 
+    It is designed to process an array of items, executing a specific task for each one. It can operate in two modes: UI mode and non-UI mode.
+
+    In UI mode, it updates a specified ListView control in a WPF window with the status of each item as it's being processed 
+    (e.g., Queued, Downloading, Completed, Error). It uses a dispatcher to ensure UI updates are thread-safe.
+
+    In non-UI mode, it runs the tasks and logs the status to the FFUDevelopment.log file.
+
+    The function determines the task to run via the -TaskType parameter and passes necessary arguments using -TaskArguments. 
+    It handles module imports and log file setup within each parallel runspace to ensure tasks have the necessary dependencies and logging capabilities.
+.PARAMETER ItemsToProcess
+    An array of objects, where each object represents an item to be processed by a parallel task. This is a mandatory parameter.
+.PARAMETER ListViewControl
+    (UI Mode) The WPF ListView control that the function will update with the status of each item. Defaults to $null.
+.PARAMETER IdentifierProperty
+    The name of the property on the item objects that serves as a unique identifier (e.g., 'Name', 'Id'). 
+    This is used to find and update the correct row in the ListView.
+.PARAMETER StatusProperty
+    The name of the property on the item objects that holds the status string. This property will be updated with progress messages.
+.PARAMETER TaskType
+    A string specifying which task to execute for each item. This is mandatory.
+    Valid values are:
+    - 'WingetDownload': Downloads a Winget application.
+    - 'CopyBYO': Copies a user-provided application.
+    - 'DownloadDriverByMake': Downloads drivers for a specific manufacturer.
+.PARAMETER TaskArguments
+    A hashtable containing arguments required by the specific task being run (e.g., paths, API keys, configuration settings).
+.PARAMETER CompletedStatusText
+    The status text to display when an item is processed successfully.
+.PARAMETER ErrorStatusPrefix
+    A prefix for status messages when an error occurs.
+.PARAMETER WindowObject
+    (UI Mode) The main WPF Window object, used to access the UI dispatcher for safe UI updates from background threads.
+.PARAMETER MainThreadLogPath
+    The file path for the log file that should be used by all parallel threads. This ensures consistent logging.
+.PARAMETER ThrottleLimit
+    The maximum number of parallel jobs to run concurrently. The default is 5.
+.NOTES
+    This function relies on ForEach-Object -Parallel, which was introduced in PowerShell 7.
+    When running in UI mode, both -WindowObject and -ListViewControl must be provided.
+    The function dynamically imports required modules ('FFU.Common' and 'FFUUI.Core') into each parallel runspace.
+    It uses a concurrent queue to manage intermediate progress updates from threads to the main UI thread, preventing UI blocking and providing more granular feedback.
+#>
 function Invoke-ParallelProcessing {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [array]$ItemsToProcess,
         [Parameter(Mandatory = $false)] 
-        [object]$ListViewControl = $null, # Changed type to [object]
+        [object]$ListViewControl = $null,
         [Parameter(Mandatory = $false)] 
         [string]$IdentifierProperty = 'Identifier', 
         [Parameter(Mandatory = $false)] 
@@ -19,9 +66,9 @@ function Invoke-ParallelProcessing {
         [Parameter(Mandatory = $false)] 
         [string]$ErrorStatusPrefix = "Error: ",
         [Parameter(Mandatory = $false)] 
-        [object]$WindowObject = $null, # Changed type to [object]
+        [object]$WindowObject = $null, 
         [Parameter(Mandatory = $false)]
-        [string]$MainThreadLogPath = $null, # New parameter for the log path
+        [string]$MainThreadLogPath = $null,
         [Parameter(Mandatory = $false)]
         [int]$ThrottleLimit = 5
     )
@@ -60,10 +107,8 @@ function Invoke-ParallelProcessing {
     $jobScopeVariables = $TaskArguments.Clone() 
     $jobScopeVariables['_commonModulePath'] = $commonModulePathForJob
     $jobScopeVariables['_uiCoreModulePath'] = $uiCoreModulePathForJob
-    $jobScopeVariables['_currentLogFilePathForJob'] = $currentLogFilePathForJob # Pass the determined log path
+    $jobScopeVariables['_currentLogFilePathForJob'] = $currentLogFilePathForJob
     $jobScopeVariables['_progressQueue'] = $progressQueue
-
-    # The $TaskScriptBlock parameter is already a local variable in this scope
 
     # Initial UI update needs to happen *before* starting the jobs
     # Update all items to a static "Processing..." status
@@ -89,13 +134,9 @@ function Invoke-ParallelProcessing {
         # $jobScopeVariables and $TaskType are local here
         # Inside the -Parallel scriptblock, we access them with $using:
         $jobs = $ItemsToProcess | ForEach-Object -Parallel {
-            # Access the current item via pipeline variable $_
             $currentItem = $_
-            # Access the combined arguments hashtable from the calling scope using $using:
             $localJobArgs = $using:jobScopeVariables
-            # Access the task type string from the calling scope using $using:
             $localTaskType = $using:TaskType
-            # Access the progress queue using $using:
             $localProgressQueue = $localJobArgs['_progressQueue']
 
             # Initialize result hashtable
@@ -242,9 +283,7 @@ function Invoke-ParallelProcessing {
                             WriteLog $nullTaskResultMessage
                             $resultStatus = $nullTaskResultMessage
                             $resultCode = 1
-                            # $resultIdentifier is already set
                         }
-                        # If it was an unsupported Make, $resultStatus and $resultCode are already set from the 'default' case.
                     }
                     Default {
                         # This handles unknown $localTaskType values
@@ -261,7 +300,6 @@ function Invoke-ParallelProcessing {
                 }
             }
             catch {
-                # Catch errors within the parallel task execution
                 $resultStatus = "Error: $($_.Exception.Message)"
                 $resultCode = 1
                 # Try to get an identifier
@@ -272,7 +310,6 @@ function Invoke-ParallelProcessing {
                     $resultIdentifier = "UnknownItemOnError"
                 }
                 WriteLog "Exception during parallel task '$localTaskType' for item '$resultIdentifier': $($_.Exception.ToString())"
-                # Enqueue the error status from the catch block
                 $localProgressQueue.Enqueue(@{ Identifier = $resultIdentifier; Status = $resultStatus })
             }
 
@@ -284,7 +321,7 @@ function Invoke-ParallelProcessing {
             # Return a consistent hashtable structure (final result)
             return @{
                 Identifier = $resultIdentifier
-                Status     = $resultStatus # Return the final status
+                Status     = $resultStatus
                 ResultCode = $resultCode
                 DriverPath = $driverPathValue
             }
@@ -292,7 +329,6 @@ function Invoke-ParallelProcessing {
         } -ThrottleLimit $ThrottleLimit -AsJob
     }
     catch {
-        # Catch errors during the *creation* of the parallel jobs (e.g., module loading in main thread failed)
         WriteLog "Error initiating ForEach-Object -Parallel: $($_.Exception.Message)"
         # Update all items to show a general startup error
         $errorStatus = "$ErrorStatusPrefix Failed to start processing"
@@ -302,7 +338,6 @@ function Invoke-ParallelProcessing {
                     Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $identifier -StatusProperty $StatusProperty -StatusValue $errorStatus # Pass $WindowObject
                 })
         }
-        # Exit the function as processing cannot proceed
         return
     }
 
@@ -334,7 +369,6 @@ function Invoke-ParallelProcessing {
                 }
                 $intermediateStatus = $statusUpdate.Status
                 if ($isUiMode) {
-                    # Use the new $isUiMode flag
                     # Update the UI with the intermediate status
                     try {
                         WriteLog "Dispatching INTERMEDIATE status for '$intermediateIdentifier': '$intermediateStatus'"
@@ -361,7 +395,7 @@ function Invoke-ParallelProcessing {
                 $jobHandled = $false
                 if ($completedJob.State -eq 'Failed') {
                     $jobHandled = $true
-                    $finalIdentifier = "UnknownJob" # Placeholder
+                    $finalIdentifier = "UnknownJob"
                     WriteLog "Job $($completedJob.Id) failed: $($completedJob.Error)"
                     $finalStatus = "$ErrorStatusPrefix Job Failed"
                     $finalResultCode = 1
@@ -438,12 +472,11 @@ function Invoke-ParallelProcessing {
                 # Remove the completed/failed job from the list and clean it up
                 $jobs = $jobs | Where-Object { $_.Id -ne $completedJob.Id }
                 Remove-Job -Job $completedJob -Force -ErrorAction SilentlyContinue
-            } # End foreach completedJob
-        } # End if ($completedJobs)
+            }
+        }
 
         # 3. Allow UI events to process and sleep briefly
         if ($isUiMode) {
-            # Use the new $isUiMode flag
             # Only sleep if jobs are still running AND the queue is empty (to avoid delaying UI updates)
             if ($jobs.Count -gt 0 -and $progressQueue.IsEmpty) {
                 $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [action] { }) | Out-Null 
@@ -460,9 +493,8 @@ function Invoke-ParallelProcessing {
                 Start-Sleep -Milliseconds 100
             }
         }
-        # If jobs are done AND queue is empty, the loop condition will terminate
 
-    } # End while ($jobs.Count -gt 0 -or -not $progressQueue.IsEmpty)
+    }
 
     # Final cleanup of any remaining jobs (shouldn't be necessary with this loop logic, but good practice)
     if ($jobs.Count -gt 0) {
@@ -471,7 +503,6 @@ function Invoke-ParallelProcessing {
     }
 
     if ($isUiMode) {
-        # Use the new $isUiMode flag
         WriteLog "Invoke-ParallelProcessing finished for ListView '$($ListViewControl.Name)'."
         # Final overall progress update
         $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 

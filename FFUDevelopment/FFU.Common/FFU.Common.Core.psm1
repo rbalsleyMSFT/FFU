@@ -1,6 +1,12 @@
-# FFU.Common.Core.psm1
-# Contains common core functions like logging and process invocation.
-
+<#
+.SYNOPSIS
+    Provides core, shared functions for logging, process execution, and resilient file transfers used across the FFU project.
+.DESCRIPTION
+    This module is a central component of the FFU project, offering a set of robust, reusable functions. 
+    It includes a centralized logging mechanism (WriteLog), a wrapper for running external processes with error handling (Invoke-Process), 
+    a retry-aware BITS transfer function for reliable downloads (Start-BitsTransferWithRetry), and a progress reporting helper. 
+    This module is designed to be imported by other scripts and modules within the project to ensure consistent behavior for common tasks.
+#>
 # Script-scoped variable for the log file path
 $script:CommonCoreLogFilePath = $null
 # Mutex for log file access
@@ -65,75 +71,6 @@ function WriteLog {
         $script:commonCoreLogMutex.ReleaseMutex()
     }
 }
-
-# Function to invoke external process
-# function Invoke-Process {
-#     [CmdletBinding(SupportsShouldProcess)]
-#     param(
-#         [Parameter(Mandatory)]
-#         [ValidateNotNullOrEmpty()]
-#         [string]$FilePath,
-#         [Parameter()]
-#         [ValidateNotNullOrEmpty()]
-#         [string[]]$ArgumentList,
-#         [Parameter()]
-#         [ValidateNotNullOrEmpty()]
-#         [bool]$Wait = $true
-#     )
-
-#     $ErrorActionPreference = 'Stop' # Keep this local to the function
-
-#     try {
-#         $stdOutTempFile = "$env:TEMP\$((New-Guid).Guid)"
-#         $stdErrTempFile = "$env:TEMP\$((New-Guid).Guid)"
-
-#         $startProcessParams = @{
-#             FilePath               = $FilePath
-#             ArgumentList           = $ArgumentList
-#             RedirectStandardError  = $stdErrTempFile
-#             RedirectStandardOutput = $stdOutTempFile
-#             Wait                   = $Wait 
-#             PassThru               = $true
-#             NoNewWindow            = $true
-#         }
-
-#         # DEBUG
-#         # WriteLog "Running Command: $($startProcessParams.FilePath) $($startProcessParams.ArgumentList -join ' ')"
-
-#         if ($PSCmdlet.ShouldProcess("Process [$($FilePath)]", "Run with args: [$($ArgumentList)]")) {
-#             $cmd = Start-Process @startProcessParams
-#             $cmdOutput = Get-Content -Path $stdOutTempFile -Raw -ErrorAction SilentlyContinue 
-#             $cmdError = Get-Content -Path $stdErrTempFile -Raw -ErrorAction SilentlyContinue  
-            
-#             if (-not [string]::IsNullOrWhiteSpace($cmdOutput)) {
-#                 WriteLog "STDOUT from '$FilePath': $cmdOutput"
-#             }
-#             if (-not [string]::IsNullOrWhiteSpace($cmdError)) {
-#                 WriteLog "STDERR from '$FilePath': $cmdError"
-#             }
-
-#             if ($cmd.ExitCode -ne 0 -and $Wait) { 
-#                 $errorMessage = "Process '$FilePath' exited with code $($cmd.ExitCode)."
-#                 if (-not [string]::IsNullOrWhiteSpace($cmdError)) {
-#                     $errorMessage += " Error: $cmdError"
-#                 }
-#                 elseif (-not [string]::IsNullOrWhiteSpace($cmdOutput)) {
-#                     $errorMessage += " Output: $cmdOutput"
-#                 }
-#                 throw $errorMessage.Trim()
-#             }
-#         }
-#     }
-#     catch {
-#         WriteLog "Error in Invoke-Process for '$FilePath': $($_.Exception.Message)" 
-#         throw 
-#     }
-#     finally {
-#         if (Test-Path $stdOutTempFile) { Remove-Item -Path $stdOutTempFile -Force -ErrorAction Ignore }
-#         if (Test-Path $stdErrTempFile) { Remove-Item -Path $stdErrTempFile -Force -ErrorAction Ignore }
-#     }
-#     return $cmd 
-# }
 
 function Invoke-Process {
     [CmdletBinding(SupportsShouldProcess)]
@@ -256,8 +193,5 @@ function Set-Progress {
     )
     WriteLog "[PROGRESS] $Percentage | $Message"
 }
-    
-# Suppress the default progress bar for a cleaner console output for any script importing this module.
-# $ProgressPreference = 'SilentlyContinue'
     
 Export-ModuleMember -Function *

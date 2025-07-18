@@ -1,5 +1,9 @@
-# FFU UI Core Applications Module
-# Contains UI-layer logic for the "Bring Your Own Apps" and related features.
+<#
+.SYNOPSIS
+    Manages the UI business logic for the "Applications" tab, including "Bring Your Own (BYO) Applications" and "Apps Script Variables".
+.DESCRIPTION
+    This module contains all the functions that power the "Applications" tab in the BuildFFUVM_UI. It handles user interactions for managing custom application lists (BYO Apps), such as adding, removing, reordering, and saving/loading the list from a JSON file (UserAppList.json). It also includes the logic for copying the application source files to the designated staging directory in parallel. Additionally, it manages the UI for creating and removing key-value pairs for the AppsScriptVariables.json file, which allows for custom parameterization of user-provided scripts.
+#>
 
 # Function to update the enabled state of the Copy Apps button
 function Update-CopyButtonState {

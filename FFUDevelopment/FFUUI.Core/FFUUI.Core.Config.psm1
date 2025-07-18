@@ -1,6 +1,9 @@
-# FFU UI Core Configuration Module
-# Contains functions for loading and saving UI configuration.
-
+<#
+.SYNOPSIS
+    Contains functions for loading and saving UI configuration.
+.DESCRIPTION
+    This module provides the core logic for loading and saving the UI configuration. It includes functions to gather settings from the various UI controls, save them to a JSON file, and load settings from a JSON file to populate the UI. This allows users to persist their build configurations and easily switch between different setups.
+#>
 function Get-UIConfig {
     param(
         [Parameter(Mandatory = $true)]

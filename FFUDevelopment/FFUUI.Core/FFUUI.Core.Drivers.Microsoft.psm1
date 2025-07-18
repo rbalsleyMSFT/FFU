@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+    Provides functions for discovering, downloading, and processing Microsoft Surface device drivers.
+.DESCRIPTION
+    This module contains the logic specific to handling Microsoft Surface drivers for the FFU UI. It includes a function to scrape the official Microsoft support website to build a list of available Surface models and their driver download pages. It also provides a robust, parallel-capable function to download the correct driver package (MSI or ZIP) based on the selected Windows release, extract its contents, and optionally compress them into a WIM archive. The download process includes logic to handle MSI installer mutexes to prevent conflicts during parallel execution.
+#>
+
 # Function to get the list of Microsoft Surface models
 function Get-MicrosoftDriversModelList {
     [CmdletBinding()]

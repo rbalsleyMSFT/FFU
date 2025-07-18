@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+    Provides functions for managing and downloading hardware drivers in the FFU Builder UI.
+.DESCRIPTION
+    This module contains all the business logic for the 'Drivers' tab in the FFU Builder UI. It handles fetching driver model lists from various manufacturers (Microsoft, Dell, HP, Lenovo), displaying and filtering them in the UI, and managing the selection state. It also includes functions to import and export driver selections to a JSON file (Drivers.json) and to orchestrate the parallel download of selected driver packages using the common parallel processing module.
+#>
+
 # Helper function to get models for a selected Make and standardize them
 function Get-ModelsForMake {
     param(

@@ -1,3 +1,18 @@
+<#
+.SYNOPSIS
+    Initializes the user interface for the BuildFFUVM_UI application.
+
+.DESCRIPTION
+    This script module contains functions responsible for initializing the WPF user interface.
+    It handles several key tasks:
+    - Caching references to all UI controls for efficient access.
+    - Populating UI elements like combo boxes with data (e.g., Hyper-V switches).
+    - Setting default values for all controls based on configuration or predefined settings.
+    - Dynamically creating and configuring complex UI components, such as sortable/selectable GridView columns and feature selection grids.
+    
+    This module is critical for setting up the initial state of the application window when it first loads.
+#>
+
 function Initialize-UIControls {
     param([PSCustomObject]$State)
     WriteLog "Initializing UI control references..."

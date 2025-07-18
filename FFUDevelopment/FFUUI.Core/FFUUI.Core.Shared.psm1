@@ -1,3 +1,10 @@
+<#
+.SYNOPSIS
+    Provides a collection of shared helper functions for manipulating WPF UI controls, handling asynchronous updates, and managing common UI interactions.
+.DESCRIPTION
+    This module contains a variety of reusable functions designed to support the FFU Builder UI. It includes utilities for managing ListView controls, such as sorting, reordering items, and handling 'Select All' functionality. It also provides thread-safe mechanisms for updating the UI from background tasks, wrappers for modern and classic file/folder dialogs, and generic functions for clearing UI content. These shared functions help to reduce code duplication and ensure consistent behavior across different parts of the application.
+#>
+
 # Function to update priorities sequentially in a ListView
 function Update-ListViewPriorities {
     param(
@@ -96,9 +103,9 @@ function Update-ListViewItemStatus {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [object]$WindowObject, # Changed type to [object]
+        [object]$WindowObject, 
         [Parameter(Mandatory)]
-        [object]$ListView,     # Changed type to [object]
+        [object]$ListView,     
         [Parameter(Mandatory)]
         [string]$IdentifierProperty, 
         [Parameter(Mandatory)]
@@ -135,7 +142,7 @@ function Update-ListViewItemStatus {
         catch {
             WriteLog "Update-ListViewItemStatus: Error updating ListView: $($_.Exception.Message)"
         }
-    } # End of if ($WindowObject -is [System.Windows.Window]...)
+    }
     else {
         # Log if called in non-UI mode or with incorrect types (should not happen if Invoke-ParallelProcessing $isUiMode is correct)
         WriteLog "Update-ListViewItemStatus: Skipped UI update for $IdentifierValue due to non-UI mode or incorrect object types."
@@ -147,7 +154,7 @@ function Update-OverallProgress {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [object]$WindowObject, # Changed type to [object]
+        [object]$WindowObject,
         [Parameter(Mandatory)]
         [int]$CompletedCount,
         [Parameter(Mandatory)]
@@ -193,7 +200,7 @@ function Update-OverallProgress {
         catch {
             WriteLog "Update-OverallProgress: Error updating progress: $($_.Exception.Message)"
         }
-    } # End of if ($WindowObject -is [System.Windows.Window])
+    } 
     else {
         # Log if called in non-UI mode or with incorrect types
         WriteLog "Update-OverallProgress: Skipped UI update ($StatusText) due to non-UI mode or incorrect WindowObject type."
@@ -242,7 +249,6 @@ function Add-SortableColumn {
 
         $checkBoxFactory.AddHandler([System.Windows.Controls.CheckBox]::ClickEvent, [System.Windows.RoutedEventHandler] {
                 param($eventSourceLocal, $eventArgsLocal)
-                # Sync logic would be needed here if this column had a header checkbox
             })
         $gridFactory.AppendChild($checkBoxFactory)
         $cellTemplate.VisualTree = $gridFactory
@@ -314,7 +320,7 @@ function Add-SelectableGridViewColumn {
     # MODIFICATION: Store the actual ListView object in the header's Tag
     $headerTagObject = [PSCustomObject]@{
         PropertyName    = $IsSelectedPropertyName
-        ListViewControl = $ListView # Store the object itself
+        ListViewControl = $ListView 
     }
     $headerCheckBox.Tag = $headerTagObject
 
@@ -322,7 +328,7 @@ function Add-SelectableGridViewColumn {
             param($senderCheckBoxLocal, $eventArgsCheckedLocal)
             $tagData = $senderCheckBoxLocal.Tag
             $localPropertyName = $tagData.PropertyName
-            $actualListView = $tagData.ListViewControl # Get the control directly from the tag
+            $actualListView = $tagData.ListViewControl
 
             $collectionToUpdate = if ($null -ne $actualListView.ItemsSource) { $actualListView.ItemsSource } else { $actualListView.Items }
             if ($null -ne $collectionToUpdate) {
@@ -336,7 +342,7 @@ function Add-SelectableGridViewColumn {
             if ($senderCheckBoxLocal.IsChecked -eq $false) {
                 $tagData = $senderCheckBoxLocal.Tag
                 $localPropertyName = $tagData.PropertyName
-                $actualListView = $tagData.ListViewControl # Get the control directly from the tag
+                $actualListView = $tagData.ListViewControl 
 
                 $collectionToUpdate = if ($null -ne $actualListView.ItemsSource) { $actualListView.ItemsSource } else { $actualListView.Items }
                 if ($null -ne $collectionToUpdate) {
@@ -366,7 +372,7 @@ function Add-SelectableGridViewColumn {
     # MODIFICATION: Store the actual ListView object in the item checkbox's Tag
     $tagObject = [PSCustomObject]@{
         HeaderCheckboxKeyName = $HeaderCheckBoxKeyName
-        ListViewControl       = $ListView # Store the object itself
+        ListViewControl       = $ListView 
     }
     $checkBoxFactory.SetValue([System.Windows.FrameworkElement]::TagProperty, $tagObject)
 
@@ -376,7 +382,7 @@ function Add-SelectableGridViewColumn {
             $tagData = $itemCheckBox.Tag
             
             $headerCheckboxKeyFromTag = $tagData.HeaderCheckboxKeyName
-            $targetListView = $tagData.ListViewControl # Get the control directly from the tag
+            $targetListView = $tagData.ListViewControl
 
             # Get the state from the window tag
             $window = [System.Windows.Window]::GetWindow($targetListView)

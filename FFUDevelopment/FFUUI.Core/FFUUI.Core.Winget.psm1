@@ -1,9 +1,9 @@
-# FFU UI Core Logic Module - Winget Functionality
-# Contains UI-layer logic for the Winget functionality in the "Applications" tab.
-
-# -----------------------------------------------------------------------------
-# SECTION: Winget UI Functions (Moved from BuildFFUVM_UI.ps1)
-# -----------------------------------------------------------------------------
+<#
+.SYNOPSIS
+    Manages all Winget-related functionality for the 'Applications' tab in the FFU Builder UI.
+.DESCRIPTION
+    This module provides the business logic for interacting with Winget from the FFU Builder UI. It includes functions for searching for packages, importing and exporting application lists, checking for and installing necessary Winget components (CLI and PowerShell module), and managing the parallel download of selected applications. It works in conjunction with FFU.Common.Winget for lower-level operations and FFU.Common.Parallel for managing concurrent downloads.
+#>
 
 # Function to search for Winget apps
 function Search-WingetApps {
