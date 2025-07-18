@@ -21,7 +21,9 @@ function Invoke-ParallelProcessing {
         [Parameter(Mandatory = $false)] 
         [object]$WindowObject = $null, # Changed type to [object]
         [Parameter(Mandatory = $false)]
-        [string]$MainThreadLogPath = $null # New parameter for the log path
+        [string]$MainThreadLogPath = $null, # New parameter for the log path
+        [Parameter(Mandatory = $false)]
+        [int]$ThrottleLimit = 5
     )
     # Check if running in UI mode by verifying the types of the passed objects
     $isUiMode = ($null -ne $WindowObject -and $WindowObject -is [System.Windows.Window] -and $null -ne $ListViewControl -and $ListViewControl -is [System.Windows.Controls.ListView])
@@ -287,7 +289,7 @@ function Invoke-ParallelProcessing {
                 DriverPath = $driverPathValue
             }
 
-        } -ThrottleLimit 5 -AsJob
+        } -ThrottleLimit $ThrottleLimit -AsJob
     }
     catch {
         # Catch errors during the *creation* of the parallel jobs (e.g., module loading in main thread failed)
@@ -412,7 +414,8 @@ function Invoke-ParallelProcessing {
                     }
                 }
                 
-                if (-not $jobHandled) { # Catches 'Completed' with no data
+                if (-not $jobHandled) {
+                    # Catches 'Completed' with no data
                     $finalIdentifier = "UnknownJob"
                     WriteLog "Job $($completedJob.Id) completed with state '$($completedJob.State)' but had no data."
                     $finalStatus = "$ErrorStatusPrefix No Result Data"

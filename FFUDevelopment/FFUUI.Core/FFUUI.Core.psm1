@@ -112,6 +112,7 @@ function Get-GeneralDefaults {
         FFUCaptureLocation             = $ffuCapturePath
         ShareName                      = "FFUCaptureShare"
         Username                       = "ffu_user"
+        Threads                        = 5
         BuildUSBDriveEnable            = $false
         CompactOS                      = $true
         Optimize                       = $true

@@ -2,6 +2,69 @@ function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
 
+    # --------------------------------------------------------------------------
+    # SECTION: Shared Input Validation Handlers
+    # --------------------------------------------------------------------------
+    # Define a shared event handler for TextBoxes that should only accept integer input
+    $integerPreviewTextInputHandler = {
+        param($eventSource, $textCompositionEventArgs)
+        # Use a regex to check if the input text is NOT a digit. \D matches any non-digit character.
+        if ($textCompositionEventArgs.Text -match '\D') {
+            # If the input is not a digit, mark the event as handled to prevent the character from being entered.
+            $textCompositionEventArgs.Handled = $true
+        }
+    }
+
+    # Define a handler to validate pasted text, ensuring it's only integers
+    $integerPastingHandler = {
+        param($sender, $pastingEventArgs)
+        if ($pastingEventArgs.DataObject.GetDataPresent([string])) {
+            $pastedText = $pastingEventArgs.DataObject.GetData([string])
+            # Check if the pasted text consists ONLY of one or more digits.
+            if ($pastedText -notmatch '^\d+$') {
+                # If not, cancel the paste operation.
+                $pastingEventArgs.CancelCommand()
+            }
+        }
+        else {
+            # If the pasted data is not in a string format, cancel it.
+            $pastingEventArgs.CancelCommand()
+        }
+    }
+
+    # List of TextBox controls that require integer-only input
+    $integerOnlyTextBoxes = @(
+        $State.Controls.txtDiskSize,
+        $State.Controls.txtMemory,
+        $State.Controls.txtProcessors,
+        $State.Controls.txtThreads
+    )
+
+    # Attach the handlers to each relevant textbox
+    foreach ($textBox in $integerOnlyTextBoxes) {
+        if ($null -ne $textBox) {
+            $textBox.Add_PreviewTextInput($integerPreviewTextInputHandler)
+            [System.Windows.DataObject]::AddPastingHandler($textBox, $integerPastingHandler)
+        }
+    }
+
+    # Add specific validation for the Threads textbox to ensure it's not empty and is at least 1
+    if ($null -ne $State.Controls.txtThreads) {
+        $State.Controls.txtThreads.Add_LostFocus({
+                param($eventSource, $routedEventArgs)
+                $textBox = $eventSource
+                $currentValue = 0
+                # Try to parse the current text as an integer
+                $isValidInteger = [int]::TryParse($textBox.Text, [ref]$currentValue)
+
+                # If the text is not a valid integer OR the value is less than 1, reset it to the default value '1'
+                if (-not $isValidInteger -or $currentValue -lt 1) {
+                    $textBox.Text = '1'
+                    WriteLog "Threads value was invalid or less than 1. Reset to 1."
+                }
+            })
+    }
+
     # Build Tab Event Handlers
     $State.Controls.btnBrowseFFUDevPath.Add_Click({
             param($eventSource, $routedEventArgs)

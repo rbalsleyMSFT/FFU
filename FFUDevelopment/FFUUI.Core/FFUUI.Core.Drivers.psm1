@@ -633,7 +633,8 @@ function Invoke-DownloadSelectedDrivers {
         -CompletedStatusText 'Completed' `
         -ErrorStatusPrefix 'Error: ' `
         -WindowObject $State.Window `
-        -MainThreadLogPath $State.LogFilePath
+        -MainThreadLogPath $State.LogFilePath `
+        -ThrottleLimit $State.Controls.txtThreads.Text
 
     $overallSuccess = $true
     $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -670,10 +671,10 @@ function Invoke-DownloadSelectedDrivers {
                 $make = $makeLookup[$modelName]
                 if ($make) {
                     $successfullyDownloaded.Add([PSCustomObject]@{
-                        Make       = $make
-                        Model      = $modelName
-                        DriverPath = $driverPath
-                    })
+                            Make       = $make
+                            Model      = $modelName
+                            DriverPath = $driverPath
+                        })
                 }
                 else {
                     WriteLog "Warning: Could not find 'Make' for successful download of model '$modelName'. Skipping from DriverMapping.json."
@@ -722,7 +723,7 @@ function Invoke-DownloadSelectedDrivers {
                         }
                         'HP' {
                             $modelObject = @{
-                                Name        = $driverItem.Model
+                                Name = $driverItem.Model
                             }
                         }
                         'Lenovo' {

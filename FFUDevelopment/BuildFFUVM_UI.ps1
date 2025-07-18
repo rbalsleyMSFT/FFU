@@ -9,7 +9,7 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 }
 
 # Creating custom state object to hold UI state and data
-$FFUDevelopmentPath = 'C:\FFUDevelopment' # hard coded for testing
+$FFUDevelopmentPath = $PSScriptRoot
 
 $script:uiState = [PSCustomObject]@{
     FFUDevelopmentPath = $FFUDevelopmentPath;

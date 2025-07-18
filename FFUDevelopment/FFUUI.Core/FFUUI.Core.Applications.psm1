@@ -300,7 +300,8 @@ function Invoke-CopyBYOApps {
         -CompletedStatusText "Copied" `
         -ErrorStatusPrefix "Error: " `
         -WindowObject $State.Window `
-        -MainThreadLogPath $State.LogFilePath
+        -MainThreadLogPath $State.LogFilePath `
+        -ThrottleLimit $State.Controls.txtThreads.Text
         
     # Final status update (handled by Invoke-ParallelProcessing)
     $State.Controls.pbOverallProgress.Visibility = 'Collapsed'

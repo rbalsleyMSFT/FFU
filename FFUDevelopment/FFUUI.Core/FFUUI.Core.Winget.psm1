@@ -155,12 +155,12 @@ function Search-WingetPackagesPublic {
         # for large datasets as it avoids holding complex objects in memory and bypasses the
         # expensive formatting system for the raw results.
         Find-WinGetPackage -Query $Query -ErrorAction Stop |
-            Select-Object -Property @{Name = 'IsSelected'; Expression = { $false } },
-            Name,
-            Id,
-            Version,
-            Source,
-            @{Name = 'DownloadStatus'; Expression = { '' } }
+        Select-Object -Property @{Name = 'IsSelected'; Expression = { $false } },
+        Name,
+        Id,
+        Version,
+        Source,
+        @{Name = 'DownloadStatus'; Expression = { '' } }
     }
     catch {
         WriteLog "Error during Winget search: $($_.Exception.Message)"
@@ -731,7 +731,8 @@ function Invoke-WingetDownload {
             -CompletedStatusText "Completed" `
             -ErrorStatusPrefix "Error: " `
             -WindowObject $State.Window `
-            -MainThreadLogPath $State.LogFilePath
+            -MainThreadLogPath $State.LogFilePath `
+            -ThrottleLimit $State.Controls.txtThreads.Text
 
         # Final status update is handled by Invoke-ParallelProcessing, but we need to re-enable the button
         $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
@@ -754,10 +755,10 @@ function Update-WingetVersionFields {
         [string]$moduleText
     )
     $State.Window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
-        $State.Controls.txtWingetVersion.Text = $wingetText
-        $State.Controls.txtWingetModuleVersion.Text = $moduleText
-        [System.Windows.Forms.Application]::DoEvents()
-    })
+            $State.Controls.txtWingetVersion.Text = $wingetText
+            $State.Controls.txtWingetModuleVersion.Text = $moduleText
+            [System.Windows.Forms.Application]::DoEvents()
+        })
 }
 
 Export-ModuleMember -Function *

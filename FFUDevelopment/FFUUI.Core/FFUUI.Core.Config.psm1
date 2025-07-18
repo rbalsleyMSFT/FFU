@@ -89,6 +89,7 @@ function Get-UIConfig {
         UserAppListPath                = "$($State.Controls.txtApplicationPath.Text)\UserAppList.json"
         USBDriveList                   = @{}
         Username                       = $State.Controls.txtUsername.Text
+        Threads                        = [int]$State.Controls.txtThreads.Text
         Verbose                        = $State.Controls.chkVerbose.IsChecked
         VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
         VMLocation                     = $State.Controls.txtVMLocation.Text
@@ -272,6 +273,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtFFUCaptureLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUCaptureLocation' -State $State
     Set-UIValue -ControlName 'txtShareName' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ShareName' -State $State
     Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Username' -State $State
+    Set-UIValue -ControlName 'txtThreads' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Threads' -State $State
     Set-UIValue -ControlName 'chkBuildUSBDriveEnable' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'BuildUSBDrive' -State $State
     Set-UIValue -ControlName 'chkCompactOS' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CompactOS' -State $State
     Set-UIValue -ControlName 'chkUpdateADK' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UpdateADK' -State $State

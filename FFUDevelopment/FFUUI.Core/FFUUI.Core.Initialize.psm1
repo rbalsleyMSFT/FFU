@@ -95,6 +95,7 @@ function Initialize-UIControls {
     $State.Controls.txtFFUCaptureLocation = $window.FindName('txtFFUCaptureLocation')
     $State.Controls.txtShareName = $window.FindName('txtShareName')
     $State.Controls.txtUsername = $window.FindName('txtUsername')
+    $State.Controls.txtThreads = $window.FindName('txtThreads')
     $State.Controls.chkCompactOS = $window.FindName('chkCompactOS')
     $State.Controls.chkOptimize = $window.FindName('chkOptimize')
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
@@ -206,6 +207,7 @@ function Initialize-UIDefaults {
     $State.Controls.txtFFUCaptureLocation.Text = $State.Defaults.generalDefaults.FFUCaptureLocation
     $State.Controls.txtShareName.Text = $State.Defaults.generalDefaults.ShareName
     $State.Controls.txtUsername.Text = $State.Defaults.generalDefaults.Username
+    $State.Controls.txtThreads.Text = $State.Defaults.generalDefaults.Threads
     $State.Controls.chkBuildUSBDriveEnable.IsChecked = $State.Defaults.generalDefaults.BuildUSBDriveEnable
     $State.Controls.chkCompactOS.IsChecked = $State.Defaults.generalDefaults.CompactOS
     $State.Controls.chkUpdateADK.IsChecked = $State.Defaults.generalDefaults.UpdateADK

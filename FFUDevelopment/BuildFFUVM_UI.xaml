@@ -665,13 +665,15 @@
                             <RowDefinition Height="Auto"/>
                             <!-- Row 5: Username -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 6: General Build Options Header -->
+                            <!-- Row 6: Threads -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 7: General Build Options Checkboxes -->
+                            <!-- Row 7: General Build Options Header -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 8: Build USB Drive Header -->
+                            <!-- Row 8: General Build Options Checkboxes -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 9: Build USB Drive Options Grid -->
+                            <!-- Row 9: Build USB Drive Section -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 10: Post-Build Cleanup -->
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
@@ -728,11 +730,20 @@
                             <TextBlock Grid.Column="0" Text="Username" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
                             <TextBox x:Name="txtUsername" Grid.Column="1" Margin="5" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
                         </Grid>
-                        <!-- Row 6: General Build Options Header -->
-                        <TextBlock Grid.Row="6" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
+                        <!-- Row 6: Threads -->
+                        <Grid Grid.Row="6" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Threads" VerticalAlignment="Center" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
+                            <TextBox x:Name="txtThreads" Grid.Column="1" Margin="5" VerticalAlignment="Center" Width="50" HorizontalAlignment="Left" Text="5" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
+                        </Grid>
+                        <!-- Row 7: General Build Options Header -->
+                        <TextBlock Grid.Row="7" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
 
-                        <!-- Row 7: General Build Options Checkboxes -->
-                        <WrapPanel Grid.Row="7" Margin="0,5">
+                        <!-- Row 8: General Build Options Checkboxes -->
+                        <WrapPanel Grid.Row="8" Margin="0,5">
                             <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                             <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
                             <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="5" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
@@ -743,8 +754,8 @@
                             <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
                         </WrapPanel>
 
-                        <!-- Row 8: Build USB Drive Section -->
-                        <StackPanel Grid.Row="8" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
+                        <!-- Row 9: Build USB Drive Section -->
+                        <StackPanel Grid.Row="9" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
                             <TextBlock Text="Build USB Drive Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
                             <StackPanel Margin="5,0,0,10">
                                 <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
@@ -780,8 +791,8 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- Row 9: Post-Build Cleanup -->
-                        <StackPanel Grid.Row="9" Margin="0,10,0,5">
+                        <!-- Row 10: Post-Build Cleanup -->
+                        <StackPanel Grid.Row="10" Margin="0,10,0,5">
                             <TextBlock Text="Post-Build Cleanup" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
                             <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="5" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
                             <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
