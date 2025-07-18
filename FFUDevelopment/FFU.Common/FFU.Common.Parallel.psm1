@@ -36,6 +36,7 @@ function Invoke-ParallelProcessing {
     $jobs = @()
     $totalItems = $ItemsToProcess.Count
     $processedCount = 0
+    $completedIdentifiers = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
     # Create a thread-safe queue for intermediate progress updates
     $progressQueue = New-Object System.Collections.Concurrent.ConcurrentQueue[hashtable]
@@ -319,17 +320,24 @@ function Invoke-ParallelProcessing {
         # Continue while jobs are running OR queue has messages
 
         # 1. Process intermediate status updates from the queue
-        $statusUpdate = $null 
+        $statusUpdate = $null
         while ($progressQueue.TryDequeue([ref]$statusUpdate)) {
             if ($null -ne $statusUpdate) {
+                WriteLog "Dequeued progress update: $($statusUpdate | ConvertTo-Json -Compress)"
                 $intermediateIdentifier = $statusUpdate.Identifier
+                # If this item has already been marked as complete, skip this stale intermediate update
+                if ($completedIdentifiers.Contains($intermediateIdentifier)) {
+                    WriteLog "Skipping stale intermediate status for already completed item: $intermediateIdentifier"
+                    continue
+                }
                 $intermediateStatus = $statusUpdate.Status
                 if ($isUiMode) {
                     # Use the new $isUiMode flag
                     # Update the UI with the intermediate status
                     try {
-                        $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                                Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $intermediateIdentifier -StatusProperty $StatusProperty -StatusValue $intermediateStatus 
+                        WriteLog "Dispatching INTERMEDIATE status for '$intermediateIdentifier': '$intermediateStatus'"
+                        $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] {
+                                Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $intermediateIdentifier -StatusProperty $StatusProperty -StatusValue $intermediateStatus
                             })
                     }
                     catch {
@@ -348,79 +356,80 @@ function Invoke-ParallelProcessing {
 
         if ($completedJobs) {
             foreach ($completedJob in $completedJobs) {
-                $finalIdentifier = "UnknownJob" # Placeholder if we can't get result
-                $finalStatus = "$ErrorStatusPrefix Job $($completedJob.Id) ended unexpectedly"
-                $finalResultCode = 1 # Assume error
-
+                $jobHandled = $false
                 if ($completedJob.State -eq 'Failed') {
+                    $jobHandled = $true
+                    $finalIdentifier = "UnknownJob" # Placeholder
                     WriteLog "Job $($completedJob.Id) failed: $($completedJob.Error)"
-                    # Try to get identifier from job name if possible (less reliable)
-                    # $finalIdentifier = ... logic to parse job name or map ID ...
                     $finalStatus = "$ErrorStatusPrefix Job Failed"
-                    $processedCount++ # Count failed job as processed
+                    $finalResultCode = 1
+                    $processedCount++
+                    
+                    # --- DISPATCH FOR FAILED JOB ---
+                    $completedIdentifiers.Add($finalIdentifier) | Out-Null
+                    if ($isUiMode) {
+                        try {
+                            WriteLog "Dispatching FINAL status for '$finalIdentifier': '$finalStatus'"
+                            $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $finalIdentifier -StatusProperty $StatusProperty -StatusValue $finalStatus })
+                            $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { Update-OverallProgress -WindowObject $WindowObject -CompletedCount $processedCount -TotalCount $totalItems -StatusText "Processed $processedCount of $totalItems..." -ProgressBarName "progressBar" -StatusLabelName "txtStatus" })
+                        }
+                        catch { WriteLog "Error setting FINAL status for item '$finalIdentifier': $($_.Exception.Message)" }
+                    }
+                    else { WriteLog "Final Status for '$finalIdentifier': $finalStatus (ResultCode: $finalResultCode)" }
                 }
                 elseif ($completedJob.HasMoreData) {
-                    # Receive final results specifically from the completed job
+                    $jobHandled = $true
                     $jobResults = $completedJob | Receive-Job
                     foreach ($result in $jobResults) {
-                        # Should only be one result per job in this setup
+                        WriteLog "Received FINAL job result: $($result | ConvertTo-Json -Compress -Depth 3)"
                         if ($null -ne $result -and $result -is [hashtable] -and $result.ContainsKey('Identifier')) {
                             $finalIdentifier = $result.Identifier
-                            $status = $result.Status # This is the FINAL status returned by the task
+                            $status = $result.Status
                             $finalResultCode = $result.ResultCode
-    
-                            # Determine final status text based on the result code
-                            if ($finalResultCode -eq 0) {
-                                # Assuming 0 means success
-                                # Use the specific status returned by the successful job
-                                # This handles cases like "Already downloaded" correctly
-                                $finalStatus = $status
-                            }
-                            else {
-                                $finalStatus = "$($ErrorStatusPrefix)$($status)" # Use status from result for error message
-                            }
+                            $finalStatus = if ($finalResultCode -eq 0) { $status } else { "$($ErrorStatusPrefix)$($status)" }
                             $processedCount++
                         }
                         else {
+                            $finalIdentifier = "UnknownResult"
                             WriteLog "Warning: Received unexpected final job result format: $($result | Out-String)"
                             $finalStatus = "$ErrorStatusPrefix Invalid Result Format"
-                            $processedCount++ # Count as processed to avoid loop issues
+                            $finalResultCode = 1
+                            $processedCount++
                         }
-                            # Add the received result (even if format was unexpected, for logging)
-                            if ($null -ne $result) { $resultsCollection.Add($result) }
+                        if ($null -ne $result) { $resultsCollection.Add($result) }
+
+                        # --- DISPATCH PER RESULT ---
+                        $completedIdentifiers.Add($finalIdentifier) | Out-Null
+                        if ($isUiMode) {
+                            try {
+                                WriteLog "Dispatching FINAL status for '$finalIdentifier': '$finalStatus'"
+                                $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $finalIdentifier -StatusProperty $StatusProperty -StatusValue $finalStatus })
+                                $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { Update-OverallProgress -WindowObject $WindowObject -CompletedCount $processedCount -TotalCount $totalItems -StatusText "Processed $processedCount of $totalItems..." -ProgressBarName "progressBar" -StatusLabelName "txtStatus" })
+                            }
+                            catch { WriteLog "Error setting FINAL status for item '$finalIdentifier': $($_.Exception.Message)" }
                         }
-                }
-                else {
-                    # Job completed but had no data
-                    if ($completedJob.State -ne 'Failed') {
-                        WriteLog "Job $($completedJob.Id) completed with state '$($completedJob.State)' but had no data."
-                        # $finalIdentifier = ... logic to parse job name or map ID ...
-                        $finalStatus = "$ErrorStatusPrefix No Result Data"
-                        $processedCount++
+                        else { WriteLog "Final Status for '$finalIdentifier': $finalStatus (ResultCode: $finalResultCode)" }
                     }
-                    # If it was 'Failed', it was handled above
                 }
+                
+                if (-not $jobHandled) { # Catches 'Completed' with no data
+                    $finalIdentifier = "UnknownJob"
+                    WriteLog "Job $($completedJob.Id) completed with state '$($completedJob.State)' but had no data."
+                    $finalStatus = "$ErrorStatusPrefix No Result Data"
+                    $finalResultCode = 1
+                    $processedCount++
 
-                # Update the specific item in the ListView with its FINAL status
-                if ($isUiMode) {
-                    # Use the new $isUiMode flag
-                    try {
-                        $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                                Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $finalIdentifier -StatusProperty $StatusProperty -StatusValue $finalStatus 
-                            })
+                    # --- DISPATCH FOR NO-DATA JOB ---
+                    $completedIdentifiers.Add($finalIdentifier) | Out-Null
+                    if ($isUiMode) {
+                        try {
+                            WriteLog "Dispatching FINAL status for '$finalIdentifier': '$finalStatus'"
+                            $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $finalIdentifier -StatusProperty $StatusProperty -StatusValue $finalStatus })
+                            $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { Update-OverallProgress -WindowObject $WindowObject -CompletedCount $processedCount -TotalCount $totalItems -StatusText "Processed $processedCount of $totalItems..." -ProgressBarName "progressBar" -StatusLabelName "txtStatus" })
+                        }
+                        catch { WriteLog "Error setting FINAL status for item '$finalIdentifier': $($_.Exception.Message)" }
                     }
-                    catch {
-                        WriteLog "Error setting FINAL status for item '$finalIdentifier': $($_.Exception.Message)"
-                    }
-
-                    # Update overall progress after processing a job's results
-                    $WindowObject.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { 
-                            Update-OverallProgress -WindowObject $WindowObject -CompletedCount $processedCount -TotalCount $totalItems -StatusText "Processed $processedCount of $totalItems..." -ProgressBarName "progressBar" -StatusLabelName "txtStatus" 
-                        })
-                }
-                else {
-                    # Log final status if not in UI mode
-                    WriteLog "Final Status for '$finalIdentifier': $finalStatus (ResultCode: $finalResultCode)"
+                    else { WriteLog "Final Status for '$finalIdentifier': $finalStatus (ResultCode: $finalResultCode)" }
                 }
 
                 # Remove the completed/failed job from the list and clean it up

@@ -234,7 +234,7 @@ function Invoke-CopyBYOApps {
 
     $allAppsWithSource = $State.Controls.lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
     if (-not $allAppsWithSource) {
-        [System.Windows.MessageBox]::Show("UserAppList.json has been updated. No applications with a source path were found to copy.", "Copy BYO Apps", "OK", "Information")
+        [System.Windows.MessageBox]::Show("No applications with a source path were found to copy.", "Copy BYO Apps", "OK", "Information")
         return
     }
         
@@ -341,7 +341,7 @@ function Start-CopyBYOApplicationTask {
     }
 
     if (-not (Test-Path -Path $sourcePath -PathType Container)) {
-        $status = "Error: Source path not found"
+        $status = "Source path not found"
         Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
         WriteLog "Copy error for $($appName): Source path '$sourcePath' not found."
         return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
@@ -381,12 +381,7 @@ function Start-CopyBYOApplicationTask {
         # Enqueue error status
         Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
     }
-        
-    # Enqueue final success status if applicable
-    if ($success) {
-        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appName -Status $status
-    }
-        
+                
     # Return the final status
     return [PSCustomObject]@{ Name = $appName; Status = $status; Success = $success }
 }
