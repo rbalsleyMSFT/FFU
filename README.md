@@ -20,7 +20,7 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Updates
 
-2412.1 has been released! Check out the changes in the [Change Log](ChangeLog.md)
+2507.1 has been released to preview! This is a major update that brings a new user interface to preview. 
 
 # Getting Started
 
