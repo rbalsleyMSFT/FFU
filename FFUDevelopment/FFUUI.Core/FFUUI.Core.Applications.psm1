@@ -57,6 +57,12 @@ function Add-BYOApplication {
         return
     }
     $listView = $State.Controls.lstApplications
+    # Check for duplicate names
+    $existingApp = $listView.Items | Where-Object { $_.Name -eq $name }
+    if ($existingApp) {
+        [System.Windows.MessageBox]::Show("An application with the name '$name' already exists.", "Duplicate Name", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        return
+    }
     $priority = 1
     if ($listView.Items.Count -gt 0) {
         $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
