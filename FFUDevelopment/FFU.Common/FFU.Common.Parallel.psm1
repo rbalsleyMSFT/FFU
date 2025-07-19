@@ -153,13 +153,6 @@ function Invoke-ParallelProcessing {
                 # Set the log path for this parallel thread
                 Set-CommonCoreLogPath -Path $localJobArgs['_currentLogFilePathForJob']
 
-                # Set other global variables if tasks rely on them (prefer passing as parameters)
-                $global:AppsPath = $localJobArgs['AppsPath']
-                $global:WindowsArch = $localJobArgs['WindowsArch']
-                if ($localJobArgs.ContainsKey('OrchestrationPath')) {
-                    $global:OrchestrationPath = $localJobArgs['OrchestrationPath']
-                }
-
                 # Execute the appropriate background task based on $localTaskType
                 switch ($localTaskType) {
                     'WingetDownload' {

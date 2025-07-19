@@ -16,7 +16,13 @@ function Get-Application {
         [string]$AppId,
         [Parameter(Mandatory = $true)]
         [ValidateSet('winget', 'msstore')]
-        [string]$Source
+        [string]$Source,
+        [Parameter(Mandatory = $true)]
+        [string]$AppsPath,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath
     )
     
     # Validate app exists in repository
@@ -109,8 +115,8 @@ function Get-Application {
     }
     # If app is in Win32 folder, add the silent install command to the WinGetWin32Apps.json file
     elseif ($appFolderPath -match 'Win32') {
-        WriteLog "$AppName is a Win32 app. Adding silent install command to $orchestrationpath\WinGetWin32Apps.json"
-        $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath
+        WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
+        $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath
     }
     else {
         # For any other case, set result to 0 (success)
@@ -164,7 +170,13 @@ function Get-Apps {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [string]$AppList
+        [string]$AppList,
+        [Parameter(Mandatory = $true)]
+        [string]$AppsPath,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath
     )
     
     # Load and validate app list
@@ -189,7 +201,7 @@ function Get-Apps {
     }
     
     # Ensure WinGet is available
-    Confirm-WinGetInstallation
+    Confirm-WinGetInstallation -WindowsArch $WindowsArch
     
     # Create necessary folders
     $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
@@ -205,7 +217,7 @@ function Get-Apps {
         
         foreach ($wingetApp in $wingetApps) {
             try {
-                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget'
+                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget' -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
             }
             catch {
                 WriteLog "Error occurred while processing $($wingetApp.Name): $_"
@@ -222,7 +234,7 @@ function Get-Apps {
         
         foreach ($storeApp in $StoreApps) {
             try {
-                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore'
+                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
             }
             catch {
                 WriteLog "Error occurred while processing $($storeApp.Name): $_"
@@ -257,7 +269,10 @@ function Install-WinGet {
 }
 function Confirm-WinGetInstallation {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch
+    )
     
     WriteLog 'Checking if WinGet is installed...'
     $minVersion = [version]"1.8.1911"
@@ -304,7 +319,9 @@ function Confirm-WinGetInstallation {
 function Add-Win32SilentInstallCommand {
     param (
         [string]$AppFolder,
-        [string]$AppFolderPath
+        [string]$AppFolderPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath
     )
     $appName = $AppFolder
     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction Stop
@@ -331,7 +348,7 @@ function Add-Win32SilentInstallCommand {
     }
     
     # Path to the JSON file
-    $wingetWin32AppsJson = "$orchestrationPath\WinGetWin32Apps.json"
+    $wingetWin32AppsJson = "$OrchestrationPath\WinGetWin32Apps.json"
     
     # Initialize or load existing JSON data
     if (Test-Path -Path $wingetWin32AppsJson) {

@@ -593,8 +593,8 @@ function Start-WingetAppDownloadTask {
             }
 
             try {
-                # Call Get-Application (ensure it's available via dot-sourcing and uses $global:LogFile)
-                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -ErrorAction Stop
+                # Call Get-Application 
+                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -ErrorAction Stop
 
                 # Determine status based on result code
                 switch ($resultCode) {

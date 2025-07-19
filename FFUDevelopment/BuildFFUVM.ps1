@@ -622,15 +622,6 @@ if ($WindowsSKU -like "*LTS*") {
 
 # Set the log path for the common logger
 Set-CommonCoreLogPath -Path $LogFile
-# Set critical paths and configuration as global variables for module access
-# This is done after Set-CommonCoreLogPath so this action itself can be logged.
-# Ensure $AppsPath, $orchestrationPath, and $WindowsArch are fully initialized before this point.
-$global:AppsPath = $AppsPath
-$global:orchestrationPath = $orchestrationPath
-$global:WindowsArch = $WindowsArch
-WriteLog "Global script variables set for module access: AppsPath='$global:AppsPath', orchestrationPath='$global:orchestrationPath', WindowsArch='$global:WindowsArch'"
-
-
 
 #FUNCTIONS
 
@@ -4159,7 +4150,7 @@ if ($InstallApps) {
                 # If there are no existing apps, use the original AppList.json directly
                 if (-not $hasExistingApps) {
                     WriteLog "No existing applications found. Using original AppList.json for all apps."
-                    Get-Apps -AppList $AppListPath
+                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
                 }
                 else {
                     # Compare apps in AppList.json with existing installations
@@ -4210,7 +4201,7 @@ if ($InstallApps) {
             
                         # Download missing apps
                         WriteLog "Downloading missing applications"
-                        Get-Apps -AppList $modifiedAppListPath
+                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
                         
                         # Cleanup modified app list
                         Remove-Item -Path $modifiedAppListPath -Force
