@@ -27,9 +27,12 @@ function Search-WingetApps {
         # Store selected apps from the current view
         $selectedAppsFromView = @($currentItemsInListView | Where-Object { $_.IsSelected })
 
+        # Get default architecture from the UI
+        $defaultArch = $State.Controls.cmbWindowsArch.SelectedItem
+
         # Search for new apps, which are streamed directly as PSCustomObjects
         # with the required properties for performance.
-        $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery
+        $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery -DefaultArchitecture $defaultArch
         WriteLog "Found $($searchedAppResults.Count) apps matching query '$searchQuery'."
 
         $finalAppList = [System.Collections.Generic.List[object]]::new()
@@ -73,9 +76,10 @@ function Save-WingetList {
         $appList = @{
             apps = @($selectedApps | ForEach-Object {
                     [ordered]@{
-                        name   = $_.Name
-                        id     = $_.Id
-                        source = $_.Source.ToLower()
+                        name         = $_.Name
+                        id           = $_.Id
+                        source       = $_.Source.ToLower()
+                        architecture = $_.Architecture
                     }
                 })
         }
@@ -116,6 +120,9 @@ function Import-WingetList {
             $newAppListForItemsSource = [System.Collections.Generic.List[object]]::new()
 
             if ($null -ne $importedAppsData.apps) {
+                # Get default architecture from the UI for fallback
+                $defaultArch = $State.Controls.cmbWindowsArch.SelectedItem
+
                 foreach ($appInfo in $importedAppsData.apps) {
                     $newAppListForItemsSource.Add([PSCustomObject]@{
                             IsSelected     = $true # Imported apps are marked as selected
@@ -123,6 +130,7 @@ function Import-WingetList {
                             Id             = $appInfo.id
                             Version        = ""  # Will be populated when searching or if data exists
                             Source         = $appInfo.source
+                            Architecture   = if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch }
                             DownloadStatus = ""
                         })
                 }
@@ -145,7 +153,9 @@ function Search-WingetPackagesPublic {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Query
+        [string]$Query,
+        [Parameter(Mandatory = $true)]
+        [string]$DefaultArchitecture
     )
 
     WriteLog "Searching Winget packages with query: '$Query'"
@@ -160,6 +170,7 @@ function Search-WingetPackagesPublic {
         Id,
         Version,
         Source,
+        @{Name = 'Architecture'; Expression = { $DefaultArchitecture } },
         @{Name = 'DownloadStatus'; Expression = { '' } }
     }
     catch {
@@ -342,8 +353,6 @@ function Start-WingetAppDownloadTask {
         [Parameter(Mandatory = $true)]
         [string]$AppsPath, # Pass necessary paths
         [Parameter(Mandatory = $true)]
-        [string]$WindowsArch,
-        [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath,
         [Parameter(Mandatory = $true)]
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue # Add queue parameter
@@ -361,7 +370,7 @@ function Start-WingetAppDownloadTask {
     WriteLog "Starting download task for $($appName) with ID $($appId) from source $($source)."
     # WriteLog "Apps Path: $($AppsPath)"
     # WriteLog "AppList JSON Path: $($AppListJsonPath)"
-    # WriteLog "Windows Architecture: $($WindowsArch)"
+    # WriteLog "Windows Architecture: $($ApplicationItemData.Architecture)"
     # WriteLog "Orchestration Path: $($OrchestrationPath)"
 
     try {
@@ -449,7 +458,7 @@ function Start-WingetAppDownloadTask {
             }
             # For now, assuming Get-Application uses $global variables set in the main script or $using: scope.
             # $global:AppsPath = $AppsPath # Potentially redundant if set globally before parallel call
-            # $global:WindowsArch = $WindowsArch # Potentially redundant
+            # $global:WindowsArch = $ApplicationItemData.Architecture # Potentially redundant
             # $global:orchestrationPath = $OrchestrationPath # Potentially redundant
 
             $wingetWin32jsonFile = Join-Path -Path $OrchestrationPath -ChildPath "WinGetWin32Apps.json"
@@ -577,7 +586,7 @@ function Start-WingetAppDownloadTask {
             # Ensure variables needed by Get-Application are accessible
             # (Assuming they are available via $using: scope or global scope from main script)
             # $global:AppsPath = $AppsPath # Potentially redundant
-            # $global:WindowsArch = $WindowsArch # Potentially redundant
+            # $global:WindowsArch = $ApplicationItemData.Architecture # Potentially redundant
             # $global:orchestrationPath = $OrchestrationPath # Potentially redundant"
             WriteLog "Orchestration Path: $($OrchestrationPath)"
             if (-not (Test-Path -Path $OrchestrationPath -PathType Container)) {
@@ -594,7 +603,7 @@ function Start-WingetAppDownloadTask {
 
             try {
                 # Call Get-Application 
-                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -ErrorAction Stop
+                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $ApplicationItemData.Architecture -OrchestrationPath $OrchestrationPath -ErrorAction Stop
 
                 # Determine status based on result code
                 switch ($resultCode) {
@@ -713,13 +722,11 @@ function Invoke-WingetDownload {
         $taskArguments = @{
             AppsPath          = $localAppsPath
             AppListJsonPath   = $localAppListJsonPath
-            WindowsArch       = $localWindowsArch
             OrchestrationPath = $localOrchestrationPath
         }
 
         # Select only necessary properties before passing to Invoke-ParallelProcessing
-        $itemsToProcess = $selectedApps | Select-Object Name, Id, Source, Version # Include Version if needed
-
+        $itemsToProcess = $selectedApps | Select-Object Name, Id, Source, Version, Architecture # Include Version and Architecture if needed
         # Invoke the centralized parallel processing function
         # Pass task type and task-specific arguments
         Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `

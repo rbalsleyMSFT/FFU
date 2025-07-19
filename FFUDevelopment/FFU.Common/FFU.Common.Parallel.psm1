@@ -157,12 +157,14 @@ function Invoke-ParallelProcessing {
                 switch ($localTaskType) {
                     'WingetDownload' {
                         # Pass the progress queue to the task function
-                        $taskResult = Start-WingetAppDownloadTask -ApplicationItemData $currentItem `
-                            -AppListJsonPath $localJobArgs['AppListJsonPath'] `
-                            -AppsPath $localJobArgs['AppsPath'] `
-                            -WindowsArch $localJobArgs['WindowsArch'] `
-                            -OrchestrationPath $localJobArgs['OrchestrationPath'] `
-                            -ProgressQueue $localProgressQueue
+                        $wingetTaskArgs = @{
+                            ApplicationItemData = $currentItem
+                            AppListJsonPath     = $localJobArgs['AppListJsonPath']
+                            AppsPath            = $localJobArgs['AppsPath']
+                            OrchestrationPath   = $localJobArgs['OrchestrationPath']
+                            ProgressQueue       = $localProgressQueue
+                        }
+                        $taskResult = Start-WingetAppDownloadTask @wingetTaskArgs
                         if ($null -ne $taskResult) {
                             $resultIdentifier = $taskResult.Id
                             $resultStatus = $taskResult.Status

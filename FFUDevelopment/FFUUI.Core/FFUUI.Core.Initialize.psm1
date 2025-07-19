@@ -384,8 +384,48 @@ function Initialize-DynamicUIElements {
     Add-SortableColumn -gridView $wingetGridView -header "Id" -binding "Id" -width 200 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $wingetGridView -header "Version" -binding "Version" -width 100 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $wingetGridView -header "Source" -binding "Source" -width 100 -headerHorizontalAlignment Left
-    Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
 
+    # --- START: Add Architecture Column ---
+    $archColumn = New-Object System.Windows.Controls.GridViewColumn
+    $archHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+    $archHeader.Tag = "Architecture" # For sorting
+    $archHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+    
+    # Create header content with correct padding to match other columns
+    $commonPaddingForHeader = New-Object System.Windows.Thickness(5, 2, 5, 2)
+    $headerTextElementFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+    $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Architecture")
+    $headerTextBlockPadding = New-Object System.Windows.Thickness($commonPaddingForHeader.Left, $commonPaddingForHeader.Top, $commonPaddingForHeader.Right, $commonPaddingForHeader.Bottom)
+    $headerTextElementFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, $headerTextBlockPadding)
+    $headerTextElementFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+    
+    $headerDataTemplate = New-Object System.Windows.DataTemplate
+    $headerDataTemplate.VisualTree = $headerTextElementFactory
+    $archHeader.ContentTemplate = $headerDataTemplate
+    
+    $archColumn.Header = $archHeader
+    $archColumn.Width = 120
+
+    # Create the CellTemplate with a ComboBox
+    $archCellTemplate = New-Object System.Windows.DataTemplate
+    $comboBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ComboBox])
+    
+    # The ItemsSource for the ComboBox
+    $availableArchitectures = @('x86', 'x64', 'arm64', 'x86 x64')
+    $comboBoxFactory.SetValue([System.Windows.Controls.ItemsControl]::ItemsSourceProperty, $availableArchitectures)
+
+    # Bind the text property to the 'Architecture' property of the data item.
+    # This ensures the initial value is displayed correctly.
+    $binding = New-Object System.Windows.Data.Binding("Architecture")
+    $binding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+    $comboBoxFactory.SetBinding([System.Windows.Controls.ComboBox]::TextProperty, $binding)
+
+    $archCellTemplate.VisualTree = $comboBoxFactory
+    $archColumn.CellTemplate = $archCellTemplate
+    $wingetGridView.Columns.Add($archColumn)
+    # --- END: Add Architecture Column ---
+
+    Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
     $State.Controls.lstWingetResults.AddHandler(
         [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
         [System.Windows.RoutedEventHandler] {

@@ -24,6 +24,26 @@ function Get-Application {
         [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath
     )
+
+    # Determine base folder path for checking existence
+    $appIsWin32ForCheck = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
+    $appBaseFolderPathForCheck = ""
+    if ($Source -eq 'winget' -or $appIsWin32ForCheck) {
+        $appBaseFolderPathForCheck = Join-Path -Path "$AppsPath\Win32" -ChildPath $AppName
+    }
+    else {
+        $appBaseFolderPathForCheck = Join-Path -Path "$AppsPath\MSStore" -ChildPath $AppName
+    }
+
+    # Check if the app (any architecture) has already been downloaded by checking for its content folder.
+    # This prevents re-downloading if BuildFFUVM.ps1 is run after downloading via the UI.
+    if (Test-Path -Path $appBaseFolderPathForCheck -PathType Container) {
+        # Check if the folder is not empty.
+        if (Get-ChildItem -Path $appBaseFolderPathForCheck -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            WriteLog "Application '$AppName' appears to be already downloaded as content exists in '$appBaseFolderPathForCheck'. Skipping download."
+            return 0 # Success, already present
+        }
+    }
     
     # Validate app exists in repository
     $wingetSearchResult = Find-WinGetPackage -id $AppId -MatchOption Equals -Source $Source
@@ -34,137 +54,153 @@ function Get-Application {
         }
         WriteLog "$AppName not found in $Source repository."
         WriteLog "Check the AppList.json file and make sure the AppID is correct."
-        Exit 1
+        return 1 # Return error code
     }
-    
-    # Determine app type and folder path
-    $appIsWin32 = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
-    if ($Source -eq 'winget' -or $appIsWin32) {
-        $appFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $AppName
-    }
-    else {
-        $appFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $AppName
-    }
-    
-    # Create app folder
-    New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
-    
-    # Log download information
-    WriteLog "Downloading $AppName for $WindowsArch architecture..."
-    if ($Source -eq 'msstore') {
-        WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
-    }
-    WriteLog "WinGet command: Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source"
-    
-    # Download the app
-    $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Architecture $WindowsArch -Source $Source
-    
-    # Handle download status
-    if ($wingetDownloadResult.status -ne 'Ok') {
-        # Try downloading without architecture if no applicable installer found
-        if ($wingetDownloadResult.status -eq 'NoApplicableInstallers' -or $wingetDownloadResult.status -eq 'NoApplicableInstallerFound') {
-            WriteLog "No installer found for $WindowsArch architecture. Attempting to download without specifying architecture..."
-            $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Source $Source
-            if ($wingetDownloadResult.status -eq 'Ok') {
-                WriteLog "Downloaded $AppName without specifying architecture."
-            }
-            else {
-                WriteLog "ERROR: No installer found for $AppName. Exiting"
-                Remove-Item -Path $appFolderPath -Recurse -Force
-                Exit 1
-            }
-        }
-        # Handle Store-specific errors
-        elseif ($Source -eq 'msstore') {
-            # If download not supported by publisher
-            if ($wingetDownloadResult.ExtendedErrorCode -match '0x8A150084') {
-                WriteLog "ERROR: The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
-                Remove-Item -Path $appFolderPath -Recurse -Force
-                Write-Error "ERROR: The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
-                Exit 1
-            }
+
+    # Determine architectures to download
+    $architecturesToDownload = if ($WindowsArch -eq 'x86 x64') { @('x86', 'x64') } else { @($WindowsArch) }
+    $overallResult = 0
+
+    foreach ($arch in $architecturesToDownload) {
+        WriteLog "Processing '$AppName' for architecture '$arch'."
+
+        # Determine app type and folder path
+        $appIsWin32 = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
+        if ($Source -eq 'winget' -or $appIsWin32) {
+            $appBaseFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $AppName
         }
         else {
-            $errormsg = "ERROR: Download failed for $AppName with status: $($wingetDownloadResult.status) $($wingetDownloadResult.ExtendedErrorCode)"
-            WriteLog $errormsg
-            Remove-Item -Path $appFolderPath -Recurse -Force
-            Write-Error $errormsg
-            Exit 1
+            $appBaseFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $AppName
         }
-    }
-    
-    WriteLog "$AppName downloaded to $appFolderPath"
-    
-    # Handle winget source apps that have appx, appxbundle, msix, or msixbundle extensions but were downloaded to the Win32 folder
-    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
-    $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
-    
-    if ($uwpExtensions -contains $installerPath.Extension -and $appFolderPath -match 'Win32') {
-        # Handle UWP apps
-        $NewAppPath = "$AppsPath\MSStore\$AppName"
-        WriteLog "$AppName is a UWP app. Moving to $NewAppPath"
-        WriteLog "Creating $NewAppPath"
-        New-Item -Path "$AppsPath\MSStore\$AppName" -ItemType Directory -Force | Out-Null
-        WriteLog "Moving $AppName to $NewAppPath"
-        Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$AppName" -Force
-        WriteLog "Removing $appFolderPath"
-        Remove-Item -Path $appFolderPath -Force -Recurse
-        WriteLog "$AppName moved to $NewAppPath"
-        # Set-InstallStoreAppsFlag
-        $result = 0  # Success for UWP app
-    }
-    # If app is in Win32 folder, add the silent install command to the WinGetWin32Apps.json file
-    elseif ($appFolderPath -match 'Win32') {
-        WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
-        $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath
-    }
-    else {
-        # For any other case, set result to 0 (success)
-        $result = 0
-    }
-    
-    # Handle MSStore specific post-processing
-    if ($Source -eq 'msstore' -and $appFolderPath -match 'MSStore') {
-        # Set-InstallStoreAppsFlag
         
-        # Handle ARM64-specific dependencies
-        if ($WindowsArch -eq 'ARM64') {
-            WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
-            $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
-            if ($dependencies) {
-                foreach ($dependency in $dependencies) {
-                    if ($dependency.Name -notmatch 'ARM64') {
-                        WriteLog "Removing dependency file $($dependency.FullName)"
-                        Remove-Item -Path $dependency.FullName -Recurse -Force
+        # If downloading multiple archs for a Win32 app, create a subfolder
+        $appFolderPath = $appBaseFolderPath
+        $subFolderForCommand = $null
+        if ($architecturesToDownload.Count -gt 1 -and ($Source -eq 'winget' -or $appIsWin32)) {
+            $appFolderPath = Join-Path -Path $appBaseFolderPath -ChildPath $arch
+            $subFolderForCommand = $arch
+        }
+
+        # Create app folder
+        New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
+        
+        # Log download information
+        WriteLog "Downloading $AppName for $arch architecture..."
+        if ($Source -eq 'msstore') {
+            WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
+        }
+        WriteLog "WinGet command: Export-WinGetPackage -id $AppId -DownloadDirectory `"$appFolderPath`" -Architecture $arch -Source $Source"
+        
+        # Download the app
+        $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Architecture $arch -Source $Source
+        
+        # Handle download status
+        if ($wingetDownloadResult.status -ne 'Ok') {
+            # Try downloading without architecture if no applicable installer found
+            if ($wingetDownloadResult.status -eq 'NoApplicableInstallers' -or $wingetDownloadResult.status -eq 'NoApplicableInstallerFound') {
+                WriteLog "No installer found for $arch architecture. Attempting to download without specifying architecture..."
+                $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Source $Source
+                if ($wingetDownloadResult.status -eq 'Ok') {
+                    WriteLog "Downloaded $AppName without specifying architecture."
+                }
+                else {
+                    WriteLog "ERROR: No installer found for $AppName. Exiting"
+                    Remove-Item -Path $appFolderPath -Recurse -Force
+                    return 1 # Return error code
+                }
+            }
+            # Handle Store-specific errors
+            elseif ($Source -eq 'msstore') {
+                # If download not supported by publisher
+                if ($wingetDownloadResult.ExtendedErrorCode -match '0x8A150084') {
+                    $errorMessage = "ERROR: The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
+                    WriteLog $errorMessage
+                    Remove-Item -Path $appFolderPath -Recurse -Force
+                    Write-Error $errorMessage
+                    return 1 # Return error code
+                }
+            }
+            else {
+                $errormsg = "ERROR: Download failed for $AppName with status: $($wingetDownloadResult.status) $($wingetDownloadResult.ExtendedErrorCode)"
+                WriteLog $errormsg
+                Remove-Item -Path $appFolderPath -Recurse -Force
+                Write-Error $errormsg
+                return 1 # Return error code
+            }
+        }
+        
+        WriteLog "$AppName ($arch) downloaded to $appFolderPath"
+        
+        # Handle winget source apps that have appx, appxbundle, msix, or msixbundle extensions but were downloaded to the Win32 folder
+        $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
+        $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
+        
+        if ($uwpExtensions -contains $installerPath.Extension -and $appFolderPath -match 'Win32') {
+            # Handle UWP apps
+            $NewAppPath = "$AppsPath\MSStore\$AppName"
+            WriteLog "$AppName is a UWP app. Moving to $NewAppPath"
+            WriteLog "Creating $NewAppPath"
+            New-Item -Path "$AppsPath\MSStore\$AppName" -ItemType Directory -Force | Out-Null
+            WriteLog "Moving $AppName to $NewAppPath"
+            Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$AppName" -Force
+            WriteLog "Removing $appFolderPath"
+            Remove-Item -Path $appFolderPath -Force -Recurse
+            WriteLog "$AppName moved to $NewAppPath"
+            $result = 0  # Success for UWP app
+        }
+        # If app is in Win32 folder, add the silent install command to the WinGetWin32Apps.json file
+        elseif ($appFolderPath -match 'Win32') {
+            WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
+            $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath -SubFolder $subFolderForCommand
+        }
+        else {
+            # For any other case, set result to 0 (success)
+            $result = 0
+        }
+        
+        if ($result -ne 0) { $overallResult = $result }
+
+        # Handle MSStore specific post-processing
+        if ($Source -eq 'msstore' -and $appFolderPath -match 'MSStore') {
+            # Handle ARM64-specific dependencies
+            if ($arch -eq 'ARM64') {
+                WriteLog 'Windows architecture is ARM64. Removing dependencies that are not ARM64.'
+                $dependencies = Get-ChildItem -Path "$appFolderPath\Dependencies" -ErrorAction SilentlyContinue
+                if ($dependencies) {
+                    foreach ($dependency in $dependencies) {
+                        if ($dependency.Name -notmatch 'ARM64') {
+                            WriteLog "Removing dependency file $($dependency.FullName)"
+                            Remove-Item -Path $dependency.FullName -Recurse -Force
+                        }
+                    }
+                }
+            }
+            
+            # Clean up multiple versions (keep only the latest)
+            WriteLog "$AppName has completed downloading. Identifying the latest version of $AppName."
+            $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
+            
+            # Find latest version based on signature date
+            $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
+            
+            # Remove older versions
+            WriteLog "Latest version of $AppName has been identified as $latestPackage. Removing old versions of $AppName that may have downloaded."
+            foreach ($package in $packages) {
+                if ($package.FullName -ne $latestPackage.FullName) {
+                    try {
+                        WriteLog "Removing $($package.FullName)"
+                        Remove-Item -Path $package.FullName -Force
+                    }
+                    catch {
+                        WriteLog "Failed to delete: $($package.FullName) - $_"
+                        throw $_
                     }
                 }
             }
         }
-        
-        # Clean up multiple versions (keep only the latest)
-        WriteLog "$AppName has completed downloading. Identifying the latest version of $AppName."
-        $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
-        
-        # Find latest version based on signature date
-        $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
-        
-        # Remove older versions
-        WriteLog "Latest version of $AppName has been identified as $latestPackage. Removing old versions of $AppName that may have downloaded."
-        foreach ($package in $packages) {
-            if ($package.FullName -ne $latestPackage) {
-                try {
-                    WriteLog "Removing $($package.FullName)"
-                    Remove-Item -Path $package.FullName -Force
-                }
-                catch {
-                    WriteLog "Failed to delete: $($package.FullName) - $_"
-                    throw $_
-                }
-            }
-        }
-    }
+    } # End foreach ($arch in $architecturesToDownload)
     
-    return $result
+    return $overallResult
 }
 function Get-Apps {
     [CmdletBinding()]
@@ -217,7 +253,8 @@ function Get-Apps {
         
         foreach ($wingetApp in $wingetApps) {
             try {
-                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget' -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
+                $appArch = if ($wingetApp.PSObject.Properties['architecture']) { $wingetApp.architecture } else { $WindowsArch }
+                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget' -AppsPath $AppsPath -WindowsArch $appArch -OrchestrationPath $OrchestrationPath
             }
             catch {
                 WriteLog "Error occurred while processing $($wingetApp.Name): $_"
@@ -234,7 +271,8 @@ function Get-Apps {
         
         foreach ($storeApp in $StoreApps) {
             try {
-                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
+                $appArch = if ($storeApp.PSObject.Properties['architecture']) { $storeApp.architecture } else { $WindowsArch }
+                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -WindowsArch $appArch -OrchestrationPath $OrchestrationPath
             }
             catch {
                 WriteLog "Error occurred while processing $($storeApp.Name): $_"
@@ -321,7 +359,8 @@ function Add-Win32SilentInstallCommand {
         [string]$AppFolder,
         [string]$AppFolderPath,
         [Parameter(Mandatory = $true)]
-        [string]$OrchestrationPath
+        [string]$OrchestrationPath,
+        [string]$SubFolder
     )
     $appName = $AppFolder
     $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction Stop
@@ -339,12 +378,18 @@ function Add-Win32SilentInstallCommand {
         return 2
     }
     $installer = Split-Path -Path $installerPath -Leaf
+    
+    $basePath = "D:\win32\$AppFolder"
+    if (-not [string]::IsNullOrEmpty($SubFolder)) {
+        $basePath = "$basePath\$SubFolder"
+    }
+
     if ($installerPath.Extension -eq ".exe") {
-        $silentInstallCommand = "D:\win32\$appFolder\$installer"
+        $silentInstallCommand = "$basePath\$installer"
     } 
     elseif ($installerPath.Extension -eq ".msi") {
         $silentInstallCommand = "msiexec"
-        $silentInstallSwitch = "/i `"D:\win32\$appFolder\$installer`" $silentInstallSwitch"
+        $silentInstallSwitch = "/i `"$basePath\$installer`" $silentInstallSwitch"
     }
     
     # Path to the JSON file
@@ -367,7 +412,7 @@ function Add-Win32SilentInstallCommand {
     # Create new app entry
     $newApp = [PSCustomObject]@{
         Priority    = $highestPriority
-        Name        = $appName
+        Name        = if (-not [string]::IsNullOrEmpty($SubFolder)) { "$appName ($SubFolder)" } else { $appName }
         CommandLine = $silentInstallCommand
         Arguments   = $silentInstallSwitch
     }
@@ -375,7 +420,7 @@ function Add-Win32SilentInstallCommand {
     $appsData += $newApp
     $appsData | ConvertTo-Json -Depth 10 | Set-Content -Path $wingetWin32AppsJson
     
-    WriteLog "Added $appName to WinGetWin32Apps.json with priority $highestPriority"
+    WriteLog "Added $($newApp.Name) to WinGetWin32Apps.json with priority $highestPriority"
     
     # Return 0 for success
     return 0
