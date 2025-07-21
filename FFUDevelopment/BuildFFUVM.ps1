@@ -2093,7 +2093,6 @@ function Get-UpdateFileInfo {
         $links = Get-KBLink -Name $kb
         foreach ($link in $links) {
             $fileName = ($link -split '/')[-1]
-            # $url = $link
 
             $architectureMatch = $false
             if ($link -match 'x64' -or $link -match 'amd64') {
@@ -4683,28 +4682,14 @@ try {
             WriteLog "Latest SSU identified as $SSUFilePath"
         }
         if ($cuUpdateInfos.Count -gt 0) {
-            # Use the actual downloaded file name from the update info
-            $CUFileName = $cuUpdateInfos[0].Name
-            $CUPath = (Get-ChildItem -Path $KBPath -Filter $CUFileName -Recurse).FullName
             if (-not $CUPath) {
-                # If exact match fails, try to find by KB article ID
                 $CUPath = (Get-ChildItem -Path $KBPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).FullName
-                if ($CUPath) {
-                    $CUFileName = Split-Path $CUPath -Leaf
-                }
             }
             WriteLog "Latest CU identified as $CUPath"
         }
         if ($cupUpdateInfos.Count -gt 0) {
-            # Use the actual downloaded file name from the update info
-            $CUPFileName = $cupUpdateInfos[0].Name
-            $CUPPath = (Get-ChildItem -Path $KBPath -Filter $CUPFileName -Recurse).FullName
             if (-not $CUPPath) {
-                # If exact match fails, try to find by KB article ID
                 $CUPPath = (Get-ChildItem -Path $KBPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).FullName
-                if ($CUPPath) {
-                    $CUPFileName = Split-Path $CUPPath -Leaf
-                }
             }
             WriteLog "Latest Preview CU identified as $CUPPath"
         }
