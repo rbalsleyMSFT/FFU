@@ -4607,11 +4607,9 @@ try {
             
             # Extract file names from URLs for comparison
             $requiredUpdateFileNames = @()
-            foreach ($update in $requiredUpdates) {
-                $fileName = ($update.Url -split '/')[-1]
-                $requiredUpdateFileNames += $fileName
+            if ($requiredUpdates.Count -gt 0) {
+                $requiredUpdateFileNames = @(($requiredUpdates.Url | ForEach-Object { ($_ -split '/')[-1] }) | Sort-Object)
             }
-            $requiredUpdateFileNames = $requiredUpdateFileNames | Sort-Object
 
             foreach ($vhdxJson in $vhdxJsons) {
                 try {
@@ -4625,11 +4623,23 @@ try {
                     if ($vhdxCacheItem.OptionalFeatures -ne $OptionalFeatures) { WriteLog 'OptionalFeatures mismatch, continuing'; continue }
 
                     $cachedUpdateNames = @()
-                    if ($vhdxCacheItem.IncludedUpdates) {
-                        $cachedUpdateNames = $vhdxCacheItem.IncludedUpdates.Name | Sort-Object
+                    if ($vhdxCacheItem.IncludedUpdates -and $vhdxCacheItem.IncludedUpdates.Count -gt 0) {
+                        $cachedUpdateNames = @($vhdxCacheItem.IncludedUpdates.Name | Sort-Object)
                     }
                     
-                    if ((Compare-Object -ReferenceObject $requiredUpdateFileNames -DifferenceObject $cachedUpdateNames).Length -gt 0) {
+                    # Manually compare the two sorted arrays of update names
+                    $updatesMatch = $false
+                    if ($requiredUpdateFileNames.Count -eq $cachedUpdateNames.Count) {
+                        $updatesMatch = $true # Assume true and prove false
+                        for ($i = 0; $i -lt $requiredUpdateFileNames.Count; $i++) {
+                            if ($requiredUpdateFileNames[$i] -ne $cachedUpdateNames[$i]) {
+                                $updatesMatch = $false
+                                break
+                            }
+                        }
+                    }
+
+                    if (-not $updatesMatch) {
                         WriteLog 'IncludedUpdates mismatch, continuing'
                         continue
                     }
