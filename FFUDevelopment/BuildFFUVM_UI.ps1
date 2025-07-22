@@ -368,6 +368,40 @@ $window.Add_SourceInitialized({
 
 # Register cleanup to reclaim memory and revert LongPathsEnabled setting when the UI window closes
 $window.Add_Closed({
+        # Stop any running build job if the window is closed
+        #DEBUG
+        Writelog "DEBUG CurrentBuildJob: $($script:uiState.Data.currentBuildJob)"
+        #END DEBUG
+        if ($null -ne $script:uiState.Data.currentBuildJob) {
+            WriteLog "UI closing, stopping background build job."
+            
+            # Stop the timer
+            if ($null -ne $script:uiState.Data.pollTimer) {
+                $script:uiState.Data.pollTimer.Stop()
+                $script:uiState.Data.pollTimer = $null
+            }
+
+            # Close the log stream
+            if ($null -ne $script:uiState.Data.logStreamReader) {
+                $script:uiState.Data.logStreamReader.Close()
+                $script:uiState.Data.logStreamReader.Dispose()
+                $script:uiState.Data.logStreamReader = $null
+            }
+
+            # Stop and remove the job
+            $jobToStop = $script:uiState.Data.currentBuildJob
+            $script:uiState.Data.currentBuildJob = $null # Clear it from state first
+            
+            try {
+                Stop-Job -Job $jobToStop
+                Remove-Job -Job $jobToStop
+                WriteLog "Background job stopped and removed."
+            }
+            catch {
+                WriteLog "Error stopping or removing background job: $($_.Exception.Message)"
+            }
+        }
+
         # Revert LongPathsEnabled registry setting if it was changed by this script
         if ($script:uiState.Flags.originalLongPathsValue -ne 1) {
             # Only revert if we changed it from something other than 1
