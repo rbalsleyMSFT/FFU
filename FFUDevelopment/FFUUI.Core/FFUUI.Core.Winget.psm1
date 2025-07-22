@@ -428,23 +428,52 @@ function Start-WingetAppDownloadTask {
                     try {
                         $wingetAppsJson = Get-Content -Path $wingetWin32jsonFile -Raw | ConvertFrom-Json
                         # Check if app already exists in WinGetWin32Apps.json
-                        $existingWin32Entry = $wingetAppsJson | Where-Object { $_.Name -eq $appName }
-                        if ($existingWin32Entry) {
+                        # For multi-arch apps, there might be entries like "AppName (x86)" and "AppName (x64)"
+                        $existingWin32Entries = @($wingetAppsJson | Where-Object { 
+                            $_.Name -eq $appName -or 
+                            $_.Name -eq "$appName (x86)" -or 
+                            $_.Name -eq "$appName (x64)"
+                        })
+                        
+                        if ($existingWin32Entries.Count -gt 0) {
                             $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
-                            if (Test-Path -Path $appFolder -PathType Container) {
-                                $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                                if ($folderSize -gt 1MB) {
-                                    $appFound = $true
-                                    $status = "Not Downloaded: App already in $wingetWin32jsonFile and found in $appFolder"
-                                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
-                                    WriteLog "Found '$appName' in WinGetWin32Apps.json and content exists in '$appFolder'. Skipping download to prevent duplicate entry."
-                                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
+                            $appContentFound = $false
+                            
+                            # Check if it's a multi-arch app with subfolders
+                            if ($ApplicationItemData.Architecture -eq 'x86 x64') {
+                                $x86Folder = Join-Path -Path $appFolder -ChildPath "x86"
+                                $x64Folder = Join-Path -Path $appFolder -ChildPath "x64"
+                                
+                                if ((Test-Path -Path $x86Folder -PathType Container) -and (Test-Path -Path $x64Folder -PathType Container)) {
+                                    $x86Size = (Get-ChildItem -Path $x86Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                                    $x64Size = (Get-ChildItem -Path $x64Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                                    
+                                    if ($x86Size -gt 1MB -and $x64Size -gt 1MB) {
+                                        $appContentFound = $true
+                                    }
                                 }
                             }
                             else {
-                                # App entry exists in WinGetWin32Apps.json but folder is missing
+                                # Single architecture app
+                                if (Test-Path -Path $appFolder -PathType Container) {
+                                    $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                                    if ($folderSize -gt 1MB) {
+                                        $appContentFound = $true
+                                    }
+                                }
+                            }
+                            
+                            if ($appContentFound) {
                                 $appFound = $true
-                                $status = "Error: App in '$wingetWin32jsonFile' but content folder '$appFolder' not found. Remove entry from WinGetWin32Apps.json or restore content."
+                                $status = "Not Downloaded: App already in $wingetWin32jsonFile and found in $appFolder"
+                                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                                WriteLog "Found '$appName' in WinGetWin32Apps.json and content exists in '$appFolder'. Skipping download to prevent duplicate entry."
+                                return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
+                            }
+                            else {
+                                # App entry exists in WinGetWin32Apps.json but folder is missing or incomplete
+                                $appFound = $true
+                                $status = "Error: App in '$wingetWin32jsonFile' but content folder '$appFolder' not found or incomplete. Remove entry from WinGetWin32Apps.json or restore content."
                                 Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
                                 WriteLog $status
                                 return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
@@ -454,34 +483,6 @@ function Start-WingetAppDownloadTask {
                     catch {
                         WriteLog "Warning: Could not read or parse '$wingetWin32jsonFile'. Error: $($_.Exception.Message)"
                     }
-                }
-            }
-            # For now, assuming Get-Application uses $global variables set in the main script or $using: scope.
-            # $global:AppsPath = $AppsPath # Potentially redundant if set globally before parallel call
-            # $global:WindowsArch = $ApplicationItemData.Architecture # Potentially redundant
-            # $global:orchestrationPath = $OrchestrationPath # Potentially redundant
-
-            $wingetWin32jsonFile = Join-Path -Path $OrchestrationPath -ChildPath "WinGetWin32Apps.json"
-            if (Test-Path -Path $wingetWin32jsonFile) {
-                try {
-                    $wingetAppsJson = Get-Content -Path $wingetWin32jsonFile -Raw | ConvertFrom-Json
-                    $wingetApp = $wingetAppsJson | Where-Object { $_.Name -eq $appName }
-                    if ($wingetApp) {
-                        $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
-                        if (Test-Path -Path $appFolder -PathType Container) {
-                            $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                            if ($folderSize -gt 1MB) {
-                                $appFound = $true
-                                $status = "Not Downloaded: App in $wingetWin32jsonFile and found in $appFolder"
-                                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
-                                WriteLog "Found '$appName' via WinGetWin32Apps.json and content exists in '$appFolder'."
-                                return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
-                            }
-                        }
-                    }
-                }
-                catch {
-                    WriteLog "Warning: Could not read or parse '$wingetWin32jsonFile'. Error: $($_.Exception.Message)"
                 }
             }
         }
