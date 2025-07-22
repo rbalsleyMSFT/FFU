@@ -130,12 +130,31 @@ function Get-Application {
         }
         
         WriteLog "$AppName ($arch) downloaded to $appFolderPath"
+
+        # Handle zip files
+        $zipFile = Get-ChildItem -Path $appFolderPath -Filter "*.zip" -File -ErrorAction SilentlyContinue
+        if ($zipFile) {
+            WriteLog "Found zip file: $($zipFile.FullName). Extracting..."
+            Expand-Archive -Path $zipFile.FullName -DestinationPath $appFolderPath -Force
+            WriteLog "Extraction complete. Removing zip file."
+            Remove-Item -Path $zipFile.FullName -Force
+            WriteLog "Zip file removed."
+        }
         
         # Handle winget source apps that have appx, appxbundle, msix, or msixbundle extensions but were downloaded to the Win32 folder
-        $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction Stop
+        $installerFiles = Get-ChildItem -Path "$appFolderPath\*" -Exclude "*.yaml", "*.xml" -File -ErrorAction SilentlyContinue
         $uwpExtensions = @(".appx", ".appxbundle", ".msix", ".msixbundle")
+        $isUwpApp = $false
+        if ($installerFiles) {
+            foreach ($file in $installerFiles) {
+                if ($uwpExtensions -contains $file.Extension) {
+                    $isUwpApp = $true
+                    break
+                }
+            }
+        }
         
-        if ($uwpExtensions -contains $installerPath.Extension -and $appFolderPath -match 'Win32') {
+        if ($isUwpApp -and $appFolderPath -match 'Win32') {
             # Handle UWP apps
             $NewAppPath = "$AppsPath\MSStore\$AppName"
             WriteLog "$AppName is a UWP app. Moving to $NewAppPath"
