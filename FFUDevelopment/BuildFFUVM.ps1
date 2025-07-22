@@ -4158,17 +4158,38 @@ if ($InstallApps) {
                         
                         # Check Win32 apps regardless of source
                         if ($wingetAppsJson) {
-                            $wingetApp = $wingetAppsJson | Where-Object { $_.Name -eq $app.name }
+                            # Check for exact match or architecture-specific entries
+                            $wingetApp = $wingetAppsJson | Where-Object { 
+                                $_.Name -eq $app.name -or 
+                                $_.Name -eq "$($app.name) (x86)" -or 
+                                $_.Name -eq "$($app.name) (x64)" -or
+                                $_.Name -eq "$($app.name) (arm64)"
+                            }
                             
                             if ($wingetApp) {
                                 # Verify content exists in Win32 folder
                                 $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $app.name
                                 if (Test-Path -Path $appFolder) {
-                                    $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum).Sum
-                                    if ($folderSize -gt 1MB) {
-                                        $appFound = $true
-                                        WriteLog "Found existing Win32 app: $($app.name)"
+                                    # Check for actual files in the folder or its subdirectories
+                                    $allFiles = Get-ChildItem -Path $appFolder -Recurse -File -ErrorAction SilentlyContinue
+                                    
+                                    if ($allFiles) {
+                                        # Verify actual content size
+                                        $folderSize = ($allFiles | Measure-Object -Property Length -Sum).Sum
+                                        if ($folderSize -gt 1MB) {
+                                            $appFound = $true
+                                            WriteLog "Found existing Win32 app: $($app.name) (Size: $([math]::Round($folderSize/1MB, 2)) MB)"
+                                        }
+                                        else {
+                                            WriteLog "Win32 app folder exists but content is too small: $($app.name) (Size: $([math]::Round($folderSize/1MB, 2)) MB)"
+                                        }
                                     }
+                                    else {
+                                        WriteLog "Win32 app folder exists but contains no files: $($app.name)"
+                                    }
+                                }
+                                else {
+                                    WriteLog "Win32 app folder does not exist: $($app.name)"
                                 }
                             }
                         }
