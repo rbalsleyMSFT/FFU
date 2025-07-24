@@ -877,7 +877,7 @@ function Register-EventHandlers {
             # Update the flag
             $localState.Flags.autoScrollLog = $isLastItemSelected
             if ($isLastItemSelected) {
-                WriteLog "Monitor tab autoscroll enabled (last item selected)."
+                # WriteLog "Monitor tab autoscroll enabled (last item selected)."
             }
             else {
                 WriteLog "Monitor tab autoscroll disabled (user selected item #$($listBox.SelectedIndex))."
