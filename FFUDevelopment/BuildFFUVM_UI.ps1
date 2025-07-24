@@ -371,9 +371,6 @@ $window.Add_SourceInitialized({
 # Register cleanup to reclaim memory and revert LongPathsEnabled setting when the UI window closes
 $window.Add_Closed({
         # Stop any running build job if the window is closed
-        #DEBUG
-        Writelog "DEBUG CurrentBuildJob: $($script:uiState.Data.currentBuildJob)"
-        #END DEBUG
         if ($null -ne $script:uiState.Data.currentBuildJob) {
             WriteLog "UI closing, stopping background build job."
             
