@@ -11,10 +11,15 @@ function Search-WingetApps {
         [Parameter(Mandatory = $true)]
         [psobject]$State
     )
-    try {
-        $searchQuery = $State.Controls.txtWingetSearch.Text
-        if ([string]::IsNullOrWhiteSpace($searchQuery)) { return }
 
+    $searchQuery = $State.Controls.txtWingetSearch.Text
+    if ([string]::IsNullOrWhiteSpace($searchQuery)) { return }
+
+    $State.Controls.txtStatus.Text = "Searching Winget for apps matching query '$searchQuery'..."
+    $State.Window.Cursor = [System.Windows.Input.Cursors]::Wait
+    $State.Controls.btnWingetSearch.IsEnabled = $false
+
+    try {
         # Get current items from the ListView
         $currentItemsInListView = @()
         if ($null -ne $State.Controls.lstWingetResults.ItemsSource) {
@@ -33,8 +38,6 @@ function Search-WingetApps {
         # Search for new apps, which are streamed directly as PSCustomObjects
         # with the required properties for performance.
         $searchedAppResults = Search-WingetPackagesPublic -Query $searchQuery -DefaultArchitecture $defaultArch
-        WriteLog "Found $($searchedAppResults.Count) apps matching query '$searchQuery'."
-
         $finalAppList = [System.Collections.Generic.List[object]]::new()
         $addedAppIds = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -45,18 +48,37 @@ function Search-WingetApps {
         }
 
         # Add new search results, avoiding duplicates of already added (selected) apps
+        $newAppsAddedCount = 0
         foreach ($result in $searchedAppResults) {
-            if (-not $addedAppIds.Contains($result.Id)) {
+            # HashSet.Add returns $true if the item was added, $false if it already existed.
+            if ($addedAppIds.Add($result.Id)) {
                 $finalAppList.Add($result)
-                $addedAppIds.Add($result.Id) | Out-Null # Track added IDs to prevent duplicates from search results themselves
+                $newAppsAddedCount++
             }
         }
 
         # Update the ListView's ItemsSource using the passed-in State object
         $State.Controls.lstWingetResults.ItemsSource = $finalAppList.ToArray()
+
+        # Update status text
+        $statusText = ""
+        if ($newAppsAddedCount -gt 0) {
+            $statusText = "Found $newAppsAddedCount new applications. "
+        }
+        else {
+            $statusText = "No new applications found. "
+        }
+        $statusText += "Displaying $($finalAppList.Count) total applications."
+        $State.Controls.txtStatus.Text = $statusText
     }
     catch {
-        [System.Windows.MessageBox]::Show("Error searching for apps: $_", "Error", "OK", "Error")
+        $errorMessage = "Error searching for apps: $($_.Exception.Message)"
+        $State.Controls.txtStatus.Text = $errorMessage
+        [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
+    }
+    finally {
+        $State.Window.Cursor = $null
+        $State.Controls.btnWingetSearch.IsEnabled = $true
     }
 }
 
@@ -160,18 +182,24 @@ function Search-WingetPackagesPublic {
 
     WriteLog "Searching Winget packages with query: '$Query'"
     try {
-        # Stream results directly from Find-WinGetPackage and convert them to simple PSCustomObjects
-        # on the fly using Select-Object with calculated properties. This is significantly faster
-        # for large datasets as it avoids holding complex objects in memory and bypasses the
-        # expensive formatting system for the raw results.
-        Find-WinGetPackage -Query $Query -ErrorAction Stop |
-        Select-Object -Property @{Name = 'IsSelected'; Expression = { $false } },
-        Name,
-        Id,
-        Version,
-        Source,
-        @{Name = 'Architecture'; Expression = { $DefaultArchitecture } },
-        @{Name = 'DownloadStatus'; Expression = { '' } }
+        # Using ForEach-Object -Parallel can speed up object creation on multi-core systems
+        # by distributing the work across multiple threads.
+        $results = Find-WinGetPackage -Query $Query -ErrorAction Stop
+        WriteLog "Found $($results.Count) packages matching query '$Query'."
+        WriteLog "Creating output objects for Winget search results, please wait..."
+        $output = $results | ForEach-Object -Parallel {
+            [PSCustomObject]@{
+                IsSelected     = [bool]$false
+                Name           = [string]$_.Name
+                Id             = [string]$_.Id
+                Version        = [string]$_.Version
+                Source         = [string]$_.Source
+                Architecture   = [string]$using:DefaultArchitecture
+                DownloadStatus = [string]::Empty
+            }
+        } -ThrottleLimit 20
+        WriteLog "Winget search completed. Created $($output.Count) output objects."
+        return $output
     }
     catch {
         WriteLog "Error during Winget search: $($_.Exception.Message)"
