@@ -545,14 +545,15 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
         }
         WriteLog "Detected System: Manufacturer='$systemManufacturer', Model='$systemModel'"
 
-        # Load and parse the mapping file
-        $driverMappings = Get-Content -Path $driverMappingPath -Raw | ConvertFrom-Json
+        # Load and parse the mapping file, ensuring it's always an array
+        $driverMappings = @(Get-Content -Path $driverMappingPath -Raw | ConvertFrom-Json -ErrorAction SilentlyContinue)
 
         # Find all matching rules and select the most specific one
         $matchingRules = @()
         foreach ($rule in $driverMappings) {
-            # Use -like for wildcard matching
-            if ($systemManufacturer -like "$($rule.Manufacturer)*" -and $systemModel -like "$($rule.Model)*") {
+            # Use -like for wildcard matching.
+            # This checks if the system model starts with the rule model, or vice-versa, for flexibility.
+            if ($systemManufacturer -like "$($rule.Manufacturer)*" -and ($systemModel -like "$($rule.Model)*" -or $rule.Model -like "$systemModel*")) {
                 $matchingRules += $rule
             }
         }
@@ -865,6 +866,7 @@ if ($null -ne $DriverSourcePath) {
 
             WriteLog "Injecting drivers from $TempDriverDir"
             Write-Host "Injecting drivers from $TempDriverDir"
+            Write-Host "This may take a while, please be patient."
             Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$TempDriverDir"" /Recurse"
             WriteLog "Driver injection from WIM succeeded."
             Write-Host "Driver injection from WIM succeeded."
