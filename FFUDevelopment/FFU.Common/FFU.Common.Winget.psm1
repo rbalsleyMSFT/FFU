@@ -25,6 +25,13 @@ function Get-Application {
         [string]$OrchestrationPath
     )
 
+    # Block Company Portal from winget source
+    # I refuse to code around the poor packaging of this app
+    if ($AppId -eq 'Microsoft.CompanyPortal' -and $Source -eq 'winget') {
+        WriteLog "Skipping download of Company Portal from the 'winget' source. This version has packaging inconsistencies. Please use the 'msstore' source instead."
+        return 4 # Return specific error code for this case
+    }
+
     # Determine base folder path for checking existence
     $appIsWin32ForCheck = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
     $appBaseFolderPathForCheck = ""
@@ -100,32 +107,29 @@ function Get-Application {
             if ($wingetDownloadResult.status -eq 'NoApplicableInstallers' -or $wingetDownloadResult.status -eq 'NoApplicableInstallerFound') {
                 WriteLog "No installer found for $arch architecture. Attempting to download without specifying architecture..."
                 $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Source $Source
-                if ($wingetDownloadResult.status -eq 'Ok') {
-                    WriteLog "Downloaded $AppName without specifying architecture."
-                }
-                else {
-                    WriteLog "ERROR: No installer found for $AppName. Exiting"
-                    Remove-Item -Path $appFolderPath -Recurse -Force
-                    return 1 # Return error code
-                }
             }
-            # Handle Store-specific errors
-            elseif ($Source -eq 'msstore') {
-                # If download not supported by publisher
-                if ($wingetDownloadResult.ExtendedErrorCode -match '0x8A150084') {
-                    $errorMessage = "ERROR: The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
+
+            # Re-evaluate status after potential second attempt
+            if ($wingetDownloadResult.status -ne 'Ok') {
+                # Handle Store-specific publisher restriction error
+                if ($Source -eq 'msstore' -and $wingetDownloadResult.ExtendedErrorCode -match '0x8A150084') {
+                    $errorMessage = "The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
                     WriteLog $errorMessage
                     Remove-Item -Path $appFolderPath -Recurse -Force
                     Write-Error $errorMessage
-                    return 1 # Return error code
+                    return 3 # Return specific error code for publisher restriction
+                }
+                # Handle other download failures
+                else {
+                    $errormsg = "Download failed for $AppName with status: $($wingetDownloadResult.status) $($wingetDownloadResult.ExtendedErrorCode)"
+                    WriteLog $errormsg
+                    Remove-Item -Path $appFolderPath -Recurse -Force
+                    Write-Error $errormsg
+                    return 1 # Return generic error code
                 }
             }
             else {
-                $errormsg = "ERROR: Download failed for $AppName with status: $($wingetDownloadResult.status) $($wingetDownloadResult.ExtendedErrorCode)"
-                WriteLog $errormsg
-                Remove-Item -Path $appFolderPath -Recurse -Force
-                Write-Error $errormsg
-                return 1 # Return error code
+                WriteLog "Downloaded $AppName without specifying architecture."
             }
         }
         

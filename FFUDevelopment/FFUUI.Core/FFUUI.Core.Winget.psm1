@@ -245,7 +245,7 @@ function Install-WingetComponents {
             }
 
             # Install/Update the module
-            Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery'
+            Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery' -Scope AllUsers
             
             # Restore original PSGallery trust setting
             if ($PSGalleryTrust -eq 'Untrusted') {
@@ -400,7 +400,7 @@ function Start-WingetAppDownloadTask {
                         }
                         else {
                             $appFound = $true
-                            $status = "Error: App in '$userAppListPath' but content missing/small in '$appFolder'. Copy content or remove from UserAppList.json."
+                            $status = "App in '$userAppListPath' but content missing/small in '$appFolder'. Copy content or remove from UserAppList.json."
                             Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
                             WriteLog $status
                             return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
@@ -408,7 +408,7 @@ function Start-WingetAppDownloadTask {
                     }
                     else {
                         $appFound = $true
-                        $status = "Error: App in '$userAppListPath' but content folder '$appFolder' not found. Copy content or remove from UserAppList.json."
+                        $status = "App in '$userAppListPath' but content folder '$appFolder' not found. Copy content or remove from UserAppList.json."
                         Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
                         WriteLog $status
                         return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
@@ -430,10 +430,10 @@ function Start-WingetAppDownloadTask {
                         # Check if app already exists in WinGetWin32Apps.json
                         # For multi-arch apps, there might be entries like "AppName (x86)" and "AppName (x64)"
                         $existingWin32Entries = @($wingetAppsJson | Where-Object { 
-                            $_.Name -eq $appName -or 
-                            $_.Name -eq "$appName (x86)" -or 
-                            $_.Name -eq "$appName (x64)"
-                        })
+                                $_.Name -eq $appName -or 
+                                $_.Name -eq "$appName (x86)" -or 
+                                $_.Name -eq "$appName (x64)"
+                            })
                         
                         if ($existingWin32Entries.Count -gt 0) {
                             $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
@@ -473,7 +473,7 @@ function Start-WingetAppDownloadTask {
                             else {
                                 # App entry exists in WinGetWin32Apps.json but folder is missing or incomplete
                                 $appFound = $true
-                                $status = "Error: App in '$wingetWin32jsonFile' but content folder '$appFolder' not found or incomplete. Remove entry from WinGetWin32Apps.json or restore content."
+                                $status = "App in '$wingetWin32jsonFile' but content folder '$appFolder' not found or incomplete. Remove entry from WinGetWin32Apps.json or restore content."
                                 Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
                                 WriteLog $status
                                 return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
@@ -571,7 +571,7 @@ function Start-WingetAppDownloadTask {
                 }
                 catch {
                     WriteLog "Error saving '$AppListJsonPath'. Error: $($_.Exception.Message)"
-                    $status = "Error saving AppList.json"
+                    $status = "Failed to save AppList.json: $($_.Exception.Message)"
                     Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
                     return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
                 }
@@ -609,8 +609,10 @@ function Start-WingetAppDownloadTask {
                 # Determine status based on result code
                 switch ($resultCode) {
                     0 { $status = "Downloaded successfully" }
-                    1 { $status = "Error: No win32 app installers were found" }
+                    1 { $status = "Error: No app installers were found" }
                     2 { $status = "Silent install switch could not be found. Did not download." }
+                    3 { $status = "Error: Publisher does not support download" }
+                    4 { $status = "Skipped: Use 'msstore' source instead." }
                     default { $status = "Downloaded with status: $resultCode" } # Should not happen with current Get-Application
                 }
 
@@ -633,7 +635,7 @@ function Start-WingetAppDownloadTask {
                 }
             }
             catch {
-                $status = "Error: $($_.Exception.Message)"
+                $status = $_.Exception.Message
                 WriteLog "Download error for $($appName): $($_.Exception.Message)"
                 $resultCode = 1 # Indicate error
                 # Enqueue error status
@@ -662,7 +664,7 @@ function Start-WingetAppDownloadTask {
             
     }
     catch {
-        $status = "Error: $($_.Exception.Message)"
+        $status = $_.Exception.Message
         WriteLog "Unexpected error in Start-WingetAppDownloadTask for $($appName): $($_.Exception.Message)"
         $resultCode = 1 # Indicate error
         # Enqueue error status
@@ -671,7 +673,7 @@ function Start-WingetAppDownloadTask {
     finally {
         # Ensure status is not empty before returning
         if ([string]::IsNullOrEmpty($status)) {
-            $status = "Error: Unknown failure" # Provide a default error status
+            $status = "Unknown failure" # Provide a default error status
             WriteLog "Status was empty for $appName ($appId), setting to default error."
             if ($resultCode -ne 0 -and $resultCode -ne 1 -and $resultCode -ne 2) {
                 $resultCode = -1 # Ensure resultCode reflects an error if it was empty

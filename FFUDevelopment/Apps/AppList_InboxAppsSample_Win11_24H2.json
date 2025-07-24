@@ -1,0 +1,149 @@
+{
+    "apps": [
+        {
+            "name": "Windows Notepad",
+            "id": "9MSMLRH6LZF3",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Client Web Experience",
+            "id": "9MSSGKG348SP",
+            "source": "msstore"
+        },
+        {
+            "name": "Screen Sketch",
+            "id": "9MZ95KL8MR0L",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Terminal",
+            "id": "9N0DX20HK701",
+            "source": "msstore"
+        },
+        {
+            "name": "VP9 Video Extensions",
+            "id": "9N4D0MSMP0PT",
+            "source": "msstore"
+        },
+        {
+            "name": "MPEG2 Video Extension",
+            "id": "9N95Q1ZZPMH4",
+            "source": "msstore"
+        },
+        {
+            "name": "Store Purchase App",
+            "id": "9NBLGGH4LS1F",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Feedback Hub",
+            "id": "9NBLGGH4R32N",
+            "source": "msstore"
+        },
+        {
+            "name": "Todos",
+            "id": "9NBLGGH5R558",
+            "source": "msstore"
+        },
+        {
+            "name": "Raw Image Extension",
+            "id": "9NCTDW2W1BH8",
+            "source": "msstore"
+        },
+        {
+            "name": "Power Automate Desktop",
+            "id": "9NFTCH6J7FHV",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox TCUI",
+            "id": "9NKNC0LD5NN6",
+            "source": "msstore"
+        },
+        {
+            "name": "Your Phone",
+            "id": "9NMPJ99VJBWV",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox Gaming Overlay",
+            "id": "9NZKPSTSNW4P",
+            "source": "msstore"
+        },
+        {
+            "name": "Clipchamp",
+            "id": "9P1J8S7CCWWT",
+            "source": "msstore"
+        },
+        {
+            "name": "Paint",
+            "id": "9PCFS5B6T72H",
+            "source": "msstore"
+        },
+        {
+            "name": "Webp Image Extension",
+            "id": "9PG2DK419DRG",
+            "source": "msstore"
+        },
+        {
+            "name": "Get Help",
+            "id": "9PKDZBMV1H3T",
+            "source": "msstore"
+        },
+        {
+            "name": "HEIF Image Extension",
+            "id": "9PMMSR1CGPWG",
+            "source": "msstore"
+        },
+        {
+            "name": "Xbox Identity Provider",
+            "id": "9WZDNCRD1HKW",
+            "source": "msstore"
+        },
+        {
+            "name": "Microsoft Office Hub",
+            "id": "9WZDNCRD29V9",
+            "source": "msstore"
+        },
+        {
+            "name": "Bing News",
+            "id": "9WZDNCRFHVFW",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Sound Recorder",
+            "id": "9WZDNCRFHWKN",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Alarms",
+            "id": "9WZDNCRFJ3PR",
+            "source": "msstore"
+        },
+        {
+            "name": "Zune Music",
+            "id": "9WZDNCRFJ3PT",
+            "source": "msstore"
+        },
+        {
+            "name": "Bing Weather",
+            "id": "9WZDNCRFJ3Q2",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Camera",
+            "id": "9WZDNCRFJBBG",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Photos",
+            "id": "9WZDNCRFJBH4",
+            "source": "msstore"
+        },
+        {
+            "name": "Windows Store",
+            "id": "9WZDNCRFJBMP",
+            "source": "msstore"
+        }
+    ]
+}
