@@ -52,5 +52,6 @@ foreach ($appFolder in Get-ChildItem -Path $basePath -Directory) {
         # Output and execute the command
         Write-Output $dismCommand
         Invoke-Expression -Command $dismCommand
+        Write-Output ""
     }
 }
