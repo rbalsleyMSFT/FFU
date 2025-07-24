@@ -285,28 +285,30 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                         $finalStatusText = "FFU build completed successfully."
                         if ($currentJob.State -eq 'Failed') {
-                            # Try to get a detailed error message.
                             $reason = $null
-                            if ($currentJob.JobStateInfo.Reason) {
+                            
+                            # Use Receive-Job with -ErrorVariable to reliably capture the error stream from the job,
+                            # as suggested by the research on handling job errors.
+                            Receive-Job -Job $currentJob -Keep -ErrorVariable jobErrors -ErrorAction SilentlyContinue | Out-Null
+                            
+                            if ($null -ne $jobErrors -and $jobErrors.Count -gt 0) {
+                                # The terminating error is typically the last one in the stream.
+                                $reason = ($jobErrors | Select-Object -Last 1).ToString()
+                            }
+
+                            # If Receive-Job didn't surface an error, fall back to the JobStateInfo.Reason property.
+                            if ([string]::IsNullOrWhiteSpace($reason) -and $currentJob.JobStateInfo.Reason) {
                                 $reason = $currentJob.JobStateInfo.Reason.Message
                             }
 
-                            # If the primary reason is empty, check the child job's error stream for more details.
-                            if ([string]::IsNullOrWhiteSpace($reason) -and $currentJob.ChildJobs.Count -gt 0) {
-                                $errorMessages = $currentJob.ChildJobs[0].Error | ForEach-Object { $_.ToString() }
-                                if ($errorMessages) {
-                                    $reason = $errorMessages -join [System.Environment]::NewLine
-                                }
-                            }
-
-                            # Fallback if no specific reason is found
+                            # Final fallback if no specific reason can be found.
                             if ([string]::IsNullOrWhiteSpace($reason)) {
                                 $reason = "An unknown error occurred. The job failed without a specific reason."
                             }
 
                             $finalStatusText = "FFU build failed. Check FFUDevelopment.log for details."
                             WriteLog "BuildFFUVM.ps1 job failed. Reason: $reason"
-                            [System.Windows.MessageBox]::Show("The build process failed. Please check the log file for details.`n`nError: $reason", "Build Error", "OK", "Error") | Out-Null
+                            [System.Windows.MessageBox]::Show("The build process failed. Please check the $FFUDevelopmentPath\FFUDevelopment.log file for details.`n`nError: $reason", "Build Error", "OK", "Error") | Out-Null
                             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                         }
                         else {
