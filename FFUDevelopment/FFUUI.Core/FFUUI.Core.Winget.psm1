@@ -146,13 +146,14 @@ function Import-WingetList {
                 $defaultArch = $State.Controls.cmbWindowsArch.SelectedItem
 
                 foreach ($appInfo in $importedAppsData.apps) {
+                    $arch = if ($appInfo.source -eq 'msstore') { 'NA' } else { if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch } }
                     $newAppListForItemsSource.Add([PSCustomObject]@{
                             IsSelected     = $true # Imported apps are marked as selected
                             Name           = $appInfo.name
                             Id             = $appInfo.id
                             Version        = ""  # Will be populated when searching or if data exists
                             Source         = $appInfo.source
-                            Architecture   = if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch }
+                            Architecture   = $arch
                             DownloadStatus = ""
                         })
                 }
@@ -188,13 +189,14 @@ function Search-WingetPackagesPublic {
         WriteLog "Found $($results.Count) packages matching query '$Query'."
         WriteLog "Creating output objects for Winget search results, please wait..."
         $output = $results | ForEach-Object -Parallel {
+            $arch = if ($_.Source -eq 'msstore') { 'NA' } else { $using:DefaultArchitecture }
             [PSCustomObject]@{
                 IsSelected     = [bool]$false
                 Name           = [string]$_.Name
                 Id             = [string]$_.Id
                 Version        = [string]$_.Version
                 Source         = [string]$_.Source
-                Architecture   = [string]$using:DefaultArchitecture
+                Architecture   = [string]$arch
                 DownloadStatus = [string]::Empty
             }
         } -ThrottleLimit 20

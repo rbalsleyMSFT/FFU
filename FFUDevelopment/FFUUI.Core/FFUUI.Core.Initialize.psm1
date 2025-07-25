@@ -411,7 +411,7 @@ function Initialize-DynamicUIElements {
     $comboBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.ComboBox])
     
     # The ItemsSource for the ComboBox
-    $availableArchitectures = @('x86', 'x64', 'arm64', 'x86 x64')
+    $availableArchitectures = @('x86', 'x64', 'arm64', 'x86 x64', 'NA')
     $comboBoxFactory.SetValue([System.Windows.Controls.ItemsControl]::ItemsSourceProperty, $availableArchitectures)
 
     # Bind the text property to the 'Architecture' property of the data item.
@@ -419,6 +419,18 @@ function Initialize-DynamicUIElements {
     $binding = New-Object System.Windows.Data.Binding("Architecture")
     $binding.Mode = [System.Windows.Data.BindingMode]::TwoWay
     $comboBoxFactory.SetBinding([System.Windows.Controls.ComboBox]::TextProperty, $binding)
+
+    # Create a style to disable the ComboBox for 'msstore' source
+    $comboBoxStyle = New-Object System.Windows.Style
+    $comboBoxStyle.TargetType = [System.Windows.Controls.ComboBox]
+    
+    $dataTrigger = New-Object System.Windows.DataTrigger
+    $dataTrigger.Binding = New-Object System.Windows.Data.Binding("Source")
+    $dataTrigger.Value = "msstore"
+    $dataTrigger.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ComboBox]::IsEnabledProperty, $false)))
+    
+    $comboBoxStyle.Triggers.Add($dataTrigger)
+    $comboBoxFactory.SetValue([System.Windows.FrameworkElement]::StyleProperty, $comboBoxStyle)
 
     $archCellTemplate.VisualTree = $comboBoxFactory
     $archColumn.CellTemplate = $archCellTemplate

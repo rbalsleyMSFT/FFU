@@ -68,8 +68,18 @@ function Get-Application {
     $architecturesToDownload = if ($WindowsArch -eq 'x86 x64') { @('x86', 'x64') } else { @($WindowsArch) }
     $overallResult = 0
 
+    # For msstore, we don't specify architecture, so we only need to loop once.
+    if ($Source -eq 'msstore') {
+        $architecturesToDownload = @('neutral') # Use a placeholder to loop once
+    }
+
     foreach ($arch in $architecturesToDownload) {
-        WriteLog "Processing '$AppName' for architecture '$arch'."
+        if ($Source -eq 'msstore') {
+            WriteLog "Processing '$AppName' for all architectures."
+        }
+        else {
+            WriteLog "Processing '$AppName' for architecture '$arch'."
+        }
 
         # Determine app type and folder path
         $appIsWin32 = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
@@ -91,22 +101,35 @@ function Get-Application {
         # Create app folder
         New-Item -Path $appFolderPath -ItemType Directory -Force | Out-Null
         
-        # Log download information
-        WriteLog "Downloading $AppName for $arch architecture..."
-        if ($Source -eq 'msstore') {
-            WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
+        # Build download parameters and log information
+        $downloadParams = @{
+            id                = $AppId
+            DownloadDirectory = $appFolderPath
+            Source            = $Source
         }
-        WriteLog "WinGet command: Export-WinGetPackage -id $AppId -DownloadDirectory `"$appFolderPath`" -Architecture $arch -Source $Source"
+        
+        if ($Source -ne 'msstore') {
+            $downloadParams.Architecture = $arch
+            WriteLog "Downloading $AppName for $arch architecture..."
+            WriteLog "WinGet command: Export-WinGetPackage -id $AppId -DownloadDirectory `"$appFolderPath`" -Architecture $arch -Source $Source"
+        }
+        else {
+            WriteLog "Downloading $AppName for all architectures..."
+            WriteLog 'MSStore app downloads require authentication with an Entra ID account. You may be prompted twice for credentials, once for the app and another for the license file.'
+            WriteLog "WinGet command: Export-WinGetPackage -id $AppId -DownloadDirectory `"$appFolderPath`" -Source $Source"
+        }
         
         # Download the app
-        $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Architecture $arch -Source $Source
+        $wingetDownloadResult = Export-WinGetPackage @downloadParams
         
         # Handle download status
         if ($wingetDownloadResult.status -ne 'Ok') {
-            # Try downloading without architecture if no applicable installer found
-            if ($wingetDownloadResult.status -eq 'NoApplicableInstallers' -or $wingetDownloadResult.status -eq 'NoApplicableInstallerFound') {
+            # For winget source, try downloading without architecture if the specified one fails
+            if (($Source -eq 'winget') -and ($wingetDownloadResult.status -eq 'NoApplicableInstallers' -or $wingetDownloadResult.status -eq 'NoApplicableInstallerFound')) {
                 WriteLog "No installer found for $arch architecture. Attempting to download without specifying architecture..."
-                $wingetDownloadResult = Export-WinGetPackage -id $AppId -DownloadDirectory $appFolderPath -Source $Source
+                # Remove the architecture parameter and try again
+                $downloadParams.Remove('Architecture')
+                $wingetDownloadResult = Export-WinGetPackage @downloadParams
             }
 
             # Re-evaluate status after potential second attempt
