@@ -345,9 +345,6 @@ function Save-HPDriversTask {
             New-Item -Path $extractFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
             $arguments = "/s /e /f `"$extractFolder`"" 
             WriteLog "Extracting driver $driverFilePath with args: $arguments"
-            #DEBUG
-            # wrap $driverFilePath in quotes to handle spaces
-            # $driverFilePath = "`"$driverFilePath`""
             WriteLog "Running HP Driver Extraction Command: $driverFilePath $arguments"
             Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -ErrorAction Stop | Out-Null
             # Start-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait -NoNewWindow -ErrorAction Stop | Out-Null

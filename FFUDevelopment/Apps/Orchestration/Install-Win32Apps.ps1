@@ -73,7 +73,7 @@ $allApps = @()
 
 # Read the WinGetWin32Apps.json file if it exists
 if (Test-Path -Path $wingetAppsJsonFile) {
-    Write-Host "Processing WinGetWin32Apps.json..."
+    Write-Host "Processing WinGetWin32Apps.json first..."
     try {
         $wingetApps = Get-Content -Path $wingetAppsJsonFile -Raw -ErrorAction Stop | ConvertFrom-Json
         if ($wingetApps -is [array]) {
@@ -87,8 +87,6 @@ if (Test-Path -Path $wingetAppsJsonFile) {
         }
     } catch {
         Write-Error "Failed to read or parse WinGetWin32Apps.json file: $_"
-        # Decide if execution should stop or continue
-        # exit 1 
     }
 } else {
     Write-Host "WinGetWin32Apps.json file not found. Skipping."
@@ -96,7 +94,7 @@ if (Test-Path -Path $wingetAppsJsonFile) {
 
 # Read the UserAppList.json file if it exists
 if (Test-Path -Path $userAppsJsonFile) {
-    Write-Host "Processing UserAppList.json..."
+    Write-Host "Processing UserAppList.json next..."
     try {
         $userApps = Get-Content -Path $userAppsJsonFile -Raw -ErrorAction Stop | ConvertFrom-Json
         if ($userApps -is [array]) {
@@ -110,8 +108,6 @@ if (Test-Path -Path $userAppsJsonFile) {
         }
     } catch {
         Write-Error "Failed to read or parse UserAppList.json file: $_"
-        # Decide if execution should stop or continue
-        # exit 1
     }
 } else {
     Write-Host "UserAppList.json file not found. Skipping."
@@ -168,8 +164,6 @@ foreach ($app in $sortedApps) {
         Write-Host "$($app.Name) exited with exit code: $($result.ExitCode)`r`n"
     } catch {
         Write-Error "Error occurred while installing $($app.Name): $_"
-        # Decide if execution should stop or continue after an error
-        # exit 1 
     }
 }
 
