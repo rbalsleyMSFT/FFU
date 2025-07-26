@@ -38,70 +38,7 @@ if (-not (Test-Path -Path $basePath)) {
 }
 Write-Host "Installing Store Apps: Base path '$basePath' exists."
 
-# 2. Pre-scan and catalog all available dependencies from all app folders
-Write-Host "Scanning for all available application dependencies..."
-$allAvailableDependencies = @{}
-$dependencyFoldersToScan = [System.Collections.Generic.List[string]]::new()
-
-# Find all 'Dependencies' subfolders
-Get-ChildItem -Path $basePath -Directory | ForEach-Object {
-    $dependenciesPath = Join-Path -Path $_.FullName -ChildPath "Dependencies"
-    if (Test-Path -Path $dependenciesPath) {
-        $dependencyFoldersToScan.Add($dependenciesPath)
-    }
-}
-
-# Handle zipped dependencies by extracting them to a temp location
-$dependencyFoldersToScan.ToArray() | ForEach-Object {
-    $folder = $_
-    Get-ChildItem -Path $folder -Filter "*.zip" -File | ForEach-Object {
-        $zipFile = $_
-        $extractPath = Join-Path -Path $tempBasePath -ChildPath $zipFile.BaseName
-        Write-Host "Extracting zipped dependencies from '$($zipFile.FullName)' to '$extractPath'..."
-        try {
-            Expand-Archive -Path $zipFile.FullName -DestinationPath $extractPath -Force
-            $script:dependencyFoldersToScan.Add($extractPath)
-        }
-        catch {
-            Write-Error "Failed to extract '$($zipFile.FullName)'. Error: $($_.Exception.Message)"
-        }
-    }
-}
-
-# Regex to parse package filenames: Name_Version_Architecture__PublisherID (PublisherID and other tags are optional)
-$packageFileRegex = '^(?<Name>.+?)_(?<Version>(?:\d+\.){2,3}\d+)_(?:[^_]+_)*(?<Arch>x64|x86|arm|arm64|neutral)(?:__.*)?$'
-
-# Catalog all package files found in the dependency folders
-foreach ($folder in $dependencyFoldersToScan.ToArray() | Select-Object -Unique) {
-    Get-ChildItem -Path $folder -Recurse -File | Where-Object { $_.Extension -in '.appx', '.msix', '.appxbundle' } | ForEach-Object {
-        $file = $_
-        $match = $file.BaseName -imatch $packageFileRegex
-        if ($match) {
-            $dependencyName = $matches.Name
-            try {
-                $dependencyVersion = [System.Version]$matches.Version
-                $dependencyArch = $matches.Arch
-
-                if (-not $allAvailableDependencies.ContainsKey($dependencyName)) {
-                    $allAvailableDependencies[$dependencyName] = [System.Collections.Generic.List[object]]::new()
-                }
-                $allAvailableDependencies[$dependencyName].Add([pscustomobject]@{
-                    Name    = $dependencyName
-                    Version = $dependencyVersion
-                    Arch    = $dependencyArch
-                    Path    = $file.FullName
-                })
-            }
-            catch {
-                Write-Warning "Could not parse version for file '$($file.Name)'. Skipping."
-            }
-        }
-    }
-}
-Write-Host "Dependency scan complete. Found $($allAvailableDependencies.Keys.Count) unique dependency packages."
-Write-Output ""
-
-# 3. Process and install each main application
+# 2. Process and install each main application
 Write-Host "Starting main application installation process..."
 foreach ($appFolder in Get-ChildItem -Path $basePath -Directory) {
     Write-Host "--- Processing application in folder: $($appFolder.Name) ---"
@@ -193,40 +130,102 @@ foreach ($appFolder in Get-ChildItem -Path $basePath -Directory) {
         Write-Error "Failed to read or parse manifest from '$($mainPackage.FullName)'. Error: $($_.Exception.Message)"
     }
 
-    if (-not $requiredDependencies) {
-        Write-Warning "Could not read dependencies from manifest for '$($mainPackage.Name)'. Proceeding without explicit dependencies."
-    }
-
-    # Resolve all required dependencies
+    # Scan for and resolve dependencies only if the manifest lists actual package dependencies.
     $resolvedDependencyPaths = [System.Collections.Generic.List[string]]::new()
-    foreach ($req in $requiredDependencies) {
-        $reqName = $req.Name
-        $reqMinVersion = [System.Version]$req.MinVersion
-        Write-Host "Resolving dependency: $reqName (MinVersion: $reqMinVersion)"
 
-        if ($allAvailableDependencies.ContainsKey($reqName)) {
-            # Find all available packages that meet the minimum version and architecture requirements
-            $candidates = $allAvailableDependencies[$reqName] | Where-Object {
-                $_.Version -ge $reqMinVersion -and
-                $_.Arch -in ($applicableArchitectures + 'neutral')
+    if ($null -ne $requiredDependencies -and $requiredDependencies.Count -gt 0) {
+        $appDependenciesPath = Join-Path -Path $appFolder.FullName -ChildPath "Dependencies"
+        
+        if (Test-Path -Path $appDependenciesPath) {
+            Write-Host "Scanning for dependencies in '$appDependenciesPath'..."
+            $appSpecificDependencies = @{}
+            $dependencyFoldersToScan = [System.Collections.Generic.List[string]]::new()
+            $dependencyFoldersToScan.Add($appDependenciesPath)
+
+            # Handle zipped dependencies by extracting them to a temp location
+            Get-ChildItem -Path $appDependenciesPath -Filter "*.zip" -File | ForEach-Object {
+                $zipFile = $_
+                # Ensure unique extract path per app to avoid conflicts
+                $extractPath = Join-Path -Path $tempBasePath -ChildPath "$($appFolder.Name)_$($zipFile.BaseName)"
+                Write-Host "Extracting zipped dependencies from '$($zipFile.FullName)' to '$extractPath'..."
+                try {
+                    Expand-Archive -Path $zipFile.FullName -DestinationPath $extractPath -Force
+                    $dependencyFoldersToScan.Add($extractPath)
+                }
+                catch {
+                    Write-Error "Failed to extract '$($zipFile.FullName)'. Error: $($_.Exception.Message)"
+                }
             }
 
-            if ($candidates) {
-                # Group by architecture and find the single latest version for each applicable arch
-                $bestCandidates = $candidates | Group-Object -Property Arch | ForEach-Object {
-                    $_.Group | Sort-Object -Property Version -Descending | Select-Object -First 1
+            # Regex to parse package filenames
+            $packageFileRegex = '^(?<Name>.+?)_(?<Version>(?:\d+\.){2,3}\d+)_(?:[^_]+_)*(?<Arch>x64|x86|arm|arm64|neutral)(?:__.*)?$'
+
+            # Catalog all package files found in the dependency folders for this app
+            foreach ($folder in $dependencyFoldersToScan.ToArray() | Select-Object -Unique) {
+                Get-ChildItem -Path $folder -Recurse -File | Where-Object { $_.Extension -in '.appx', '.msix', '.appxbundle' } | ForEach-Object {
+                    $file = $_
+                    $match = $file.BaseName -imatch $packageFileRegex
+                    if ($match) {
+                        $dependencyName = $matches.Name
+                        try {
+                            $dependencyVersion = [System.Version]$matches.Version
+                            $dependencyArch = $matches.Arch
+
+                            if (-not $appSpecificDependencies.ContainsKey($dependencyName)) {
+                                $appSpecificDependencies[$dependencyName] = [System.Collections.Generic.List[object]]::new()
+                            }
+                            $appSpecificDependencies[$dependencyName].Add([pscustomobject]@{
+                                Name    = $dependencyName
+                                Version = $dependencyVersion
+                                Arch    = $dependencyArch
+                                Path    = $file.FullName
+                            })
+                        }
+                        catch {
+                            Write-Warning "Could not parse version for file '$($file.Name)'. Skipping."
+                        }
+                    }
                 }
-                
-                foreach($best in $bestCandidates) {
-                    Write-Host "  - Found best match: $($best.Path.Replace($basePath, '...'))"
-                    $resolvedDependencyPaths.Add($best.Path)
-                }
-            } else {
-                Write-Warning "  - No suitable package found for dependency '$reqName' with MinVersion '$reqMinVersion' for applicable architectures."
             }
-        } else {
-            Write-Warning "  - Dependency '$reqName' not found in any scanned dependency folders."
+            Write-Host "Dependency scan for '$($appFolder.Name)' complete."
+
+            # Resolve all required dependencies using the app-specific catalog
+            foreach ($req in $requiredDependencies) {
+                $reqName = $req.Name
+                $reqMinVersion = [System.Version]$req.MinVersion
+                Write-Host "Resolving dependency: $reqName (MinVersion: $reqMinVersion)"
+
+                if ($appSpecificDependencies.ContainsKey($reqName)) {
+                    # Find all available packages that meet the minimum version and architecture requirements
+                    $candidates = $appSpecificDependencies[$reqName] | Where-Object {
+                        $_.Version -ge $reqMinVersion -and
+                        $_.Arch -in ($applicableArchitectures + 'neutral')
+                    }
+
+                    if ($candidates) {
+                        # Group by architecture and find the single latest version for each applicable arch
+                        $bestCandidates = $candidates | Group-Object -Property Arch | ForEach-Object {
+                            $_.Group | Sort-Object -Property Version -Descending | Select-Object -First 1
+                        }
+                        
+                        foreach($best in $bestCandidates) {
+                            Write-Host "  - Found best match: $($best.Path.Replace($basePath, '...'))"
+                            $resolvedDependencyPaths.Add($best.Path)
+                        }
+                    } else {
+                        Write-Warning "  - No suitable package found for dependency '$reqName' with MinVersion '$reqMinVersion' for applicable architectures."
+                    }
+                } else {
+                    Write-Warning "  - Dependency '$reqName' not found in this app's dependency folder."
+                }
+            }
         }
+        else {
+            Write-Warning "Dependencies are required by manifest, but no 'Dependencies' folder found for '$($appFolder.Name)'."
+        }
+    }
+    else {
+        Write-Host "No actual package dependencies listed in manifest for '$($appFolder.Name)'. Proceeding without dependency resolution."
     }
 
     # Build the DISM command
@@ -235,7 +234,7 @@ foreach ($appFolder in Get-ChildItem -Path $basePath -Directory) {
         "/Add-ProvisionedAppxPackage"
         "/PackagePath:`"$($mainPackage.FullName)`""
         "/Region:all"
-        "/StubPackageOption:installfull"
+        # "/StubPackageOption:installfull"
     )
 
     # Add resolved dependencies, ensuring no duplicates
