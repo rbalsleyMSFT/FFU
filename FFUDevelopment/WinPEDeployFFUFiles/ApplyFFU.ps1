@@ -682,7 +682,6 @@ if ($null -eq $DriverSourcePath) {
     }
     else {
         WriteLog "Drivers folder not found at $DriversPath. Skipping driver installation."
-        Write-Host "Drivers folder not found at $DriversPath. Skipping driver installation."
     }
 }
 #Partition drive

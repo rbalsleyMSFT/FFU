@@ -266,5 +266,4 @@ foreach ($appFolder in Get-ChildItem -Path $basePath -Directory) {
 
 # Final cleanup
 Write-Host "Installation process finished."
-pause
 Remove-TemporaryFiles
