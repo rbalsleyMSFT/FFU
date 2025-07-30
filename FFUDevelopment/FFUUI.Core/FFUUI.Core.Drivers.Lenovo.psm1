@@ -17,6 +17,20 @@ function Get-LenovoDriversModelList {
         [string]$UserAgent
     )
 
+    # Lenovo is special - they prevent access to the PSREF API without a cookie as of July 2025. 
+    # This cookie must be retrieved via Javascript
+    # It appears that the cookie is hard-coded. We'll see how long this lasts.
+    # If anyone knows how to reliably get the the model and machine type information from Lenovo, let me know.
+    # https://download.lenovo.com/cdrt/td/catalogv2.xml only provides a subset of the information available from PSREF (e.g. it's missing 300w, 500w, and other consumer models).
+
+    # $lenovoCookie = "X-PSREF-USER-TOKEN=eyJ0eXAiOiJKV1QifQ.bjVTdWk0YklZeUc2WnFzL0lXU0pTeU1JcFo0aExzRXl1UGxHN3lnS1BtckI0ZVU5WEJyVGkvaFE0NmVNU2U1ZjNrK3ZqTEVIZ29nTk1TNS9DQmIwQ0pTN1Q1VytlY1RpNzZTUldXbm4wZ1g2RGJuQWg4MXRkTmxKT2YrOW9LRjBzQUZzV05HM3NpcU92WFVTM0o0blM1SDQyUlVXNThIV1VBS2R0c1B2NjJyQjIrUGxNZ2x6RTRhUjY5UDZWclBX.ZDBmM2EyMWRjZTg2N2JmYWMxZDIxY2NiYjQzMWFhNjg1YjEzZTAxNmU2M2RmN2M5ZjIyZWJhMzZkOWI1OWJhZg"
+    
+    # Wrote a separate function to grab the token. Check the function notes for more details. Keep the above comment for now to see if the cookie ever changes.
+    $lenovoCookie = Get-LenovoPSREFToken
+
+    # Add the cookie to the headers
+    $Headers["Cookie"] = $lenovoCookie
+
     WriteLog "Querying Lenovo PSREF API for model/machine type: $ModelSearchTerm"
     $url = "https://psref.lenovo.com/api/search/DefinitionFilterAndSearch/Suggest?kw=$([uri]::EscapeDataString($ModelSearchTerm))"
     $models = [System.Collections.Generic.List[PSCustomObject]]::new()

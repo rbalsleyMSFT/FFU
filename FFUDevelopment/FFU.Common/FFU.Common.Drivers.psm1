@@ -248,9 +248,145 @@ function Test-ExistingDriver {
     # If neither WIM nor a valid folder exists, return null
     return $null
 }
+function Get-LenovoPSREFToken {
+
+    <# 
+        .DESCRIPTION
+        Retrieves the Lenovo PSREF token from the Edge browser's local storage.
+
+        .NOTES
+
+        Lenovo's PSREF site creates a cookie/token via javascript when navigating to the PSREF site. This cookie only needs
+        to be retrieved once on a single machine, and every machine within the same network will be able to access the PSREF API. 
+
+        Using Invoke-Webrequest with sessionvariable or websession doesn't work because the token is created by javascript.
+        Using edge in headless mode with remote debugging enabled allows for the retrieval of the token via the DevTools protocol.
+
+        You couldn't be more unhappy about this solution than I am, but it works.
+
+        Why use PSREF and not catalogv2.xml? Catalogv2.xml doesn't include all models. PSREF provides an API that can be used to retrieve
+        the friendly model and machine type information for both business and consumer models. Many EDU devices are deemed consumer. 
+
+        System Update and other tools rely on the user to input machine type and model information, but finding the machine type is difficult for some.
+        Our solution makes it easier to simply type the model name and you can match the machine type to the model name.
+
+        If you have a better solution, please submit a PR or open a discussion on Github. Happy to consider alternatives. An easy way to test
+        if your alternative works is to see if you can retrieve 100e, 300w, 500w, etc. These don't show up in catalogv2.xml, but they do in PSREF.
+    #>
+
+    # Path to Edge
+    $edgeExe = "$Env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
+
+    # Any free port works. 9222 is common.
+    $port = 9222
+    $uri = 'https://psref.lenovo.com'
+
+    # Headless run with remote debugging.
+    $flags = "--headless=new --disable-gpu --remote-debugging-port=$port $uri"
+    $edge = Start-Process -FilePath $edgeExe -ArgumentList $flags -PassThru
+    Writelog "Edge process started with PID: $($edge.Id)."
+
+    # Wait a short moment so the target appears.
+    Start-Sleep -Seconds 3
+
+    # Find the first page target.
+    $targets = Invoke-RestMethod "http://localhost:$port/json"
+    $wsUrl = ($targets | Where-Object type -eq 'page')[0].webSocketDebuggerUrl
+
+    # Connect to that WebSocket.
+    $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+    $socket.ConnectAsync($wsUrl, [Threading.CancellationToken]::None).Wait()
+
+    # Helper to send a DevTools command.
+    function Send-DevToolsCommand {
+        param([int]$id, [string]$method, [hashtable]$params = @{})
+        $cmd = @{ id = $id; method = $method; params = $params } |
+        ConvertTo-Json -Compress
+        $data = [Text.Encoding]::UTF8.GetBytes($cmd)
+        $socket.SendAsync([ArraySegment[byte]]$data, 'Text', $true,
+            [Threading.CancellationToken]::None).Wait()
+    }
+
+    # Ask the page to return localStorage['asut'].
+    Send-DevToolsCommand -id 1 -method 'Runtime.evaluate' -params @{
+        expression = "localStorage.getItem('asut')"
+    }
+
+    # Receive frames until the whole message arrives.
+    $ms = New-Object System.IO.MemoryStream
+    $buf = New-Object byte[] 8192
+    do {
+        $seg = [ArraySegment[byte]]::new($buf)
+        $res = $socket.ReceiveAsync($seg,
+            [Threading.CancellationToken]::None).Result
+        $ms.Write($buf, 0, $res.Count)
+    } until ($res.EndOfMessage)
+
+    $ms.Position = 0
+    $json = ([System.IO.StreamReader]::new($ms, [Text.Encoding]::UTF8)).ReadToEnd() |
+    ConvertFrom-Json
+
+    $token = $json.result.result.value
+    # Concatenate the token value with X-PSREF-USER-TOKEN=
+    $token = "X-PSREF-USER-TOKEN=$token"
+    WriteLog "Retrieved Lenovo PSREF token: $token"
+
+    # Clean up.
+    $socket.Dispose()
+
+    if ($null -ne $socket) {
+        $socket.Dispose()
+    }
+
+    # Find the PID listening on the debugging port for reliable termination.
+    $listeningPid = $null
+    try {
+        # Find the process listening on the specific port. The regex now looks for the local address and port, followed by anything, then LISTENING.
+        # Dots are escaped for literal matching.
+        $netstatOutput = netstat -ano -p TCP | Where-Object { $_ -match "127\.0\.0\.1:$port.*LISTENING" }
+        if ($netstatOutput) {
+            # The last number in the line is the PID
+            $listeningPid = ($netstatOutput -split '\s+')[-1]
+            WriteLog "Found Edge process PID $listeningPid listening on port $port. This is the process we will terminate."
+        }
+        else {
+            WriteLog "Could not find any process listening on port $port."
+        }
+    }
+    catch {
+        WriteLog "Could not run netstat to find listening PID. Error: $($_.Exception.Message)"
+    }
+
+    # Determine the correct PID to kill. Prioritize the one found via netstat.
+    $pidToKill = $null
+    if ($listeningPid) {
+        $pidToKill = $listeningPid
+    }
+    elseif ($null -ne $edgeProcess -and -not $edgeProcess.HasExited) {
+        $pidToKill = $edgeProcess.Id
+        WriteLog "Could not find listening process via netstat. Falling back to initial Edge process PID $($pidToKill) for termination."
+    }
+
+    if ($pidToKill) {
+        WriteLog "Attempting to terminate Edge process tree with PID: $pidToKill"
+        try {
+            taskkill /PID $pidToKill /T /F | Out-Null
+            WriteLog "Successfully issued termination command for Edge process tree with PID: $pidToKill."
+        }
+        catch {
+            WriteLog "Failed to terminate Edge process tree with PID: $pidToKill. It may have already closed. Error: $($_.Exception.Message)"
+        }
+    }
+    else {
+        WriteLog "No active Edge process found to terminate."
+    }
+
+    return $token
+}
+
 
 # --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 
-Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson, Test-ExistingDriver
+Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson, Test-ExistingDriver, Get-LenovoPSREFToken

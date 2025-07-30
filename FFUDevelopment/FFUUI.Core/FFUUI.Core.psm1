@@ -15,7 +15,7 @@ $script:Headers = @{
     "Accept-Encoding"           = "gzip, deflate, br, zstd"
     "Accept-Language"           = "en-US,en;q=0.9"
     "Priority"                  = "u=0, i"
-    "Sec-Ch-Ua"                 = "`"Microsoft Edge`";v=`"125`", `"Chromium`";v=`"125`", `"Not.A/Brand`";v=`"24`""
+    "Sec-Ch-Ua"                 = "`"Not)A;Brand`";v=`"8`", `"Chromium`";v=`"138`", `"Microsoft Edge`";v=`"138`""
     "Sec-Ch-Ua-Mobile"          = "?0"
     "Sec-Ch-Ua-Platform"        = "`"Windows`""
     "Sec-Fetch-Dest"            = "document"
@@ -24,7 +24,7 @@ $script:Headers = @{
     "Sec-Fetch-User"            = "?1"
     "Upgrade-Insecure-Requests" = "1"
 }
-$script:UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0'
+$script:UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0'
 
 function Get-CoreStaticVariables {
     [CmdletBinding()]
