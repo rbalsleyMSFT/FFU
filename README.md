@@ -1,6 +1,6 @@
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
-What if you could have a Windows image (Windows 10/11 or Server) that has:
+What if you could have a Windows image (Windows 10/11/Server/LTSC) that has:
 
 - The latest Windows cumulative update
 - The latest .NET cumulative update
@@ -14,19 +14,19 @@ What if you could have a Windows image (Windows 10/11 or Server) that has:
 - The ability to bring your own drivers and apps if necessary
 - Custom WinRE support
 
-And the best part: it takes less than two minutes to apply the image, even with all of these updates added to the media. After setting Windows up and going through Autopilot or a provisioning package, total elapsed time ~10 minutes (depending on what Intune or your device management tool is deploying).
+And the best part: **it takes less than two minutes** to apply the image, even with all of these updates added to the media. After setting Windows up and going through Autopilot or a provisioning package, total elapsed time ~10 minutes (depending on what Intune or your device management tool is deploying).
 
 The Full-Flash update (FFU) process can automatically download the latest release of Windows 11, the updates mentioned above, and creates a USB drive that can be used to quickly reimage a machine.
 
 # Updates
 
-2507.1 has been released to preview! This is a major update that brings a new user interface to preview. 
+2507.1 has been released to preview! This is a major update that brings a new user interface to preview.
 
 # Getting Started
 
 - Download the latest [release](https://github.com/rbalsleyMSFT/FFU/releases)
 - Extract the FFUDevelopment folder from the ZIP file (recommend to C:\FFUDevelopment)
-- Follow the doc: C:\FFUDevelopment\Docs\BuildDeployFFU.docx
+- Watch the Youtube video (updated docs for the UI coming soon)
 
 ## YouTube Detailed Walkthrough
 
