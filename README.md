@@ -38,35 +38,67 @@ Here's a detailed overview of the new UI process.
 
 Chapters:
 [00:00](https://www.youtube.com/watch?v=oozG1aVcg9M&t=0s) Begin
+
 [01:07](https://www.youtube.com/watch?v=oozG1aVcg9M&t=67s) Prereqs
+
 [06:32](https://www.youtube.com/watch?v=oozG1aVcg9M&t=392s) Demo Begins
+
 [07:16](https://www.youtube.com/watch?v=oozG1aVcg9M&t=436s) Running the BuildFFUVM_UI.ps1 script
+
 [08:15](https://www.youtube.com/watch?v=oozG1aVcg9M&t=495s) UI Overview
+
 [10:13](https://www.youtube.com/watch?v=oozG1aVcg9M&t=613s) Hyper-V Settings
+
 [16:04](https://www.youtube.com/watch?v=oozG1aVcg9M&t=964s) Windows Settings
+
 [22:35](https://www.youtube.com/watch?v=oozG1aVcg9M&t=1355s) Updates
+
 [24:49](https://www.youtube.com/watch?v=oozG1aVcg9M&t=1489s) Applications
+
 [29:39](https://www.youtube.com/watch?v=oozG1aVcg9M&t=1779s) Install Winget Applications
+
 [45:29](https://www.youtube.com/watch?v=oozG1aVcg9M&t=2729s) Bring Your Own Applications
+
 [54:14](https://www.youtube.com/watch?v=oozG1aVcg9M&t=3254s) Apps Script Variables
+
 [57:43](https://www.youtube.com/watch?v=oozG1aVcg9M&t=3463s) M365 Apps/Office
+
 [59:01](https://www.youtube.com/watch?v=oozG1aVcg9M&t=3541s) Drivers
+
 [01:01:22](https://www.youtube.com/watch?v=oozG1aVcg9M&t=3682s) Drivers.json example
+
 [01:02:07](https://www.youtube.com/watch?v=oozG1aVcg9M&t=3727s) DriverMapping.json explanation
+
 [01:06:08](https://www.youtube.com/watch?v=oozG1aVcg9M&t=3968s) Driver WIM Compression
+
 [01:10:50](https://www.youtube.com/watch?v=oozG1aVcg9M&t=4250s) Build
+
 [01:12:41](https://www.youtube.com/watch?v=oozG1aVcg9M&t=4361s) Build USB Drive
+
 [01:20:07](https://www.youtube.com/watch?v=oozG1aVcg9M&t=4807s) Monitor
+
 [01:20:32](https://www.youtube.com/watch?v=oozG1aVcg9M&t=4832s) Setting up the Demo Build
+
 [01:24:10](https://www.youtube.com/watch?v=oozG1aVcg9M&t=5050s) Save/Load Config Files
+
 [01:25:11](https://www.youtube.com/watch?v=oozG1aVcg9M&t=5111s) Kicking off the Demo Build/Going over the monitor tab
+
 [01:32:26](https://www.youtube.com/watch?v=oozG1aVcg9M&t=5546s) Demoing the new FFU Builder Orchestrator
+
 [01:35:25](https://www.youtube.com/watch?v=oozG1aVcg9M&t=5725s) New captureffu.ps1 console output
+
 [01:42:29](https://www.youtube.com/watch?v=oozG1aVcg9M&t=6149s) Demo Build Complete
+
 [01:42:42](https://www.youtube.com/watch?v=oozG1aVcg9M&t=6162s) How to configure a VM to test your newly built FFU
+
 [01:48:58](https://www.youtube.com/watch?v=oozG1aVcg9M&t=6538s) The moment of truth: What does the new deployment experience look like?
+
 [01:53:13](https://www.youtube.com/watch?v=oozG1aVcg9M&t=6793s) How to bypass OOBE using a provisioning package
+
 [01:55:49](https://www.youtube.com/watch?v=oozG1aVcg9M&t=6949s) Preview Focus Areas
+
 [02:04:04](https://www.youtube.com/watch?v=oozG1aVcg9M&t=7444s) Known Issues/Things to fix before GA
+
 [02:05:38](https://www.youtube.com/watch?v=oozG1aVcg9M&t=7538s) Providing Feedback
+
 [02:06:43](https://www.youtube.com/watch?v=oozG1aVcg9M&t=7603s) Thank you
