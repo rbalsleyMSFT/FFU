@@ -37,6 +37,7 @@ Here's a detailed overview of the new UI process.
 [![Reimage Windows Fast with FFU Builder 2507.1 Preview](https://img.youtube.com/vi/oozG1aVcg9M/maxresdefault.jpg)](https://youtu.be/oozG1aVcg9M "Reimage Windows Fast with FFU Builder 2507.1 Preview")
 
 Chapters:
+
 [00:00](https://www.youtube.com/watch?v=oozG1aVcg9M&t=0s) Begin
 
 [01:07](https://www.youtube.com/watch?v=oozG1aVcg9M&t=67s) Prereqs
