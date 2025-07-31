@@ -1,25 +1,35 @@
 # Change Log
 
+# 2507.1 UI Preview
+
+Waaay too many to list. Just watch the Youtube video in the Readme :)
+
 # 2505.1
 
-Highly recommended that you upgrade to this release. Fixes the issue with the May 2025 cumulative update and some SKU naming issues for SKUs other than Pro. 
+Highly recommended that you upgrade to this release. Fixes the issue with the May 2025 cumulative update and some SKU naming issues for SKUs other than Pro.
 
 # Support for Windows LTSB/LTSC
-Thanks to @zehadialam for the code to allow support for LTSB and LTSC. This has been a requested feature from a number of customers and some might be opting for LTSC when Windows 10 support ends in October. We support LTSB 2016, LTSC 2019, 2021, 2024 including the N and IoT variants. Extensive testing has gone into validating CU and .net support. File an issue if you see any weird behavior. 
+
+Thanks to @zehadialam for the code to allow support for LTSB and LTSC. This has been a requested feature from a number of customers and some might be opting for LTSC when Windows 10 support ends in October. We support LTSB 2016, LTSC 2019, 2021, 2024 including the N and IoT variants. Extensive testing has gone into validating CU and .net support. File an issue if you see any weird behavior.
 
 # Support for automating computer naming via CSV
+
 Thanks to @JonasKloseBW for PR #150
+
 - Allows setting the computer name with a predefined list (SerialComputerNames.csv) of serial numbers and matching computer names
 - Defaults to FFU-{Random} if no matching serial number is found in list so FFU deployment can continue without user input
 
 # Fixes
+
 - Thanks to @JonasKloseBW for PR #129 for adding the -AppListPath parameter
 - Fixed an issue where if AppsScriptVariables was configured in a config file, the hashtable wasn't being created by the script when setting the variable.
 - Fixed a crash where shortening the Windows SKU was creating duplicate shortened names for certain SKUs (EDU mainly, but others too)
 - Fix an issue with checkpoint CUs and May 2025-05B CU. Should future proof new checkpoint CUs in the future.
 
 # Additional Fixes
+
 BuildFFUVM.ps1
+
 - Added parameter definitions that were missing:
   - AppListPath - Path to a JSON file containing a list of applications to install using WinGet. Default is $FFUDevelopmentPath\Apps\AppList.json.
   - PEDriversFolder - Path to the folder containing drivers to be injected into the WinPE deployment media. Default is $FFUDevelopmentPath\PEDrivers.
@@ -41,30 +51,35 @@ BuildFFUVM.ps1
 - VHDXCaching will now recurse the KBPath folder when finding downloaded KBs to include in its config file
 
 Sample_default.json
+
 - Added new/missing parameters
   - ApplistPath
   - UpdateADK
   - UpdateLatestMicrocode
 
 CaptureFFU.ps1
+
 - `$WindowsVersion` 2016 and 2019 for LTSC releases
 - Changed some SKU spacing to make things more consistent and included Enterprise N LTSC
 
 ApplyFFU.ps1
+
 - Updated version to 2505.1
 
 # 2412.1
 
-This is a major release with a number of quality-of-life improvements that will reduce the time it takes to create FFUs. I highly recommend you update to this release. 
+This is a major release with a number of quality-of-life improvements that will reduce the time it takes to create FFUs. I highly recommend you update to this release.
 
 ## Windows Server Support
-Thanks to [JonasKloseBW](https://github.com/JonasKloseBW) we have added support for Windows Server! This includes support for Windows Server 2016 through 2025 and supports both core and desktop experience. It will require you to provide your own Server ISO 
+
+Thanks to [JonasKloseBW](https://github.com/JonasKloseBW) we have added support for Windows Server! This includes support for Windows Server 2016 through 2025 and supports both core and desktop experience. It will require you to provide your own Server ISO
 using the `-ISOPath` parameter since we can't automatically download it like we can with client. You also will want to set the `-WindowsSKU` parameter to either `'Standard', 'Datacenter', 'Standard (Desktop Experience)', or 'Datacenter (Desktop Experience)'` depending on your needs.
 
-Cumulative Updates for Windows and .NET should work as expected. Defender updates should work too. If you notice anything that doesn't work, open an issue. 
+Cumulative Updates for Windows and .NET should work as expected. Defender updates should work too. If you notice anything that doesn't work, open an issue.
 
 ## VHDX Caching Support
-Thanks again to Jonas for adding VHDX caching support #89. For those of you that might be making many FFUs for different configurations, instead of building the VHDX every time, you can cache the VHDX and re-use it for your next build. In testing, this seems to save about 10 minutes, depending on how you're installing Windows (via MCT download, or your own ISO and how old your media is). 
+
+Thanks again to Jonas for adding VHDX caching support #89. For those of you that might be making many FFUs for different configurations, instead of building the VHDX every time, you can cache the VHDX and re-use it for your next build. In testing, this seems to save about 10 minutes, depending on how you're installing Windows (via MCT download, or your own ISO and how old your media is).
 
 The way this works is a VHDXCache folder is created in the FFUDevelopment folder. If `-AllowVHDXCaching $true`, we store the VHDX file and a config file that keeps track of the following info
 
@@ -89,19 +104,21 @@ The way this works is a VHDXCache folder is created in the FFUDevelopment folder
   ]
 }
 ```
+
 The VHDX files are cached before boot, so they've never been sysprepped. On subsequent runs, if `-AllowVHDXCaching $true` is set, we search the VHDXCache folder, loop through any config files, and look to see if we find one that matches the build information you've passed to the script. If a match is found, robocopy copies in the VHDX and uses the cached VHDX to build the FFU VM.
 
 ## Configuration File Support
-A configuration file can now be used to configure the parameters in lieu of, or in conjunction with, parameters specified on the command line. Configuration files are especially helpful for those making FFUs for different models, Windows releases, application sets, and more. 
+
+A configuration file can now be used to configure the parameters in lieu of, or in conjunction with, parameters specified on the command line. Configuration files are especially helpful for those making FFUs for different models, Windows releases, application sets, and more.
 
 To use, run:
 `.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose`
 
 ### Creating your own Configuration Json file
 
-If you have a command line that you’ve been using for awhile and would like to convert it to a json file automatically, run your command line like normal, adding 
-`-exportConfigFile 'C:\FFUDevelopment\config\YourConfigFile.json'` 
-to the end of the command. Doing this will generate a well-formatted json file with your configuration settings. 
+If you have a command line that you’ve been using for awhile and would like to convert it to a json file automatically, run your command line like normal, adding
+`-exportConfigFile 'C:\FFUDevelopment\config\YourConfigFile.json'`
+to the end of the command. Doing this will generate a well-formatted json file with your configuration settings.
 
 You can also temporarily overwrite parameters while using a config file. Using the following sample command:
 
@@ -111,14 +128,15 @@ If you’d like to not include Office (the Sample_default.json file installs Off
 
 `.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose -InstallOffice $False`
 
-Doing this will temporarily overwrite whatever is in the json for the `InstallOffice` parameter. It will not modify the json file. If you would like to change the json file, you can add `-exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'` and that will overwrite the json file with the new parameter. 
+Doing this will temporarily overwrite whatever is in the json for the `InstallOffice` parameter. It will not modify the json file. If you would like to change the json file, you can add `-exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'` and that will overwrite the json file with the new parameter.
 
 `.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose -InstallOffice $False -exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'`
 
 ## Custom FFU Naming Support
+
 Thanks to Jonas, we now have custom FFU naming support. A new parameter -CustomFFUNameTemplate has been added.
 
-This parameter sets a custom FFU output name with placeholders. Allowed placeholders are: 
+This parameter sets a custom FFU output name with placeholders. Allowed placeholders are:
 
 `{WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}`
 
@@ -155,16 +173,18 @@ Would result in:
 `Win11_24h2_Pro_Office_2024-12-20_1225.ffu`
 
 ## Additional PRs added
+
 #79 Includes the latest Microsoft Software Removal Tool from `@zehadialam` - use `-UpdateLatestMSRT $true`
 
-#72 Includes some Unattend Sample files from @HedgeComp in the `$FFUDevelopment\Unattend` folder 
+#72 Includes some Unattend Sample files from @HedgeComp in the `$FFUDevelopment\Unattend` folder
 
-#74 Includes some improvements to the USBImagingToolCreator.ps1 file from @w0 
+#74 Includes some improvements to the USBImagingToolCreator.ps1 file from @w0
 
-#103 Includes some additional improvements to the USBImagingToolCreator.ps1 file from @MKellyCBSD 
+#103 Includes some additional improvements to the USBImagingToolCreator.ps1 file from @MKellyCBSD
 
 ## Misc Fixes
-- Added server skus to validateset for $WindowsSKU 
+
+- Added server skus to validateset for $WindowsSKU
 - Added new variable $installationType which uses $WindowsRelease to determine Server or Client. If $installationType is Server, $WindowsRelease version is used to set $WindowsVersion to the appropriate version (1607, 1809, 21H2)
 - Fixed an issue where the recovery partition wouldn't be created on server OSes due to winre.wim being hidden. Never saw this on client OSes even though it also was hidden IIRC.
 - Removed verbosity for Optimize-Volume as it was outputting when -verbose was not specified.
@@ -183,13 +203,13 @@ Would result in:
 - Changed some minor formatting items
 - Added Get-Childprocesses function to return child processes of parent process
 - Added a new -Wait boolean parameter to Invoke-Process function. This is to control whether Invoke-Process should wait in order to track stdout and stderr output. This is needed for processes that may hang, waiting for user input and there isn't a way to bypass (some Intel drivers provided by Dell leave dialog windows even when running silently)
--Invoke-Process now returns process information (returns $cmd). This allows for process tracking when calling the function.
+  -Invoke-Process now returns process information (returns $cmd). This allows for process tracking when calling the function.
 - Since Invoke-Process now returns the process information, also needed to add Out-Null to the majority of the Invoke-Process references to prevent Invoke-Process from writing to the terminal
 - Refactored a lot of the Get-DellDrivers function due to inconsistencies with how driver extraction behaves between client and server devices. For client, /s /e seemed to work fine, but for server it would only extract the driver installer content and other dell related files, rather than the driver files themselves. We have since switched to using /s /drivers= which will extract the driver content. Not all drivers support /drivers= and may output some information to the terminal that looks like help documentation. If a driver doesn't support /drivers, the script falls back to using /s /e to do the extraction. If this doesn't work for you, you can always provide your own drivers that you manually download from Dell's website.
 - Updated Malicious Software Removal Tool (MSRT) code to handle Windows Server
 - Refactored the Get-ODTURL function to fix recent download issues. Also added some better error handling
 - Moved the odtsetup.exe download to the FFUDevelopment folder and will clean it up after office has downloaded
-Updated parameter definition block to be alphabetized (not to be confused by the param block, which is not alphabetized)
+  Updated parameter definition block to be alphabetized (not to be confused by the param block, which is not alphabetized)
 - Added $PEDriversFolder script variable to the param block (for some reason it was missing)
 - Added ConfigFile and ExportConfigFile parameters to support json config files
 - Changed Version to 2412.1
