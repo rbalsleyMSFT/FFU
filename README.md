@@ -1,3 +1,5 @@
+**Update 2025-07-30:** [2507.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases/tag/v2507.1Preview) - click the link to get the build and check out the Youtube walk-through.
+
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
 What if you could have a Windows image (Windows 10/11 or Server) that has:
@@ -17,10 +19,6 @@ What if you could have a Windows image (Windows 10/11 or Server) that has:
 And the best part: it takes less than two minutes to apply the image, even with all of these updates added to the media. After setting Windows up and going through Autopilot or a provisioning package, total elapsed time ~10 minutes (depending on what Intune or your device management tool is deploying).
 
 The Full-Flash update (FFU) process can automatically download the latest release of Windows 11, the updates mentioned above, and creates a USB drive that can be used to quickly reimage a machine.
-
-# Updates
-
-2412.1 has been released! Check out the changes in the [Change Log](ChangeLog.md)
 
 # Getting Started
 
