@@ -420,7 +420,7 @@ param(
     [bool]$UpdateADK = $true
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2507.1'
+$version = '2507.2'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
