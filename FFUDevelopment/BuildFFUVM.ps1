@@ -1648,20 +1648,29 @@ function Get-ADKURL {
             return
         }
 
-        # Retrieve headers of the FWlink URL
-        $OriginalVerbosePreference = $VerbosePreference
-        $VerbosePreference = 'SilentlyContinue'
-        $FWLinkRequest = Invoke-WebRequest -Uri $ADKFWLink -Method Head -MaximumRedirection 0 -ErrorAction SilentlyContinue
-        $VerbosePreference = $OriginalVerbosePreference
-
-        if ($FWLinkRequest.StatusCode -ne 302) {
-            WriteLog "Failed to retrieve ADK download URL. Unexpected status code: $($FWLinkRequest.StatusCode)"
-            return
+        # Let Invoke-WebRequest handle the redirect and get the final URL.
+        try {
+            $OriginalVerbosePreference = $VerbosePreference
+            $VerbosePreference = 'SilentlyContinue'
+            # Allow one redirection to get the final URL from the fwlink
+            $response = Invoke-WebRequest -Uri $ADKFWLink -Method Head -MaximumRedirection 1 -Headers $Headers -UserAgent $UserAgent
+            $VerbosePreference = $OriginalVerbosePreference
+            
+            # The final URL after redirection is in the ResponseUri property of the BaseResponse's RequestMessage.
+            $ADKUrl = $response.BaseResponse.RequestMessage.RequestUri.AbsoluteUri
+            
+            if ($null -eq $ADKUrl) {
+                 WriteLog "Could not determine final ADK download URL after redirection."
+                 return $null
+            }
+            
+            WriteLog "Resolved ADK download URL to: $ADKUrl"
+            return $ADKUrl
         }
-
-        # Get the ADK link redirected to by the FWlink
-        $ADKUrl = $FWLinkRequest.Headers.Location
-        return $ADKUrl
+        catch {
+             WriteLog "An error occurred while resolving the ADK FWLink: $($_.Exception.Message)"
+             throw
+        }
     }
     catch {
         WriteLog $_
