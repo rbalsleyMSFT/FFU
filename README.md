@@ -1,4 +1,4 @@
-**Update 2025-07-30:** [2507.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases/tag/v2507.1Preview) - click the link to get the build and check out the Youtube walk-through.
+**Update 2025-08-01:** [2507.2 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases) - click the link to get the build and check out the Youtube walk-through.
 
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
