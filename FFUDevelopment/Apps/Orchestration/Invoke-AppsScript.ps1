@@ -38,6 +38,8 @@ else {
 
 # Example of how to use the AppsScriptVariables hashtable to control script execution
 
+# Note: The UI saves the values as strings, so if you type true for a value, it'll save to the config file as a string, not boolean
+
 # Example: Check if a variable named 'foo' is set to string 'bar' and run a script accordingly
 # if ($AppsScriptVariables['foo'] -eq 'bar') {
 #     Write-Host "Foo would have installed"
@@ -46,8 +48,8 @@ else {
 #     Write-Host "Foo would not have installed"
 # }
 
-# Example: Check if a variable named 'foo' is set to boolean $true and run a script accordingly
-# if ($AppsScriptVariables[Teams] -eq $true) {
+# Example: Check if a variable named 'Teams' is set to string 'true' and run a script accordingly
+# if ($AppsScriptVariables['Teams'] -eq 'true') {
 #     Write-Host "Teams would have been installed"
 # }
 # else {
@@ -55,5 +57,4 @@ else {
 # }
 
 # Your code below here
-
 Write-Host 'Invoke-AppsScript.ps1 finished'

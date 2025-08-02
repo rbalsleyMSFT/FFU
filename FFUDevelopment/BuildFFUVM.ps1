@@ -3501,7 +3501,13 @@ function Get-FFUEnvironment {
         Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
-    Writelog 'Removing dirty.txt file'
+    # Remove existing Apps.iso
+    if (Test-Path -Path $AppsISO) {
+        WriteLog "Removing $AppsISO"
+        Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+    WriteLog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
 }
