@@ -12,42 +12,71 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [bool]$Wait = $true
+        [bool]$Wait = $true,
+
+        [Parameter()]
+        [string[]]$AdditionalSuccessCodes
+
     )
 
     $ErrorActionPreference = 'Stop'
 
     try {
-        $stdOutTempFile = "$env:TEMP\$((New-Guid).Guid)"
-        $stdErrTempFile = "$env:TEMP\$((New-Guid).Guid)"
-
-        $startProcessParams = @{
-            FilePath               = $FilePath
-            ArgumentList           = $ArgumentList
-            RedirectStandardError  = $stdErrTempFile
-            RedirectStandardOutput = $stdOutTempFile
-            Wait                   = $($Wait);
-            PassThru               = $true;
-            NoNewWindow            = $true;
-        }
         if ($PSCmdlet.ShouldProcess("Process [$($FilePath)]", "Run with args: [$($ArgumentList)]")) {
-            $cmd = Start-Process @startProcessParams
-            $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
-            $cmdError = Get-Content -Path $stdErrTempFile -Raw
-            if ($cmd.ExitCode -ne 0 -and $wait -eq $true) {
-                if ($cmdError) {
-                    throw $cmdError.Trim()
-                }
-                if ($cmdOutput) {
-                    throw $cmdOutput.Trim()
+            # Use .NET Process class for proper stream handling
+            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfo.FileName = $FilePath
+            if ($ArgumentList) {
+                $pinfo.Arguments = $ArgumentList -join ' '
+            }
+            $pinfo.RedirectStandardOutput = $true
+            $pinfo.RedirectStandardError = $true
+            $pinfo.UseShellExecute = $false
+            $pinfo.CreateNoWindow = $true
+            
+            $p = New-Object System.Diagnostics.Process
+            $p.StartInfo = $pinfo
+            
+            # Start the process
+            $p.Start() | Out-Null
+            
+            # Read output and error streams
+            $cmdOutput = $p.StandardOutput.ReadToEnd()
+            $cmdError = $p.StandardError.ReadToEnd()
+            
+            if ($Wait) {
+                $p.WaitForExit()
+            }
+            
+            $exitCode = $p.ExitCode
+            # An exit code of 0 is always a success
+            if ($exitCode -ne 0) {
+                # Check if the non-zero exit code is in the list of additional success codes
+                if ($null -eq $AdditionalSuccessCodes -or $exitCode -notin $AdditionalSuccessCodes) {
+                    if ($cmdError) {
+                        throw $cmdError.Trim()
+                    }
+                    if ($cmdOutput) {
+                        throw $cmdOutput.Trim()
+                    }
+                    # If there's no output, throw a generic error with the exit code
+                    if (-not $cmdError -and -not $cmdOutput) {
+                        throw "Process exited with non-zero code: $exitCode"
+                    }
                 }
             }
             else {
                 if ([string]::IsNullOrEmpty($cmdOutput) -eq $false) {
                     # WriteLog $cmdOutput
-                    Write-Host $cmdOutput
                 }
             }
+            
+            # Create a simple object with exit code for compatibility
+            $result = [PSCustomObject]@{
+                ExitCode = $exitCode
+            }
+            
+            return $result
         }
     }
     catch {
@@ -55,12 +84,7 @@ function Invoke-Process {
         # WriteLog $_
         # Write-Host "Script failed - $Logfile for more info"
         throw $_
-
     }
-    finally {
-        Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
-    }
-    return $cmd
 }
 
 function Install-Applications {
@@ -109,16 +133,32 @@ function Install-Applications {
                 break 
             }
         }
+
+        # Check for 'PAUSE' command
+        if ($app.CommandLine -eq 'PAUSE') {
+            Write-Host "Pausing script as requested by '$($app.Name)'. Press Enter to continue..."
+            $null = Read-Host
+            continue
+        }
         
         try {
             # Construct the argument list properly, handling potential array vs string
             $argumentsToPass = if ($app.Arguments -is [array]) { $app.Arguments } else { @($app.Arguments) }
-            
+
+            # Check for and parse AdditionalExitCodes
+            $additionalSuccessCodes = @()
+            if ($app.PSObject.Properties['AdditionalExitCodes'] -and -not [string]::IsNullOrWhiteSpace($app.AdditionalExitCodes)) {
+                $additionalSuccessCodes = $app.AdditionalExitCodes -split ',' | ForEach-Object { $_.Trim() }
+                Write-Host "Additional success exit codes for $($app.Name): $($additionalSuccessCodes -join ', ')"
+            }
+
             Write-Host "Running command: $($app.CommandLine) $($argumentsToPass -join ' ')"
-            $result = Invoke-Process -FilePath $($app.CommandLine) -ArgumentList $argumentsToPass
+            $result = Invoke-Process -FilePath $($app.CommandLine) -ArgumentList $argumentsToPass -AdditionalSuccessCodes $additionalSuccessCodes
             Write-Host "$($app.Name) exited with exit code: $($result.ExitCode)`r`n"
         } catch {
             Write-Error "Error occurred while installing $($app.Name): $_"
+            Read-Host "An error occurred, and the script cannot continue. Press Enter to exit."
+            throw $_
         }
     }
 }

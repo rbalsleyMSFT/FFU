@@ -89,6 +89,7 @@ function Initialize-UIControls {
     $State.Controls.txtAppCommandLine = $window.FindName('txtAppCommandLine')
     $State.Controls.txtAppArguments = $window.FindName('txtAppArguments')
     $State.Controls.txtAppSource = $window.FindName('txtAppSource')
+    $State.Controls.txtAppAdditionalExitCodes = $window.FindName('txtAppAdditionalExitCodes')
     $State.Controls.btnAddApplication = $window.FindName('btnAddApplication')
     $State.Controls.btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
     $State.Controls.btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
