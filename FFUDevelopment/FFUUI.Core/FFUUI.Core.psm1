@@ -202,6 +202,11 @@ function Update-ApplicationPanelVisibility {
         [string]$TriggeringControlName # Optional: to know which control initiated the change
     )
 
+    # If BYO apps is checked, ensure the main Install Apps is also checked.
+    if ($State.Controls.chkBringYourOwnApps.IsChecked) {
+        $State.Controls.chkInstallApps.IsChecked = $true
+    }
+
     $installAppsChecked = $State.Controls.chkInstallApps.IsChecked
     
     # If the main 'Install Apps' is unchecked, everything below it gets hidden and reset.
@@ -268,6 +273,12 @@ function Update-InstallAppsState {
             # If no state was saved (e.g., it was never forced), ensure it's unchecked.
             $installAppsChk.IsChecked = $false
         }
+        
+        # If BYO is checked, it overrides the restoration and keeps Install Apps checked.
+        if ($State.Controls.chkBringYourOwnApps.IsChecked) {
+            $installAppsChk.IsChecked = $true
+        }
+
         $installAppsChk.IsEnabled = $true
     }
 }
