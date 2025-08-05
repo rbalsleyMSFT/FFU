@@ -202,8 +202,8 @@ function Update-ApplicationPanelVisibility {
         [string]$TriggeringControlName # Optional: to know which control initiated the change
     )
 
-    # If BYO apps is checked, ensure the main Install Apps is also checked.
-    if ($State.Controls.chkBringYourOwnApps.IsChecked) {
+    # If BYO Apps, Winget Apps, or Define Apps Script Variables is checked, force Install Apps to be checked
+    if ($State.Controls.chkBringYourOwnApps.IsChecked -or $State.Controls.chkInstallWingetApps.IsChecked -or $State.Controls.chkDefineAppsScriptVariables.IsChecked) {
         $State.Controls.chkInstallApps.IsChecked = $true
     }
 
@@ -274,8 +274,8 @@ function Update-InstallAppsState {
             $installAppsChk.IsChecked = $false
         }
         
-        # If BYO is checked, it overrides the restoration and keeps Install Apps checked.
-        if ($State.Controls.chkBringYourOwnApps.IsChecked) {
+        # If BYO, Winget, or Apps Script Variables are checked, it overrides the restoration and keeps Install Apps checked.
+        if ($State.Controls.chkBringYourOwnApps.IsChecked -or $State.Controls.chkInstallWingetApps.IsChecked -or $State.Controls.chkDefineAppsScriptVariables.IsChecked) {
             $installAppsChk.IsChecked = $true
         }
 
