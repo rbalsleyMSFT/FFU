@@ -377,6 +377,9 @@
                                 <TextBlock Text="Additional Exit Codes:" Margin="0,0,0,5"/>
                                 <TextBox x:Name="txtAppAdditionalExitCodes" Margin="0,0,0,10" ToolTip="Enter a comma-separated list of additional success exit codes."/>
 
+                                <!-- Ignore Non-Zero Exit Codes Checkbox -->
+                                <CheckBox x:Name="chkIgnoreExitCodes" Content="Ignore all non-zero exit codes" Margin="0,0,0,10" ToolTip="If checked, any non-zero exit code will be considered a success."/>
+
                                 <!-- Add Application Button -->
                                 <Button x:Name="btnAddApplication" Content="Add Application" Width="120" HorizontalAlignment="Left" Margin="0,10,0,10" Padding="10,5" ToolTip="Add the application to the list"/>
 
@@ -397,6 +400,7 @@
                                                 <GridViewColumn Header="Arguments" DisplayMemberBinding="{Binding Arguments}" Width="200"/>
                                                 <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="150"/>
                                                 <GridViewColumn Header="Exit Codes" DisplayMemberBinding="{Binding AdditionalExitCodes}" Width="100"/>
+                                                <GridViewColumn Header="Ignore Exit Codes" DisplayMemberBinding="{Binding IgnoreExitCodes}" Width="120"/>
                                                 <GridViewColumn Header="Copy Status" DisplayMemberBinding="{Binding CopyStatus}" Width="150"/>
                                                 <GridViewColumn Header="Action" Width="85">
                                                     <GridViewColumn.CellTemplate>

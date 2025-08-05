@@ -56,6 +56,7 @@ function Add-BYOApplication {
     $arguments = $State.Controls.txtAppArguments.Text
     $source = $State.Controls.txtAppSource.Text
     $additionalExitCodes = $State.Controls.txtAppAdditionalExitCodes.Text
+    $ignoreNonZeroExitCodes = $State.Controls.chkIgnoreExitCodes.IsChecked
 
     if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine)) {
         [System.Windows.MessageBox]::Show("Please fill in all fields (Name and Command Line)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
@@ -72,13 +73,24 @@ function Add-BYOApplication {
     if ($listView.Items.Count -gt 0) {
         $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
     }
-    $application = [PSCustomObject]@{ Priority = $priority; Name = $name; CommandLine = $commandLine; Arguments = $arguments; Source = $source; AdditionalExitCodes = $additionalExitCodes; CopyStatus = "" }
+    $application = [PSCustomObject]@{ 
+        Priority = $priority
+        Name = $name
+        CommandLine = $commandLine
+        Arguments = $arguments
+        Source = $source
+        AdditionalExitCodes = $additionalExitCodes
+        IgnoreNonZeroExitCodes = $ignoreNonZeroExitCodes
+        IgnoreExitCodes = if ($ignoreNonZeroExitCodes) { "Yes" } else { "No" }
+        CopyStatus = "" 
+    }
     $listView.Items.Add($application)
     $State.Controls.txtAppName.Text = ""
     $State.Controls.txtAppCommandLine.Text = ""
     $State.Controls.txtAppArguments.Text = ""
     $State.Controls.txtAppSource.Text = ""
     $State.Controls.txtAppAdditionalExitCodes.Text = ""
+    $State.Controls.chkIgnoreExitCodes.IsChecked = $false
     Update-CopyButtonState -State $State
 }
     
@@ -162,8 +174,10 @@ function Save-BYOApplicationList {
 
     try {
         # Ensure items are sorted by current priority before saving
-        # Exclude CopyStatus when saving and ensure Priority is an integer
-        $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source, AdditionalExitCodes
+        # Exclude UI-only properties (CopyStatus, IgnoreExitCodes) and ensure Priority is an integer
+        $propertiesToSave = 'Priority', 'Name', 'CommandLine', 'Arguments', 'Source', 'AdditionalExitCodes', 'IgnoreNonZeroExitCodes'
+        $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source, AdditionalExitCodes, IgnoreNonZeroExitCodes
+        
         $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Force -Encoding UTF8
         [System.Windows.MessageBox]::Show("Applications saved successfully to `"$Path`".", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
@@ -195,14 +209,17 @@ function Import-BYOApplicationList {
         # Add items and sort by priority from the file
         $sortedApps = $applications | Sort-Object Priority
         foreach ($app in $sortedApps) {
+            $ignoreNonZero = if ($app.PSObject.Properties['IgnoreNonZeroExitCodes']) { $app.IgnoreNonZeroExitCodes } else { $false }
             $appObject = [PSCustomObject]@{
-                Priority            = $app.Priority
-                Name                = $app.Name
-                CommandLine         = $app.CommandLine
-                Arguments           = if ($app.PSObject.Properties['Arguments']) { $app.Arguments } else { "" }
-                Source              = $app.Source
-                AdditionalExitCodes = if ($app.PSObject.Properties['AdditionalExitCodes']) { $app.AdditionalExitCodes } else { "" }
-                CopyStatus          = ""
+                Priority               = $app.Priority
+                Name                   = $app.Name
+                CommandLine            = $app.CommandLine
+                Arguments              = if ($app.PSObject.Properties['Arguments']) { $app.Arguments } else { "" }
+                Source                 = $app.Source
+                AdditionalExitCodes    = if ($app.PSObject.Properties['AdditionalExitCodes']) { $app.AdditionalExitCodes } else { "" }
+                IgnoreNonZeroExitCodes = $ignoreNonZero
+                IgnoreExitCodes        = if ($ignoreNonZero) { "Yes" } else { "No" }
+                CopyStatus             = ""
             }
             $listView.Items.Add($appObject)
         }

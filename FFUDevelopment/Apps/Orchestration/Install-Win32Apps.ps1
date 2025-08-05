@@ -15,8 +15,10 @@ function Invoke-Process {
         [bool]$Wait = $true,
 
         [Parameter()]
-        [string[]]$AdditionalSuccessCodes
+        [string[]]$AdditionalSuccessCodes,
 
+        [Parameter()]
+        [bool]$IgnoreNonZeroExitCodes = $false
     )
 
     $ErrorActionPreference = 'Stop'
@@ -51,8 +53,12 @@ function Invoke-Process {
             $exitCode = $p.ExitCode
             # An exit code of 0 is always a success
             if ($exitCode -ne 0) {
+                # If IgnoreNonZeroExitCodes is true, treat any non-zero exit code as a success
+                if ($IgnoreNonZeroExitCodes) {
+                    Write-Host "Ignoring non-zero exit code $exitCode because IgnoreNonZeroExitCodes is set to true."
+                }
                 # Check if the non-zero exit code is in the list of additional success codes
-                if ($null -eq $AdditionalSuccessCodes -or $exitCode -notin $AdditionalSuccessCodes) {
+                elseif ($null -eq $AdditionalSuccessCodes -or $exitCode -notin $AdditionalSuccessCodes) {
                     if ($cmdError) {
                         throw $cmdError.Trim()
                     }
@@ -152,8 +158,14 @@ function Install-Applications {
                 Write-Host "Additional success exit codes for $($app.Name): $($additionalSuccessCodes -join ', ')"
             }
 
+            # Check for IgnoreNonZeroExitCodes
+            $ignoreNonZeroExitCodes = $false
+            if ($app.PSObject.Properties['IgnoreNonZeroExitCodes'] -and $app.IgnoreNonZeroExitCodes -is [bool]) {
+                $ignoreNonZeroExitCodes = $app.IgnoreNonZeroExitCodes
+            }
+
             Write-Host "Running command: $($app.CommandLine) $($argumentsToPass -join ' ')"
-            $result = Invoke-Process -FilePath $($app.CommandLine) -ArgumentList $argumentsToPass -AdditionalSuccessCodes $additionalSuccessCodes
+            $result = Invoke-Process -FilePath $($app.CommandLine) -ArgumentList $argumentsToPass -AdditionalSuccessCodes $additionalSuccessCodes -IgnoreNonZeroExitCodes $ignoreNonZeroExitCodes
             Write-Host "$($app.Name) exited with exit code: $($result.ExitCode)`r`n"
         } catch {
             Write-Error "Error occurred while installing $($app.Name): $_"
