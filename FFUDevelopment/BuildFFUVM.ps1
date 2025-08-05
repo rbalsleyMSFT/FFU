@@ -3740,14 +3740,10 @@ if ($InstallDrivers -or $CopyDrivers) {
             throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
         }
         if ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
-            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
-            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty"
+            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty, and no drivers are specified for download."
+            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty, and no drivers are specified for download."
         }
-        if (!(Test-Path -Path $DriversJsonPath)) {
-            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversJsonPath file is missing"
-            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversJsonPath file is missing"
-        }
-        WriteLog 'Driver validation complete'
+        WriteLog "Drivers folder found with content. Will use existing drivers."
     }   
 }
 #Validate PEDrivers folder
