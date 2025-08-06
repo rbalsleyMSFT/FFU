@@ -337,8 +337,8 @@ If (Test-Path -Path $UnattendComputerNamePath) {
 }
 
 #Ask for device name if unattend exists
+Write-SectionHeader 'Device Name Selection'
 if ($Unattend -and $UnattendPrefix) {
-    Write-SectionHeader 'Device Name Selection'
     Writelog 'Unattend file found with prefixes.txt. Getting prefixes.'
     $UnattendPrefixes = @(Get-content $UnattendPrefixFile)
     $UnattendPrefixCount = $UnattendPrefixes.Count
@@ -385,7 +385,6 @@ if ($Unattend -and $UnattendPrefix) {
     Write-Host "Computer name set to $computername"
 }
 elseif ($Unattend -and $UnattendComputerName) {
-    Write-SectionHeader 'Device Name Selection'
     Writelog 'Unattend file found with SerialComputerNames.csv. Getting name for current computer.'
     $SerialComputerNames = Import-Csv -Path $UnattendComputerNameFile.FullName -Delimiter ","
 
