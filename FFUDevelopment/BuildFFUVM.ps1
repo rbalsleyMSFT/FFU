@@ -2542,6 +2542,14 @@ function New-FFUVM {
 Function Set-CaptureFFU {
     $CaptureFFUScriptPath = "$FFUDevelopmentPath\WinPECaptureFFUFiles\CaptureFFU.ps1"
 
+    # Workaround for PowerShell 7 issue on Windows 11 23H2 and earlier
+    # https://github.com/PowerShell/PowerShell/issues/21645
+    $osBuild = (Get-CimInstance -ClassName Win32_OperatingSystem).BuildNumber
+    if ($osBuild -le 22631) {
+        WriteLog "Applying workaround for PowerShell 7 LocalAccounts module issue on Windows 11 build $osBuild"
+        Import-Module Microsoft.PowerShell.LocalAccounts -UseWindowsPowerShell
+    }
+
     If (-not (Test-Path -Path $FFUCaptureLocation)) {
         WriteLog "Creating FFU capture location at $FFUCaptureLocation"
         New-Item -Path $FFUCaptureLocation -ItemType Directory -Force
