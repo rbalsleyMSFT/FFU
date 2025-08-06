@@ -5,6 +5,85 @@
     This module contains all the functions that power the "Applications" tab in the BuildFFUVM_UI. It handles user interactions for managing custom application lists (BYO Apps), such as adding, removing, reordering, and saving/loading the list from a JSON file (UserAppList.json). It also includes the logic for copying the application source files to the designated staging directory in parallel. Additionally, it manages the UI for creating and removing key-value pairs for the AppsScriptVariables.json file, which allows for custom parameterization of user-provided scripts.
 #>
 
+# Function to update the enabled state of BYO Apps action buttons based on selection
+function Update-BYOAppsActionButtonsState {
+    param(
+        [psobject]$State
+    )
+    $listView = $State.Controls.lstApplications
+    $removeButton = $State.Controls.btnRemoveSelectedBYOApps
+    $editButton = $State.Controls.btnEditApplication
+    
+    if ($listView -and $removeButton -and $editButton) {
+        # Count selected items
+        $selectedItems = @($listView.Items | Where-Object { $_.IsSelected })
+        $selectedCount = $selectedItems.Count
+
+        # Enable the remove button if any item is selected
+        $removeButton.IsEnabled = ($selectedCount -gt 0)
+        
+        # Enable the edit button only if exactly one item is selected
+        $editButton.IsEnabled = ($selectedCount -eq 1)
+    }
+}
+
+# Function to remove all selected BYO applications
+function Remove-SelectedBYOApplications {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    $listView = $State.Controls.lstApplications
+    $itemsToRemove = @($listView.Items | Where-Object { $_.IsSelected })
+
+    if ($itemsToRemove.Count -eq 0) {
+        # This should not happen if the button is correctly disabled, but as a safeguard:
+        [System.Windows.MessageBox]::Show("No applications are selected for removal.", "Remove Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        return
+    }
+
+    # Check if the item being edited is among those being removed
+    if ($null -ne $State.Data.editingBYOApplication -and $itemsToRemove.Contains($State.Data.editingBYOApplication)) {
+        # Reset the edit state
+        $State.Data.editingBYOApplication = $null
+        $State.Controls.btnAddApplication.Content = "Add Application"
+        # Clear the form fields
+        $State.Controls.txtAppName.Clear()
+        $State.Controls.txtAppCommandLine.Clear()
+        $State.Controls.txtAppArguments.Clear()
+        $State.Controls.txtAppSource.Clear()
+        $State.Controls.txtAppAdditionalExitCodes.Clear()
+        $State.Controls.chkIgnoreExitCodes.IsChecked = $false
+    }
+
+    foreach ($item in $itemsToRemove) {
+        $listView.Items.Remove($item)
+    }
+
+    # Re-calculate priorities for the remaining items
+    Update-ListViewPriorities -ListView $listView
+    
+    # Update button states (Copy and Remove)
+    Update-CopyButtonState -State $State
+    Update-BYOAppsActionButtonsState -State $State
+
+    # Update the header checkbox state
+    $headerChk = $State.Controls.chkSelectAllBYOApps
+    if ($null -ne $headerChk) {
+        Update-SelectAllHeaderCheckBoxState -ListView $listView -HeaderCheckBox $headerChk
+    }
+
+    # Ask user if they want to save the changes
+    $result = [System.Windows.MessageBox]::Show("The selected applications have been removed from the list. Do you want to save these changes to UserAppList.json now?", "Save Changes", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    
+    if ($result -eq 'Yes') {
+        $userAppListPath = Join-Path -Path $State.Controls.txtApplicationPath.Text -ChildPath 'UserAppList.json'
+        Save-BYOApplicationList -Path $userAppListPath -State $State
+    }
+}
+
 # Function to update the enabled state of the Copy Apps button
 function Update-CopyButtonState {
     param(
@@ -40,6 +119,7 @@ function Remove-Application {
         Update-ListViewPriorities -ListView $listView
         # Update the Copy Apps button state
         Update-CopyButtonState -State $State
+        Update-BYOAppsActionButtonsState -State $State
     }
 }
 
@@ -63,28 +143,62 @@ function Add-BYOApplication {
         return
     }
     $listView = $State.Controls.lstApplications
-    # Check for duplicate names
-    $existingApp = $listView.Items | Where-Object { $_.Name -eq $name }
-    if ($existingApp) {
-        [System.Windows.MessageBox]::Show("An application with the name '$name' already exists.", "Duplicate Name", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
-        return
+
+    # Check if we are in edit mode
+    if ($null -ne $State.Data.editingBYOApplication) {
+        $itemToUpdate = $State.Data.editingBYOApplication
+        
+        # Check for duplicate names, excluding the item being edited
+        $existingApp = $listView.Items | Where-Object { $_.Name -eq $name -and $_ -ne $itemToUpdate }
+        if ($existingApp) {
+            [System.Windows.MessageBox]::Show("An application with the name '$name' already exists.", "Duplicate Name", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            return
+        }
+
+        # Update the properties of the existing object
+        $itemToUpdate.Name = $name
+        $itemToUpdate.CommandLine = $commandLine
+        $itemToUpdate.Arguments = $arguments
+        $itemToUpdate.Source = $source
+        $itemToUpdate.AdditionalExitCodes = $additionalExitCodes
+        $itemToUpdate.IgnoreNonZeroExitCodes = $ignoreNonZeroExitCodes
+        $itemToUpdate.IgnoreExitCodes = if ($ignoreNonZeroExitCodes) { "Yes" } else { "No" }
+        
+        # Refresh the ListView to show the changes
+        $listView.Items.Refresh()
+
+        # Reset state
+        $State.Data.editingBYOApplication = $null
+        $State.Controls.btnAddApplication.Content = "Add Application"
     }
-    $priority = 1
-    if ($listView.Items.Count -gt 0) {
-        $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
+    else {
+        # This is a new application
+        # Check for duplicate names
+        $existingApp = $listView.Items | Where-Object { $_.Name -eq $name }
+        if ($existingApp) {
+            [System.Windows.MessageBox]::Show("An application with the name '$name' already exists.", "Duplicate Name", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            return
+        }
+        $priority = 1
+        if ($listView.Items.Count -gt 0) {
+            $priority = ($listView.Items | Measure-Object -Property Priority -Maximum).Maximum + 1
+        }
+        $application = [PSCustomObject]@{
+            IsSelected             = $false
+            Priority               = $priority
+            Name                   = $name
+            CommandLine            = $commandLine
+            Arguments              = $arguments
+            Source                 = $source
+            AdditionalExitCodes    = $additionalExitCodes
+            IgnoreNonZeroExitCodes = $ignoreNonZeroExitCodes
+            IgnoreExitCodes        = if ($ignoreNonZeroExitCodes) { "Yes" } else { "No" }
+            CopyStatus             = ""
+        }
+        $listView.Items.Add($application)
     }
-    $application = [PSCustomObject]@{ 
-        Priority = $priority
-        Name = $name
-        CommandLine = $commandLine
-        Arguments = $arguments
-        Source = $source
-        AdditionalExitCodes = $additionalExitCodes
-        IgnoreNonZeroExitCodes = $ignoreNonZeroExitCodes
-        IgnoreExitCodes = if ($ignoreNonZeroExitCodes) { "Yes" } else { "No" }
-        CopyStatus = "" 
-    }
-    $listView.Items.Add($application)
+
+    # Clear form and update button states for both add and update operations
     $State.Controls.txtAppName.Text = ""
     $State.Controls.txtAppCommandLine.Text = ""
     $State.Controls.txtAppArguments.Text = ""
@@ -92,6 +206,38 @@ function Add-BYOApplication {
     $State.Controls.txtAppAdditionalExitCodes.Text = ""
     $State.Controls.chkIgnoreExitCodes.IsChecked = $false
     Update-CopyButtonState -State $State
+    Update-BYOAppsActionButtonsState -State $State
+}
+
+# Function to populate the form for editing a BYO application
+function Start-EditBYOApplication {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    $listView = $State.Controls.lstApplications
+    $itemToEdit = @($listView.Items | Where-Object { $_.IsSelected }) | Select-Object -First 1
+
+    if ($null -eq $itemToEdit) {
+        [System.Windows.MessageBox]::Show("No application selected or multiple applications selected.", "Edit Error", "OK", "Warning")
+        return
+    }
+
+    # Store the item being edited in the state
+    $State.Data.editingBYOApplication = $itemToEdit
+
+    # Populate the form fields
+    $State.Controls.txtAppName.Text = $itemToEdit.Name
+    $State.Controls.txtAppCommandLine.Text = $itemToEdit.CommandLine
+    $State.Controls.txtAppArguments.Text = $itemToEdit.Arguments
+    $State.Controls.txtAppSource.Text = $itemToEdit.Source
+    $State.Controls.txtAppAdditionalExitCodes.Text = $itemToEdit.AdditionalExitCodes
+    $State.Controls.chkIgnoreExitCodes.IsChecked = $itemToEdit.IgnoreNonZeroExitCodes
+
+    # Change the Add button to Update
+    $State.Controls.btnAddApplication.Content = "Update App"
 }
     
 # Function to add a new Apps Script Variable from the UI
@@ -211,6 +357,7 @@ function Import-BYOApplicationList {
         foreach ($app in $sortedApps) {
             $ignoreNonZero = if ($app.PSObject.Properties['IgnoreNonZeroExitCodes']) { $app.IgnoreNonZeroExitCodes } else { $false }
             $appObject = [PSCustomObject]@{
+                IsSelected             = $false
                 Priority               = $app.Priority
                 Name                   = $app.Name
                 CommandLine            = $app.CommandLine
@@ -228,8 +375,8 @@ function Import-BYOApplicationList {
         Update-ListViewPriorities -ListView $listView
         # Update the Copy Apps button state
         Update-CopyButtonState -State $State
-
-        [System.Windows.MessageBox]::Show("Applications imported successfully from `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Update-BYOAppsActionButtonsState -State $State
+        [System.Windows.MessageBox]::Show("Applications imported successfully from `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)    
     }
     catch {
         [System.Windows.MessageBox]::Show("Failed to import applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)

@@ -94,7 +94,9 @@ function Initialize-UIControls {
     $State.Controls.btnAddApplication = $window.FindName('btnAddApplication')
     $State.Controls.btnSaveBYOApplications = $window.FindName('btnSaveBYOApplications')
     $State.Controls.btnLoadBYOApplications = $window.FindName('btnLoadBYOApplications')
+    $State.Controls.btnEditApplication = $window.FindName('btnEditApplication')
     $State.Controls.btnClearBYOApplications = $window.FindName('btnClearBYOApplications')
+    $State.Controls.btnRemoveSelectedBYOApps = $window.FindName('btnRemoveSelectedBYOApps')
     $State.Controls.btnCopyBYOApps = $window.FindName('btnCopyBYOApps')
     $State.Controls.lstApplications = $window.FindName('lstApplications')
     $State.Controls.btnMoveTop = $window.FindName('btnMoveTop')
@@ -455,6 +457,28 @@ function Initialize-DynamicUIElements {
             }
         }
     )
+
+    # BYO Applications ListView setup
+    $byoAppsGridView = New-Object System.Windows.Controls.GridView
+    $State.Controls.lstApplications.View = $byoAppsGridView
+
+    # Set ListViewItem style to stretch content horizontally
+    $itemStyleBYOApps = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleBYOApps.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstApplications.ItemContainerStyle = $itemStyleBYOApps
+
+    # Add the selectable column
+    Add-SelectableGridViewColumn -ListView $State.Controls.lstApplications -State $State -HeaderCheckBoxKeyName "chkSelectAllBYOApps" -ColumnWidth 60
+
+    # Add other sortable columns
+    Add-SortableColumn -gridView $byoAppsGridView -header "Priority" -binding "Priority" -width 60 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Name" -binding "Name" -width 150 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Command Line" -binding "CommandLine" -width 200 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Arguments" -binding "Arguments" -width 200 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Source" -binding "Source" -width 150 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Exit Codes" -binding "AdditionalExitCodes" -width 100 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Ignore Exit Codes" -binding "IgnoreExitCodes" -width 120 -headerHorizontalAlignment Left
+    Add-SortableColumn -gridView $byoAppsGridView -header "Copy Status" -binding "CopyStatus" -width 150 -headerHorizontalAlignment Left
 
     # Apps Script Variables ListView setup
     # Bind ItemsSource to the data list

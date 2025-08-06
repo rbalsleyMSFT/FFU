@@ -356,6 +356,13 @@ function Register-EventHandlers {
             Add-BYOApplication -State $localState
         })
 
+    $State.Controls.btnEditApplication.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Start-EditBYOApplication -State $localState
+        })
+
     $State.Controls.btnSaveBYOApplications.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -398,12 +405,21 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
+            # Before clearing, check if we are in edit mode and reset the state
+            if ($null -ne $localState.Data.editingBYOApplication) {
+                $localState.Data.editingBYOApplication = $null
+                $localState.Controls.btnAddApplication.Content = "Add Application"
+            }
+
             Clear-ListViewContent -State $localState `
                 -ListViewControl $localState.Controls.lstApplications `
                 -ConfirmationTitle "Clear BYO Applications" `
                 -ConfirmationMessage "Are you sure you want to clear all 'Bring Your Own' applications?" `
                 -StatusMessage "BYO application list cleared." `
-                -PostClearAction { Update-CopyButtonState -State $State }
+                -PostClearAction { 
+                Update-CopyButtonState -State $State
+                Update-BYOAppsActionButtonsState -State $State 
+            }
         })
             
     $State.Controls.btnCopyBYOApps.Add_Click({
@@ -411,6 +427,13 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
             Invoke-CopyBYOApps -State $localState -Button $eventSource
+        })
+
+    $State.Controls.btnRemoveSelectedBYOApps.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Remove-SelectedBYOApplications -State $localState
         })
 
     $State.Controls.btnMoveTop.Add_Click({
@@ -440,6 +463,65 @@ function Register-EventHandlers {
             $localState = $window.Tag
             Move-ListViewItemBottom -ListView $localState.Controls.lstApplications
         })
+
+    $State.Controls.lstApplications.Add_PreviewKeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllBYOApps'
+                # Update button states after toggle
+                Update-BYOAppsActionButtonsState -State $localState
+                $keyEvent.Handled = $true
+            }
+        })
+
+    $State.Controls.lstApplications.Add_SelectionChanged({
+            param($eventSource, $selChangeEvent)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $headerChk = $localState.Controls.chkSelectAllBYOApps
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstApplications -HeaderCheckBox $headerChk
+            }
+            # Update button states based on selection
+            Update-BYOAppsActionButtonsState -State $localState
+        })
+
+    # Add a routed event handler to catch checkbox clicks within the ListView
+    $State.Controls.lstApplications.AddHandler(
+        [System.Windows.Controls.Primitives.ButtonBase]::ClickEvent,
+        [System.Windows.RoutedEventHandler] {
+            param($eventSource, $e)
+            # Check if the original source of the click was a CheckBox
+            $clickedCheckBox = $e.OriginalSource
+            if ($clickedCheckBox -is [System.Windows.Controls.CheckBox]) {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                $dataItem = $clickedCheckBox.DataContext
+
+                if ($null -ne $dataItem) {
+                    # Defensively add the 'IsSelected' property if it's missing from the data object.
+                    # This can happen in some complex UI scenarios or if the object was created without it.
+                    if ($null -eq $dataItem.PSObject.Properties['IsSelected']) {
+                        $dataItem | Add-Member -MemberType NoteProperty -Name 'IsSelected' -Value $false
+                    }
+                    
+                    # Now that we're sure the property exists, set its value.
+                    $dataItem.IsSelected = $clickedCheckBox.IsChecked
+                }
+
+                # Update the state of the action buttons based on the new selection.
+                Update-BYOAppsActionButtonsState -State $localState
+
+                # Also, update the header checkbox to reflect the change.
+                $headerChk = $localState.Controls.chkSelectAllBYOApps
+                if ($null -ne $headerChk) {
+                    Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstApplications -HeaderCheckBox $headerChk
+                }
+            }
+        }
+    )
 
     # Apps Script Variables Event Handlers
     # Attach the handler to the script variables checkbox

@@ -392,27 +392,6 @@
 
                                     <!-- Applications ListView -->
                                     <ListView x:Name="lstApplications" Grid.Column="0" Height="200">
-                                        <ListView.View>
-                                            <GridView>
-                                                <GridViewColumn Header="Priority" DisplayMemberBinding="{Binding Priority}" Width="60"/>
-                                                <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="150"/>
-                                                <GridViewColumn Header="Command Line" DisplayMemberBinding="{Binding CommandLine}" Width="200"/>
-                                                <GridViewColumn Header="Arguments" DisplayMemberBinding="{Binding Arguments}" Width="200"/>
-                                                <GridViewColumn Header="Source" DisplayMemberBinding="{Binding Source}" Width="150"/>
-                                                <GridViewColumn Header="Exit Codes" DisplayMemberBinding="{Binding AdditionalExitCodes}" Width="100"/>
-                                                <GridViewColumn Header="Ignore Exit Codes" DisplayMemberBinding="{Binding IgnoreExitCodes}" Width="120"/>
-                                                <GridViewColumn Header="Copy Status" DisplayMemberBinding="{Binding CopyStatus}" Width="150"/>
-                                                <GridViewColumn Header="Action" Width="85">
-                                                    <GridViewColumn.CellTemplate>
-                                                        <DataTemplate>
-                                                            <Grid HorizontalAlignment="Stretch">
-                                                                <Button Content="Remove" Tag="{Binding Priority}" Width="70" HorizontalAlignment="Center" ToolTip="Remove this application from the list and reorder priorities"/>
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </GridViewColumn.CellTemplate>
-                                                </GridViewColumn>
-                                            </GridView>
-                                        </ListView.View>
                                     </ListView>
 
                                     <!-- Reorder Buttons -->
@@ -429,9 +408,10 @@
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,10">
                                     <Button x:Name="btnSaveBYOApplications" Content="Save UserAppList.json" Margin="0,0,10,0" Padding="10,5" ToolTip="Save application list to JSON file"/>
                                     <Button x:Name="btnLoadBYOApplications" Content="Import UserAppList.json" Margin="0,0,10,0" Padding="10,5" ToolTip="Import application list from JSON file"/>
+                                    <Button x:Name="btnEditApplication" Content="Edit Application" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Edit the selected application's details"/>
                                     <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
-                                    <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="10,5" ToolTip="Clear all applications from the list"/>
-                                </StackPanel>
+                                    <Button x:Name="btnRemoveSelectedBYOApps" Content="Remove Selected" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Remove selected applications from the list"/>
+                                    <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="10,5" ToolTip="Clear all applications from the list"/>                                </StackPanel>
                             </StackPanel>
 
                             <!-- AppsScriptVariables Section -->
