@@ -4933,20 +4933,6 @@ try {
         WriteLog "Setting Windows Product Key"
         Set-WindowsProductKey -Path $WindowsPartition -ProductKey $ProductKey
     }
-    
-
-    If ($InstallApps) {
-        #Copy Unattend file so VM Boots into Audit Mode
-        WriteLog 'Copying unattend file to boot to audit mode'
-        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\unattend" -ItemType Directory -Force | Out-Null
-        if ($WindowsArch -eq 'x64') {
-            Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
-        }
-        else {
-            Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
-        }
-        WriteLog 'Copy completed'
-    }
 
     Set-Progress -Percentage 40 -Message "Finalizing VHDX..."
     if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
@@ -4983,11 +4969,6 @@ try {
             Mount-Vhd -Path $VHDXPath
         }
     } 
-    else {
-        if ($InstallApps) {
-            Dismount-ScratchVhdx -VhdxPath $VHDXPath
-        }
-    }
 }
 catch {
     Write-Host 'Creating VHDX Failed'
@@ -5010,6 +4991,33 @@ catch {
     }
     throw $_
     
+}
+
+#Inject unattend after caching so cached VHDX never contains audit-mode unattend
+if ($InstallApps) {
+    # Determine mount state and only mount if needed to avoid redundant mount/dismount cycles
+    $vhdMeta = Get-VHD -Path $VHDXPath
+    if ($vhdMeta.Attached) {
+        WriteLog 'VHDX already mounted; reusing existing mount for unattend injection'
+        $disk = Get-Disk -Number $vhdMeta.DiskNumber
+    }
+    else {
+        WriteLog 'Mounting VHDX to inject unattend for audit-mode boot'
+        $disk = Mount-VHD -Path $VHDXPath -Passthru | Get-Disk
+    }
+    $osPartition = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+    $osPartitionDriveLetter = $osPartition.DriveLetter
+    WriteLog 'Copying unattend file to boot to audit mode'
+    New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force | Out-Null
+    if ($WindowsArch -eq 'x64') {
+        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+    }
+    else {
+        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+    }
+    WriteLog 'Copy completed'
+    # Always dismount so downstream VM creation logic has a clean starting point
+    Dismount-ScratchVhdx -VhdxPath $VHDXPath
 }
 
 #If installing apps (Office or 3rd party), we need to build a VM and capture that FFU, if not, just cut the FFU from the VHDX file
