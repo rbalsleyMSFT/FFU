@@ -545,7 +545,7 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
         WriteLog "Detected System: Manufacturer='$systemManufacturer', Model='$systemModel'"
 
         # Load and parse the mapping file, ensuring it's always an array
-        $driverMappings = @(Get-Content -Path $driverMappingPath -Raw | ConvertFrom-Json -ErrorAction SilentlyContinue)
+        $driverMappings = Get-Content -Path $driverMappingPath | Out-String | ConvertFrom-Json -ErrorAction SilentlyContinue
 
         # Find all matching rules and select the most specific one
         $matchingRules = @()
@@ -553,6 +553,7 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
             # Use -like for wildcard matching.
             # This checks if the system model starts with the rule model, or vice-versa, for flexibility.
             if ($systemManufacturer -like "$($rule.Manufacturer)*" -and ($systemModel -like "$($rule.Model)*" -or $rule.Model -like "$systemModel*")) {
+                WriteLog "Match found: Manufacturer='$($rule.Manufacturer)', Model='$($rule.Model)'"
                 $matchingRules += $rule
             }
         }
