@@ -117,6 +117,7 @@ function Get-GeneralDefaults {
         ShareName                      = "FFUCaptureShare"
         Username                       = "ffu_user"
         Threads                        = 5
+        MaxUSBDrives                   = 5
         BuildUSBDriveEnable            = $false
         CompactOS                      = $true
         Optimize                       = $true

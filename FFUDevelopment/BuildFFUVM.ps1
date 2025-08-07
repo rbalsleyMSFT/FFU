@@ -193,6 +193,9 @@ A hashtable containing USB drives from win32_diskdrive where:
 
 Example: @{ "SanDisk Ultra" = "1234567890"; "Kingston DataTraveler" = "0987654321" }
 
+.PARAMETER MaxUSBDrives
+Maximum number of USB drives to build in parallel. Default is 5. Set to 0 to process all discovered drives (or all selected drives when USBDriveList or selection is used). Actual throttle will never exceed the number of drives discovered.
+
 .PARAMETER UserAgent
 User agent string to use when downloading files.
 
@@ -344,6 +347,7 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
     [hashtable]$USBDriveList,
+    [int]$MaxUSBDrives = 5,
     [Parameter(Mandatory = $false)]
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
@@ -3310,6 +3314,9 @@ Function New-DeploymentUSB {
     # 2. Partition and format USB drives in parallel
     WriteLog "Starting parallel creation for $USBDrivesCount USB drive(s)."
 
+    $resolvedUSBThrottle = if ($MaxUSBDrives -gt 0) { [math]::Min($MaxUSBDrives, $USBDrivesCount) } else { $USBDrivesCount }
+    WriteLog "Using USB drive throttle limit: $resolvedUSBThrottle (MaxUSBDrives param: $MaxUSBDrives; Drives to process: $USBDrivesCount)"
+
     $USBDrives | ForEach-Object -Parallel {
         $USBDrive = $_
         
@@ -3391,7 +3398,7 @@ Function New-DeploymentUSB {
         Set-Volume -DriveLetter $DeployPartition.DriveLetter -NewFileSystemLabel "Deploy"
         WriteLog "Finished processing disk $DiskNumber"
 
-    } -ThrottleLimit 2
+    } -ThrottleLimit $resolvedUSBThrottle
 
     # Dismount ISO after all parallel jobs are complete
     WriteLog "Dismounting deployment ISO."

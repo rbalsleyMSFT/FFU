@@ -44,7 +44,8 @@ function Register-EventHandlers {
         $State.Controls.txtDiskSize,
         $State.Controls.txtMemory,
         $State.Controls.txtProcessors,
-        $State.Controls.txtThreads
+        $State.Controls.txtThreads,
+        $State.Controls.txtMaxUSBDrives
     )
 
     # Attach the handlers to each relevant textbox
@@ -68,6 +69,20 @@ function Register-EventHandlers {
                 if (-not $isValidInteger -or $currentValue -lt 1) {
                     $textBox.Text = '1'
                     WriteLog "Threads value was invalid or less than 1. Reset to 1."
+                }
+            })
+    }
+
+    # Add specific validation for the Max USB Drives textbox to ensure it's an integer >=0 (allow 0 meaning all)
+    if ($null -ne $State.Controls.txtMaxUSBDrives) {
+        $State.Controls.txtMaxUSBDrives.Add_LostFocus({
+                param($eventSource, $routedEventArgs)
+                $textBox = $eventSource
+                $currentValue = 0
+                $isValidInteger = [int]::TryParse($textBox.Text, [ref]$currentValue)
+                if (-not $isValidInteger -or $currentValue -lt 0) {
+                    $textBox.Text = '0'
+                    WriteLog "Max USB Drives value was invalid or less than 0. Reset to 0 (process all)."
                 }
             })
     }

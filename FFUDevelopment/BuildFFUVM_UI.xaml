@@ -755,6 +755,12 @@
                                 <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
                                 <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
 
+                                <!-- Max USB Drives -->
+                                <StackPanel Orientation="Horizontal" Margin="5">
+                                    <TextBlock Text="Max USB Drives" VerticalAlignment="Center" ToolTip="Maximum number of USB drives to build at once. Enter 0 to process all discovered (or all selected) drives."/>
+                                    <TextBox x:Name="txtMaxUSBDrives" Width="50" Margin="10,0,0,0" Text="5" VerticalAlignment="Center" ToolTip="Maximum number of USB drives to build at once. Enter 0 to process all discovered (or all selected) drives."/>
+                                </StackPanel>
+
                                 <!-- USB Drive Selection Section -->
                                 <Grid x:Name="usbDriveSelectionPanel" Margin="5,0,0,0">
                                     <Grid.RowDefinitions>
