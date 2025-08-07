@@ -381,8 +381,8 @@ if ($Unattend -and $UnattendPrefix) {
         $computername = $computername.substring(0, 15)
     }
     $computername = Set-Computername($computername)
-    Writelog "Computer name set to $computername"
-    Write-Host "Computer name set to $computername"
+    Writelog "Computer name will be set to $computername"
+    Write-Host "Computer name will be set to $computername"
 }
 elseif ($Unattend -and $UnattendComputerName) {
     Writelog 'Unattend file found with SerialComputerNames.csv. Getting name for current computer.'
@@ -394,16 +394,16 @@ elseif ($Unattend -and $UnattendComputerName) {
     If ($SCName) {
         [string]$computername = $SCName.ComputerName
         $computername = Set-Computername($computername)
-        Writelog "Computer name set to $computername"
-        Write-Host "Computer name set to $computername"
+        Writelog "Computer name will be set to $computername"
+        Write-Host "Computer name will be set to $computername"
     }
     else {
         Writelog 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
         Write-Host 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
         [string]$computername = ("FFU-" + ( -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 11 | ForEach-Object { [char]$_ })))
         $computername = Set-Computername($computername)
-        Writelog "Computer name set to $computername"
-        Write-Host "Computer name set to $computername"
+        Writelog "Computer name will be set to $computername"
+        Write-Host "Computer name will be set to $computername"
     }
 }
 elseif ($Unattend) {
@@ -411,8 +411,8 @@ elseif ($Unattend) {
     Write-Host 'Unattend file found but no prefixes.txt. Please enter a device name.'
     [string]$computername = Read-Host 'Enter device name'
     Set-Computername($computername)
-    Writelog "Computer name set to $computername"
-    Write-Host "Computer name set to $computername"
+    Writelog "Computer name will be set to $computername"
+    Write-Host "Computer name will be set to $computername"
 }
 else {
     WriteLog 'No unattend folder found. Device name will be set via PPKG, AP JSON, or default OS name.'
