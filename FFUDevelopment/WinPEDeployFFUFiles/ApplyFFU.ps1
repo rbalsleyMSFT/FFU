@@ -410,7 +410,7 @@ elseif ($Unattend) {
     Writelog 'Unattend file found with no prefixes.txt, asking for name'
     Write-Host 'Unattend file found but no prefixes.txt. Please enter a device name.'
     [string]$computername = Read-Host 'Enter device name'
-    Set-Computername($computername)
+    $computername = Set-Computername($computername)
     Writelog "Computer name will be set to $computername"
     Write-Host "Computer name will be set to $computername"
 }
