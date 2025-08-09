@@ -3388,8 +3388,19 @@ Function New-DeploymentUSB {
 
         if ($using:CopyUnattend) {
             $UnattendPathOnUSB = Join-Path $DeployPartitionDriveLetter "Unattend"
-            WriteLog "Copying Unattend files to $UnattendPathOnUSB"
-            robocopy $using:UnattendFolder $UnattendPathOnUSB /E /COPYALL /R:5 /W:5 /J /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            WriteLog "Copying unattend file to $UnattendPathOnUSB"
+            New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
+            if ($using:WindowsArch -eq 'x64') {
+                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_x64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            }
+            elseif ($using:WindowsArch -eq 'arm64') {
+                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_arm64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            }
+            if (Test-Path (Join-Path $using:UnattendFolder 'prefixes.txt')) {
+                WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
+                Copy-Item -Path (Join-Path $using:UnattendFolder 'prefixes.txt') -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
+            }
+            WriteLog 'Copy completed'
         }
 
         if ($using:CopyAutopilot) {
