@@ -421,7 +421,9 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ExportConfigFile,
     [string]$orchestrationPath,
-    [bool]$UpdateADK = $true
+    [bool]$UpdateADK = $true,
+    [bool]$CleanupCurrentRunDownloads = $false,
+    [switch]$Cleanup
 )
 $ProgressPreference = 'SilentlyContinue'
 $version = '2507.2'
@@ -1664,16 +1666,16 @@ function Get-ADKURL {
             $ADKUrl = $response.BaseResponse.RequestMessage.RequestUri.AbsoluteUri
             
             if ($null -eq $ADKUrl) {
-                 WriteLog "Could not determine final ADK download URL after redirection."
-                 return $null
+                WriteLog "Could not determine final ADK download URL after redirection."
+                return $null
             }
             
             WriteLog "Resolved ADK download URL to: $ADKUrl"
             return $ADKUrl
         }
         catch {
-             WriteLog "An error occurred while resolving the ADK FWLink: $($_.Exception.Message)"
-             throw
+            WriteLog "An error occurred while resolving the ADK FWLink: $($_.Exception.Message)"
+            throw
         }
     }
     catch {
@@ -1951,7 +1953,9 @@ function Get-WindowsESD {
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
+                Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath -Headers $Headers -UserAgent $UserAgent
+                Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Download succeeded"
                 #Set back to show progress
@@ -2021,8 +2025,10 @@ function Get-Office {
     $xmlContent = [xml](Get-Content $OfficeDownloadXML)
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
     $xmlContent.Save($OfficeDownloadXML)
+    Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
     Invoke-Process $OfficePath\setup.exe "/download $OfficeDownloadXML" | Out-Null
+    Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
 
     WriteLog "Cleaning up ODT default config files"
     #Clean up default configuration files
@@ -3410,6 +3416,26 @@ Function New-DeploymentUSB {
 
 function Get-FFUEnvironment {
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
+    try {
+        Remove-InProgressItems -FFUDevelopmentPath $FFUDevelopmentPath
+    }
+    catch {
+        WriteLog "Remove-InProgressItems failed: $($_.Exception.Message)"
+    }
+    if ($CleanupCurrentRunDownloads) {
+        try {
+            Cleanup-CurrentRunDownloads -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+        catch {
+            WriteLog "Cleanup-CurrentRunDownloads failed: $($_.Exception.Message)"
+        }
+        try {
+            Restore-RunJsonBackups -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+        catch {
+            WriteLog "Restore-RunJsonBackups failed: $($_.Exception.Message)"
+        }
+    }
     # Check for running VMs that start with '_FFU-' and are in the 'Off' state
     $vms = Get-VM
 
@@ -3452,12 +3478,21 @@ function Get-FFUEnvironment {
     WriteLog 'Removal complete'
 
     # Check for content in the VM folder and delete any folders that start with _FFU-
-    $folders = Get-ChildItem -Path $VMLocation -Directory
-    foreach ($folder in $folders) {
-        if ($folder.Name -like '_FFU-*') {
-            WriteLog "Removing folder $($folder.FullName)"
-            Remove-Item -Path $folder.FullName -Recurse -Force
+    if ([string]::IsNullOrWhiteSpace($VMLocation)) {
+        $VMLocation = Join-Path $FFUDevelopmentPath 'VM'
+        WriteLog "VMLocation not set; defaulting to $VMLocation"
+    }
+    if (Test-Path -Path $VMLocation) {
+        $folders = Get-ChildItem -Path $VMLocation -Directory
+        foreach ($folder in $folders) {
+            if ($folder.Name -like '_FFU-*') {
+                WriteLog "Removing folder $($folder.FullName)"
+                Remove-Item -Path $folder.FullName -Recurse -Force
+            }
         }
+    }
+    else {
+        WriteLog "VMLocation path $VMLocation not found; skipping VM folder cleanup"
     }
 
     # Remove orphaned mounted images
@@ -3520,6 +3555,13 @@ function Get-FFUEnvironment {
     if (Test-Path -Path $AppsISO) {
         WriteLog "Removing $AppsISO"
         Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+    # Remove per-run session folder if present (Cancel/-Cleanup scenario)
+    $sessionDir = Join-Path $FFUDevelopmentPath '.session'
+    if (Test-Path -Path $sessionDir) {
+        WriteLog 'Removing .session folder'
+        Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
     WriteLog 'Removing dirty.txt file'
@@ -3683,20 +3725,384 @@ function Get-PEArchitecture {
     }
 }
 
+function New-RunSession {
+    param(
+        [string]$FFUDevelopmentPath,
+        [string]$DriversFolder,
+        [string]$OrchestrationPath
+    )
+    try {
+        $sessionDir = Join-Path $FFUDevelopmentPath '.session'
+        $backupDir = Join-Path $sessionDir 'backups'
+        $inprogDir = Join-Path $sessionDir 'inprogress'
+        if (-not (Test-Path $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null }
+        if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+        if (-not (Test-Path $inprogDir)) { New-Item -ItemType Directory -Path $inprogDir -Force | Out-Null }
+
+        $manifest = [ordered]@{
+            RunStartUtc      = (Get-Date).ToUniversalTime().ToString('o')
+            JsonBackups      = @()
+            OfficeXmlBackups = @()
+        }
+
+        if ($DriversFolder) {
+            $driverMapPath = Join-Path $DriversFolder 'DriverMapping.json'
+            if (Test-Path $driverMapPath) {
+                $backup = Join-Path $backupDir 'DriverMapping.json'
+                Copy-Item -Path $driverMapPath -Destination $backup -Force
+                $manifest.JsonBackups += @{ Path = $driverMapPath; Backup = $backup }
+                WriteLog "Backed up DriverMapping.json to $backup"
+            }
+        }
+        if ($OrchestrationPath) {
+            $wgPath = Join-Path $OrchestrationPath 'WinGetWin32Apps.json'
+            if (Test-Path $wgPath) {
+                $backup2 = Join-Path $backupDir 'WinGetWin32Apps.json'
+                Copy-Item -Path $wgPath -Destination $backup2 -Force
+                $manifest.JsonBackups += @{ Path = $wgPath; Backup = $backup2 }
+                WriteLog "Backed up WinGetWin32Apps.json to $backup2"
+            }
+        }
+        # Backup Office XMLs (DeployFFU.xml, DownloadFFU.xml) if present so we can restore them after cleanup
+        if ($OfficePath) {
+            foreach ($n in @('DeployFFU.xml', 'DownloadFFU.xml')) {
+                $src = Join-Path $OfficePath $n
+                if (Test-Path $src) {
+                    $dst = Join-Path $backupDir $n
+                    try {
+                        Copy-Item -Path $src -Destination $dst -Force
+                        $manifest.OfficeXmlBackups += @{ Path = $src; Backup = $dst }
+                        WriteLog "Backed up $n to $dst"
+                    }
+                    catch { WriteLog "Failed backing up $($n): $($_.Exception.Message)" }
+                }
+            }
+        }
+
+        $manifestPath = Join-Path $sessionDir 'currentRun.json'
+        $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+        WriteLog "Run session initialized at $sessionDir"
+    }
+    catch {
+        WriteLog "New-RunSession failed: $($_.Exception.Message)"
+    }
+}
+function Get-CurrentRunManifest {
+    param([string]$FFUDevelopmentPath)
+    $manifestPath = Join-Path $FFUDevelopmentPath '.session\currentRun.json'
+    if (Test-Path $manifestPath) { return (Get-Content $manifestPath -Raw | ConvertFrom-Json) }
+    return $null
+}
+function Save-RunManifest {
+    param([string]$FFUDevelopmentPath, [object]$Manifest)
+    if ($null -eq $Manifest) { return }
+    $manifestPath = Join-Path $FFUDevelopmentPath '.session\currentRun.json'
+    $Manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+}
+function Mark-DownloadInProgress {
+    param([string]$FFUDevelopmentPath, [string]$TargetPath)
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath) -or [string]::IsNullOrWhiteSpace($TargetPath)) { return }
+    $sessionInprog = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'inprogress'
+    if (-not (Test-Path $sessionInprog)) { New-Item -ItemType Directory -Path $sessionInprog -Force | Out-Null }
+    $marker = Join-Path $sessionInprog ("{0}.marker" -f ([guid]::NewGuid()))
+    $payload = @{ TargetPath = $TargetPath; CreatedUtc = (Get-Date).ToUniversalTime().ToString('o') }
+    $payload | ConvertTo-Json -Depth 3 | Set-Content -Path $marker -Encoding UTF8
+    WriteLog "Marked in-progress: $TargetPath"
+}
+function Clear-DownloadInProgress {
+    param([string]$FFUDevelopmentPath, [string]$TargetPath)
+    $sessionInprog = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'inprogress'
+    if (-not (Test-Path $sessionInprog)) { return }
+    Get-ChildItem -Path $sessionInprog -Filter *.marker -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $data = Get-Content $_.FullName -Raw | ConvertFrom-Json
+            if ($data.TargetPath -eq $TargetPath) { Remove-Item -Path $_.FullName -Force }
+        }
+        catch {}
+    }
+    WriteLog "Cleared in-progress: $TargetPath"
+}
+function Remove-InProgressItems {
+    param([string]$FFUDevelopmentPath)
+    $sessionInprog = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'inprogress'
+    if (-not (Test-Path $sessionInprog)) { return }
+
+    function Remove-PathWithRetry {
+        param(
+            [string]$path,
+            [bool]$isDirectory
+        )
+        for ($i = 0; $i -lt 3; $i++) {
+            try {
+                if ($isDirectory) {
+                    Remove-Item -Path $path -Recurse -Force -ErrorAction Stop
+                }
+                else {
+                    # clear readonly if set
+                    try { (Get-Item -LiteralPath $path -ErrorAction SilentlyContinue).Attributes = 'Normal' } catch {}
+                    Remove-Item -Path $path -Force -ErrorAction Stop
+                }
+                return $true
+            }
+            catch {
+                Start-Sleep -Milliseconds 350
+            }
+        }
+        return -not (Test-Path -LiteralPath $path)
+    }
+
+    Get-ChildItem -Path $sessionInprog -Filter *.marker -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $data = Get-Content $_.FullName -Raw | ConvertFrom-Json
+            $target = $data.TargetPath
+
+            if (Test-Path $target) {
+                # Special-case Office: preserve DeployFFU.xml and DownloadFFU.xml; remove everything else with retries.
+                $targetFull = [System.IO.Path]::GetFullPath($target).TrimEnd('\')
+                $officeFull = $null
+                if ($OfficePath) { $officeFull = [System.IO.Path]::GetFullPath($OfficePath).TrimEnd('\') }
+
+                if ($officeFull -and ($targetFull -ieq $officeFull) -and (Test-Path $OfficePath -PathType Container)) {
+                    $preserve = @('DeployFFU.xml', 'DownloadFFU.xml')
+                    WriteLog "Cleaning in-progress Office folder: preserving $($preserve -join ', ') and removing other content."
+                    Get-ChildItem -Path $OfficePath -Force | ForEach-Object {
+                        if ($preserve -notcontains $_.Name) {
+                            $itemPath = $_.FullName
+                            $isDir = $_.PSIsContainer
+                            WriteLog "Removing Office item: $itemPath"
+                            $removed = $false
+                            try { $removed = Remove-PathWithRetry -path $itemPath -isDirectory:$isDir } catch {}
+                            if (-not $removed) {
+                                # If setup.exe (or ODT stub) is locked, try to stop the exact owning process by path and retry.
+                                try {
+                                    $basename = [System.IO.Path]::GetFileName($itemPath)
+                                    if (-not $isDir -and $basename -in @('setup.exe', 'odtsetup.exe')) {
+                                        Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $itemPath } | Stop-Process -Force -ErrorAction SilentlyContinue
+                                        Start-Sleep -Milliseconds 500
+                                        $removed = Remove-PathWithRetry -path $itemPath -isDirectory:$false
+                                    }
+                                }
+                                catch {
+                                    WriteLog "Process stop attempt for $itemPath failed: $($_.Exception.Message)"
+                                }
+                            }
+                            if (-not $removed) {
+                                WriteLog "Failed removing Office item $itemPath after retries."
+                            }
+                        }
+                    }
+                }
+                else {
+                    WriteLog "Removing in-progress target: $target"
+                    $isDir = Test-Path $target -PathType Container
+                    [void](Remove-PathWithRetry -path $target -isDirectory:$isDir)
+                }
+            }
+
+            Remove-Item -Path $_.FullName -Force
+        }
+        catch {
+            WriteLog "Failed Remove-InProgressItems marker '$($_.FullName)': $($_.Exception.Message)"
+        }
+    }
+}
+function Cleanup-CurrentRunDownloads {
+    param([string]$FFUDevelopmentPath)
+    $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
+    if ($null -eq $manifest) { WriteLog "No current run manifest; skipping current-run cleanup."; return }
+    $runStart = [datetime]::Parse($manifest.RunStartUtc)
+
+    # 1) Generic current-run scrub across known roots (includes Orchestration now)
+    $roots = @()
+    if ($AppsPath) { $roots += (Join-Path $AppsPath 'Win32'); $roots += (Join-Path $AppsPath 'MSStore') }
+    if ($DefenderPath) { $roots += $DefenderPath }
+    if ($MSRTPath) { $roots += $MSRTPath }
+    if ($OneDrivePath) { $roots += $OneDrivePath }
+    if ($EdgePath) { $roots += $EdgePath }
+    if ($KBPath) { $roots += $KBPath }
+    if ($orchestrationPath) { $roots += $orchestrationPath }
+
+    foreach ($root in $roots | Where-Object { $_ -and (Test-Path $_) }) {
+        WriteLog "Scanning for current-run items in $root"
+        # Remove folders created/modified this run
+        Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $runStart } | Sort-Object FullName -Descending | ForEach-Object {
+            try {
+                WriteLog "Removing current-run folder: $($_.FullName)"
+                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            catch { WriteLog "Failed removing folder $($_.FullName): $($_.Exception.Message)" }
+        }
+        # Remove files created/modified this run
+        Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $runStart -and $_.Name -notin @('DeployFFU.xml', 'DownloadFFU.xml') } | ForEach-Object {
+            try {
+                WriteLog "Removing current-run file: $($_.FullName)"
+                Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+            catch { WriteLog "Failed removing file $($_.FullName): $($_.Exception.Message)" }
+        }
+    }
+
+    # 2) Office folder policy: keep XML configs, remove everything else
+    if ($OfficePath -and (Test-Path $OfficePath)) {
+        $preserve = @('DeployFFU.xml', 'DownloadFFU.xml')
+        WriteLog "Cleaning Office folder: preserving $($preserve -join ', ') and removing other content."
+        Get-ChildItem -Path $OfficePath -Force | ForEach-Object {
+            if ($preserve -notcontains $_.Name) {
+                try {
+                    WriteLog "Removing Office item: $($_.FullName)"
+                    if ($_.PSIsContainer) {
+                        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                catch { WriteLog "Failed removing Office item $($_.FullName): $($_.Exception.Message)" }
+            }
+        }
+    }
+
+    # 3) Remove generated update artifacts under Orchestration (Update-*.ps1) created this run
+    if ($orchestrationPath -and (Test-Path $orchestrationPath)) {
+        try {
+            Get-ChildItem -Path $orchestrationPath -Filter 'Update-*.ps1' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTimeUtc -ge $runStart } | ForEach-Object {
+                WriteLog "Removing current-run artifact: $($_.FullName)"
+                Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+        catch { WriteLog "Failed removing Update-*.ps1 artifacts: $($_.Exception.Message)" }
+        # Also remove Install-Office.ps1 if created this run
+        $installOffice = Join-Path $orchestrationPath 'Install-Office.ps1'
+        if (Test-Path $installOffice) {
+            $fi = Get-Item $installOffice
+            if ($fi.LastWriteTimeUtc -ge $runStart) {
+                WriteLog "Removing current-run artifact: $installOffice"
+                Remove-Item -Path $installOffice -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    # 4) If Defender/OneDrive/Edge/MSRT folders exist, remove them entirely (they're session downloads)
+    foreach ($p in @($DefenderPath, $OneDrivePath, $EdgePath, $MSRTPath)) {
+        if ($p -and (Test-Path $p)) {
+            try {
+                WriteLog "Removing current-run folder (entire): $p"
+                Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            catch { WriteLog "Failed removing folder $($p): $($_.Exception.Message)" }
+        }
+    }
+
+    # 5) Remove any ESDs downloaded this run
+    Get-ChildItem -Path $PSScriptRoot -Filter *.esd -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $runStart } | ForEach-Object {
+        try {
+            WriteLog "Removing current-run ESD: $($_.FullName)"
+            Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+        catch { WriteLog "Failed removing ESD $($_.FullName): $($_.Exception.Message)" }
+    }
+
+    # 6) Remove empty top-level subfolders under Apps (cosmetic)
+    if ($AppsPath -and (Test-Path $AppsPath)) {
+        Get-ChildItem -Path $AppsPath -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $any = Get-ChildItem -Path $_.FullName -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($null -eq $any) {
+                    WriteLog "Removing empty folder: $($_.FullName)"
+                    Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+            catch { WriteLog "Failed removing empty folder $($_.FullName): $($_.Exception.Message)" }
+        }
+    }
+}
+function Restore-RunJsonBackups {
+    param([string]$FFUDevelopmentPath)
+    $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
+    if ($null -eq $manifest) { return }
+    $runStart = [datetime]::Parse($manifest.RunStartUtc)
+
+    foreach ($entry in $manifest.JsonBackups) {
+        $path = $entry.Path
+        $backup = $entry.Backup
+        try {
+            if (Test-Path $backup) {
+                WriteLog "Restoring JSON from backup: $path"
+                Copy-Item -Path $backup -Destination $path -Force
+            }
+        }
+        catch { WriteLog "Failed restoring backup for $($path): $($_.Exception.Message)" }
+    }
+
+    $candidateJsons = @()
+    if ($DriversFolder) { $candidateJsons += (Join-Path $DriversFolder 'DriverMapping.json') }
+    if ($orchestrationPath) { $candidateJsons += (Join-Path $orchestrationPath 'WinGetWin32Apps.json') }
+
+    foreach ($jp in $candidateJsons) {
+        if (Test-Path $jp) {
+            $hasBackup = $manifest.JsonBackups | Where-Object { $_.Path -eq $jp }
+            if ($null -eq $hasBackup) {
+                $fi = Get-Item $jp
+                if ($fi.LastWriteTimeUtc -ge $runStart) {
+                    WriteLog "Removing current-run JSON: $jp"
+                    Remove-Item -Path $jp -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+}
+
+# Restore Office XML backups if present; ensure Office folder exists and only XMLs remain
+if ($manifest.OfficeXmlBackups -and $OfficePath) {
+    if (-not (Test-Path $OfficePath)) {
+        try { New-Item -ItemType Directory -Path $OfficePath -Force | Out-Null } catch {}
+    }
+    foreach ($ox in $manifest.OfficeXmlBackups) {
+        try {
+            WriteLog "Restoring Office XML from backup: $($ox.Path)"
+            Copy-Item -Path $ox.Backup -Destination $ox.Path -Force
+        }
+        catch { WriteLog "Failed restoring Office XML $($ox.Path): $($_.Exception.Message)" }
+    }
+    # Ensure only DeployFFU.xml and DownloadFFU.xml remain
+    $preserve = @('DeployFFU.xml', 'DownloadFFU.xml')
+    Get-ChildItem -Path $OfficePath -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($preserve -notcontains $_.Name) {
+            try {
+                if ($_.PSIsContainer) { Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+                else { Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue }
+            }
+            catch { WriteLog "Failed removing extra Office item $($_.FullName): $($_.Exception.Message)" }
+        }
+    }
+}
+
 ###END FUNCTIONS
 
 
-#Remove old log file if found
-if (Test-Path -Path $Logfile) {
-    Remove-item -Path $LogFile -Force
+if (-not $Cleanup) {
+    #Remove old log file if found
+    if (Test-Path -Path $Logfile) {
+        Remove-item -Path $LogFile -Force
+    }
+
+    $startTime = Get-Date
+    Write-Host "FFU build process started at" $startTime
+    Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
+    Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
 }
 
-$startTime = Get-Date
-Write-Host "FFU build process started at" $startTime
-Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
-Write-Host "To track progress, please open the log file $Logfile or use the -Verbose parameter next time"
+
+if ($Cleanup) {
+    WriteLog 'User cancelled, starting cleanup process'
+    WriteLog 'Cleanup requested via -Cleanup. Running Get-FFUEnvironment...'
+    Get-FFUEnvironment
+    return
+}
 
 WriteLog 'Begin Logging'
+New-RunSession -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -OrchestrationPath $orchestrationPath
 Set-Progress -Percentage 1 -Message "FFU build process started..."
 
 ####### Generate Config File #######
@@ -5281,6 +5687,11 @@ else {
 
 #Clean up dirty.txt file
 Remove-Item -Path .\dirty.txt -Force | out-null
+# Remove per-run session folder if present
+$sessionDir = Join-Path $FFUDevelopmentPath '.session'
+if (Test-Path -Path $sessionDir) { 
+    Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction SilentlyContinue 
+}
 if ($VerbosePreference -ne 'Continue') {
     Write-Host 'Script complete'
 }

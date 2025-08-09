@@ -43,14 +43,17 @@ $script:uiState = [PSCustomObject]@{
         vmSwitchMap                 = @{};
         logData                     = $null;
         logStreamReader             = $null;
-        pollTimer                   = $null
+        pollTimer                   = $null;
+        lastConfigFilePath          = $null
     };
     Flags              = @{
         installAppsForcedByUpdates        = $false;
         prevInstallAppsStateBeforeUpdates = $null;
         installAppsCheckedByOffice        = $false;
         lastSortProperty                  = $null;
-        lastSortAscending                 = $true
+        lastSortAscending                 = $true;
+        isBuilding                        = $false;
+        isCleanupRunning                  = $false
     };
     Defaults           = @{};
     LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
@@ -132,7 +135,225 @@ $script:uiState.Controls.btnRun.Add_Click({
         # Get a local reference to the button for convenience in this handler
         $btnRun = $script:uiState.Controls.btnRun
         try {
-            # Disable button to prevent multiple clicks
+            # If a build is running and cleanup is not already running, treat this click as Cancel
+            if ($script:uiState.Flags.isBuilding -and -not $script:uiState.Flags.isCleanupRunning) {
+                $btnRun.IsEnabled = $false
+                $script:uiState.Controls.txtStatus.Text = "Cancel requested. Stopping build..."
+                WriteLog "Cancel requested by user. Stopping background build job."
+
+                # Stop the timer
+                if ($null -ne $script:uiState.Data.pollTimer) {
+                    $script:uiState.Data.pollTimer.Stop()
+                    $script:uiState.Data.pollTimer = $null
+                }
+
+                # Close the log stream
+                if ($null -ne $script:uiState.Data.logStreamReader) {
+                    $script:uiState.Data.logStreamReader.Close()
+                    $script:uiState.Data.logStreamReader.Dispose()
+                    $script:uiState.Data.logStreamReader = $null
+                }
+
+                # Stop and remove the running build job
+                $jobToStop = $script:uiState.Data.currentBuildJob
+                $script:uiState.Data.currentBuildJob = $null
+                if ($null -ne $jobToStop) {
+                    try {
+                        # Attempt graceful stop first
+                        Stop-Job -Job $jobToStop -ErrorAction SilentlyContinue
+                        Wait-Job -Job $jobToStop -Timeout 5 -ErrorAction SilentlyContinue | Out-Null
+                    }
+                    catch {
+                        WriteLog "Stop-Job threw: $($_.Exception.Message)"
+                    }
+
+                    # If the job's hosting process is still alive, kill its process tree to stop child tools like DISM
+                    try {
+                        $jobProcId = $null
+                        if ($null -ne $jobToStop.ChildJobs -and $jobToStop.ChildJobs.Count -gt 0) {
+                            $jobProcId = $jobToStop.ChildJobs[0].ProcessId
+                        }
+                        if ($jobProcId) {
+                            # Recursively terminate the job process and any children
+                            function Stop-ProcessTree {
+                                param([int]$parentPid)
+                                $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentPid" -ErrorAction SilentlyContinue
+                                foreach ($child in $children) {
+                                    Stop-ProcessTree -parentPid $child.ProcessId
+                                }
+                                try { Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue } catch {}
+                            }
+                            Stop-ProcessTree -parentPid $jobProcId
+                        }
+                    }
+                    catch {
+                        WriteLog "Error terminating job process tree: $($_.Exception.Message)"
+                    }
+
+                    # Safety net: kill any active DISM capture still running
+                    try {
+                        $dismCaptures = Get-CimInstance Win32_Process -Filter "Name='DISM.EXE'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match '/Capture-FFU' }
+                        foreach ($p in $dismCaptures) {
+                            try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+                        }
+                    }
+                    catch {
+                        WriteLog "Error stopping DISM capture processes: $($_.Exception.Message)"
+                    }
+
+                    # Also stop Office ODT setup.exe if running (to avoid recreating files after cleanup)
+                    try {
+                        $officePathForKill = Join-Path (Split-Path (Split-Path $lastConfigPath -Parent) -Parent) 'Apps\Office'
+                        $setupProcs = Get-CimInstance Win32_Process -Filter "Name='setup.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -like "$officePathForKill*" }
+                        foreach ($p in $setupProcs) {
+                            try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+                        }
+                    }
+                    catch {
+                        WriteLog "Error stopping Office setup.exe processes: $($_.Exception.Message)"
+                    }
+
+                    try {
+                        Remove-Job -Job $jobToStop -Force -ErrorAction SilentlyContinue
+                        WriteLog "Background build job stopped and removed."
+                    }
+                    catch {
+                        WriteLog "Error removing background build job: $($_.Exception.Message)"
+                    }
+                }
+
+                # Start cleanup using the same BuildFFUVM.ps1 via -Cleanup short-circuit
+                $lastConfigPath = $script:uiState.Data.lastConfigFilePath
+                if ([string]::IsNullOrWhiteSpace($lastConfigPath)) {
+                    WriteLog "No stored config file path found. Cleanup cannot proceed."
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled. No config found for cleanup."
+                    $script:uiState.Flags.isBuilding = $false
+                    $script:uiState.Flags.isCleanupRunning = $false
+                    $btnRun.Content = "Build FFU"
+                    $btnRun.IsEnabled = $true
+                    return
+                }
+
+                $ffuDevPath = Split-Path (Split-Path $lastConfigPath -Parent) -Parent
+                $mainLogPath = Join-Path $ffuDevPath "FFUDevelopment.log"
+
+                WriteLog "Starting cleanup without deleting FFUDevelopment.log (will append new entries)."
+
+                $script:uiState.Controls.txtStatus.Text = "Cancel in progress... Cleaning environment..."
+                WriteLog "Starting cleanup job (BuildFFUVM.ps1 -Cleanup)."
+
+                # Prepare parameters for cleanup
+                # Inform user: in-progress items will be removed; ask whether to also remove other items downloaded during this run
+                $removeCurrentRunToo = $false
+                $promptText = "Cancel requested.`n`nWe'll remove the download currently in progress to avoid partial/corrupt content.`n`nDo you also want to remove other items downloaded during this run? Previously downloaded items will be kept."
+                $result = [System.Windows.MessageBox]::Show($promptText, "Cancel cleanup options", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+                if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $removeCurrentRunToo = $true }
+
+                $cleanupParams = @{
+                    ConfigFile                 = $lastConfigPath
+                    Cleanup                    = $true
+                    # Avoid wiping all user content on cancel
+                    RemoveApps                 = $false
+                    RemoveUpdates              = $false
+                    CleanupDrivers             = $false
+                    # Scoped removal to current run only (optional per user choice)
+                    CleanupCurrentRunDownloads = $removeCurrentRunToo
+                }
+
+                $cleanupScriptBlock = {
+                    param($buildParams, $PSScriptRoot)
+                    & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
+                }
+
+                # Start cleanup job
+                $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $cleanupScriptBlock -ArgumentList @($cleanupParams, $PSScriptRoot)
+
+                # Wait for log file to appear (or open immediately if it exists)
+                $logWaitTimeout = 60
+                $watch = [System.Diagnostics.Stopwatch]::StartNew()
+                while (-not (Test-Path $mainLogPath) -and $watch.Elapsed.TotalSeconds -lt $logWaitTimeout) {
+                    Start-Sleep -Milliseconds 250
+                }
+                $watch.Stop()
+
+                # Open log stream for cleanup (tail to end to avoid re-reading the whole file)
+                if (Test-Path $mainLogPath) {
+                    $fileStream = [System.IO.File]::Open($mainLogPath, 'Open', 'Read', 'ReadWrite')
+                    [void]$fileStream.Seek(0, [System.IO.SeekOrigin]::End)
+                    $script:uiState.Data.logStreamReader = [System.IO.StreamReader]::new($fileStream)
+                }
+                else {
+                    WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Monitor tab will not update during cleanup."
+                }
+
+                # Create a timer to poll the cleanup job
+                $script:uiState.Data.pollTimer = New-Object System.Windows.Threading.DispatcherTimer
+                $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromSeconds(1)
+                $script:uiState.Flags.isCleanupRunning = $true
+
+                $script:uiState.Data.pollTimer.Add_Tick({
+                        param($sender, $e)
+                        $currentJob = $script:uiState.Data.currentBuildJob
+
+                        # Read new lines from log
+                        if ($null -ne $script:uiState.Data.logStreamReader) {
+                            while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
+                                $script:uiState.Data.logData.Add($line)
+                                if ($script:uiState.Flags.autoScrollLog) {
+                                    $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
+                                    $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
+                                }
+                            }
+                        }
+
+                        if ($null -eq $currentJob -or $null -eq $script:uiState.Data.pollTimer) {
+                            if ($null -ne $sender) { $sender.Stop() }
+                            $script:uiState.Data.pollTimer = $null
+                            return
+                        }
+
+                        if ($currentJob.State -in 'Completed', 'Failed', 'Stopped') {
+                            if ($null -ne $sender) { $sender.Stop() }
+                            $script:uiState.Data.pollTimer = $null
+
+                            if ($null -ne $script:uiState.Data.logStreamReader) {
+                                $lastLine = $null
+                                while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
+                                    $script:uiState.Data.logData.Add($line)
+                                    $lastLine = $line
+                                }
+                                if ($script:uiState.Flags.autoScrollLog -and $null -ne $lastLine) {
+                                    $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
+                                    $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
+                                }
+                                $script:uiState.Data.logStreamReader.Close()
+                                $script:uiState.Data.logStreamReader.Dispose()
+                                $script:uiState.Data.logStreamReader = $null
+                            }
+
+                            $script:uiState.Controls.txtStatus.Text = "Build canceled. Environment cleaned."
+                            $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
+                            $script:uiState.Controls.pbOverallProgress.Value = 0
+
+                            # Receive and remove cleanup job
+                            $currentJob | Receive-Job -ErrorAction SilentlyContinue | Out-Null
+                            Remove-Job -Job $currentJob -Force
+                            $script:uiState.Data.currentBuildJob = $null
+
+                            # Reset flags and button
+                            $script:uiState.Flags.isCleanupRunning = $false
+                            $script:uiState.Flags.isBuilding = $false
+                            $btn = $script:uiState.Controls.btnRun
+                            $btn.Content = "Build FFU"
+                            $btn.IsEnabled = $true
+                        }
+                    })
+
+                $script:uiState.Data.pollTimer.Start()
+                return
+            }
+
+            # Not currently building: start a new build
             $btnRun.IsEnabled = $false
 
             # Switch to Monitor Tab
@@ -153,6 +374,7 @@ $script:uiState.Controls.btnRun.Add_Click({
             $config = Get-UIConfig -State $script:uiState
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
             $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
+            $script:uiState.Data.lastConfigFilePath = $configFilePath
             
             if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {
                 Copy-Item -Path $config.OfficeConfigXMLFile -Destination $config.OfficePath -Force
@@ -283,25 +505,21 @@ $script:uiState.Controls.btnRun.Add_Click({
                             $script:uiState.Data.logStreamReader = $null
                         }
 
+                        # Determine final status based on job result and whether cleanup was running (should be false here)
                         $finalStatusText = "FFU build completed successfully."
                         if ($currentJob.State -eq 'Failed') {
                             $reason = $null
                             
-                            # Use Receive-Job with -ErrorVariable to reliably capture the error stream from the job,
-                            # as suggested by the research on handling job errors.
                             Receive-Job -Job $currentJob -Keep -ErrorVariable jobErrors -ErrorAction SilentlyContinue | Out-Null
                             
                             if ($null -ne $jobErrors -and $jobErrors.Count -gt 0) {
-                                # The terminating error is typically the last one in the stream.
                                 $reason = ($jobErrors | Select-Object -Last 1).ToString()
                             }
 
-                            # If Receive-Job didn't surface an error, fall back to the JobStateInfo.Reason property.
                             if ([string]::IsNullOrWhiteSpace($reason) -and $currentJob.JobStateInfo.Reason) {
                                 $reason = $currentJob.JobStateInfo.Reason.Message
                             }
 
-                            # Final fallback if no specific reason can be found.
                             if ([string]::IsNullOrWhiteSpace($reason)) {
                                 $reason = "An unknown error occurred. The job failed without a specific reason."
                             }
@@ -318,19 +536,27 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                         # Update UI elements
                         $script:uiState.Controls.txtStatus.Text = $finalStatusText
-                        $script:uiState.Controls.btnRun.IsEnabled = $true
 
-                        # Clean up the job object
+                        # Receive & remove job and clear state
                         $currentJob | Receive-Job -ErrorAction SilentlyContinue | Out-Null
                         Remove-Job -Job $currentJob -Force
-                        
-                        # Clear the job from the state
                         $script:uiState.Data.currentBuildJob = $null
+
+                        # Reset button and flags for next run
+                        $script:uiState.Flags.isBuilding = $false
+                        $script:uiState.Flags.isCleanupRunning = $false
+                        $script:uiState.Controls.btnRun.Content = "Build FFU"
+                        $script:uiState.Controls.btnRun.IsEnabled = $true
                     }
                 })
             
             # Start the timer
             $script:uiState.Data.pollTimer.Start()
+
+            # Mark building and toggle button to Cancel
+            $script:uiState.Flags.isBuilding = $true
+            $btnRun.Content = "Cancel"
+            $btnRun.IsEnabled = $true
         }
         catch {
             # This catch block handles errors during the setup of the job (e.g., Get-UIConfig fails)
@@ -350,6 +576,9 @@ $script:uiState.Controls.btnRun.Add_Click({
             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
             if ($null -ne $script:uiState.Controls.btnRun) {
                 $script:uiState.Controls.btnRun.IsEnabled = $true
+                $script:uiState.Controls.btnRun.Content = "Build FFU"
+                $script:uiState.Flags.isBuilding = $false
+                $script:uiState.Flags.isCleanupRunning = $false
             }
         }
     })
