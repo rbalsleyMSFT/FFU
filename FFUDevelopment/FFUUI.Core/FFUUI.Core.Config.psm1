@@ -261,6 +261,58 @@ function Invoke-LoadConfiguration {
     }
 }
 
+function Select-VMSwitchFromConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State,
+        [Parameter(Mandatory = $true)]
+        [psobject]$ConfigContent
+    )
+
+    # Select VM switch based on configuration; fall back to 'Other' with custom name.
+    $combo = $State.Controls.cmbVMSwitchName
+    if ($null -eq $combo) {
+        WriteLog "LoadConfig Error: 'cmbVMSwitchName' control not found."
+        return
+    }
+
+    $configSwitch = $ConfigContent.VMSwitchName
+    if ($null -eq $configSwitch -or [string]::IsNullOrWhiteSpace($configSwitch)) {
+        WriteLog "LoadConfig Info: VMSwitchName in config was empty or null. Leaving selection unchanged."
+        return
+    }
+
+    $itemFound = $false
+    foreach ($item in $combo.Items) {
+        if ($null -ne $item -and $item.ToString().Equals($configSwitch, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $itemFound = $true
+            break
+        }
+    }
+
+    if ($itemFound) {
+        $combo.SelectedItem = ($combo.Items | Where-Object { $_.ToString().Equals($configSwitch, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+        WriteLog "LoadConfig: Selected existing VM switch '$configSwitch'."
+    }
+    else {
+        # Ensure 'Other' exists
+        $otherExists = $false
+        foreach ($item in $combo.Items) {
+            if ($null -ne $item -and $item.ToString() -eq 'Other') { $otherExists = $true; break }
+        }
+        if (-not $otherExists) { $combo.Items.Add('Other') | Out-Null }
+
+        # Select 'Other' and populate custom name
+        $combo.SelectedItem = 'Other'
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
+        $State.Controls.txtCustomVMSwitchName.Text = $configSwitch
+        $State.Data.customVMSwitchName = $configSwitch
+        $State.Data.customVMHostIP = $ConfigContent.VMHostIPAddress
+        WriteLog "LoadConfig: VMSwitchName '$configSwitch' not found. Selected 'Other' and populated custom VM Switch Name textbox."
+    }
+}
+
 function Update-UIFromConfig {
     param(
         [Parameter(Mandatory = $true)]
@@ -305,7 +357,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkRemoveUpdates' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveUpdates' -State $State
 
     # Hyper-V Settings
-    Set-UIValue -ControlName 'cmbVMSwitchName' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'VMSwitchName' -State $State
+    Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
     Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State
     Set-UIValue -ControlName 'txtMemory' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Memory' -TransformValue { param($val) $val / 1GB } -State $State
