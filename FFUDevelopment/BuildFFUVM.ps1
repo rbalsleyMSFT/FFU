@@ -886,7 +886,9 @@ function Get-MicrosoftDrivers {
             ### DOWNLOAD THE FILE
             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
             WriteLog "Downloading $Model driver file to $filePath"
+            Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
             Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
             WriteLog "Download complete"
 
             # Determine file extension
@@ -1128,7 +1130,9 @@ function Get-HPDrivers {
 
         # Download the driver with retry
         WriteLog "Downloading driver to: $DriverFilePath"
+        Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
         Start-BitsTransferWithRetry -Source $DriverUrl -Destination $DriverFilePath
+        Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
         WriteLog 'Driver downloaded'
 
         # Make folder for extraction
@@ -1353,7 +1357,9 @@ function Get-LenovoDrivers {
 
         # Download the driver with retry
         WriteLog "Downloading driver: $driverUrl to $driverFilePath"
+        Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
         Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath
+        Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
         WriteLog "Driver downloaded"
 
         # Make folder for extraction
@@ -1536,7 +1542,9 @@ function Get-DellDrivers {
 
             WriteLog "Downloading driver: $($driver.DownloadUrl) to $driverFilePath"
             try {
+                Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
                 Start-BitsTransferWithRetry -Source $driver.DownloadUrl -Destination $driverFilePath
+                Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
                 WriteLog "Driver downloaded"
             }
             catch {
@@ -3866,6 +3874,32 @@ function Remove-InProgressItems {
         try {
             $data = Get-Content $_.FullName -Raw | ConvertFrom-Json
             $target = $data.TargetPath
+            try {
+                if ($DriversFolder -and $target) {
+                    $fullTarget = [System.IO.Path]::GetFullPath($target).TrimEnd('\')
+                    $driversRoot = [System.IO.Path]::GetFullPath($DriversFolder).TrimEnd('\')
+                    if ($fullTarget.StartsWith($driversRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $remainder = $fullTarget.Substring($driversRoot.Length).TrimStart('\')
+                        $parts = $remainder -split '\\'
+                        if ($parts.Length -ge 1) {
+                            $knownMakes = @('Dell','HP','Lenovo','Microsoft')
+                            if ($parts.Length -ge 2 -and $knownMakes -contains $parts[0]) {
+                                # Drivers\<Make>\<Model>\...
+                                $modelFolder = Join-Path (Join-Path $driversRoot $parts[0]) $parts[1]
+                            }
+                            else {
+                                # Drivers\<Model>\... (when DriversFolder already includes Make)
+                                $modelFolder = Join-Path $driversRoot $parts[0]
+                            }
+                            if ($modelFolder) {
+                                WriteLog "Promoting in-progress driver target to model folder: $modelFolder (from $target)"
+                                $target = $modelFolder
+                            }
+                        }
+                    }
+                }
+            }
+            catch {}
 
             if (Test-Path $target) {
                 # Special-case Office: preserve DeployFFU.xml and DownloadFFU.xml; remove everything else with retries.
@@ -3916,6 +3950,53 @@ function Remove-InProgressItems {
             WriteLog "Failed Remove-InProgressItems marker '$($_.FullName)': $($_.Exception.Message)"
         }
     }
+    # Also clean up any driver content created this run (model folders and temp folders),
+    # even when broader current-run cleanup is not requested.
+    try {
+        if ($DriversFolder -and (Test-Path $DriversFolder)) {
+            $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
+            if ($manifest -and $manifest.RunStartUtc) {
+                $runStart = [datetime]::Parse($manifest.RunStartUtc)
+
+                # Remove OEM temp folders like _TEMP_* (safe to always remove)
+                Get-ChildItem -Path $DriversFolder -Directory -Recurse -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like '_TEMP_*' } |
+                    ForEach-Object {
+                        WriteLog "Removing driver temp folder: $($_.FullName)"
+                        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+
+                # Remove model folders created/modified this run; never remove top-level make roots
+                Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    $makeRoot = $_.FullName
+                    # Model-level folders are immediate children under a make root (e.g. Drivers\Lenovo\<Model>)
+                    Get-ChildItem -Path $makeRoot -Directory -ErrorAction SilentlyContinue |
+                        Where-Object { $_.CreationTimeUtc -ge $runStart -or $_.LastWriteTimeUtc -ge $runStart } |
+                        ForEach-Object {
+                            WriteLog "Removing driver model folder from current run: $($_.FullName)"
+                            Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                        }
+                }
+
+                # Remove make root folders created this run (if empty)
+                Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CreationTimeUtc -ge $runStart -and $_.LastWriteTimeUtc -ge $runStart } |
+                    ForEach-Object {
+                        $any = Get-ChildItem -Path $_.FullName -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($null -eq $any) {
+                            WriteLog "Removing empty make root folder created this run: $($_.FullName)"
+                            Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                        }
+                        else {
+                            WriteLog "Skipping non-empty make root folder: $($_.FullName)"
+                        }
+                    }
+            }
+        }
+    }
+    catch {
+        WriteLog "Driver in-progress cleanup step failed: $($_.Exception.Message)"
+    }
 }
 function Cleanup-CurrentRunDownloads {
     param([string]$FFUDevelopmentPath)
@@ -3931,25 +4012,101 @@ function Cleanup-CurrentRunDownloads {
     if ($OneDrivePath) { $roots += $OneDrivePath }
     if ($EdgePath) { $roots += $EdgePath }
     if ($KBPath) { $roots += $KBPath }
+    if ($DriversFolder) { $roots += $DriversFolder }
     if ($orchestrationPath) { $roots += $orchestrationPath }
 
     foreach ($root in $roots | Where-Object { $_ -and (Test-Path $_) }) {
-        WriteLog "Scanning for current-run items in $root"
-        # Remove folders created/modified this run
-        Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $runStart } | Sort-Object FullName -Descending | ForEach-Object {
-            try {
-                WriteLog "Removing current-run folder: $($_.FullName)"
-                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        $isDriversRoot = $false
+        try {
+            if ($DriversFolder) {
+                $isDriversRoot = ([System.IO.Path]::GetFullPath($root).TrimEnd('\') -ieq [System.IO.Path]::GetFullPath($DriversFolder).TrimEnd('\'))
             }
-            catch { WriteLog "Failed removing folder $($_.FullName): $($_.Exception.Message)" }
         }
-        # Remove files created/modified this run
-        Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTimeUtc -ge $runStart -and $_.Name -notin @('DeployFFU.xml', 'DownloadFFU.xml') } | ForEach-Object {
-            try {
-                WriteLog "Removing current-run file: $($_.FullName)"
-                Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
-            }
-            catch { WriteLog "Failed removing file $($_.FullName): $($_.Exception.Message)" }
+        catch {}
+
+        if ($isDriversRoot) {
+            WriteLog "Scanning Drivers folder (creation-time filter) in $root"
+
+            # Remove driver folders created this run (skip non-empty make roots)
+            Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.CreationTimeUtc -ge $runStart } |
+                Sort-Object FullName -Descending | ForEach-Object {
+                    try {
+                        $parent = Split-Path -Path $_.FullName -Parent
+                        $parentIsDriversRoot = ([System.IO.Path]::GetFullPath($parent).TrimEnd('\') -ieq [System.IO.Path]::GetFullPath($root).TrimEnd('\'))
+                        if ($parentIsDriversRoot) {
+                            # Only remove top-level make folders if created this run AND empty (avoid deleting existing Lenovo/HP/Dell/Microsoft trees)
+                            $any = Get-ChildItem -Path $_.FullName -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                            if ($null -eq $any) {
+                                WriteLog "Removing empty make folder created this run: $($_.FullName)"
+                                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                            }
+                        }
+                        else {
+                            WriteLog "Removing current-run driver folder: $($_.FullName)"
+                            Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                    catch { WriteLog "Failed removing driver folder $($_.FullName): $($_.Exception.Message)" }
+                }
+
+            # Remove driver files created this run
+            Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.CreationTimeUtc -ge $runStart } |
+                ForEach-Object {
+                    try {
+                        WriteLog "Removing current-run driver file: $($_.FullName)"
+                        Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+                    }
+                    catch { WriteLog "Failed removing driver file $($_.FullName): $($_.Exception.Message)" }
+                }
+
+            # Prune empty driver folders (skip existing make roots)
+            Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | ForEach-Object {
+                    try {
+                        $any = Get-ChildItem -Path $_.FullName -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($null -eq $any) {
+                            $parent = Split-Path -Path $_.FullName -Parent
+                            $parentIsDriversRoot = ([System.IO.Path]::GetFullPath($parent).TrimEnd('\') -ieq [System.IO.Path]::GetFullPath($root).TrimEnd('\'))
+                            if ($parentIsDriversRoot) {
+                                # Only remove empty make roots if they were created this run
+                                if ($_.CreationTimeUtc -ge $runStart) {
+                                    WriteLog "Removing empty make folder created this run: $($_.FullName)"
+                                    Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                                }
+                            }
+                            else {
+                                WriteLog "Removing empty driver subfolder: $($_.FullName)"
+                                Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                            }
+                        }
+                    }
+                    catch { WriteLog "Failed pruning empty driver folder $($_.FullName): $($_.Exception.Message)" }
+                }
+        }
+        else {
+            WriteLog "Scanning for current-run items in $root"
+            # Remove folders created/modified this run (legacy behavior for non-Drivers roots)
+            Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTimeUtc -ge $runStart } |
+                Sort-Object FullName -Descending | ForEach-Object {
+                    try {
+                        WriteLog "Removing current-run folder: $($_.FullName)"
+                        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    catch { WriteLog "Failed removing folder $($_.FullName): $($_.Exception.Message)" }
+                }
+            # Remove files created/modified this run (preserve Office XMLs)
+            Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTimeUtc -ge $runStart -and $_.Name -notin @('DeployFFU.xml', 'DownloadFFU.xml') } |
+                ForEach-Object {
+                    try {
+                        WriteLog "Removing current-run file: $($_.FullName)"
+                        Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+                    }
+                    catch { WriteLog "Failed removing file $($_.FullName): $($_.Exception.Message)" }
+                }
         }
     }
 

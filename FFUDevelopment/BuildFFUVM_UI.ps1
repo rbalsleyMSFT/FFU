@@ -203,10 +203,30 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                     # Also stop Office ODT setup.exe if running (to avoid recreating files after cleanup)
                     try {
-                        $officePathForKill = Join-Path (Split-Path (Split-Path $lastConfigPath -Parent) -Parent) 'Apps\Office'
-                        $setupProcs = Get-CimInstance Win32_Process -Filter "Name='setup.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -like "$officePathForKill*" }
-                        foreach ($p in $setupProcs) {
-                            try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+                        $officePathForKill = $null
+
+                        # Prefer explicit UI path
+                        $uiOfficePath = $script:uiState.Controls.txtOfficePath.Text
+                        if (-not [string]::IsNullOrWhiteSpace($uiOfficePath)) {
+                            $officePathForKill = $uiOfficePath
+                        }
+                        else {
+                            # Fall back to the last config path only if known
+                            $lastConfigPathLocal = $script:uiState.Data.lastConfigFilePath
+                            if (-not [string]::IsNullOrWhiteSpace($lastConfigPathLocal)) {
+                                $ffuDevRoot = Split-Path (Split-Path $lastConfigPathLocal -Parent) -Parent
+                                if (-not [string]::IsNullOrWhiteSpace($ffuDevRoot)) {
+                                    $officePathForKill = Join-Path $ffuDevRoot 'Apps\Office'
+                                }
+                            }
+                        }
+
+                        # Only proceed when a valid Office folder exists
+                        if ($officePathForKill -and (Test-Path -LiteralPath $officePathForKill -PathType Container)) {
+                            $setupProcs = Get-CimInstance Win32_Process -Filter "Name='setup.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -like "$officePathForKill*" }
+                            foreach ($p in $setupProcs) {
+                                try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+                            }
                         }
                     }
                     catch {
