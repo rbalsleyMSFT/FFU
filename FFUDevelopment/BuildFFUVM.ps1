@@ -395,7 +395,7 @@ param(
     [string]$ExportConfigFile,
     [bool]$UpdateADK = $true    
 )
-$version = '2505.1'
+$version = '2505.2'
 
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
