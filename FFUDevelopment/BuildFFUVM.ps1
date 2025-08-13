@@ -2529,7 +2529,7 @@ function Get-KBLink {
     # Extract the first KB article ID from the HTML content and store it globally
     # Edge and Defender do not have KB article IDs
     if ($Name -notmatch 'Defender|Edge') {
-        if ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)\s*<') {
+        if ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)(?:\s*\([^)]+\))*\s*<') {
             $kbArticleID = "KB$($matches[2])"
             $global:LastKBArticleID = $kbArticleID
             WriteLog "Found KB article ID: $kbArticleID"
