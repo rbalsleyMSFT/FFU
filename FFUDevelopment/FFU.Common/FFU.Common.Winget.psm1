@@ -409,42 +409,153 @@ function Add-Win32SilentInstallCommand {
         [string]$SubFolder
     )
     $appName = $AppFolder
-    $installerPath = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction Stop
-    if (-not $installerPath) {
+
+    # Discover installer candidates (top-level files as before)
+    $installerCandidates = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction SilentlyContinue
+    if (-not $installerCandidates) {
         WriteLog "No win32 app installers were found. Skipping the inclusion of $AppFolder"
         Remove-Item -Path $AppFolderPath -Recurse -Force
         return 1
     }
+
+    # Read the exported WinGet YAML
     $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop
-    $yamlContent = Get-Content -Path $yamlFile -Raw
-    $silentInstallSwitch = [regex]::Match($yamlContent, 'Silent:\s*(.+)').Groups[1].Value.Replace("'", "").Trim()
+    $yamlText = Get-Content -Path $yamlFile -Raw
+
+    # Attempt to resolve the correct installer from YAML NestedInstallerFiles within the matching Architecture block
+    $desiredArch = if (-not [string]::IsNullOrEmpty($SubFolder)) { $SubFolder } else { $null }
+    $relativeFromYaml = $null
+    $blockSilent = $null
+
+    $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    $pattern = '-\s+Architecture:\s*(?<arch>\S+)[\s\S]*?NestedInstallerFiles:\s*-\s*RelativeFilePath:\s*(?<path>.+?)\r?\n'
+    $yamlMatches = [regex]::Matches($yamlText, $pattern, $regexOptions)
+
+    $selectedMatch = $null
+    if ($yamlMatches.Count -gt 0) {
+        if ($desiredArch) {
+            foreach ($m in $yamlMatches) {
+                if ($m.Groups['arch'].Value -ieq $desiredArch) {
+                    $selectedMatch = $m
+                    break
+                }
+            }
+        }
+        if (-not $selectedMatch) {
+            $selectedMatch = $yamlMatches[0]
+        }
+
+        $pathValue = $selectedMatch.Groups['path'].Value.Trim()
+        $pathValue = $pathValue.Trim("'").Trim('"')
+        $relativeFromYaml = $pathValue
+
+        # Extract a Silent switch from within the same installer block if present
+        $startIndex = $selectedMatch.Index
+        $nextIndex = -1
+        for ($i = 0; $i -lt $yamlMatches.Count; $i++) {
+            if ($yamlMatches[$i].Index -gt $startIndex) {
+                $nextIndex = $yamlMatches[$i].Index
+                break
+            }
+        }
+        if ($nextIndex -gt -1) {
+            $blockText = $yamlText.Substring($startIndex, $nextIndex - $startIndex)
+        }
+        else {
+            $blockText = $yamlText.Substring($startIndex)
+        }
+        $blockSilentMatch = [regex]::Match($blockText, 'InstallerSwitches:[\s\S]*?Silent:\s*(.+?)\r?\n', $regexOptions)
+        if ($blockSilentMatch.Success) {
+            $blockSilent = $blockSilentMatch.Groups[1].Value.Trim().Trim("'").Trim('"')
+        }
+    }
+
+    # Resolve Silent switch (prefer block-level, fallback to first Silent in file)
+    $silentInstallSwitch = $blockSilent
+    if ([string]::IsNullOrEmpty($silentInstallSwitch)) {
+        $globalSilentMatch = [regex]::Match($yamlText, 'Silent:\s*(.+)', $regexOptions)
+        $silentInstallSwitch = $globalSilentMatch.Groups[1].Value.Trim().Trim("'").Trim('"')
+    }
     if (-not $silentInstallSwitch) {
         WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
         Remove-Item -Path $appFolderPath -Recurse -Force
         return 2
     }
-    $installer = Split-Path -Path $installerPath -Leaf
-    
+
+    # Choose final installer path and extension
+    $resolvedRelativePath = $null
+    $installerExt = $null
+
+    if ($installerCandidates.Count -eq 1 -and -not $relativeFromYaml) {
+        # Single installer – keep current behavior
+        $resolvedRelativePath = $installerCandidates[0].Name
+        $installerExt = $installerCandidates[0].Extension
+        WriteLog "Single installer detected ($resolvedRelativePath). Using current behavior."
+    }
+    else {
+        if ($relativeFromYaml) {
+            $normalizedPath = ($relativeFromYaml -replace '/', '\')
+            $resolvedRelativePath = $normalizedPath
+            $installerExt = [System.IO.Path]::GetExtension($normalizedPath)
+            if ([string]::IsNullOrEmpty($installerExt)) {
+                $leafName = [System.IO.Path]::GetFileName($normalizedPath)
+                $matchedCandidate = $installerCandidates | Where-Object { $_.Name -ieq $leafName } | Select-Object -First 1
+                if ($matchedCandidate) {
+                    $installerExt = $matchedCandidate.Extension
+                }
+            }
+            WriteLog "Multiple installers found. Selected by YAML NestedInstallerFiles: $resolvedRelativePath"
+        }
+        if (-not $resolvedRelativePath) {
+            # Fallbacks when YAML lacks NestedInstallerFiles or couldn't be matched
+            $msis = $installerCandidates | Where-Object { $_.Extension -ieq ".msi" }
+            if ($msis.Count -eq 1) {
+                $resolvedRelativePath = $msis[0].Name
+                $installerExt = ".msi"
+                WriteLog "Multiple installers found. YAML not used. Falling back to single MSI: $resolvedRelativePath"
+            }
+            else {
+                $exes = $installerCandidates | Where-Object { $_.Extension -ieq ".exe" }
+                if ($exes.Count -eq 1) {
+                    $resolvedRelativePath = $exes[0].Name
+                    $installerExt = ".exe"
+                    WriteLog "Multiple installers found. YAML not used. Falling back to single EXE: $resolvedRelativePath"
+                }
+                else {
+                    $first = $installerCandidates | Select-Object -First 1
+                    $resolvedRelativePath = $first.Name
+                    $installerExt = $first.Extension
+                    WriteLog "Multiple installers found and ambiguous. Selecting the first candidate: $resolvedRelativePath"
+                }
+            }
+        }
+    }
+
     $basePath = "D:\win32\$AppFolder"
     if (-not [string]::IsNullOrEmpty($SubFolder)) {
         $basePath = "$basePath\$SubFolder"
     }
 
-    if ($installerPath.Extension -eq ".exe") {
-        $silentInstallCommand = "$basePath\$installer"
-    } 
-    elseif ($installerPath.Extension -eq ".msi") {
-        $silentInstallCommand = "msiexec"
-        $silentInstallSwitch = "/i `"$basePath\$installer`" $silentInstallSwitch"
+    # Build final command/arguments
+    if ($installerExt -ieq ".exe") {
+        $silentInstallCommand = "$basePath\$resolvedRelativePath"
     }
-    
+    elseif ($installerExt -ieq ".msi") {
+        $silentInstallCommand = "msiexec"
+        $silentInstallSwitch = "/i `"$basePath\$resolvedRelativePath`" $silentInstallSwitch"
+    }
+    else {
+        # Default path usage if extension could not be inferred
+        $silentInstallCommand = "$basePath\$resolvedRelativePath"
+    }
+
     # Path to the JSON file
     $wingetWin32AppsJson = "$OrchestrationPath\WinGetWin32Apps.json"
-    
+
     # Initialize or load existing JSON data
     if (Test-Path -Path $wingetWin32AppsJson) {
         [array]$appsData = Get-Content -Path $wingetWin32AppsJson -Raw | ConvertFrom-Json
-        
+
         # Get highest priority value
         if ($appsData.Count -gt 0) {
             $highestPriority = $appsData.Count + 1
@@ -454,7 +565,7 @@ function Add-Win32SilentInstallCommand {
         $appsData = @()
         $highestPriority = 1
     }
-    
+
     # Create new app entry
     $newApp = [PSCustomObject]@{
         Priority    = $highestPriority
@@ -462,12 +573,12 @@ function Add-Win32SilentInstallCommand {
         CommandLine = $silentInstallCommand
         Arguments   = $silentInstallSwitch
     }
-    
+
     $appsData += $newApp
     $appsData | ConvertTo-Json -Depth 10 | Set-Content -Path $wingetWin32AppsJson
-    
+
     WriteLog "Added $($newApp.Name) to WinGetWin32Apps.json with priority $highestPriority"
-    
+
     # Return 0 for success
     return 0
 }
