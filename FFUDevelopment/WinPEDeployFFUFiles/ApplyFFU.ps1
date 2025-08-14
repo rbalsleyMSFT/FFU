@@ -203,6 +203,19 @@ function Stop-Script {
     Read-Host "Press Enter to exit"
     Exit
 }
+
+function ConvertTo-ComparableModelName {
+    [CmdletBinding()]
+    param(
+        [string]$Text
+    )
+    # Normalize model strings by converting any non-alphanumeric sequence to a single space, collapsing whitespace, and trimming.
+    if ($null -eq $Text) { return '' }
+    $normalized = ($Text -replace '[^A-Za-z0-9]+', ' ')
+    $normalized = ($normalized -replace '\s+', ' ').Trim()
+    return $normalized
+}
+
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
@@ -551,9 +564,12 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
         $matchingRules = @()
         foreach ($rule in $driverMappings) {
             # Use -like for wildcard matching.
+            # Prepare normalized model strings (ignore special characters and collapse whitespace)
+            $systemModelNorm = ConvertTo-ComparableModelName -Text $systemModel
+            $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
             # This checks if the system model starts with the rule model, or vice-versa, for flexibility.
-            if ($systemManufacturer -like "$($rule.Manufacturer)*" -and ($systemModel -like "$($rule.Model)*" -or $rule.Model -like "$systemModel*")) {
-                WriteLog "Match found: Manufacturer='$($rule.Manufacturer)', Model='$($rule.Model)'"
+            if ($systemManufacturer -like "$($rule.Manufacturer)*" -and ($systemModelNorm -like "$($ruleModelNorm)*" -or $ruleModelNorm -like "$systemModelNorm*")) {
+                WriteLog "Match found: Manufacturer='$($rule.Manufacturer)', Model='$($rule.Model)' (Normalized: System='$systemModelNorm', Rule='$ruleModelNorm')"
                 $matchingRules += $rule
             }
         }
@@ -846,7 +862,7 @@ If ($computername) {
     }   
 }
 
-#Add Drivers
+# Add Drivers
 if ($null -ne $DriverSourcePath) {
     Write-SectionHeader -Title 'Installing Drivers'
     if ($DriverSourceType -eq 'WIM') {
@@ -894,8 +910,11 @@ if ($null -ne $DriverSourcePath) {
     }
     elseif ($DriverSourceType -eq 'Folder') {
         WriteLog "Injecting drivers from folder: $DriverSourcePath"
+        Write-Host "Injecting drivers from folder: $DriverSourcePath"
+        Write-Host "This may take a while, please be patient."
         Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$DriverSourcePath"" /Recurse"
         WriteLog "Driver injection from folder succeeded."
+        Write-Host "Driver injection from folder succeeded."
     }
 }
 else {
