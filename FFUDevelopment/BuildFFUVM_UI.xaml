@@ -411,7 +411,8 @@
                                     <Button x:Name="btnEditApplication" Content="Edit Application" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Edit the selected application's details"/>
                                     <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
                                     <Button x:Name="btnRemoveSelectedBYOApps" Content="Remove Selected" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Remove selected applications from the list"/>
-                                    <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="10,5" ToolTip="Clear all applications from the list"/>                                </StackPanel>
+                                    <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="10,5" ToolTip="Clear all applications from the list"/>
+                                </StackPanel>
                             </StackPanel>
 
                             <!-- AppsScriptVariables Section -->
@@ -740,6 +741,7 @@
                             <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
                             <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
                             <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
+                            <CheckBox x:Name="chkInjectUnattend" Content="Inject Unattend.xml" Margin="5" VerticalAlignment="Center" Tag="When set to $true and Install Apps is enabled, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend into Apps\Unattend\Unattend.xml to be used by sysprep."/>
                             <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
                         </WrapPanel>
 

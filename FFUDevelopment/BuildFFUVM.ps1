@@ -93,6 +93,9 @@ Prefix for the generated FFU file. Default is _FFU.
 .PARAMETER Headers
 Headers to use when downloading files. Not recommended to modify.
 
+.PARAMETER InjectUnattend
+When set to $true and InstallApps is also $true, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
+
 .PARAMETER InstallApps
 When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created.
 
@@ -420,6 +423,7 @@ param(
     [string]$ConfigFile,
     [Parameter(Mandatory = $false)]
     [string]$ExportConfigFile,
+    [bool]$InjectUnattend = $false,
     [string]$orchestrationPath,
     [bool]$UpdateADK = $true,
     [bool]$CleanupCurrentRunDownloads = $false,
@@ -5125,6 +5129,28 @@ if ($InstallApps) {
             }
         
             #Create Apps ISO
+            # Inject Unattend.xml into Apps if requested and applicable
+            if ($InstallApps -and $InjectUnattend) {
+                # Determine source unattend.xml based on architecture
+                $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+                $unattendSource = Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+
+                # Ensure target folder exists under Apps
+                $targetFolder = Join-Path $AppsPath 'Unattend'
+                if (-not (Test-Path -Path $targetFolder -PathType Container)) {
+                    New-Item -Path $targetFolder -ItemType Directory -Force | Out-Null
+                }
+
+                # Copy if source exists; otherwise log and skip
+                if (Test-Path -Path $unattendSource -PathType Leaf) {
+                    $destination = Join-Path $targetFolder 'Unattend.xml'
+                    Copy-Item -Path $unattendSource -Destination $destination -Force | Out-Null
+                    WriteLog "Injected unattend file into Apps: $unattendSource -> $destination"
+                }
+                else {
+                    WriteLog "InjectUnattend is true but source file missing: $unattendSource. Skipping unattend injection."
+                }
+            }
             Set-Progress -Percentage 10 -Message "Creating Apps ISO..."
             WriteLog "Creating $AppsISO file"
             New-AppsISO

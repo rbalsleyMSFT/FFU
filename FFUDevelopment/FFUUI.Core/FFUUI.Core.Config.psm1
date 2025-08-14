@@ -38,6 +38,7 @@ function Get-UIConfig {
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
         CreateCaptureMedia             = $State.Controls.chkCreateCaptureMedia.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
+        InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
         CustomFFUNameTemplate          = $State.Controls.txtCustomFFUNameTemplate.Text
         Disksize                       = [int64]$State.Controls.txtDiskSize.Text * 1GB
         DownloadDrivers                = $State.Controls.chkDownloadDrivers.IsChecked
@@ -340,6 +341,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'PromptExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateCaptureMedia' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
+    Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
     Set-UIValue -ControlName 'chkVerbose' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'Verbose' -State $State
 
     # USB Drive Modification group (Build Tab)

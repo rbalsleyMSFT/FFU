@@ -131,6 +131,7 @@ function Get-GeneralDefaults {
         CopyAutopilot                  = $false
         CopyUnattend                   = $false
         CopyPPKG                       = $false
+        InjectUnattend                 = $false
         CleanupAppsISO                 = $true
         CleanupCaptureISO              = $true
         CleanupDeployISO               = $true

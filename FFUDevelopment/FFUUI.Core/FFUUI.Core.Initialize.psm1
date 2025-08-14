@@ -121,6 +121,7 @@ function Initialize-UIControls {
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
     $State.Controls.chkCreateCaptureMedia = $window.FindName('chkCreateCaptureMedia')
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
+    $State.Controls.chkInjectUnattend = $window.FindName('chkInjectUnattend')
     $State.Controls.chkVerbose = $window.FindName('chkVerbose')
     $State.Controls.chkCopyAutopilot = $window.FindName('chkCopyAutopilot')
     $State.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
@@ -234,6 +235,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkUpdateADK.IsChecked = $State.Defaults.generalDefaults.UpdateADK
     $State.Controls.chkOptimize.IsChecked = $State.Defaults.generalDefaults.Optimize
     $State.Controls.chkAllowVHDXCaching.IsChecked = $State.Defaults.generalDefaults.AllowVHDXCaching
+    $State.Controls.chkInjectUnattend.IsChecked = $State.Defaults.generalDefaults.InjectUnattend
     $State.Controls.chkCreateCaptureMedia.IsChecked = $State.Defaults.generalDefaults.CreateCaptureMedia
     $State.Controls.chkCreateDeploymentMedia.IsChecked = $State.Defaults.generalDefaults.CreateDeploymentMedia
     $State.Controls.chkAllowExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.AllowExternalHardDiskMedia
