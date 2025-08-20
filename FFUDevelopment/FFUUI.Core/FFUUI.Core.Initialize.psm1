@@ -28,7 +28,6 @@ function Initialize-UIControls {
     $State.Controls.cmbWindowsSKU = $window.FindName('cmbWindowsSKU')
     $State.Controls.cmbMediaType = $window.FindName('cmbMediaType')
     $State.Controls.MediaTypeStackPanel = $window.FindName('MediaTypeStackPanel')
-    $State.Controls.txtOptionalFeatures = $window.FindName('txtOptionalFeatures')
     $State.Controls.featuresPanel = $window.FindName('stackFeaturesContainer')
     $State.Controls.chkDownloadDrivers = $window.FindName('chkDownloadDrivers')
     $State.Controls.cmbMake = $window.FindName('cmbMake')
@@ -274,7 +273,6 @@ function Initialize-UIDefaults {
     $State.Controls.cmbWindowsLang.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultWindowsLang
     $State.Controls.cmbMediaType.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedMediaTypes
     $State.Controls.cmbMediaType.SelectedItem = $State.Defaults.windowsSettingsDefaults.DefaultMediaType
-    $State.Controls.txtOptionalFeatures.Text = $State.Defaults.windowsSettingsDefaults.DefaultOptionalFeatures
     $State.Controls.txtProductKey.Text = $State.Defaults.windowsSettingsDefaults.DefaultProductKey
 
     # Updates tab defaults from General Defaults

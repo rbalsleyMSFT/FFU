@@ -608,7 +608,6 @@ function UpdateOptionalFeaturesString {
     foreach ($entry in $State.Controls.featureCheckBoxes.GetEnumerator()) {
         if ($entry.Value.IsChecked) { $checkedFeatures += $entry.Key }
     }
-    $State.Controls.txtOptionalFeatures.Text = $checkedFeatures -join ";"
 }
 function BuildFeaturesGrid {
     param (

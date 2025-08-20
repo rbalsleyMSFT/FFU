@@ -71,7 +71,7 @@ function Get-UIConfig {
         OfficeConfigXMLFile            = $State.Controls.txtOfficeConfigXMLFilePath.Text
         OfficePath                     = $State.Controls.txtOfficePath.Text
         Optimize                       = $State.Controls.chkOptimize.IsChecked
-        OptionalFeatures               = $State.Controls.txtOptionalFeatures.Text
+        OptionalFeatures               = (($State.Controls.featureCheckBoxes.GetEnumerator() | Where-Object { $_.Value.IsChecked } | ForEach-Object { $_.Key } | Sort-Object) -join ';')
         OrchestrationPath              = "$($State.Controls.txtApplicationPath.Text)\Orchestration"
         PEDriversFolder                = $State.Controls.txtPEDriversFolder.Text
         Processors                     = [int]$State.Controls.txtProcessors.Text
@@ -419,10 +419,9 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'cmbWindowsSKU' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'WindowsSKU' -State $State
     Set-UIValue -ControlName 'cmbMediaType' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'MediaType' -State $State
     Set-UIValue -ControlName 'txtProductKey' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ProductKey' -State $State
-    Set-UIValue -ControlName 'txtOptionalFeatures' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'OptionalFeatures' -State $State
-
-    # Update Optional Features checkboxes based on the loaded text
-    $loadedFeaturesString = $State.Controls.txtOptionalFeatures.Text
+   
+    # Update Optional Features checkboxes
+    $loadedFeaturesString = $ConfigContent.OptionalFeatures
     if (-not [string]::IsNullOrWhiteSpace($loadedFeaturesString)) {
         $loadedFeaturesArray = $loadedFeaturesString.Split(';')
         WriteLog "LoadConfig: Updating Optional Features checkboxes. Loaded features: $($loadedFeaturesArray -join ', ')"
