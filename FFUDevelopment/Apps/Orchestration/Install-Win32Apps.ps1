@@ -7,7 +7,6 @@ function Invoke-Process {
         [string]$FilePath,
 
         [Parameter()]
-        [ValidateNotNullOrEmpty()]
         [string[]]$ArgumentList,
 
         [Parameter()]
@@ -148,8 +147,22 @@ function Install-Applications {
         }
         
         try {
-            # Construct the argument list properly, handling potential array vs string
-            $argumentsToPass = if ($app.Arguments -is [array]) { $app.Arguments } else { @($app.Arguments) }
+            # Normalize arguments: treat null/empty/whitespace as no arguments
+            $argumentsToPass = $null
+            if ($null -ne $app.Arguments) {
+                if ($app.Arguments -is [array]) {
+                    $trimmed = $app.Arguments | ForEach-Object { ($_ | ForEach-Object { if ($_ -ne $null) { $_.ToString().Trim() } else { $_ } }) } | Where-Object { $_ -and (-not [string]::IsNullOrWhiteSpace($_)) }
+                    if ($trimmed.Count -gt 0) {
+                        $argumentsToPass = $trimmed
+                    }
+                }
+                else {
+                    $single = $app.Arguments.ToString().Trim()
+                    if (-not [string]::IsNullOrWhiteSpace($single)) {
+                        $argumentsToPass = @($single)
+                    }
+                }
+            }
 
             # Check for and parse AdditionalExitCodes
             $additionalSuccessCodes = @()
@@ -164,10 +177,17 @@ function Install-Applications {
                 $ignoreNonZeroExitCodes = $app.IgnoreNonZeroExitCodes
             }
 
-            Write-Host "Running command: $($app.CommandLine) $($argumentsToPass -join ' ')"
-            $result = Invoke-Process -FilePath $($app.CommandLine) -ArgumentList $argumentsToPass -AdditionalSuccessCodes $additionalSuccessCodes -IgnoreNonZeroExitCodes $ignoreNonZeroExitCodes
+            if ($null -eq $argumentsToPass -or $argumentsToPass.Count -eq 0) {
+                Write-Host "Running command: $($app.CommandLine) (no arguments)"
+                $result = Invoke-Process -FilePath $app.CommandLine -AdditionalSuccessCodes $additionalSuccessCodes -IgnoreNonZeroExitCodes $ignoreNonZeroExitCodes
+            }
+            else {
+                Write-Host "Running command: $($app.CommandLine) $($argumentsToPass -join ' ')"
+                $result = Invoke-Process -FilePath $app.CommandLine -ArgumentList $argumentsToPass -AdditionalSuccessCodes $additionalSuccessCodes -IgnoreNonZeroExitCodes $ignoreNonZeroExitCodes
+            }
             Write-Host "$($app.Name) exited with exit code: $($result.ExitCode)`r`n"
-        } catch {
+        }
+        catch {
             Write-Error "Error occurred while installing $($app.Name): $_"
             Read-Host "An error occurred, and the script cannot continue. Press Enter to exit."
             throw $_
@@ -192,16 +212,20 @@ if (Test-Path -Path $wingetAppsJsonFile) {
         if ($wingetContent -is [array]) {
             $wingetApps = $wingetContent
             Write-Host "Found $(($wingetApps | Measure-Object).Count) WinGet Win32 apps."
-        } elseif ($wingetContent) {
+        }
+        elseif ($wingetContent) {
             $wingetApps = @($wingetContent) # Ensure it's an array
             Write-Host "Found 1 WinGet Win32 app."
-        } else {
-             Write-Host "WinGetWin32Apps.json is empty or invalid."
         }
-    } catch {
+        else {
+            Write-Host "WinGetWin32Apps.json is empty or invalid."
+        }
+    }
+    catch {
         Write-Error "Failed to read or parse WinGetWin32Apps.json file: $_"
     }
-} else {
+}
+else {
     Write-Host "WinGetWin32Apps.json file not found. Skipping."
 }
 
@@ -218,16 +242,20 @@ if (Test-Path -Path $userAppsJsonFile) {
         if ($userContent -is [array]) {
             $userApps = $userContent
             Write-Host "Found $(($userApps | Measure-Object).Count) user-defined apps."
-        } elseif ($userContent) {
+        }
+        elseif ($userContent) {
             $userApps = @($userContent) # Ensure it's an array
             Write-Host "Found 1 user-defined app."
-        } else {
-             Write-Host "UserAppList.json is empty or invalid."
         }
-    } catch {
+        else {
+            Write-Host "UserAppList.json is empty or invalid."
+        }
+    }
+    catch {
         Write-Error "Failed to read or parse UserAppList.json file: $_"
     }
-} else {
+}
+else {
     Write-Host "UserAppList.json file not found. Skipping."
 }
 
