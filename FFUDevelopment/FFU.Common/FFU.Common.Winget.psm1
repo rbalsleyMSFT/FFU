@@ -22,7 +22,8 @@ function Get-Application {
         [Parameter(Mandatory = $true)]
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
-        [string]$OrchestrationPath
+        [string]$OrchestrationPath,
+        [switch]$SkipWin32Json
     )
 
     # Block Company Portal from winget source
@@ -48,6 +49,29 @@ function Get-Application {
         # Check if the folder is not empty.
         if (Get-ChildItem -Path $appBaseFolderPathForCheck -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1) {
             WriteLog "Application '$AppName' appears to be already downloaded as content exists in '$appBaseFolderPathForCheck'. Skipping download."
+            
+            # Add silent install command(s) only if not skipping JSON generation (build-time scenario)
+            $appIsWin32Existing = ($Source -eq 'winget' -or ($Source -eq 'msstore' -and $AppId.StartsWith('XP')))
+            if ($appIsWin32Existing -and -not $SkipWin32Json) {
+                $win32BasePath = Join-Path -Path "$AppsPath\Win32" -ChildPath $AppName
+                if (Test-Path -Path $win32BasePath -PathType Container) {
+                    $archFolders = Get-ChildItem -Path $win32BasePath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('x86', 'x64', 'arm64') }
+                    if ($archFolders) {
+                        foreach ($archFolder in $archFolders) {
+                            WriteLog "Adding silent install command for pre-downloaded $AppName ($($archFolder.Name)) to $OrchestrationPath\WinGetWin32Apps.json"
+                            Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $archFolder.FullName -OrchestrationPath $OrchestrationPath -SubFolder $archFolder.Name | Out-Null
+                        }
+                    }
+                    else {
+                        WriteLog "Adding silent install command for pre-downloaded $AppName to $OrchestrationPath\WinGetWin32Apps.json"
+                        Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $win32BasePath -OrchestrationPath $OrchestrationPath | Out-Null
+                    }
+                }
+            }
+            elseif ($appIsWin32Existing -and $SkipWin32Json) {
+                WriteLog "Skipping WinGetWin32Apps.json regeneration for pre-downloaded $AppName (UI mode)."
+            }
+            
             return 0 # Success, already present
         }
     }
@@ -196,8 +220,14 @@ function Get-Application {
         }
         # If app is in Win32 folder, add the silent install command to the WinGetWin32Apps.json file
         elseif ($appFolderPath -match 'Win32') {
-            WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
-            $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath -SubFolder $subFolderForCommand
+            if (-not $SkipWin32Json) {
+                WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
+                $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath -SubFolder $subFolderForCommand
+            }
+            else {
+                WriteLog "$AppName is a Win32 app. Skipping WinGetWin32Apps.json generation (UI mode)."
+                $result = 0
+            }
         }
         else {
             # For any other case, set result to 0 (success)
@@ -314,7 +344,7 @@ function Get-Apps {
         if (-not (Test-Path -Path $storeAppsFolder -PathType Container)) {
             New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
         }
-        
+            
         foreach ($storeApp in $StoreApps) {
             try {
                 $appArch = if ($storeApp.PSObject.Properties['architecture']) { $storeApp.architecture } else { $WindowsArch }
@@ -325,6 +355,62 @@ function Get-Apps {
                 throw $_
             }
         }
+    }
+    
+    # Post-processing: Override CommandLine / Arguments from AppList.json if provided
+    # Users may supply custom silent install commands or arguments. These optional
+    # properties (CommandLine, Arguments) in AppList.json replace the auto-generated
+    # values in WinGetWin32Apps.json. Keyed by Name.
+    try {
+        $overrideMap = @{}
+        foreach ($app in $apps.apps) {
+            if ($app.source -in @('winget', 'msstore')) {
+                $hasCmd = ($app.PSObject.Properties['CommandLine'] -and -not [string]::IsNullOrWhiteSpace($app.CommandLine))
+                $hasArgs = ($app.PSObject.Properties['Arguments'] -and -not [string]::IsNullOrWhiteSpace($app.Arguments))
+                if ($hasCmd -or $hasArgs) {
+                    $overrideMap[$app.name] = @{
+                        CommandLine = if ($hasCmd) { $app.CommandLine } else { $null }
+                        Arguments   = if ($hasArgs) { $app.Arguments } else { $null }
+                    }
+                }
+            }
+        }
+    
+        if ($overrideMap.Count -gt 0) {
+            $winGetWin32Path = Join-Path -Path $OrchestrationPath -ChildPath 'WinGetWin32Apps.json'
+            if (Test-Path -Path $winGetWin32Path) {
+                [array]$appsDataUpdated = Get-Content -Path $winGetWin32Path -Raw | ConvertFrom-Json
+                $changed = $false
+                foreach ($entry in $appsDataUpdated) {
+                    if ($overrideMap.ContainsKey($entry.Name)) {
+                        $ov = $overrideMap[$entry.Name]
+                        if ($ov.CommandLine) {
+                            WriteLog "Override (AppList.json) CommandLine for $($entry.Name)"
+                            $entry.CommandLine = $ov.CommandLine
+                            $changed = $true
+                        }
+                        if ($ov.Arguments) {
+                            WriteLog "Override (AppList.json) Arguments for $($entry.Name)"
+                            $entry.Arguments = $ov.Arguments
+                            $changed = $true
+                        }
+                    }
+                }
+                if ($changed) {
+                    $appsDataUpdated | ConvertTo-Json -Depth 10 | Set-Content -Path $winGetWin32Path
+                    WriteLog "Applied AppList.json command overrides to WinGetWin32Apps.json"
+                }
+                else {
+                    WriteLog "No matching apps required command overrides."
+                }
+            }
+            else {
+                WriteLog "WinGetWin32Apps.json not found; no overrides applied."
+            }
+        }
+    }
+    catch {
+        WriteLog "Failed to apply AppList.json command overrides: $($_.Exception.Message)"
     }
 }
 function Install-WinGet {

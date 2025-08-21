@@ -450,69 +450,34 @@ function Start-WingetAppDownloadTask {
             }
         }
 
-        # 2. Check previous Winget download
-        if (-not $appFound) {
-            if (-not $appFound) {
-                $wingetWin32jsonFile = Join-Path -Path $OrchestrationPath -ChildPath "WinGetWin32Apps.json"
-                if (Test-Path -Path $wingetWin32jsonFile) {
-                    try {
-                        $wingetAppsJson = Get-Content -Path $wingetWin32jsonFile -Raw | ConvertFrom-Json
-                        # Check if app already exists in WinGetWin32Apps.json
-                        # For multi-arch apps, there might be entries like "AppName (x86)" and "AppName (x64)"
-                        $existingWin32Entries = @($wingetAppsJson | Where-Object { 
-                                $_.Name -eq $appName -or 
-                                $_.Name -eq "$appName (x86)" -or 
-                                $_.Name -eq "$appName (x64)"
-                            })
-                        
-                        if ($existingWin32Entries.Count -gt 0) {
-                            $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
-                            $appContentFound = $false
-                            
-                            # Check if it's a multi-arch app with subfolders
-                            if ($ApplicationItemData.Architecture -eq 'x86 x64') {
-                                $x86Folder = Join-Path -Path $appFolder -ChildPath "x86"
-                                $x64Folder = Join-Path -Path $appFolder -ChildPath "x64"
-                                
-                                if ((Test-Path -Path $x86Folder -PathType Container) -and (Test-Path -Path $x64Folder -PathType Container)) {
-                                    $x86Size = (Get-ChildItem -Path $x86Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                                    $x64Size = (Get-ChildItem -Path $x64Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                                    
-                                    if ($x86Size -gt 1MB -and $x64Size -gt 1MB) {
-                                        $appContentFound = $true
-                                    }
-                                }
-                            }
-                            else {
-                                # Single architecture app
-                                if (Test-Path -Path $appFolder -PathType Container) {
-                                    $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                                    if ($folderSize -gt 1MB) {
-                                        $appContentFound = $true
-                                    }
-                                }
-                            }
-                            
-                            if ($appContentFound) {
-                                $appFound = $true
-                                $status = "Not Downloaded: App already in $wingetWin32jsonFile and found in $appFolder"
-                                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
-                                WriteLog "Found '$appName' in WinGetWin32Apps.json and content exists in '$appFolder'. Skipping download to prevent duplicate entry."
-                                return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
-                            }
-                            else {
-                                # App entry exists in WinGetWin32Apps.json but folder is missing or incomplete
-                                $appFound = $true
-                                $status = "App in '$wingetWin32jsonFile' but content folder '$appFolder' not found or incomplete. Remove entry from WinGetWin32Apps.json or restore content."
-                                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
-                                WriteLog $status
-                                return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
-                            }
+        # 2. Check existing downloaded Win32 content (folder-based; no WinGetWin32Apps.json dependency)
+        if (-not $appFound -and $source -eq 'winget') {
+            $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
+            if (Test-Path -Path $appFolder -PathType Container) {
+                $contentFound = $false
+                if ($ApplicationItemData.Architecture -eq 'x86 x64') {
+                    $x86Folder = Join-Path -Path $appFolder -ChildPath "x86"
+                    $x64Folder = Join-Path -Path $appFolder -ChildPath "x64"
+                    if ((Test-Path -Path $x86Folder -PathType Container) -and (Test-Path -Path $x64Folder -PathType Container)) {
+                        $x86Size = (Get-ChildItem -Path $x86Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                        $x64Size = (Get-ChildItem -Path $x64Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                        if ($x86Size -gt 1MB -and $x64Size -gt 1MB) {
+                            $contentFound = $true
                         }
                     }
-                    catch {
-                        WriteLog "Warning: Could not read or parse '$wingetWin32jsonFile'. Error: $($_.Exception.Message)"
+                }
+                else {
+                    $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                    if ($folderSize -gt 1MB) {
+                        $contentFound = $true
                     }
+                }
+                if ($contentFound) {
+                    $appFound = $true
+                    $status = "Not Downloaded: Existing content found in $appFolder"
+                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                    WriteLog "Found existing content for '$appName' in '$appFolder'. Skipping download to prevent duplicate entry."
+                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
                 }
             }
         }
@@ -634,7 +599,7 @@ function Start-WingetAppDownloadTask {
 
             try {
                 # Call Get-Application 
-                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $ApplicationItemData.Architecture -OrchestrationPath $OrchestrationPath -ErrorAction Stop
+                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $ApplicationItemData.Architecture -OrchestrationPath $OrchestrationPath -SkipWin32Json -ErrorAction Stop
 
                 # Determine status based on result code
                 switch ($resultCode) {

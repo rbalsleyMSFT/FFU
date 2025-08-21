@@ -5871,6 +5871,13 @@ if ($AllowVHDXCaching) {
         throw $_
     }
 }
+
+# Remove WinGetWin32Apps.json so it is always rebuilt next run
+if (Test-Path -Path $wingetWin32jsonFile -PathType Leaf) {
+    WriteLog "Removing $wingetWin32jsonFile"
+    Remove-Item -Path $wingetWin32jsonFile -Force -ErrorAction SilentlyContinue
+    WriteLog "Removal complete"
+}
 #Set $LongPathsEnabled registry value back to original value. $LongPathsEnabled could be $null if the registry value was not found
 if ($null -eq $LongPathsEnabled) {
     Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -ErrorAction SilentlyContinue
