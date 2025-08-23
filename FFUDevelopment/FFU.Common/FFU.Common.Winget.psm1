@@ -20,11 +20,11 @@ function Get-Application {
         [Parameter(Mandatory = $true)]
         [string]$AppsPath,
         [Parameter(Mandatory = $true)]
+        [string]$ApplicationArch,
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath,
-        [switch]$SkipWin32Json,
-        [string]$SelectedWindowsArch
+        [switch]$SkipWin32Json
     )
 
     # Block Company Portal from winget source
@@ -89,8 +89,8 @@ function Get-Application {
         return 1 # Return error code
     }
 
-    # Determine architectures to download
-    $architecturesToDownload = if ($WindowsArch -eq 'x86 x64') { @('x86', 'x64') } else { @($WindowsArch) }
+    # Determine architectures to download (ApplicationArch controls download set; WindowsArch (optional) used later for pruning store installers)
+    $architecturesToDownload = if ($ApplicationArch -eq 'x86 x64') { @('x86', 'x64') } else { @($ApplicationArch) }
     $overallResult = 0
 
     # For msstore, we don't specify architecture, so we only need to loop once.
@@ -253,11 +253,11 @@ function Get-Application {
                 }
             }
             
-            # Clean up multiple versions honoring SelectedWindowsArch (keep only one installer)
+            # Clean up multiple versions honoring WindowsArch (pruning target; keep only one installer)
             WriteLog "$AppName has completed downloading. Evaluating installer set for pruning."
             $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
-            if ($packages.Count -gt 1 -and $SelectedWindowsArch) {
-                WriteLog "SelectedWindowsArch provided for pruning: $SelectedWindowsArch"
+            if ($packages.Count -gt 1 -and $WindowsArch) {
+                WriteLog "WindowsArch pruning target provided: $WindowsArch"
                 # Detect universal bundles (contain x86,x64,arm64 in name)
                 $universalCandidates = $packages | Where-Object {
                     $base = $_.BaseName
@@ -280,11 +280,11 @@ function Get-Application {
                     $candidateSet = $universalCandidates
                 }
                 else {
-                    $archToken = switch -Regex ($SelectedWindowsArch.ToLower()) {
+                    $archToken = switch -Regex ($WindowsArch.ToLower()) {
                         '^x64$' { 'x64' ; break }
                         '^x86$' { 'x86' ; break }
                         '^arm64$' { 'arm64' ; break }
-                        default { $SelectedWindowsArch.ToLower() }
+                        default { $WindowsArch.ToLower() }
                     }
                     $archMatches = $packages | Where-Object { $_.BaseName -match "(?i)$archToken" }
                     if ($archMatches) {
@@ -313,7 +313,7 @@ function Get-Application {
                 }
             }
             elseif ($packages.Count -gt 1) {
-                WriteLog "Multiple installers present but no SelectedWindowsArch supplied. Using original latest-version logic."
+                WriteLog "Multiple installers present but no WindowsArch pruning target supplied. Using original latest-version logic."
                 $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
                 WriteLog "Retaining latest by signature date: $($latestPackage.Name)"
                 foreach ($package in $packages) {
@@ -389,7 +389,7 @@ function Get-Apps {
         foreach ($wingetApp in $wingetApps) {
             try {
                 $appArch = if ($wingetApp.PSObject.Properties['architecture']) { $wingetApp.architecture } else { $WindowsArch }
-                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget' -AppsPath $AppsPath -WindowsArch $appArch -OrchestrationPath $OrchestrationPath
+                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget' -AppsPath $AppsPath -ApplicationArch $appArch -OrchestrationPath $OrchestrationPath
             }
             catch {
                 WriteLog "Error occurred while processing $($wingetApp.Name): $_"
@@ -407,7 +407,7 @@ function Get-Apps {
         foreach ($storeApp in $StoreApps) {
             try {
                 $appArch = if ($storeApp.PSObject.Properties['architecture']) { $storeApp.architecture } else { $WindowsArch }
-                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -WindowsArch $appArch -OrchestrationPath $OrchestrationPath -SelectedWindowsArch $WindowsArch
+                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -ApplicationArch $appArch -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
             }
             catch {
                 WriteLog "Error occurred while processing $($storeApp.Name): $_"

@@ -386,7 +386,7 @@ function Start-WingetAppDownloadTask {
         [string]$OrchestrationPath,
         [Parameter(Mandatory = $true)]
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue, # Add queue parameter
-        [string]$SelectedWindowsArch
+        [string]$WindowsArch
     )
         
     $appName = $ApplicationItemData.Name
@@ -596,7 +596,7 @@ function Start-WingetAppDownloadTask {
 
             try {
                 # Call Get-Application 
-                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $ApplicationItemData.Architecture -OrchestrationPath $OrchestrationPath -SkipWin32Json -SelectedWindowsArch $SelectedWindowsArch -ErrorAction Stop
+                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -ApplicationArch $ApplicationItemData.Architecture -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -SkipWin32Json -ErrorAction Stop
 
                 # Determine status based on result code
                 switch ($resultCode) {
@@ -718,7 +718,7 @@ function Invoke-WingetDownload {
             AppsPath            = $localAppsPath
             AppListJsonPath     = $localAppListJsonPath
             OrchestrationPath   = $localOrchestrationPath
-            SelectedWindowsArch = $localWindowsArch
+            WindowsArch         = $localWindowsArch
         }
 
         # Select only necessary properties before passing to Invoke-ParallelProcessing
