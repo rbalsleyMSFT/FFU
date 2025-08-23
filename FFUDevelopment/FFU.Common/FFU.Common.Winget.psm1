@@ -23,7 +23,8 @@ function Get-Application {
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath,
-        [switch]$SkipWin32Json
+        [switch]$SkipWin32Json,
+        [string]$SelectedWindowsArch
     )
 
     # Block Company Portal from winget source
@@ -252,26 +253,84 @@ function Get-Application {
                 }
             }
             
-            # Clean up multiple versions (keep only the latest)
-            WriteLog "$AppName has completed downloading. Identifying the latest version of $AppName."
+            # Clean up multiple versions honoring SelectedWindowsArch (keep only one installer)
+            WriteLog "$AppName has completed downloading. Evaluating installer set for pruning."
             $packages = Get-ChildItem -Path "$appFolderPath\*" -Exclude "Dependencies\*", "*.xml", "*.yaml" -File -ErrorAction Stop
-            
-            # Find latest version based on signature date
-            $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
-            
-            # Remove older versions
-            WriteLog "Latest version of $AppName has been identified as $latestPackage. Removing old versions of $AppName that may have downloaded."
-            foreach ($package in $packages) {
-                if ($package.FullName -ne $latestPackage.FullName) {
-                    try {
-                        WriteLog "Removing $($package.FullName)"
-                        Remove-Item -Path $package.FullName -Force
+            if ($packages.Count -gt 1 -and $SelectedWindowsArch) {
+                WriteLog "SelectedWindowsArch provided for pruning: $SelectedWindowsArch"
+                # Detect universal bundles (contain x86,x64,arm64 in name)
+                $universalCandidates = $packages | Where-Object {
+                    $base = $_.BaseName
+                    # Split base name into tokens to avoid partial matches (e.g. arm inside arm64)
+                    $tokens = ($base -split '[\.\-_]') | ForEach-Object { $_.ToLower() }
+                    # Architecture tokens we recognize
+                    $archTokens = @('x86', 'x64', 'arm', 'arm64')
+                    # Distinct matched architecture tokens
+                    $matched = $tokens | Where-Object { $_ -in $archTokens } | Select-Object -Unique
+                    if ($matched.Count -ge 2) {
+                        WriteLog "Multi-architecture bundle detected: $base (tokens: $($matched -join ', '))"
+                        $true
                     }
-                    catch {
-                        WriteLog "Failed to delete: $($package.FullName) - $_"
-                        throw $_
+                    else {
+                        $false
                     }
                 }
+                if ($universalCandidates) {
+                    WriteLog "Universal bundle candidate(s) detected: $($universalCandidates.Name -join ', ')"
+                    $candidateSet = $universalCandidates
+                }
+                else {
+                    $archToken = switch -Regex ($SelectedWindowsArch.ToLower()) {
+                        '^x64$' { 'x64' ; break }
+                        '^x86$' { 'x86' ; break }
+                        '^arm64$' { 'arm64' ; break }
+                        default { $SelectedWindowsArch.ToLower() }
+                    }
+                    $archMatches = $packages | Where-Object { $_.BaseName -match "(?i)$archToken" }
+                    if ($archMatches) {
+                        WriteLog "Architecture-specific candidates matching '$archToken': $($archMatches.Name -join ', ')"
+                        $candidateSet = $archMatches
+                    }
+                    else {
+                        WriteLog "No installer filename matched '$archToken'. Falling back to all installers."
+                        $candidateSet = $packages
+                    }
+                }
+                # From candidate set, choose latest by signature date
+                $latestPackage = $candidateSet | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
+                WriteLog "Retaining installer: $($latestPackage.Name)"
+                foreach ($package in $packages) {
+                    if ($package.FullName -ne $latestPackage.FullName) {
+                        try {
+                            WriteLog "Removing $($package.FullName)"
+                            Remove-Item -Path $package.FullName -Force
+                        }
+                        catch {
+                            WriteLog "Failed to delete: $($package.FullName) - $_"
+                            throw $_
+                        }
+                    }
+                }
+            }
+            elseif ($packages.Count -gt 1) {
+                WriteLog "Multiple installers present but no SelectedWindowsArch supplied. Using original latest-version logic."
+                $latestPackage = $packages | Sort-Object { (Get-AuthenticodeSignature $_.FullName).SignerCertificate.NotBefore } -Descending | Select-Object -First 1
+                WriteLog "Retaining latest by signature date: $($latestPackage.Name)"
+                foreach ($package in $packages) {
+                    if ($package.FullName -ne $latestPackage.FullName) {
+                        try {
+                            WriteLog "Removing $($package.FullName)"
+                            Remove-Item -Path $package.FullName -Force
+                        }
+                        catch {
+                            WriteLog "Failed to delete: $($package.FullName) - $_"
+                            throw $_
+                        }
+                    }
+                }
+            }
+            else {
+                WriteLog "Single installer present; no pruning required."
             }
         }
     } # End foreach ($arch in $architecturesToDownload)
@@ -348,7 +407,7 @@ function Get-Apps {
         foreach ($storeApp in $StoreApps) {
             try {
                 $appArch = if ($storeApp.PSObject.Properties['architecture']) { $storeApp.architecture } else { $WindowsArch }
-                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -WindowsArch $appArch -OrchestrationPath $OrchestrationPath
+                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -WindowsArch $appArch -OrchestrationPath $OrchestrationPath -SelectedWindowsArch $WindowsArch
             }
             catch {
                 WriteLog "Error occurred while processing $($storeApp.Name): $_"

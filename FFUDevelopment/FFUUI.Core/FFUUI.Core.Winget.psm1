@@ -385,7 +385,8 @@ function Start-WingetAppDownloadTask {
         [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath,
         [Parameter(Mandatory = $true)]
-        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue # Add queue parameter
+        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue, # Add queue parameter
+        [string]$SelectedWindowsArch
     )
         
     $appName = $ApplicationItemData.Name
@@ -398,10 +399,6 @@ function Start-WingetAppDownloadTask {
     Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
     
     WriteLog "Starting download task for $($appName) with ID $($appId) from source $($source)."
-    # WriteLog "Apps Path: $($AppsPath)"
-    # WriteLog "AppList JSON Path: $($AppListJsonPath)"
-    # WriteLog "Windows Architecture: $($ApplicationItemData.Architecture)"
-    # WriteLog "Orchestration Path: $($OrchestrationPath)"
 
     try {
         # Define paths
@@ -599,7 +596,7 @@ function Start-WingetAppDownloadTask {
 
             try {
                 # Call Get-Application 
-                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $ApplicationItemData.Architecture -OrchestrationPath $OrchestrationPath -SkipWin32Json -ErrorAction Stop
+                $resultCode = Get-Application -AppName $appName -AppId $appId -Source $source -AppsPath $AppsPath -WindowsArch $ApplicationItemData.Architecture -OrchestrationPath $OrchestrationPath -SkipWin32Json -SelectedWindowsArch $SelectedWindowsArch -ErrorAction Stop
 
                 # Determine status based on result code
                 switch ($resultCode) {
@@ -718,9 +715,10 @@ function Invoke-WingetDownload {
 
         # Create hashtable for task-specific arguments to pass to Invoke-ParallelProcessing
         $taskArguments = @{
-            AppsPath          = $localAppsPath
-            AppListJsonPath   = $localAppListJsonPath
-            OrchestrationPath = $localOrchestrationPath
+            AppsPath            = $localAppsPath
+            AppListJsonPath     = $localAppListJsonPath
+            OrchestrationPath   = $localOrchestrationPath
+            SelectedWindowsArch = $localWindowsArch
         }
 
         # Select only necessary properties before passing to Invoke-ParallelProcessing

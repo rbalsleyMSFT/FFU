@@ -163,6 +163,7 @@ function Invoke-ParallelProcessing {
                             AppsPath            = $localJobArgs['AppsPath']
                             OrchestrationPath   = $localJobArgs['OrchestrationPath']
                             ProgressQueue       = $localProgressQueue
+                            SelectedWindowsArch = $localJobArgs['SelectedWindowsArch']
                         }
                         $taskResult = Start-WingetAppDownloadTask @wingetTaskArgs
                         if ($null -ne $taskResult) {
