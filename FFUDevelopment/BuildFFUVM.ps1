@@ -2991,7 +2991,7 @@ function Get-ShortenedWindowsSKU {
         'ServerDatacenter' { 'Srv_Dtc' }
         'Datacenter' { 'Srv_Dtc' }
         'Standard (Desktop Experience)' { 'Srv_Std_DE' }
-        'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE'  
+        'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }
     }
     return $shortenedWindowsSKU
 
