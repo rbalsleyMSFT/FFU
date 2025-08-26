@@ -631,75 +631,6 @@ if ($WindowsSKU -like "*LTS*") {
 # Set the log path for the common logger
 Set-CommonCoreLogPath -Path $LogFile
 
-function Get-DriveLetterAssignments {
-    <#
-    .SYNOPSIS
-    Gets drive letter assignments for all the partitions needed by the FFU creation process.
-    
-    .DESCRIPTION
-    This function assigns available drive letters for:
-    - System partition (prefers 'S')
-    - OS partition (prefers 'W') 
-    - Recovery partition (prefers 'R')
-    - Network share mapping (prefers 'X', 'Y', 'Z' to avoid conflicts)
-    
-    .OUTPUTS
-    Returns a hashtable with the assigned drive letters
-    #>
-    
-    WriteLog "Assigning available drive letters for FFU creation process..."
-    
-    $assignments = @{}
-    $usedLetters = @()
-    
-    try {
-        # Get system partition drive letter (prefer S)
-        $systemLetter = Get-AvailableDriveLetter -PreferredLetters @('S') -ExcludeLetters $usedLetters
-        $assignments.System = $systemLetter
-        $usedLetters += $systemLetter
-        
-        # Get OS partition drive letter (prefer W, but avoid conflicts)
-        $osLetter = Get-AvailableDriveLetter -PreferredLetters @('W') -ExcludeLetters $usedLetters
-        $assignments.OS = $osLetter
-        $usedLetters += $osLetter
-        
-        # Get recovery partition drive letter (prefer R)
-        $recoveryLetter = Get-AvailableDriveLetter -PreferredLetters @('R') -ExcludeLetters $usedLetters
-        $assignments.Recovery = $recoveryLetter
-        $usedLetters += $recoveryLetter
-        
-        # Get network share drive letter (prefer letters at end of alphabet to avoid conflicts)
-        $networkLetter = Get-AvailableDriveLetter -PreferredLetters @('Z', 'Y', 'X') -ExcludeLetters $usedLetters
-        $assignments.Network = $networkLetter
-        $usedLetters += $networkLetter
-        
-        WriteLog "Drive letter assignments:"
-        WriteLog "  System partition: $($assignments.System):"
-        WriteLog "  OS partition: $($assignments.OS):"
-        WriteLog "  Recovery partition: $($assignments.Recovery):"
-        WriteLog "  Network share: $($assignments.Network):"
-        
-        return $assignments
-    }
-    catch {
-        WriteLog "Error assigning drive letters: $($_.Exception.Message)"
-        throw "Failed to assign drive letters: $($_.Exception.Message)"
-    }
-}
-
-# Get drive letter assignments at script startup to avoid conflicts
-WriteLog "Initializing drive letter assignments to avoid conflicts..."
-try {
-    $script:DriveLetterAssignments = Get-DriveLetterAssignments
-    WriteLog "Drive letter assignments completed successfully"
-}
-catch {
-    WriteLog "Failed to get drive letter assignments: $($_.Exception.Message)"
-    throw "Cannot proceed without valid drive letter assignments: $($_.Exception.Message)"
-}
-
-#FUNCTIONS
-
 function Get-AvailableDriveLetter {
     <#
     .SYNOPSIS
@@ -771,6 +702,75 @@ function Get-AvailableDriveLetter {
     
     throw "No available drive letters found. Used: $($usedDriveLetters -join ', '), Excluded: $($ExcludeLetters -join ', ')"
 }
+
+function Get-DriveLetterAssignments {
+    <#
+    .SYNOPSIS
+    Gets drive letter assignments for all the partitions needed by the FFU creation process.
+    
+    .DESCRIPTION
+    This function assigns available drive letters for:
+    - System partition (prefers 'S')
+    - OS partition (prefers 'W') 
+    - Recovery partition (prefers 'R')
+    - Network share mapping (prefers 'X', 'Y', 'Z' to avoid conflicts)
+    
+    .OUTPUTS
+    Returns a hashtable with the assigned drive letters
+    #>
+    
+    WriteLog "Assigning available drive letters for FFU creation process..."
+    
+    $assignments = @{}
+    $usedLetters = @()
+    
+    try {
+        # Get system partition drive letter (prefer S)
+        $systemLetter = Get-AvailableDriveLetter -PreferredLetters @('S') -ExcludeLetters $usedLetters
+        $assignments.System = $systemLetter
+        $usedLetters += $systemLetter
+        
+        # Get OS partition drive letter (prefer W, but avoid conflicts)
+        $osLetter = Get-AvailableDriveLetter -PreferredLetters @('W') -ExcludeLetters $usedLetters
+        $assignments.OS = $osLetter
+        $usedLetters += $osLetter
+        
+        # Get recovery partition drive letter (prefer R)
+        $recoveryLetter = Get-AvailableDriveLetter -PreferredLetters @('R') -ExcludeLetters $usedLetters
+        $assignments.Recovery = $recoveryLetter
+        $usedLetters += $recoveryLetter
+        
+        # Get network share drive letter (prefer letters at end of alphabet to avoid conflicts)
+        $networkLetter = Get-AvailableDriveLetter -PreferredLetters @('Z', 'Y', 'X') -ExcludeLetters $usedLetters
+        $assignments.Network = $networkLetter
+        $usedLetters += $networkLetter
+        
+        WriteLog "Drive letter assignments:"
+        WriteLog "  System partition: $($assignments.System):"
+        WriteLog "  OS partition: $($assignments.OS):"
+        WriteLog "  Recovery partition: $($assignments.Recovery):"
+        WriteLog "  Network share: $($assignments.Network):"
+        
+        return $assignments
+    }
+    catch {
+        WriteLog "Error assigning drive letters: $($_.Exception.Message)"
+        throw "Failed to assign drive letters: $($_.Exception.Message)"
+    }
+}
+
+# Get drive letter assignments at script startup to avoid conflicts
+WriteLog "Initializing drive letter assignments to avoid conflicts..."
+try {
+    $script:DriveLetterAssignments = Get-DriveLetterAssignments
+    WriteLog "Drive letter assignments completed successfully"
+}
+catch {
+    WriteLog "Failed to get drive letter assignments: $($_.Exception.Message)"
+    throw "Cannot proceed without valid drive letter assignments: $($_.Exception.Message)"
+}
+
+#FUNCTIONS
 
 function Clear-NetworkDriveMapping {
     <#
