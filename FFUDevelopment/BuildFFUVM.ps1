@@ -1,4 +1,3 @@
-
 #Requires -Modules Hyper-V, Storage
 #Requires -RunAsAdministrator
 
@@ -487,7 +486,6 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         }
     }
 }
-
 # Validate that the selected Windows SKU is compatible with the chosen Windows release and ensure an ISO is provided for unsupported releases
 $clientSKUs = @(
     'Home',
@@ -633,7 +631,183 @@ if ($WindowsSKU -like "*LTS*") {
 # Set the log path for the common logger
 Set-CommonCoreLogPath -Path $LogFile
 
+function Get-DriveLetterAssignments {
+    <#
+    .SYNOPSIS
+    Gets drive letter assignments for all the partitions needed by the FFU creation process.
+    
+    .DESCRIPTION
+    This function assigns available drive letters for:
+    - System partition (prefers 'S')
+    - OS partition (prefers 'W') 
+    - Recovery partition (prefers 'R')
+    - Network share mapping (prefers 'X', 'Y', 'Z' to avoid conflicts)
+    
+    .OUTPUTS
+    Returns a hashtable with the assigned drive letters
+    #>
+    
+    WriteLog "Assigning available drive letters for FFU creation process..."
+    
+    $assignments = @{}
+    $usedLetters = @()
+    
+    try {
+        # Get system partition drive letter (prefer S)
+        $systemLetter = Get-AvailableDriveLetter -PreferredLetters @('S') -ExcludeLetters $usedLetters
+        $assignments.System = $systemLetter
+        $usedLetters += $systemLetter
+        
+        # Get OS partition drive letter (prefer W, but avoid conflicts)
+        $osLetter = Get-AvailableDriveLetter -PreferredLetters @('W') -ExcludeLetters $usedLetters
+        $assignments.OS = $osLetter
+        $usedLetters += $osLetter
+        
+        # Get recovery partition drive letter (prefer R)
+        $recoveryLetter = Get-AvailableDriveLetter -PreferredLetters @('R') -ExcludeLetters $usedLetters
+        $assignments.Recovery = $recoveryLetter
+        $usedLetters += $recoveryLetter
+        
+        # Get network share drive letter (prefer letters at end of alphabet to avoid conflicts)
+        $networkLetter = Get-AvailableDriveLetter -PreferredLetters @('Z', 'Y', 'X') -ExcludeLetters $usedLetters
+        $assignments.Network = $networkLetter
+        $usedLetters += $networkLetter
+        
+        WriteLog "Drive letter assignments:"
+        WriteLog "  System partition: $($assignments.System):"
+        WriteLog "  OS partition: $($assignments.OS):"
+        WriteLog "  Recovery partition: $($assignments.Recovery):"
+        WriteLog "  Network share: $($assignments.Network):"
+        
+        return $assignments
+    }
+    catch {
+        WriteLog "Error assigning drive letters: $($_.Exception.Message)"
+        throw "Failed to assign drive letters: $($_.Exception.Message)"
+    }
+}
+
+# Get drive letter assignments at script startup to avoid conflicts
+WriteLog "Initializing drive letter assignments to avoid conflicts..."
+try {
+    $script:DriveLetterAssignments = Get-DriveLetterAssignments
+    WriteLog "Drive letter assignments completed successfully"
+}
+catch {
+    WriteLog "Failed to get drive letter assignments: $($_.Exception.Message)"
+    throw "Cannot proceed without valid drive letter assignments: $($_.Exception.Message)"
+}
+
 #FUNCTIONS
+
+function Get-AvailableDriveLetter {
+    <#
+    .SYNOPSIS
+    Gets an available drive letter that is not currently in use.
+    
+    .DESCRIPTION
+    This function checks all drive letters from A-Z (excluding A: and B: which are typically reserved for floppy drives)
+    and returns the first available drive letter. It can optionally exclude specific letters and can specify a preference order.
+    
+    .PARAMETER ExcludeLetters
+    Array of drive letters to exclude from consideration (e.g., @('C', 'D'))
+    
+    .PARAMETER PreferredLetters
+    Array of preferred drive letters to try first (e.g., @('S', 'W', 'R'))
+    
+    .EXAMPLE
+    Get-AvailableDriveLetter
+    Returns the first available drive letter from C-Z
+    
+    .EXAMPLE
+    Get-AvailableDriveLetter -PreferredLetters @('S', 'W', 'R') -ExcludeLetters @('C', 'D')
+    Returns 'S' if available, otherwise 'W', then 'R', then first available from remaining letters
+    #>
+    param(
+        [string[]]$ExcludeLetters = @(),
+        [string[]]$PreferredLetters = @()
+    )
+    
+    # Get all currently used drive letters
+    $usedDriveLetters = @()
+    try {
+        $usedDriveLetters += Get-PSDrive -PSProvider FileSystem | ForEach-Object { $_.Name.ToUpper() }
+        $usedDriveLetters += Get-WmiObject -Class Win32_LogicalDisk | ForEach-Object { $_.DeviceID.Replace(':', '').ToUpper() }
+        $usedDriveLetters += Get-Volume | Where-Object { $_.DriveLetter } | ForEach-Object { $_.DriveLetter.ToString().ToUpper() }
+    }
+    catch {
+        WriteLog "Warning: Could not get all drive information: $($_.Exception.Message)"
+    }
+    
+    # Remove duplicates and sort
+    $usedDriveLetters = $usedDriveLetters | Sort-Object -Unique
+    
+    # Convert exclude letters to uppercase
+    $ExcludeLetters = $ExcludeLetters | ForEach-Object { $_.ToUpper() }
+    
+    WriteLog "Currently used drive letters: $($usedDriveLetters -join ', ')"
+    WriteLog "Excluded drive letters: $($ExcludeLetters -join ', ')"
+    
+    # Try preferred letters first
+    if ($PreferredLetters) {
+        foreach ($letter in $PreferredLetters) {
+            $upperLetter = $letter.ToUpper()
+            if ($upperLetter -notin $usedDriveLetters -and $upperLetter -notin $ExcludeLetters -and $upperLetter -notin @('A', 'B')) {
+                WriteLog "Using preferred drive letter: $upperLetter"
+                return $upperLetter
+            }
+        }
+    }
+    
+    # If no preferred letter is available, find any available letter (excluding A, B, and commonly used C)
+    $allLetters = 'C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'
+    
+    foreach ($letter in $allLetters) {
+        if ($letter -notin $usedDriveLetters -and $letter -notin $ExcludeLetters) {
+            WriteLog "Using available drive letter: $letter"
+            return $letter
+        }
+    }
+    
+    throw "No available drive letters found. Used: $($usedDriveLetters -join ', '), Excluded: $($ExcludeLetters -join ', ')"
+}
+
+function Clear-NetworkDriveMapping {
+    <#
+    .SYNOPSIS
+    Clears any network drive mappings that were created during the FFU process.
+    
+    .DESCRIPTION
+    This function attempts to disconnect any network drives that were mapped using the
+    assigned network drive letter to ensure clean script exit.
+    #>
+    
+    if ($script:DriveLetterAssignments -and $script:DriveLetterAssignments.Network) {
+        $networkDrive = "$($script:DriveLetterAssignments.Network):"
+        
+        try {
+            WriteLog "Attempting to clear network drive mapping for $networkDrive"
+            
+            # Check if the drive is mapped
+            $mappedDrive = Get-PSDrive -Name $script:DriveLetterAssignments.Network -ErrorAction SilentlyContinue
+            
+            if ($mappedDrive -and $mappedDrive.DisplayRoot) {
+                WriteLog "Network drive $networkDrive is mapped to $($mappedDrive.DisplayRoot), disconnecting..."
+                Remove-PSDrive -Name $script:DriveLetterAssignments.Network -Force -ErrorAction SilentlyContinue
+                
+                # Also try net use to ensure it's fully disconnected
+                $null = & net use $networkDrive /delete /y 2>$null
+                
+                WriteLog "Network drive $networkDrive disconnected successfully"
+            } else {
+                WriteLog "Network drive $networkDrive was not mapped or already disconnected"
+            }
+        }
+        catch {
+            WriteLog "Warning: Could not clear network drive mapping for $networkDrive`: $($_.Exception.Message)"
+        }
+    }
+}
 
 function Get-Parameters {
     [CmdletBinding()]
@@ -930,7 +1104,6 @@ function Get-MicrosoftDrivers {
         WriteLog "Failed to parse the download page for the MSI file."
     }
 }
-
 function Get-HPDrivers {
     [CmdletBinding()]
     param (
@@ -1397,7 +1570,6 @@ function Get-LenovoDrivers {
     Remove-Item -Path $LenovoCatalogXML -Force
     WriteLog "Catalog XML file deleted"
 }
-
 function Get-DellDrivers {
     param (
         [Parameter(Mandatory = $true)]
@@ -1844,7 +2016,6 @@ function Confirm-ADKVersionIsLatest {
         return $false
     }
 }
-
 function Get-ADK {
     # Check if latest ADK and WinPE add-on are installed
     if ($UpdateADK) {
@@ -2332,7 +2503,6 @@ function Get-Index {
         }
     }
 }
-
 #Create VHDX
 function New-ScratchVhdx {
     param(
@@ -2365,7 +2535,7 @@ function New-SystemPartition {
 
     WriteLog "Creating System partition..."
 
-    $sysPartition = $VhdxDisk | New-Partition -DriveLetter 'S' -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden 
+    $sysPartition = $VhdxDisk | New-Partition -DriveLetter $script:DriveLetterAssignments.System -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden 
     $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System" 
 
     WriteLog 'Done.'
@@ -2401,10 +2571,10 @@ function New-OSPartition {
     WriteLog "Creating OS partition..."
 
     if ($OSPartitionSize -gt 0) {
-        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" 
+        $osPartition = $vhdxDisk | New-Partition -DriveLetter $script:DriveLetterAssignments.OS -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" 
     }
     else {
-        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" 
+        $osPartition = $vhdxDisk | New-Partition -DriveLetter $script:DriveLetterAssignments.OS -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" 
     }
 
     $osPartition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel "Windows" 
@@ -2470,7 +2640,7 @@ function New-RecoveryPartition {
                 WriteLog "OS partition shrunk by $calculatedRecoverySize bytes for Recovery partition."
             }
 
-            $recoveryPartition = $VhdxDisk | New-Partition -DriveLetter 'R' -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}" `
+            $recoveryPartition = $VhdxDisk | New-Partition -DriveLetter $script:DriveLetterAssignments.Recovery -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}" `
             | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery' 
 
             WriteLog "Done. Recovery partition at drive $($recoveryPartition.DriveLetter):"
@@ -2512,7 +2682,7 @@ function Enable-WindowsFeaturesByName {
     # Looping through each feature and enabling it
     foreach ($FeatureName in $FeaturesArray) {
         WriteLog "Enabling Windows Optional feature: $FeatureName"
-        Enable-WindowsOptionalFeature -Path $WindowsPartition -FeatureName $FeatureName -All -Source $Source | Out-Null
+        Enable-WindowsOptionalFeature -Path $WindowsPartition -FeatureName $FeatureName -All -Source $Source | Out-null
         WriteLog "Done"
     }
 }
@@ -2601,7 +2771,7 @@ Function Set-CaptureFFU {
 
     # Return the share path in the format of \\<IPAddress>\<ShareName> /user:<UserName> <password>
     $SharePath = "\\$VMHostIPAddress\$ShareName /user:$UserName $Password"
-    $SharePath = "net use W: " + $SharePath + ' 2>&1'
+    $SharePath = "net use $script:DriveLetterAssignments.Network: " + $SharePath + ' 2>&1'
     
     # Update CaptureFFU.ps1 script
     if (Test-Path -Path $CaptureFFUScriptPath) {
@@ -2821,7 +2991,7 @@ function Get-ShortenedWindowsSKU {
         'ServerDatacenter' { 'Srv_Dtc' }
         'Datacenter' { 'Srv_Dtc' }
         'Standard (Desktop Experience)' { 'Srv_Std_DE' }
-        'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }  
+        'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }
     }
     return $shortenedWindowsSKU
 
@@ -3747,7 +3917,6 @@ function Get-PEArchitecture {
         default { return ("Unknown architecture: 0x{0:X}" -f $machine) }
     }
 }
-
 function New-RunSession {
     param(
         [string]$FFUDevelopmentPath,
@@ -4224,7 +4393,6 @@ function Restore-RunJsonBackups {
         }
     }
 }
-
 # Restore Office XML backups if present; ensure Office folder exists and only XMLs remain
 if ($manifest.OfficeXmlBackups -and $OfficePath) {
     if (-not (Test-Path $OfficePath)) {
@@ -4720,7 +4888,6 @@ catch {
     WriteLog 'ADK not found'
     throw $_
 }
-            
 #Create apps ISO for Office and/or 3rd party apps
 if ($InstallApps) {
     Set-Progress -Percentage 6 -Message "Downloading and preparing applications..."
@@ -5163,7 +5330,6 @@ if ($InstallApps) {
         }
     }
 }
-
 #Create VHDX
 try {
     Set-Progress -Percentage 11 -Message "Checking for required Windows Updates..."
@@ -5626,7 +5792,6 @@ if ($InstallApps) {
     # Always dismount so downstream VM creation logic has a clean starting point
     Dismount-ScratchVhdx -VhdxPath $VHDXPath
 }
-
 #If installing apps (Office or 3rd party), we need to build a VM and capture that FFU, if not, just cut the FFU from the VHDX file
 if ($InstallApps) {
     Set-Progress -Percentage 41 -Message "Starting VM for app installation..."
@@ -5915,5 +6080,8 @@ else {
 if ($VerbosePreference -ne 'Continue') {
     Write-Host $runTimeFormatted
 }
+# Clean up any network drive mappings before script exit
+Clear-NetworkDriveMapping
+
 WriteLog 'Script complete'
 WriteLog $runTimeFormatted
