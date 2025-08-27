@@ -3597,6 +3597,71 @@ function Remove-FFU {
     Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
     WriteLog "Removal complete"
 }
+Function Remove-DisabledUpdates {
+    # Remove Defender artifacts if Defender update is disabled
+    if (-not $UpdateLatestDefender) {
+        $removed = $false
+        if (Test-Path -Path $installDefenderPath) {
+            WriteLog "Update Defender disabled - removing $installDefenderPath"
+            Remove-Item -Path $installDefenderPath -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if (Test-Path -Path $DefenderPath) {
+            WriteLog "Update Defender disabled - removing $DefenderPath"
+            Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if ($removed) { WriteLog 'Removal complete' }
+    }
+
+    # Remove MSRT artifacts if MSRT update is disabled
+    if (-not $UpdateLatestMSRT) {
+        $removed = $false
+        if (Test-Path -Path $installMSRTPath) {
+            WriteLog "Update MSRT disabled - removing $installMSRTPath"
+            Remove-Item -Path $installMSRTPath -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if (Test-Path -Path $MSRTPath) {
+            WriteLog "Update MSRT disabled - removing $MSRTPath"
+            Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if ($removed) { WriteLog 'Removal complete' }
+    }
+
+    # Remove OneDrive artifacts if OneDrive update is disabled
+    if (-not $UpdateOneDrive) {
+        $removed = $false
+        if (Test-Path -Path $installODPath) {
+            WriteLog "Update OneDrive disabled - removing $installODPath"
+            Remove-Item -Path $installODPath -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if (Test-Path -Path $OneDrivePath) {
+            WriteLog "Update OneDrive disabled - removing $OneDrivePath"
+            Remove-Item -Path $OneDrivePath -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if ($removed) { WriteLog 'Removal complete' }
+    }
+
+    # Remove Edge artifacts if Edge update is disabled
+    if (-not $UpdateEdge) {
+        $removed = $false
+        if (Test-Path -Path $installEdgePath) {
+            WriteLog "Update Edge disabled - removing $installEdgePath"
+            Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if (Test-Path -Path $EdgePath) {
+            WriteLog "Update Edge disabled - removing $EdgePath"
+            Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if ($removed) { WriteLog 'Removal complete' }
+    }
+}
 
 Function Remove-Updates {
     if ($UpdateLatestDefender) {
@@ -4886,6 +4951,10 @@ if ($InstallApps) {
                 }
                 
             }
+
+
+            # Remove residual update artifacts for any updates disabled via flags
+            Remove-DisabledUpdates
 
             #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
             if ($UpdateLatestDefender) {
