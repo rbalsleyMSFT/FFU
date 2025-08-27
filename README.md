@@ -22,7 +22,7 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Getting Started
 
-- Download the latest [release](https://github.com/rbalsleyMSFT/FFU/releases)
+- Download the latest [release](https://github.com/rbalsleyMSFT/FFU/releases) (2505.2 is the latest release based on the doc below; 2508.1Preview is based on the UI - updated docs are coming for the UI build)
 - Extract the FFUDevelopment folder from the ZIP file (recommend to C:\FFUDevelopment)
 - Follow the doc: C:\FFUDevelopment\Docs\BuildDeployFFU.docx
 
