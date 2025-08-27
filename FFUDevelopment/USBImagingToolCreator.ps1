@@ -28,7 +28,7 @@ function Write-ProgressLog {
     }
 Function Get-RemovableDrive {
 writelog "Get information for all removable drives"
-$USBDrives = Get-WmiObject Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media"} 
+$USBDrives = Get-WmiObject Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media" -or "External hard disk media"} 
 If($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
     } else {
