@@ -579,10 +579,11 @@ if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
 if (-not $UserAppListPath) { $UserAppListPath = "$AppsPath\UserAppList.json" }
 if (-not $OrchestrationPath) { $OrchestrationPath = "$AppsPath\Orchestration" }
 if (-not $wingetWin32jsonFile) { $wingetWin32jsonFile = "$OrchestrationPath\WinGetWin32Apps.json" }
-if (-not $InstallDefenderPath) { $installDefenderPath = "$OrchestrationPath\Update-Defender.ps1" }
-if (-not $InstallMSRTPath) { $installMSRTPath = "$OrchestrationPath\Update-MSRT.ps1" }
-if (-not $InstallODPath) { $installODPath = "$OrchestrationPath\Update-OneDrive.ps1" }
-if (-not $InstallEdgePath) { $installEdgePath = "$OrchestrationPath\Update-Edge.ps1" }
+if (-not $InstallOfficePath) { $InstallOfficePath = "$OrchestrationPath\Install-Office.ps1" }
+if (-not $InstallDefenderPath) { $InstallDefenderPath = "$OrchestrationPath\Update-Defender.ps1" }
+if (-not $InstallMSRTPath) { $InstallMSRTPath = "$OrchestrationPath\Update-MSRT.ps1" }
+if (-not $InstallODPath) { $InstallODPath = "$OrchestrationPath\Update-OneDrive.ps1" }
+if (-not $InstallEdgePath) { $InstallEdgePath = "$OrchestrationPath\Update-Edge.ps1" }
 if (-not $AppsScriptVarsJsonPath) { $AppsScriptVarsJsonPath = "$OrchestrationPath\AppsScriptVariables.json" }
 if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy_$WindowsArch.iso" }
 if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture_$WindowsArch.iso" }
@@ -3597,7 +3598,26 @@ function Remove-FFU {
     Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
     WriteLog "Removal complete"
 }
-Function Remove-DisabledUpdates {
+Function Remove-DisabledArtifacts {
+    # Remove Office artifacts if Install Office is disabled
+    if (-not $InstallOffice) {
+        $removed = $false
+        if (Test-Path -Path $installOfficePath) {
+            WriteLog "Install Office disabled - removing $installOfficePath"
+            Remove-Item -Path $installOfficePath -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if (Test-Path -Path $OfficePath) {
+            WriteLog 'Removing Office and ODT download'
+            $OfficeDownloadPath = "$OfficePath\Office"
+            Remove-Item -Path $OfficeDownloadPath -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$OfficePath\setup.exe" -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if ($removed) { WriteLog 'Removal complete' }
+    }
+
+
     # Remove Defender artifacts if Defender update is disabled
     if (-not $UpdateLatestDefender) {
         $removed = $false
@@ -4925,7 +4945,10 @@ if ($InstallApps) {
                     WriteLog "$($app.name)"
                 }
             }
-            
+
+            # Remove residual update artifacts for any updates disabled via flags
+            Remove-DisabledArtifacts
+
             #Install Office
             if ($InstallOffice) {
                 #Check if Office has already been downloaded, if so, skip download
@@ -4951,10 +4974,6 @@ if ($InstallApps) {
                 }
                 
             }
-
-
-            # Remove residual update artifacts for any updates disabled via flags
-            Remove-DisabledUpdates
 
             #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
             if ($UpdateLatestDefender) {
