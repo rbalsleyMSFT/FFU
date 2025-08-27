@@ -62,6 +62,7 @@ Function Build-DeploymentUSB{
             $ScriptBlock = {
             param($DriveNumber)
             Clear-Disk -Number $DriveNumber -RemoveData -RemoveOEM -Confirm:$false
+			Initialize-Disk -Number $DriveNumber
             $Disk = Get-Disk -Number $DriveNumber
             $PartitionStyle = $Disk.PartitionStyle
             if($PartitionStyle -ne 'MBR'){
