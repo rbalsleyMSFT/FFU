@@ -4499,10 +4499,10 @@ if ($InstallApps) {
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
 #from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
 #This behavior doesn't happen with WIM files.
-If (-not ($ISOPath) -and (-not ($InstallApps))) {
-    $InstallApps = $true
-    WriteLog "Script will download Windows media. Setting `$InstallApps to `$true to build VM to capture FFU. Must do this when using MCT ESD."
-}
+# If (-not ($ISOPath) -and (-not ($InstallApps))) {
+#     $InstallApps = $true
+#     WriteLog "Script will download Windows media. Setting `$InstallApps to `$true to build VM to capture FFU. Must do this when using MCT ESD."
+# }
 
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
