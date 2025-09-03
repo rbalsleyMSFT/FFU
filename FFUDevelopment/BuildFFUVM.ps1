@@ -70,7 +70,7 @@ When set to $true, this will create WinPE deployment media for use when deployin
 Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
 
 .PARAMETER Disksize
-Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk.
+Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk.
 
 .PARAMETER DriversFolder
 Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
@@ -304,7 +304,7 @@ param(
     [string]$Model,
     [bool]$InstallDrivers,
     [uint64]$Memory = 4GB,
-    [uint64]$Disksize = 30GB,
+    [uint64]$Disksize = 50GB,
     [int]$Processors = 4,
     [string]$VMSwitchName,
     [string]$VMLocation,
@@ -2339,7 +2339,7 @@ function New-ScratchVhdx {
     param(
         [Parameter(Mandatory = $true)]
         [string]$VhdxPath,
-        [uint64]$SizeBytes = 30GB,
+        [uint64]$SizeBytes = 50GB,
         [uint32]$LogicalSectorSizeBytes,
         [switch]$Dynamic,
         [Microsoft.PowerShell.Cmdletization.GeneratedTypes.Disk.PartitionStyle]$PartitionStyle = [Microsoft.PowerShell.Cmdletization.GeneratedTypes.Disk.PartitionStyle]::GPT

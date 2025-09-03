@@ -115,9 +115,9 @@
                         <TextBox x:Name="txtVMHostIPAddress" Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
                         <!-- Row 3: Disk Size (GB) -->
                         <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                            <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
+                            <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                         </StackPanel>
-                        <TextBox x:Name="txtDiskSize" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="30" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
+                        <TextBox x:Name="txtDiskSize" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="50" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                         <!-- Row 4: Memory (GB) -->
                         <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Memory (GB)" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>

@@ -141,7 +141,7 @@ function Get-GeneralDefaults {
         RemoveUpdates                  = $false 
         # Hyper-V Settings Defaults
         VMHostIPAddress                = ""
-        DiskSizeGB                     = 30
+        DiskSizeGB                     = 50
         MemoryGB                       = 4
         Processors                     = 4
         VMLocation                     = $vmLocationPath
