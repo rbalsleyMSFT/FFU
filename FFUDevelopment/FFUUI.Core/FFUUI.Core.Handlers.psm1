@@ -216,11 +216,11 @@ function Register-EventHandlers {
             }
             else {
                 $localState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-                if ($localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
+                if ($null -ne $selectedItem -and $localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
                     $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.vmSwitchMap[$selectedItem]
                 }
                 else {
-                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found in map
+                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found or key null
                 }
             }
         })
@@ -949,6 +949,12 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
             Invoke-LoadConfiguration -State $localState
+        })
+    $State.Controls.btnRestoreDefaults.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Invoke-RestoreDefaults -State $localState
         })
     $State.Controls.btnBuildConfig.Add_Click({
             param($eventSource, $routedEventArgs)

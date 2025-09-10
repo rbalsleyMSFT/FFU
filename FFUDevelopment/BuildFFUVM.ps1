@@ -5893,59 +5893,10 @@ If ($RemoveFFU) {
        
 }
 Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
-If ($CleanupCaptureISO) {
-    try {
-        If (Test-Path -Path $CaptureISO) {
-            WriteLog "Removing $CaptureISO"
-            Remove-Item -Path $CaptureISO -Force
-            WriteLog "Removal complete"
-        }     
-    }
-    catch {
-        Writelog "Removing $CaptureISO failed with error $_"
-        throw $_
-    }
-}
-If ($CleanupDeployISO) {
-    try {
-        If (Test-Path -Path $DeployISO) {
-            WriteLog "Removing $DeployISO"
-            Remove-Item -Path $DeployISO -Force
-            WriteLog "Removal complete"
-        }     
-    }
-    catch {
-        Writelog "Removing $DeployISO failed with error $_"
-        throw $_
-    }
-}
-If ($CleanupAppsISO) {
-    try {
-        If (Test-Path -Path $AppsISO) {
-            WriteLog "Removing $AppsISO"
-            Remove-Item -Path $AppsISO -Force
-            WriteLog "Removal complete"
-        }     
-    }
-    catch {
-        Writelog "Removing $AppsISO failed with error $_"
-        throw $_
-    }
-}
-If ($CleanupDrivers) {
-    try {
-        #Remove files in $Driversfolder, but keep $DriversFolder
-        If (Test-Path -Path $Driversfolder) {
-            WriteLog "Removing files in $Driversfolder"
-            Remove-Item -Path $Driversfolder\* -Force -Recurse
-            WriteLog "Removal complete"
-        }  
-    }
-    catch {
-        Writelog "Removing $Driversfolder\* failed with error $_"
-        throw $_
-    }
-}
+# Delegated post-build cleanup to common module
+Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $Driversfolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates
+
+# Remove KBPath for cached vhdx files
 if ($AllowVHDXCaching) {
     try {
         If (Test-Path -Path $KBPath) {

@@ -170,6 +170,7 @@ function Initialize-UIControls {
     $State.Controls.btnBrowseDriversJsonPath = $window.FindName('btnBrowseDriversJsonPath')
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
     $State.Controls.btnLoadConfig = $window.FindName('btnLoadConfig')
+    $State.Controls.btnRestoreDefaults = $window.FindName('btnRestoreDefaults')
     $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
 
     # Monitor Tab
@@ -198,11 +199,11 @@ function Initialize-VMSwitchData {
     if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
         $State.Controls.cmbVMSwitchName.SelectedIndex = 0
         $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
-        if ($State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
+        if ($null -ne $firstSwitch -and $State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
             $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
         }
         else {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found
+            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found or key null
         }
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
     }

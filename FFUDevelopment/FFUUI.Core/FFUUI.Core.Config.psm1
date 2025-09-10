@@ -664,6 +664,126 @@ function Invoke-SaveConfiguration {
     }
 }
 
+function Invoke-RestoreDefaults {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
+    try {
+        $rootPath = $State.FFUDevelopmentPath
+
+        # Normalize potential array values to single strings
+        function Normalize-PathScalar {
+            param([object]$value)
+            if ($null -eq $value) { return $null }
+            if ($value -is [System.Array]) {
+                foreach ($v in $value) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$v)) {
+                        return [string]$v
+                    }
+                }
+                return $null
+            }
+            return [string]$value
+        }
+
+        $appsPath = Join-Path $rootPath 'Apps'
+        $driversRaw = Normalize-PathScalar -value $State.Controls.txtDriversFolder.Text
+        if ([string]::IsNullOrWhiteSpace($driversRaw)) {
+            $driversPath = Join-Path $rootPath 'Drivers'
+        }
+        else {
+            $driversPath = $driversRaw
+        }
+        $ffuCaptureRaw = Normalize-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
+        $ffuCapturePath = if ([string]::IsNullOrWhiteSpace($ffuCaptureRaw)) { Join-Path $rootPath 'FFU' } else { $ffuCaptureRaw }
+
+        $captureISOPath = Join-Path $rootPath 'WinPECaptureFFUFiles\WinPE-Capture.iso'
+        $deployISOPath = Join-Path $rootPath 'WinPEDeployFFUFiles\WinPE-Deploy.iso'
+        $appsISOPath = Join-Path $rootPath 'Apps.iso'
+        
+        $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Capture, Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
+        $result = [System.Windows.MessageBox]::Show($msg, "Confirm Restore Defaults", "YesNo", "Warning")
+        if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
+            WriteLog "RestoreDefaults: User cancelled."
+            return
+        }
+
+        WriteLog "RestoreDefaults: Starting environment reset."
+        WriteLog "RestoreDefaults: Paths -> Apps=$appsPath Drivers=$driversPath FFUCapture=$ffuCapturePath"
+
+        # Remove JSON artifact files if present
+        $artifactFiles = @(
+            (Join-Path $rootPath 'config\FFUConfig.json'),
+            (Join-Path $appsPath 'AppList.json'),
+            (Join-Path $driversPath 'Drivers.json'),
+            (Join-Path $appsPath 'UserAppList.json')
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+        foreach ($file in $artifactFiles) {
+            if ((-not [string]::IsNullOrWhiteSpace($file)) -and (Test-Path -LiteralPath $file)) {
+                try {
+                    WriteLog "RestoreDefaults: Removing $file"
+                    Remove-Item -LiteralPath $file -Force -ErrorAction Stop
+                }
+                catch {
+                    WriteLog "RestoreDefaults: Failed removing $file : $($_.Exception.Message)"
+                }
+            }
+        }
+
+        # Force all cleanup flags true
+        Invoke-FFUPostBuildCleanup `
+            -RootPath $rootPath `
+            -AppsPath $appsPath `
+            -DriversPath $driversPath `
+            -FFUCapturePath $ffuCapturePath `
+            -CaptureISOPath $captureISOPath `
+            -DeployISOPath $deployISOPath `
+            -AppsISOPath $appsISOPath `
+            -RemoveCaptureISO:$true `
+            -RemoveDeployISO:$true `
+            -RemoveAppsISO:$true `
+            -RemoveDrivers:$true `
+            -RemoveFFU:$true `
+            -RemoveApps:$true `
+            -RemoveUpdates:$true
+
+        # Clear UI lists / state
+        if ($null -ne $State.Data.allDriverModels) { $State.Data.allDriverModels.Clear() }
+        if ($null -ne $State.Controls.lstDriverModels) { $State.Controls.lstDriverModels.Items.Refresh() }
+        if ($null -ne $State.Controls.lstApplications) {
+            try {
+                if ($State.Controls.lstApplications.ItemsSource) { $State.Controls.lstApplications.ItemsSource = $null }
+                $State.Controls.lstApplications.Items.Clear()
+            } catch {}
+        }
+        if ($null -ne $State.Controls.lstWingetResults) {
+            try { 
+                if ($State.Controls.lstWingetResults.ItemsSource) { $State.Controls.lstWingetResults.ItemsSource = $null }
+                $State.Controls.lstWingetResults.Items.Clear() 
+            } catch {}
+        }
+        if ($null -ne $State.Controls.lstAppsScriptVariables) {
+            try {
+                if ($State.Controls.lstAppsScriptVariables.ItemsSource) { $State.Controls.lstAppsScriptVariables.ItemsSource = $null }
+                $State.Controls.lstAppsScriptVariables.Items.Clear()
+            } catch {}
+        }
+
+        $State.Data.lastConfigFilePath = $null
+
+        Initialize-UIDefaults -State $State
+
+        WriteLog "RestoreDefaults: Completed."
+        [System.Windows.MessageBox]::Show("Environment restored to defaults.", "Restore Defaults", "OK", "Information")
+    }
+    catch {
+        WriteLog "RestoreDefaults: Failed with $($_.Exception.Message)"
+        [System.Windows.MessageBox]::Show("Restore Defaults failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+    }
+}
+
 function Invoke-AutoLoadPreviousEnvironment {
     [CmdletBinding()]
     param(
