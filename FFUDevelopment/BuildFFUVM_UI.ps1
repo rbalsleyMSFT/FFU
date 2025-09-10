@@ -126,6 +126,14 @@ $window.Add_Loaded({
         Initialize-UIDefaults -State $script:uiState
         Initialize-DynamicUIElements -State $script:uiState
         Register-EventHandlers -State $script:uiState
+
+        # Attempt automatic load of previous environment (silent)
+        try {
+            Invoke-AutoLoadPreviousEnvironment -State $script:uiState
+        }
+        catch {
+            WriteLog "Auto-load previous environment failed: $($_.Exception.Message)"
+        }
     })
 
 

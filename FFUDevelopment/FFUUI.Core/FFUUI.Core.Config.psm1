@@ -664,4 +664,246 @@ function Invoke-SaveConfiguration {
     }
 }
 
+function Invoke-AutoLoadPreviousEnvironment {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
+
+    try {
+        $ffuDevRoot = $State.FFUDevelopmentPath
+        if ([string]::IsNullOrWhiteSpace($ffuDevRoot)) {
+            WriteLog "AutoLoad: FFUDevelopmentPath not set; skipping."
+            return
+        }
+
+        $configPath = Join-Path $ffuDevRoot "config\FFUConfig.json"
+        if (-not (Test-Path -LiteralPath $configPath)) {
+            WriteLog "AutoLoad: No existing FFUConfig.json found at $configPath."
+            return
+        }
+
+        WriteLog "AutoLoad: Found config file at $configPath. Parsing..."
+        $configContent = $null
+        try {
+            $raw = Get-Content -Path $configPath -Raw -ErrorAction Stop
+            if ([string]::IsNullOrWhiteSpace($raw)) {
+                WriteLog "AutoLoad: Config file is empty; aborting auto-load."
+                return
+            }
+            $configContent = $raw | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            WriteLog "AutoLoad: Failed to parse config JSON: $($_.Exception.Message)"
+            return
+        }
+
+        if ($null -eq $configContent) {
+            WriteLog "AutoLoad: Parsed configContent is null; aborting."
+            return
+        }
+
+        WriteLog "AutoLoad: Applying configuration to UI."
+        Update-UIFromConfig -ConfigContent $configContent -State $State
+
+        # Track which supplemental assets we successfully load
+        $loadedWinget = $false
+        $loadedBYO = $false
+        $loadedDrivers = $false
+
+        # --- Winget AppList ---
+        $appListPath = $null
+        if ($configContent.PSObject.Properties.Match('AppListPath').Count -gt 0) {
+            $appListPath = $configContent.AppListPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($appListPath) -and (Test-Path -LiteralPath $appListPath)) {
+            WriteLog "AutoLoad: Loading Winget AppList from $appListPath."
+            try {
+                $importedAppsData = Get-Content -Path $appListPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($null -ne $importedAppsData -and $null -ne $importedAppsData.apps) {
+                    $defaultArch = $State.Controls.cmbWindowsArch.SelectedItem
+                    $appsBuffer = [System.Collections.Generic.List[object]]::new()
+                    foreach ($appInfo in $importedAppsData.apps) {
+                        $arch = if ($appInfo.source -eq 'msstore') { 'NA' } else {
+                            if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch }
+                        }
+                        $appsBuffer.Add([PSCustomObject]@{
+                                IsSelected     = $true
+                                Name           = $appInfo.name
+                                Id             = $appInfo.id
+                                Version        = ""
+                                Source         = $appInfo.source
+                                Architecture   = $arch
+                                DownloadStatus = ""
+                            })
+                    }
+                    $State.Controls.lstWingetResults.ItemsSource = $appsBuffer.ToArray()
+                    $loadedWinget = $true
+                    WriteLog "AutoLoad: Winget AppList loaded with $($appsBuffer.Count) entries."
+                }
+                else {
+                    WriteLog "AutoLoad: AppList JSON did not contain an 'apps' array."
+                }
+            }
+            catch {
+                WriteLog "AutoLoad: Failed loading Winget AppList ($appListPath): $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "AutoLoad: AppListPath not set or file missing."
+        }
+
+        # --- BYO UserAppList (UserAppList.json) ---
+        $userAppListPath = $null
+        if ($configContent.PSObject.Properties.Match('UserAppListPath').Count -gt 0) {
+            $userAppListPath = $configContent.UserAppListPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($userAppListPath) -and (Test-Path -LiteralPath $userAppListPath)) {
+            WriteLog "AutoLoad: Loading UserAppList from $userAppListPath."
+            try {
+                $applications = Get-Content -Path $userAppListPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($applications) {
+                    $listView = $State.Controls.lstApplications
+                    $listView.Items.Clear()
+                    $sortedApps = $applications | Sort-Object Priority
+                    foreach ($app in $sortedApps) {
+                        $ignoreNonZero = if ($app.PSObject.Properties['IgnoreNonZeroExitCodes']) { $app.IgnoreNonZeroExitCodes } else { $false }
+                        $listView.Items.Add([PSCustomObject]@{
+                                IsSelected             = $false
+                                Priority               = $app.Priority
+                                Name                   = $app.Name
+                                CommandLine            = $app.CommandLine
+                                Arguments              = if ($app.PSObject.Properties['Arguments']) { $app.Arguments } else { "" }
+                                Source                 = $app.Source
+                                AdditionalExitCodes    = if ($app.PSObject.Properties['AdditionalExitCodes']) { $app.AdditionalExitCodes } else { "" }
+                                IgnoreNonZeroExitCodes = $ignoreNonZero
+                                IgnoreExitCodes        = if ($ignoreNonZero) { "Yes" } else { "No" }
+                                CopyStatus             = ""
+                            })
+                    }
+                    # Reorder priorities sequentially
+                    if (Get-Command -Name Update-ListViewPriorities -ErrorAction SilentlyContinue) {
+                        Update-ListViewPriorities -ListView $listView
+                    }
+                    if (Get-Command -Name Update-CopyButtonState -ErrorAction SilentlyContinue) {
+                        Update-CopyButtonState -State $State
+                    }
+                    if (Get-Command -Name Update-BYOAppsActionButtonsState -ErrorAction SilentlyContinue) {
+                        Update-BYOAppsActionButtonsState -State $State
+                    }
+                    $loadedBYO = $true
+                    WriteLog "AutoLoad: UserAppList loaded with $($listView.Items.Count) entries."
+                }
+                else {
+                    WriteLog "AutoLoad: UserAppList JSON empty or null."
+                }
+            }
+            catch {
+                WriteLog "AutoLoad: Failed loading UserAppList ($userAppListPath): $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "AutoLoad: UserAppListPath not set or file missing."
+        }
+
+        # --- Drivers (DriversJsonPath) ---
+        $driversJsonPath = $null
+        if ($configContent.PSObject.Properties.Match('DriversJsonPath').Count -gt 0) {
+            $driversJsonPath = $configContent.DriversJsonPath
+        }
+        if (-not [string]::IsNullOrWhiteSpace($driversJsonPath) -and (Test-Path -LiteralPath $driversJsonPath)) {
+            WriteLog "AutoLoad: Loading Drivers JSON from $driversJsonPath."
+            try {
+                $rawDrivers = Get-Content -Path $driversJsonPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($rawDrivers -and $rawDrivers.PSObject.Properties.Count -gt 0) {
+                    $State.Data.allDriverModels.Clear()
+                    foreach ($makeProp in $rawDrivers.PSObject.Properties) {
+                        $makeName = $makeProp.Name
+                        $makeObject = $makeProp.Value
+                        if ($null -eq $makeObject -or -not ($makeObject.PSObject.Properties['Models'])) {
+                            continue
+                        }
+                        $models = $makeObject.Models
+                        if ($models -and ($models -is [System.Collections.IEnumerable])) {
+                            foreach ($modelEntry in $models) {
+                                if ($null -eq $modelEntry -or -not ($modelEntry.PSObject.Properties['Name'])) { continue }
+                                $modelName = $modelEntry.Name
+                                if ([string]::IsNullOrWhiteSpace($modelName)) { continue }
+
+                                $driverObj = [PSCustomObject]@{
+                                    IsSelected     = $true
+                                    Make           = $makeName
+                                    Model          = $modelName
+                                    DownloadStatus = if ($modelEntry.PSObject.Properties['DownloadStatus']) { $modelEntry.DownloadStatus } else { "" }
+                                    Link           = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
+                                    ProductName    = if ($modelEntry.PSObject.Properties['ProductName']) { $modelEntry.ProductName } else { $null }
+                                    MachineType    = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null }
+                                    Id             = if ($modelEntry.PSObject.Properties['Id']) { $modelEntry.Id } else { $null }
+                                }
+
+                                $State.Data.allDriverModels.Add($driverObj)
+                            }
+                        }
+                    }
+                    $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+                    if (Get-Command -Name Update-SelectAllHeaderCheckBoxState -ErrorAction SilentlyContinue) {
+                        $headerChk = $State.Controls.chkSelectAllDriverModels
+                        if ($null -ne $headerChk) {
+                            Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstDriverModels -HeaderCheckBox $headerChk
+                        }
+                    }
+                    $loadedDrivers = $true
+                    WriteLog "AutoLoad: Loaded $($State.Data.allDriverModels.Count) driver model entries."
+                }
+                else {
+                    WriteLog "AutoLoad: Drivers JSON empty or did not contain expected structure."
+                }
+            }
+            catch {
+                WriteLog "AutoLoad: Failed loading Drivers JSON ($driversJsonPath): $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "AutoLoad: DriversJsonPath not set or file missing."
+        }
+
+        # Set checkboxes based on what was loaded
+        if ($loadedWinget -or $loadedBYO) {
+            $State.Controls.chkInstallApps.IsChecked = $true
+        }
+        if ($loadedWinget) {
+            $State.Controls.chkInstallWingetApps.IsChecked = $true
+        }
+        if ($loadedBYO) {
+            $State.Controls.chkBringYourOwnApps.IsChecked = $true
+        }
+        if ($loadedDrivers) {
+            $State.Controls.chkDownloadDrivers.IsChecked = $true
+        }
+
+        # Re-run panel visibility/state helpers
+        if (Get-Command -Name Update-ApplicationPanelVisibility -ErrorAction SilentlyContinue) {
+            Update-ApplicationPanelVisibility -State $State -TriggeringControlName 'AutoLoad'
+        }
+        if (Get-Command -Name Update-DriverDownloadPanelVisibility -ErrorAction SilentlyContinue) {
+            Update-DriverDownloadPanelVisibility -State $State
+        }
+        if (Get-Command -Name Update-DriverCheckboxStates -ErrorAction SilentlyContinue) {
+            Update-DriverCheckboxStates -State $State
+        }
+        if (Get-Command -Name Update-OfficePanelVisibility -ErrorAction SilentlyContinue) {
+            Update-OfficePanelVisibility -State $State
+        }
+        if (Get-Command -Name Update-CopyButtonState -ErrorAction SilentlyContinue) {
+            Update-CopyButtonState -State $State
+        }
+
+        WriteLog "AutoLoad: Completed. Loaded Config=$true; Winget=$loadedWinget; BYO=$loadedBYO; Drivers=$loadedDrivers."
+    }
+    catch {
+        WriteLog "AutoLoad: Unexpected failure: $($_.Exception.ToString())"
+    }
+}
+
 Export-ModuleMember -Function *
