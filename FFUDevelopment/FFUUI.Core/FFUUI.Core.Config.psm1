@@ -741,6 +741,14 @@ function Invoke-AutoLoadPreviousEnvironment {
                     $State.Controls.lstWingetResults.ItemsSource = $appsBuffer.ToArray()
                     $loadedWinget = $true
                     WriteLog "AutoLoad: Winget AppList loaded with $($appsBuffer.Count) entries."
+                    # Ensure Winget search/list panel is visible when apps are present
+                    if ($null -ne $State.Controls.wingetSearchPanel) {
+                        $State.Controls.wingetSearchPanel.Visibility = 'Visible'
+                    }
+                    # Update the Select All header checkbox state if present
+                    if ($null -ne $State.Controls.chkSelectAllWingetResults -and (Get-Command -Name Update-SelectAllHeaderCheckBoxState -ErrorAction SilentlyContinue)) {
+                        Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstWingetResults -HeaderCheckBox $State.Controls.chkSelectAllWingetResults
+                    }
                 }
                 else {
                     WriteLog "AutoLoad: AppList JSON did not contain an 'apps' array."
@@ -855,6 +863,25 @@ function Invoke-AutoLoadPreviousEnvironment {
                     }
                     $loadedDrivers = $true
                     WriteLog "AutoLoad: Loaded $($State.Data.allDriverModels.Count) driver model entries."
+
+                    # Ensure driver-related panels are visible since models were auto-loaded
+                    if ($null -ne $State.Controls.spModelFilterSection) { $State.Controls.spModelFilterSection.Visibility = 'Visible' }
+                    if ($null -ne $State.Controls.lstDriverModels) { $State.Controls.lstDriverModels.Visibility = 'Visible' }
+                    if ($null -ne $State.Controls.spDriverActionButtons) { $State.Controls.spDriverActionButtons.Visibility = 'Visible' }
+
+                    # Optionally set Make combo to the first make represented in the loaded list (if none selected yet)
+                    try {
+                        if ($State.Controls.cmbMake.SelectedIndex -lt 0 -and $State.Data.allDriverModels.Count -gt 0) {
+                            $firstMake = ($State.Data.allDriverModels | Select-Object -First 1).Make
+                            if (-not [string]::IsNullOrWhiteSpace($firstMake)) {
+                                $makeItem = $State.Controls.cmbMake.Items | Where-Object { $_ -eq $firstMake } | Select-Object -First 1
+                                if ($makeItem) { $State.Controls.cmbMake.SelectedItem = $makeItem }
+                            }
+                        }
+                    }
+                    catch {
+                        WriteLog "AutoLoad: Non-fatal error setting Make selection: $($_.Exception.Message)"
+                    }
                 }
                 else {
                     WriteLog "AutoLoad: Drivers JSON empty or did not contain expected structure."
