@@ -52,7 +52,7 @@ When set to $true, will copy the $FFUDevelopmentPath\Autopilot folder to the Dep
 When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false.
 
 .PARAMETER CopyPEDrivers
-When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false.
+When set to $true, enables adding WinPE drivers. By default copies drivers from $FFUDevelopmentPath\PEDrivers to the WinPE deployment media unless -UseDriversAsPEDrivers is also $true.
 
 .PARAMETER CopyPPKG
 When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
@@ -132,7 +132,7 @@ When set to $true, will optimize the FFU file. Default is $true.
 .PARAMETER OptionalFeatures
 Provide a semicolon-separated list of Windows optional features you want to include in the FFU (e.g., netfx3;TFTP).
 
-.PARAMETER orchestrationPath
+.PARAMETER OrchestrationPath
 Path to the orchestration folder containing scripts that run inside the VM. Default is $FFUDevelopmentPath\Apps\Orchestration.
 
 .PARAMETER PEDriversFolder
@@ -185,6 +185,9 @@ When set to $true, will download and install the latest OneDrive and install it 
 
 .PARAMETER UpdatePreviewCU
 When set to $true, will download and install the latest Preview cumulative update. Default is $false.
+
+.PARAMETER UseDriversAsPEDrivers
+When set to $true (and -CopyPEDrivers is also $true), bypasses the contents of $FFUDevelopmentPath\PEDrivers and instead builds the WinPE driver set dynamically from the $DriversFolder path, copying only the required WinPE drivers. Has no effect if -CopyPEDrivers is not specified. Default is $false.
 
 .PARAMETER UserAppListPath
 Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json.
@@ -378,6 +381,7 @@ param(
     [bool]$CompressDownloadedDriversToWim = $false,
     [bool]$CopyDrivers,
     [bool]$CopyPEDrivers,
+    [bool]$UseDriversAsPEDrivers,
     [bool]$RemoveFFU,
     [bool]$UpdateLatestCU,
     [bool]$UpdatePreviewCU,
@@ -552,6 +556,26 @@ class VhdxCacheItem {
     [string]$OptionalFeatures = ""
     [VhdxCacheUpdateItem[]]$IncludedUpdates = @()
 }
+
+#Support for ini reading
+$definition = @'
+[DllImport("kernel32.dll")]
+public static extern uint GetPrivateProfileString(
+    string lpAppName,
+    string lpKeyName,
+    string lpDefault,
+    System.Text.StringBuilder lpReturnedString,
+    uint nSize,
+    string lpFileName);
+
+[DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+public static extern uint GetPrivateProfileSection(
+    string lpAppName,
+    byte[] lpReturnedString,
+    uint nSize,
+    string lpFileName);
+'@
+Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -2625,6 +2649,108 @@ Function Set-CaptureFFU {
     }
 }
 
+function Get-PrivateProfileString {
+    param (
+        [Parameter()]
+        [string]$FileName,
+        [Parameter()]
+        [string]$SectionName,
+        [Parameter()]
+        [string]$KeyName
+    )
+    $sbuilder = [System.Text.StringBuilder]::new(1024)
+    [void][Win32.Kernel32]::GetPrivateProfileString($SectionName, $KeyName, "", $sbuilder, $sbuilder.Capacity, $FileName)
+
+    return $sbuilder.ToString()
+}
+
+function Get-PrivateProfileSection {
+    param (
+        [Parameter()]
+        [string]$FileName,
+        [Parameter()]
+        [string]$SectionName
+    )
+    $buffer = [byte[]]::new(16384)
+    [void][Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
+    $keyValues = [System.Text.Encoding]::Unicode.GetString($buffer).TrimEnd("`0").Split("`0")
+    $hashTable = @{}
+
+    foreach ($keyValue in $keyValues) {
+        if (![string]::IsNullOrEmpty($keyValue)) {
+            $parts = $keyValue -split "="
+            $hashTable[$parts[0]] = $parts[1]
+        }
+    }
+
+    return $hashTable
+}
+
+function Copy-Drivers {
+    param (
+        [Parameter()]
+        [string]$Path,
+        [Parameter()]
+        [string]$Output
+    )
+    # Find more information about device classes here:
+    # https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
+    # For now, included are system devices, scsi and raid controllers, keyboards, mice and HID devices for touch support
+    # 4D36E97D-E325-11CE-BFC1-08002BE10318 = System devices
+    # 4D36E97B-E325-11CE-BFC1-08002BE10318 = SCSI, RAID, and NVMe Controllers
+    # 4d36e96b-e325-11ce-bfc1-08002be10318 = Keyboards
+    # 4d36e96f-e325-11ce-bfc1-08002be10318 = Mice and other pointing devices
+    # 745a17a0-74d3-11d0-b6fe-00a0c90f57da = Human Interface Devices
+    $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{4d36e96f-e325-11ce-bfc1-08002be10318}", "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}")
+    $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware"
+    $pathLength = $Path.Length
+    $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
+ 
+    for ($i = 0; $i -lt $infFiles.Count; $i++) {
+        $infFullName = $infFiles[$i].FullName
+        $infPath = Split-Path -Path $infFullName
+        $childPath = $infPath.Substring($pathLength)
+        $targetPath = Join-Path -Path $Output -ChildPath $childPath
+        
+        if ((Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "ClassGUID") -in $filterGUIDs) {
+            #Avoid drivers that reference keywords from the exclusion list to keep the total size small
+            if (((Get-Content -Path $infFullName) -match $exclusionList).Length -eq 0) {
+                $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Version" -KeyName "Provider").Trim("%")
+                
+                WriteLog "Copying PE drivers for $providerName"
+                WriteLog "Driver inf is: $infFullName"
+                [void](New-Item -Path $targetPath -ItemType Directory -Force)
+                Copy-Item -Path $infFullName -Destination $targetPath -Force
+                $CatalogFileName = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "Catalogfile"
+                Copy-Item -Path "$infPath\$CatalogFileName" -Destination $targetPath -Force
+                
+                $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName "SourceDisksFiles"
+                foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
+                    if (!$sourceDiskFiles[$sourceDiskFile].Contains(",")) {
+                        Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
+                    } else {
+                        $subdir = ($sourceDiskFiles[$sourceDiskFile] -split ",")[1]
+                        [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
+                        Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
+                    }
+                }
+
+                #Arch specific files override the files specified in the universal section
+                $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName "SourceDisksFiles.$WindowsArch"
+                foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
+                    if (!$sourceDiskFiles[$sourceDiskFile].Contains(",")) {
+                        Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
+                    } else {
+                        $subdir = ($sourceDiskFiles[$sourceDiskFile] -split ",")[1]
+                        [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
+                        Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
+                    }
+                }
+            }
+        }
+    }
+}
+
 function New-PEMedia {
     param (
         [Parameter()]
@@ -2702,9 +2828,34 @@ function New-PEMedia {
         WriteLog 'Copy complete'
         #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
         if ($CopyPEDrivers) {
+            if ($UseDriversAsPEDrivers) {
+                WriteLog "UseDriversAsPEDrivers is set. Building WinPE driver set from Drivers folder (bypassing PEDrivers folder contents)."
+                if (Test-Path -Path $PEDriversFolder) {
+                    try {
+                        Remove-Item -Path (Join-Path $PEDriversFolder '*') -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+                    }
+                    catch {
+                        WriteLog "Warning: Failed clearing existing PEDriversFolder contents: $($_.Exception.Message)"
+                    }
+                }
+                else {
+                    try {
+                        New-Item -Path $PEDriversFolder -ItemType Directory -Force | Out-Null
+                    }
+                    catch {
+                        WriteLog "Error: Failed to create PEDriversFolder at $PEDriversFolder - continuing may fail when adding drivers."
+                    }
+                }
+                WriteLog "Copying required WinPE drivers from Drivers folder"
+                Copy-Drivers -Path $DriversFolder -Output $PEDriversFolder
+            }
+            else {
+                WriteLog "Copying PE drivers from PEDrivers folder"
+            }
+            
             WriteLog "Adding drivers to WinPE media"
             try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$PEDriversFolder" -Recurse -ErrorAction SilentlyContinue | Out-null
+                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver $PEDriversFolder -Recurse -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-null
             }
             catch {
                 WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
@@ -4432,15 +4583,39 @@ if ($CopyPEDrivers) {
         WriteLog "Driver folder path $PEDriversFolder contains spaces. Please remove spaces from the path and try again."
         throw "Driver folder path $PEDriversFolder contains spaces. Please remove spaces from the path and try again."
     }
-    if (!(Test-Path -Path $PEDriversFolder)) {
-        WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
-        throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
+    if ($UseDriversAsPEDrivers) {
+        # When using Drivers as PE drivers, skip strict PEDrivers folder existence/content checks.
+        $driverSourceAvailable = $false
+        if ($DriversJsonPath -and (Test-Path -Path $DriversJsonPath)) {
+            $driverSourceAvailable = $true
+            WriteLog "Drivers JSON path is set to $DriversJsonPath; drivers will be downloaded for WinPE."
+        }
+        elseif ($Make -and $Model) {
+            $driverSourceAvailable = $true
+            WriteLog "Make/Model ($Make / $Model) specified; drivers will be downloaded for WinPE."
+        }
+        elseif ((Test-Path -Path $DriversFolder) -and ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -ge 1MB)) {
+            $driverSourceAvailable = $true
+            WriteLog "Drivers folder contains existing content; will reuse for WinPE."
+        }
+        if (-not $driverSourceAvailable) {
+            WriteLog "-UseDriversAsPEDrivers is set, but no driver sources are available (Drivers folder missing/empty and no download instructions)."
+            throw "-UseDriversAsPEDrivers is set, but no driver sources are available (Drivers folder missing/empty and no download instructions)."
+        }
+        WriteLog "UseDriversAsPEDrivers is set. Skipping PEDrivers folder existence/content checks; drivers will be sourced from Drivers folder (or downloaded)."
+        WriteLog 'PEDriver validation complete'
     }
-    if ((Get-ChildItem -Path $PEDriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
-        WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
-        throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
+    else {
+        if (!(Test-Path -Path $PEDriversFolder)) {
+            WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
+            throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
+        }
+        if ((Get-ChildItem -Path $PEDriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
+            WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
+            throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
+        }
+        WriteLog 'PEDriver validation complete'
     }
-    WriteLog 'PEDriver validation complete'
 }
 
 #Validate PPKG folder

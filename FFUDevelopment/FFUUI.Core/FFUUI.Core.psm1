@@ -175,6 +175,7 @@ function Get-GeneralDefaults {
         InstallDrivers                 = $false
         CopyDrivers                    = $false
         CopyPEDrivers                  = $false
+        UseDriversAsPEDrivers          = $false
         UpdateADK                      = $true
         CompressDownloadedDriversToWim = $false
     }
@@ -292,11 +293,14 @@ function Update-DriverCheckboxStates {
     $installDriversChk = $State.Controls.chkInstallDrivers
     $copyDriversChk = $State.Controls.chkCopyDrivers
     $compressWimChk = $State.Controls.chkCompressDriversToWIM
+    $copyPEDriversChk = $State.Controls.chkCopyPEDrivers
+    $useDriversAsPeChk = $State.Controls.chkUseDriversAsPEDrivers
 
     # Default to enabled, then apply disabling rules
     $installDriversChk.IsEnabled = $true
     $copyDriversChk.IsEnabled = $true
     $compressWimChk.IsEnabled = $true
+    $copyPEDriversChk.IsEnabled = $true
 
     if ($installDriversChk.IsChecked) {
         $copyDriversChk.IsEnabled = $false
@@ -309,6 +313,16 @@ function Update-DriverCheckboxStates {
 
     if ($compressWimChk.IsChecked) {
         $installDriversChk.IsEnabled = $false
+    }
+
+    # Sub-option visibility logic: only show UseDriversAsPEDrivers when CopyPEDrivers is checked
+    if ($copyPEDriversChk.IsChecked) {
+        $useDriversAsPeChk.Visibility = 'Visible'
+    }
+    else {
+        # Parent unchecked: hide and clear sub-option
+        $useDriversAsPeChk.IsChecked = $false
+        $useDriversAsPeChk.Visibility = 'Collapsed'
     }
 }
 

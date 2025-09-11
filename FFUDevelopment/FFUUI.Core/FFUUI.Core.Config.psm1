@@ -34,6 +34,7 @@ function Get-UIConfig {
         CopyDrivers                    = $State.Controls.chkCopyDrivers.IsChecked
         CopyOfficeConfigXML            = $State.Controls.chkCopyOfficeConfigXML.IsChecked
         CopyPEDrivers                  = $State.Controls.chkCopyPEDrivers.IsChecked
+        UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
         CreateCaptureMedia             = $State.Controls.chkCreateCaptureMedia.IsChecked
@@ -460,6 +461,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'PEDriversFolder' -State $State
     Set-UIValue -ControlName 'txtDriversJsonPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversJsonPath' -State $State
     Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPEDrivers' -State $State
+    Set-UIValue -ControlName 'chkUseDriversAsPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UseDriversAsPEDrivers' -State $State
     Set-UIValue -ControlName 'chkCompressDriversToWIM' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CompressDownloadedDriversToWim' -State $State
 
     # Updates tab

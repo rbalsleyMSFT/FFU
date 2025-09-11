@@ -143,6 +143,7 @@ function Initialize-UIControls {
     $State.Controls.txtDriversFolder = $window.FindName('txtDriversFolder')
     $State.Controls.txtPEDriversFolder = $window.FindName('txtPEDriversFolder')
     $State.Controls.chkCopyPEDrivers = $window.FindName('chkCopyPEDrivers')
+    $State.Controls.chkUseDriversAsPEDrivers = $window.FindName('chkUseDriversAsPEDrivers')
     $State.Controls.chkUpdateLatestCU = $window.FindName('chkUpdateLatestCU')
     $State.Controls.chkUpdateLatestNet = $window.FindName('chkUpdateLatestNet')
     $State.Controls.chkUpdateLatestDefender = $window.FindName('chkUpdateLatestDefender')
@@ -310,6 +311,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkInstallDrivers.IsChecked = $State.Defaults.generalDefaults.InstallDrivers
     $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
     $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
+    $State.Controls.chkUseDriversAsPEDrivers.IsChecked = $State.Defaults.generalDefaults.UseDriversAsPEDrivers
     $State.Controls.chkCompressDriversToWIM.IsChecked = $State.Defaults.generalDefaults.CompressDownloadedDriversToWim
 
     # Drivers tab UI logic

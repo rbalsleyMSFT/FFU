@@ -628,9 +628,10 @@
                             <CheckBox x:Name="chkCompressDriversToWIM" Content="Compress Driver Model Folder to WIM" Margin="0,0,5,0" ToolTip="When set to $true, will compress each downloaded driver model folder into a separate WIM file within the Drivers folder. This is useful with Copy Drivers to USB drive."/>
                         </StackPanel>
 
-                        <!-- Row 12: Copy PE Drivers Checkbox -->
-                        <StackPanel Grid.Row="12" Orientation="Horizontal" Margin="5">
-                            <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                        <!-- Row 12: PE Driver Options (UseDriversAsPEDrivers is a dependent sub-option) -->
+                        <StackPanel Grid.Row="12" Margin="5">
+                            <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,0,5" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                            <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="25,0,0,0" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>

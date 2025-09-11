@@ -808,6 +808,10 @@ function Register-EventHandlers {
     $State.Controls.chkCopyDrivers.Add_Unchecked($driverCheckboxHandler)
     $State.Controls.chkCompressDriversToWIM.Add_Checked($driverCheckboxHandler)
     $State.Controls.chkCompressDriversToWIM.Add_Unchecked($driverCheckboxHandler)
+    $State.Controls.chkCopyPEDrivers.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkCopyPEDrivers.Add_Unchecked($driverCheckboxHandler)
+    $State.Controls.chkUseDriversAsPEDrivers.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkUseDriversAsPEDrivers.Add_Unchecked($driverCheckboxHandler)
 
     $State.Controls.btnBrowseDriversFolder.Add_Click({
             param($eventSource, $routedEventArgs)
