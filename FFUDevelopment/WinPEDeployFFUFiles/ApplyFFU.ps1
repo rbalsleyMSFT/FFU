@@ -209,10 +209,23 @@ function ConvertTo-ComparableModelName {
     param(
         [string]$Text
     )
-    # Normalize model strings by converting any non-alphanumeric sequence to a single space, collapsing whitespace, and trimming.
+    # Normalize model strings with HP-specific adjustments.
+    # Remove inch unit variants (23.8-in, 23.8 inch, 23inch, 23-in, etc.) keeping only the numeric size.
+    # Canonicalize All-in-One variants (All in One, All-in-One, All-in-One PC, AiO, AIO) to 'AIO'.
+    # Convert any non-alphanumeric sequence to a single space, collapse whitespace, and trim.
     if ($null -eq $Text) { return '' }
+    $original = $Text
+    # Remove inch unit variants while preserving the numeric size
+    $Text = [regex]::Replace($Text, '(?i)(\d+(?:\.\d+)?)(?:\s*[-]?\s*)(?:in|inch)\b', '$1')
+    # Canonicalize All-in-One variants
+    $Text = [regex]::Replace($Text, '(?i)\bAll[\s-]*in[\s-]*One(?:\s*PC)?\b', 'AIO')
+    $Text = [regex]::Replace($Text, '(?i)\bAiO\b', 'AIO')
+    # Generic normalization
     $normalized = ($Text -replace '[^A-Za-z0-9]+', ' ')
     $normalized = ($normalized -replace '\s+', ' ').Trim()
+    if ($normalized -ne $original) {
+        WriteLog "Normalized model string: Original='$original' -> Normalized='$normalized'"
+    }
     return $normalized
 }
 
@@ -562,10 +575,11 @@ if (Test-Path -Path $driverMappingPath -PathType Leaf) {
 
         # Find all matching rules and select the most specific one
         $matchingRules = @()
+        # Normalize system model once outside the loop
+        $systemModelNorm = ConvertTo-ComparableModelName -Text $systemModel
         foreach ($rule in $driverMappings) {
             # Use -like for wildcard matching.
-            # Prepare normalized model strings (ignore special characters and collapse whitespace)
-            $systemModelNorm = ConvertTo-ComparableModelName -Text $systemModel
+            # Prepare normalized rule model string
             $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
             # This checks if the system model starts with the rule model, or vice-versa, for flexibility.
             if ($systemManufacturer -like "$($rule.Manufacturer)*" -and ($systemModelNorm -like "$($ruleModelNorm)*" -or $ruleModelNorm -like "$systemModelNorm*")) {
