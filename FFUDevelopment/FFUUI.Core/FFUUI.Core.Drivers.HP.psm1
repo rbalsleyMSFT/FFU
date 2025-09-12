@@ -118,7 +118,9 @@ function Save-HPDriversTask {
         [Parameter()] # Made optional
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
         [Parameter()]
-        [bool]$CompressToWim = $false # New parameter for compression
+        [bool]$CompressToWim = $false, # New parameter for compression
+        [Parameter()]
+        [bool]$PreserveSourceOnCompress = $false
     )
             
     $modelName = $DriverItemData.Model
@@ -150,7 +152,7 @@ function Save-HPDriversTask {
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                     $existingDriver.Status = "Already downloaded & Compressed"
                     $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedModelName).wim"
                     $existingDriver.Success = $true
@@ -362,7 +364,7 @@ function Save-HPDriversTask {
             $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim"
             WriteLog "Compressing '$modelSpecificFolder' to '$wimFilePath'..."
             try {
-                Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                 WriteLog "Compression successful for '$identifier'."
                 $finalStatus = "Completed & Compressed"
                 $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim" # Update relative path to the WIM

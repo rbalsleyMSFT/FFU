@@ -94,7 +94,9 @@ function Save-MicrosoftDriversTask {
         [Parameter()] # Made optional
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
         [Parameter()]
-        [bool]$CompressToWim = $false # New parameter for compression
+        [bool]$CompressToWim = $false, # New parameter for compression
+        [Parameter()]
+        [bool]$PreserveSourceOnCompress = $false
         # REMOVED: UI-related parameters
     )
         
@@ -125,7 +127,7 @@ function Save-MicrosoftDriversTask {
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Compressing existing..." }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $modelName -WimDescription "Drivers for $modelName" -ErrorAction Stop
+                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $modelName -WimDescription "Drivers for $modelName" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                     $existingDriver.Status = "Already downloaded & Compressed"
                     $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($modelName).wim"
                     $existingDriver.Success = $true
@@ -377,7 +379,7 @@ function Save-MicrosoftDriversTask {
                     WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
                     try {
                         # Use the function from the imported common module
-                        $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $modelName -WimDescription $modelName -ErrorAction Stop
+                        $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $modelName -WimDescription $modelName -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                         if ($compressResult) {
                             WriteLog "Compression successful for '$modelName'."
                             $status = "Completed & Compressed"

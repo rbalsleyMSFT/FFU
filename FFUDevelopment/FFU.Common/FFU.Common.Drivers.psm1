@@ -22,7 +22,10 @@ function Compress-DriverFolderToWim {
         [string]$WimName, # Optional, defaults to folder name
 
         [Parameter()]
-        [string]$WimDescription # Optional, defaults to folder name
+        [string]$WimDescription, # Optional, defaults to folder name
+
+        [Parameter()]
+        [bool]$PreserveSource = $false # When $true, do not delete source folder; create marker for deferred cleanup
     )
 
     WriteLog "Starting compression of folder '$SourceFolderPath' to '$DestinationWimPath'."
@@ -66,14 +69,29 @@ function Compress-DriverFolderToWim {
             WriteLog "Successfully compressed '$SourceFolderPath' to '$DestinationWimPath' using dism.exe."
             
             # Remove the source folder after successful compression
-            WriteLog "Removing source driver folder: $SourceFolderPath"
-            try {
-                Remove-Item -Path $SourceFolderPath -Recurse -Force -ErrorAction Stop
-                WriteLog "Successfully removed source folder '$SourceFolderPath'."
+            if ($PreserveSource) {
+                WriteLog "Preserving source driver folder for deferred WinPE driver harvesting: $SourceFolderPath"
+                try {
+                    $markerFile = Join-Path -Path $SourceFolderPath -ChildPath '__PreservedForPEDrivers.txt'
+                    if (-not (Test-Path -Path $markerFile -PathType Leaf)) {
+                        New-Item -Path $markerFile -ItemType File -Force | Out-Null
+                        WriteLog "Created preservation marker file: $markerFile"
+                    }
+                }
+                catch {
+                    WriteLog "Warning: Failed to create preservation marker in $SourceFolderPath. Error: $($_.Exception.Message)"
+                }
             }
-            catch {
-                WriteLog "Warning: Failed to remove source folder '$SourceFolderPath'. Error: $($_.Exception.Message)"
-                # Do not fail the whole operation, just log a warning.
+            else {
+                WriteLog "Removing source driver folder: $SourceFolderPath"
+                try {
+                    Remove-Item -Path $SourceFolderPath -Recurse -Force -ErrorAction Stop
+                    WriteLog "Successfully removed source folder '$SourceFolderPath'."
+                }
+                catch {
+                    WriteLog "Warning: Failed to remove source folder '$SourceFolderPath'. Error: $($_.Exception.Message)"
+                    # Do not fail the whole operation, just log a warning.
+                }
             }
 
             return $true # Indicate success

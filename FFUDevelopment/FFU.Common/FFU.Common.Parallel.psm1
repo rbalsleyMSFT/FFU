@@ -209,7 +209,8 @@ function Invoke-ParallelProcessing {
                                     -Headers $localJobArgs['Headers'] `
                                     -UserAgent $localJobArgs['UserAgent'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             'Dell' {
                                 $taskResult = Save-DellDriversTask -DriverItemData $currentItem `
@@ -217,7 +218,8 @@ function Invoke-ParallelProcessing {
                                     -WindowsArch $localJobArgs['WindowsArch'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             'HP' {
                                 $taskResult = Save-HPDriversTask -DriverItemData $currentItem `
@@ -226,7 +228,8 @@ function Invoke-ParallelProcessing {
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
                                     -WindowsVersion $localJobArgs['WindowsVersion'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             'Lenovo' {
                                 $taskResult = Save-LenovoDriversTask -DriverItemData $currentItem `
@@ -235,7 +238,8 @@ function Invoke-ParallelProcessing {
                                     -Headers $localJobArgs['Headers'] `
                                     -UserAgent $localJobArgs['UserAgent'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             default {
                                 $unsupportedMakeMessage = "Error: Unsupported Make '$make' for driver download."

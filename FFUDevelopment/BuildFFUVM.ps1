@@ -2728,7 +2728,8 @@ function Copy-Drivers {
                 foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
                     if (!$sourceDiskFiles[$sourceDiskFile].Contains(",")) {
                         Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
-                    } else {
+                    }
+                    else {
                         $subdir = ($sourceDiskFiles[$sourceDiskFile] -split ",")[1]
                         [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
                         Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
@@ -2740,7 +2741,8 @@ function Copy-Drivers {
                 foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
                     if (!$sourceDiskFiles[$sourceDiskFile].Contains(",")) {
                         Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
-                    } else {
+                    }
+                    else {
                         $subdir = ($sourceDiskFiles[$sourceDiskFile] -split ",")[1]
                         [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
                         Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
@@ -2902,6 +2904,41 @@ function New-PEMedia {
     WriteLog "Cleaning up $WinPEFFUPath"
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
+    # Deferred cleanup of preserved driver model folders (only after WinPE Deploy media is created)
+    if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $Deploy -and $CopyPEDrivers) {
+        WriteLog "Beginning deferred cleanup of preserved driver model folders (UseDriversAsPEDrivers + compression scenario)."
+        $removedCount = 0
+        $skippedCount = 0
+        if (Test-Path -Path $DriversFolder) {
+            Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                $makeDir = $_.FullName
+                Get-ChildItem -Path $makeDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    $modelDir = $_.FullName
+                    $markerFile = Join-Path -Path $modelDir -ChildPath '__PreservedForPEDrivers.txt'
+                    $leaf = Split-Path -Path $modelDir -Leaf
+                    $wimPath = Join-Path -Path $makeDir -ChildPath ($leaf + '.wim')
+                    if ((Test-Path -Path $markerFile -PathType Leaf) -and (Test-Path -Path $wimPath -PathType Leaf)) {
+                        try {
+                            WriteLog "Removing preserved driver folder: $modelDir (WIM located at $wimPath)"
+                            Remove-Item -Path $modelDir -Recurse -Force -ErrorAction Stop
+                            $removedCount++
+                        }
+                        catch {
+                            WriteLog "Warning: Failed to remove preserved folder $modelDir : $($_.Exception.Message)"
+                            $skippedCount++
+                        }
+                    }
+                    else {
+                        $skippedCount++
+                    }
+                }
+            }
+            WriteLog "Deferred driver cleanup complete. Removed: $removedCount; Skipped: $skippedCount"
+        }
+        else {
+            WriteLog "Drivers folder $DriversFolder not found during deferred cleanup."
+        }
+    }
 }
 
 function Optimize-FFUCaptureDrive {
@@ -4812,14 +4849,16 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
     else {
         WriteLog "Found $($driversToProcess.Count) driver entries to process from $driversJsonPath."
 
+        $preserveSourceOnCompress = ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim)
         $taskArguments = @{
-            DriversFolder  = $DriversFolder
-            WindowsRelease = $WindowsRelease
-            WindowsArch    = $WindowsArch
-            WindowsVersion = $WindowsVersion 
-            Headers        = $Headers
-            UserAgent      = $UserAgent
-            CompressToWim  = $CompressDownloadedDriversToWim
+            DriversFolder            = $DriversFolder
+            WindowsRelease           = $WindowsRelease
+            WindowsArch              = $WindowsArch
+            WindowsVersion           = $WindowsVersion 
+            Headers                  = $Headers
+            UserAgent                = $UserAgent
+            CompressToWim            = $CompressDownloadedDriversToWim
+            PreserveSourceOnCompress = $preserveSourceOnCompress
         }
         
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."

@@ -571,6 +571,8 @@ function Invoke-DownloadSelectedDrivers {
     $localHeaders = $coreStaticVars.Headers
     $localUserAgent = $coreStaticVars.UserAgent
     $compressDrivers = $State.Controls.chkCompressDriversToWIM.IsChecked
+    # Determine if we must preserve source folders (used later for PE driver harvesting)
+    $preserveSource = ($State.Controls.chkUseDriversAsPEDrivers.IsChecked -and $State.Controls.chkCompressDriversToWIM.IsChecked)
 
     $State.Controls.txtStatus.Text = "Processing all selected drivers..."
     WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
@@ -620,15 +622,16 @@ function Invoke-DownloadSelectedDrivers {
             return
         }
     }
-
+    $preserveSource = ($State.Controls.chkUseDriversAsPEDrivers.IsChecked -and $State.Controls.chkCompressDriversToWIM.IsChecked)
     $taskArguments = @{
-        DriversFolder  = $localDriversFolder
-        WindowsRelease = $localWindowsRelease
-        WindowsArch    = $localWindowsArch
-        WindowsVersion = $localWindowsVersion
-        Headers        = $localHeaders
-        UserAgent      = $localUserAgent
-        CompressToWim  = $compressDrivers
+        DriversFolder            = $localDriversFolder
+        WindowsRelease           = $localWindowsRelease
+        WindowsArch              = $localWindowsArch
+        WindowsVersion           = $localWindowsVersion
+        Headers                  = $localHeaders
+        UserAgent                = $localUserAgent
+        CompressToWim            = $compressDrivers
+        PreserveSourceOnCompress = $preserveSource
     }
 
     $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `

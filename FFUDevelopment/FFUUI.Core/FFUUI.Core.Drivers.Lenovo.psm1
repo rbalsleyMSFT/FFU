@@ -94,10 +94,12 @@ function Save-LenovoDriversTask {
         [hashtable]$Headers,
         [Parameter(Mandatory = $true)]
         [string]$UserAgent,
-        [Parameter()] # Made optional
+        [Parameter()]
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null,
         [Parameter()]
-        [bool]$CompressToWim = $false
+        [bool]$CompressToWim = $false,
+        [Parameter()]
+        [bool]$PreserveSourceOnCompress = $false
     )
             
     # The Model property from the UI already contains the combined "ProductName (MachineType)" string
@@ -133,7 +135,7 @@ function Save-LenovoDriversTask {
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                     $existingDriver.Status = "Already downloaded & Compressed"
                     $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
                     $existingDriver.Success = $true
@@ -424,7 +426,7 @@ function Save-LenovoDriversTask {
             $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
             WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
             try {
-                $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $identifier -WimDescription $identifier -ErrorAction Stop
+                $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $identifier -WimDescription $identifier -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                 if ($compressResult) {
                     WriteLog "Compression successful for '$identifier'."
                     $status = "Completed & Compressed"
