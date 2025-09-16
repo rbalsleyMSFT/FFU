@@ -108,11 +108,13 @@ function Get-Application {
 
         # Determine app type and folder path
         $appIsWin32 = ($Source -eq 'msstore' -and $AppId.StartsWith("XP"))
+        $sanitizedAppName = ConvertTo-SafeName -Name $AppName
+        if ($sanitizedAppName -ne $AppName) { WriteLog "Sanitized app name: '$AppName' -> '$sanitizedAppName'" }
         if ($Source -eq 'winget' -or $appIsWin32) {
-            $appBaseFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $AppName
+            $appBaseFolderPath = Join-Path -Path "$AppsPath\Win32" -ChildPath $sanitizedAppName
         }
         else {
-            $appBaseFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $AppName
+            $appBaseFolderPath = Join-Path -Path "$AppsPath\MSStore" -ChildPath $sanitizedAppName
         }
         
         # If downloading multiple archs for a Win32 app, create a subfolder

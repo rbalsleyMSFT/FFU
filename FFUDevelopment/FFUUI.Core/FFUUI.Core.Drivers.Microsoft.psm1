@@ -234,8 +234,10 @@ function Save-MicrosoftDriversTask {
                     WriteLog "Creating Drivers folder: $DriversFolder"
                     New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
                 }
+                $sanitizedModelName = ConvertTo-SafeName -Name $modelName
+                if ($sanitizedModelName -ne $modelName) { WriteLog "Sanitized model name: '$modelName' -> '$sanitizedModelName'" }
                 $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
-                $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
+                $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedModelName
                 if (-Not (Test-Path -Path $modelPath)) {
                     WriteLog "Creating model folder: $modelPath"
                     New-Item -Path $modelPath -ItemType Directory -Force | Out-Null

@@ -126,7 +126,8 @@ function Save-HPDriversTask {
     $modelName = $DriverItemData.Model
     $make = $DriverItemData.Make # Should be 'HP'
     $identifier = $modelName # Unique identifier for progress updates
-    $sanitizedModelName = $modelName -replace '[\\/:"*?<>|]', '_'
+    $sanitizedModelName = ConvertTo-SafeName -Name $modelName
+    if ($sanitizedModelName -ne $modelName) { WriteLog "Sanitized model name: '$modelName' -> '$sanitizedModelName'" }
     $hpDriversBaseFolder = Join-Path -Path $DriversFolder -ChildPath $make # Changed variable name for clarity
     $platformListXml = Join-Path -Path $hpDriversBaseFolder -ChildPath "PlatformList.xml"
     $modelSpecificFolder = Join-Path -Path $hpDriversBaseFolder -ChildPath $sanitizedModelName # Sanitize model name for folder path

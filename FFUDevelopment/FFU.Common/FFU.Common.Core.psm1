@@ -194,4 +194,22 @@ function Set-Progress {
     WriteLog "[PROGRESS] $Percentage | $Message"
 }
     
+function ConvertTo-SafeName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+    # Replace invalid Windows filename characters (<>:"/\|?* and control chars) with a dash
+    $sanitized = $Name -replace '[<>:\"/\\|?*\x00-\x1F]', '-'
+    # Collapse multiple consecutive dashes
+    $sanitized = $sanitized -replace '-{2,}', '-'
+    # Trim leading/trailing spaces, periods, and dashes
+    $sanitized = $sanitized.Trim(' ','.','-')
+    if ([string]::IsNullOrWhiteSpace($sanitized)) {
+        $sanitized = 'Unnamed'
+    }
+    return $sanitized
+}
+
 Export-ModuleMember -Function *

@@ -106,7 +106,8 @@ function Save-LenovoDriversTask {
     $identifier = $DriverItemData.Model
     $machineType = $DriverItemData.MachineType 
     $make = "Lenovo"
-    $sanitizedIdentifier = $identifier -replace '[\\/:"*?<>|]', '_'
+    $sanitizedIdentifier = ConvertTo-SafeName -Name $identifier
+    if ($sanitizedIdentifier -ne $identifier) { WriteLog "Sanitized model identifier: '$identifier' -> '$sanitizedIdentifier'" }
     $status = "Starting..."
     $success = $false
     

@@ -183,13 +183,15 @@ function Save-DellDriversTask {
     # Initial status update
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Checking..." }
     
+    $sanitizedModelName = ConvertTo-SafeName -Name $modelName
+    if ($sanitizedModelName -ne $modelName) { WriteLog "Sanitized model name: '$modelName' -> '$sanitizedModelName'" }
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
-    $modelPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
-    $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
+    $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedModelName
+    $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedModelName # Relative path for the driver folder
 
     try {
         # Check for existing drivers
-        $existingDriver = Test-ExistingDriver -Make $make -Model $modelName -DriversFolder $DriversFolder -Identifier $modelName -ProgressQueue $ProgressQueue
+        $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedModelName -DriversFolder $DriversFolder -Identifier $modelName -ProgressQueue $ProgressQueue
         if ($null -ne $existingDriver) {
             # Add the 'Model' property to the return object for consistency if it's not there
             if (-not $existingDriver.PSObject.Properties['Model']) {
@@ -198,14 +200,14 @@ function Save-DellDriversTask {
 
             # Special handling for existing folders that need compression
             if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
-                $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($modelName).wim"
-                $sourceFolderPath = Join-Path -Path $makeDriversPath -ChildPath $modelName
+                $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($sanitizedModelName).wim"
+                $sourceFolderPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedModelName
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Compressing existing..." }
                 try {
                     Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $modelName -WimDescription "Drivers for $modelName" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                     $existingDriver.Status = "Already downloaded & Compressed"
-                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($modelName).wim"
+                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedModelName).wim"
                     $existingDriver.Success = $true
                     WriteLog "Successfully compressed existing drivers for $modelName to $wimFilePath."
                 }

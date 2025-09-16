@@ -904,8 +904,10 @@ function Get-MicrosoftDrivers {
                 New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
                 WriteLog "Drivers folder created"
             }
+            $sanitizedModel = ConvertTo-SafeName -Name $Model
+            if ($sanitizedModel -ne $Model) { WriteLog "Sanitized model name: '$Model' -> '$sanitizedModel'" }
             $surfaceDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
-            $modelPath = Join-Path -Path $surfaceDriversPath -ChildPath $Model
+            $modelPath = Join-Path -Path $surfaceDriversPath -ChildPath $sanitizedModel
             if (-Not (Test-Path -Path $modelPath)) {
                 WriteLog "Creating model folder: $modelPath"
                 New-Item -Path $modelPath -ItemType Directory | Out-Null
