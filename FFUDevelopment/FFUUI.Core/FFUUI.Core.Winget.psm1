@@ -98,7 +98,7 @@ function Save-WingetList {
         $appList = @{
             apps = @($selectedApps | ForEach-Object {
                     [ordered]@{
-                        name         = $_.Name
+                        name         = (ConvertTo-SafeName -Name $_.Name)
                         id           = $_.Id
                         source       = $_.Source.ToLower()
                         architecture = $_.Architecture
@@ -394,6 +394,7 @@ function Start-WingetAppDownloadTask {
     $source = $ApplicationItemData.Source
     $status = "Checking..." # Initial local status
     $resultCode = -1 # Default to error/unknown
+    $sanitizedAppName = ConvertTo-SafeName -Name $appName
     
     # Initial status update
     Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
@@ -415,7 +416,7 @@ function Start-WingetAppDownloadTask {
                 $userAppEntry = $userAppListContent | Where-Object { $_.Name -eq $appName }
 
                 if ($userAppEntry) {
-                    $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
+                    $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $sanitizedAppName
                     if (Test-Path -Path $appFolder -PathType Container) {
                         $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
                         if ($folderSize -gt 1MB) {
@@ -449,7 +450,7 @@ function Start-WingetAppDownloadTask {
 
         # 2. Check existing downloaded Win32 content (folder-based; no WinGetWin32Apps.json dependency)
         if (-not $appFound -and $source -eq 'winget') {
-            $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $appName
+            $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $sanitizedAppName
             if (Test-Path -Path $appFolder -PathType Container) {
                 $contentFound = $false
                 if ($ApplicationItemData.Architecture -eq 'x86 x64') {
@@ -481,7 +482,7 @@ function Start-WingetAppDownloadTask {
 
         # Check MSStore folder
         if (-not $appFound -and (Test-Path -Path "$AppsPath\MSStore" -PathType Container)) {
-            $appFolder = Join-Path -Path "$AppsPath\MSStore" -ChildPath $appName
+            $appFolder = Join-Path -Path "$AppsPath\MSStore" -ChildPath $sanitizedAppName
             if (Test-Path -Path $appFolder -PathType Container) {
                 $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
                 if ($folderSize -gt 1MB) {
@@ -529,7 +530,7 @@ function Start-WingetAppDownloadTask {
             }
 
             if (-not $appExistsInAppList) {
-                $newApp = @{ name = $appName; id = $appId; source = $source }
+                $newApp = @{ name = $sanitizedAppName; id = $appId; source = $source }
                 if (-not ($appListContent.apps -is [array])) { $appListContent.apps = @() }
                 $appListContent.apps += $newApp
                 try {
