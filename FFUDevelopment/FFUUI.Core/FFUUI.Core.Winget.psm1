@@ -98,10 +98,12 @@ function Save-WingetList {
         $appList = @{
             apps = @($selectedApps | ForEach-Object {
                     [ordered]@{
-                        name         = (ConvertTo-SafeName -Name $_.Name)
-                        id           = $_.Id
-                        source       = $_.Source.ToLower()
-                        architecture = $_.Architecture
+                        name                   = (ConvertTo-SafeName -Name $_.Name)
+                        id                     = $_.Id
+                        source                 = $_.Source.ToLower()
+                        architecture           = $_.Architecture
+                        AdditionalExitCodes    = if ($_.PSObject.Properties['AdditionalExitCodes']) { $_.AdditionalExitCodes } else { "" }
+                        IgnoreNonZeroExitCodes = if ($_.PSObject.Properties['IgnoreNonZeroExitCodes']) { [bool]$_.IgnoreNonZeroExitCodes } else { $false }
                     }
                 })
         }
@@ -148,13 +150,15 @@ function Import-WingetList {
                 foreach ($appInfo in $importedAppsData.apps) {
                     $arch = if ($appInfo.source -eq 'msstore') { 'NA' } else { if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch } }
                     $newAppListForItemsSource.Add([PSCustomObject]@{
-                            IsSelected     = $true # Imported apps are marked as selected
-                            Name           = $appInfo.name
-                            Id             = $appInfo.id
-                            Version        = ""  # Will be populated when searching or if data exists
-                            Source         = $appInfo.source
-                            Architecture   = $arch
-                            DownloadStatus = ""
+                            IsSelected               = $true # Imported apps are marked as selected
+                            Name                     = $appInfo.name
+                            Id                       = $appInfo.id
+                            Version                  = ""  # Will be populated when searching or if data exists
+                            Source                   = $appInfo.source
+                            Architecture             = $arch
+                            AdditionalExitCodes      = if ($appInfo.PSObject.Properties['AdditionalExitCodes']) { $appInfo.AdditionalExitCodes } else { "" }
+                            IgnoreNonZeroExitCodes   = if ($appInfo.PSObject.Properties['IgnoreNonZeroExitCodes']) { [bool]$appInfo.IgnoreNonZeroExitCodes } else { $false }
+                            DownloadStatus           = ""
                         })
                 }
             }
@@ -191,13 +195,15 @@ function Search-WingetPackagesPublic {
         $output = $results | ForEach-Object -Parallel {
             $arch = if ($_.Source -eq 'msstore') { 'NA' } else { $using:DefaultArchitecture }
             [PSCustomObject]@{
-                IsSelected     = [bool]$false
-                Name           = [string]$_.Name
-                Id             = [string]$_.Id
-                Version        = [string]$_.Version
-                Source         = [string]$_.Source
-                Architecture   = [string]$arch
-                DownloadStatus = [string]::Empty
+                IsSelected               = [bool]$false
+                Name                     = [string]$_.Name
+                Id                       = [string]$_.Id
+                Version                  = [string]$_.Version
+                Source                   = [string]$_.Source
+                Architecture             = [string]$arch
+                AdditionalExitCodes      = [string]::Empty
+                IgnoreNonZeroExitCodes   = [bool]$false
+                DownloadStatus           = [string]::Empty
             }
         } -ThrottleLimit 20
         WriteLog "Winget search completed. Created $($output.Count) output objects."
@@ -724,6 +730,42 @@ function Invoke-WingetDownload {
 
         # Select only necessary properties before passing to Invoke-ParallelProcessing
         $itemsToProcess = $selectedApps | Select-Object Name, Id, Source, Version, Architecture # Include Version and Architecture if needed
+
+        # Before downloading, persist the selected apps to AppList.json including exit-code fields (parity with Save-WingetList)
+        try {
+            # Determine AppList.json path; default if empty
+            if ([string]::IsNullOrWhiteSpace($localAppListJsonPath)) {
+                $localAppListJsonPath = Join-Path -Path $localAppsPath -ChildPath "AppList.json"
+                $taskArguments.AppListJsonPath = $localAppListJsonPath
+                WriteLog "AppListJsonPath was empty. Defaulting to: $localAppListJsonPath"
+            }
+
+            # Build apps payload from current selection, preserving AdditionalExitCodes/IgnoreNonZeroExitCodes
+            $appListToSave = @{
+                apps = @($selectedApps | ForEach-Object {
+                        [ordered]@{
+                            name                   = (ConvertTo-SafeName -Name $_.Name)
+                            id                     = $_.Id
+                            source                 = $_.Source.ToLower()
+                            architecture           = $_.Architecture
+                            AdditionalExitCodes    = if ($_.PSObject.Properties['AdditionalExitCodes']) { $_.AdditionalExitCodes } else { "" }
+                            IgnoreNonZeroExitCodes = if ($_.PSObject.Properties['IgnoreNonZeroExitCodes']) { [bool]$_.IgnoreNonZeroExitCodes } else { $false }
+                        }
+                    })
+            }
+
+            # Ensure destination directory exists and write AppList.json
+            $destDir = Split-Path -Parent $localAppListJsonPath
+            if (-not (Test-Path -LiteralPath $destDir)) {
+                [void][System.IO.Directory]::CreateDirectory($destDir)
+            }
+            $appListToSave | ConvertTo-Json -Depth 10 | Set-Content -Path $localAppListJsonPath -Encoding UTF8
+            WriteLog "Persisted AppList.json with selected apps and exit-code fields to: $localAppListJsonPath"
+        }
+        catch {
+            WriteLog "Warning: Failed to persist AppList.json prior to download. Error: $($_.Exception.Message)"
+        }
+
         # Invoke the centralized parallel processing function
         # Pass task type and task-specific arguments
         Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `

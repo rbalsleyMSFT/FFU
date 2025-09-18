@@ -446,6 +446,75 @@ function Initialize-DynamicUIElements {
     $wingetGridView.Columns.Add($archColumn)
     # --- END: Add Architecture Column ---
 
+    # --- START: Add Additional Exit Codes Column ---
+    $exitCodesColumn = New-Object System.Windows.Controls.GridViewColumn
+    $exitCodesHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+    $exitCodesHeader.Tag = "AdditionalExitCodes"
+    $exitCodesHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+
+    $exitHeaderTextFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+    $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Additional Exit Codes")
+    $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5,2,5,2)))
+    $exitHeaderTextFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+    $exitHeaderTemplate = New-Object System.Windows.DataTemplate
+    $exitHeaderTemplate.VisualTree = $exitHeaderTextFactory
+    $exitCodesHeader.ContentTemplate = $exitHeaderTemplate
+
+    $exitCodesColumn.Header = $exitCodesHeader
+    $exitCodesColumn.Width = 140
+
+    $exitCodesCellTemplate = New-Object System.Windows.DataTemplate
+    $exitCodesTextBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBox])
+    $exitBinding = New-Object System.Windows.Data.Binding("AdditionalExitCodes")
+    $exitBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+    $exitCodesTextBoxFactory.SetBinding([System.Windows.Controls.TextBox]::TextProperty, $exitBinding)
+    $exitCodesCellTemplate.VisualTree = $exitCodesTextBoxFactory
+    $exitCodesColumn.CellTemplate = $exitCodesCellTemplate
+    $wingetGridView.Columns.Add($exitCodesColumn)
+    # --- END: Add Additional Exit Codes Column ---
+
+    # --- START: Add Ignore Non-Zero Exit Codes Column ---
+    $ignoreColumn = New-Object System.Windows.Controls.GridViewColumn
+    $ignoreHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+    $ignoreHeader.Tag = "IgnoreNonZeroExitCodes"
+    $ignoreHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+
+    $ignoreHeaderTextFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+    $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Ignore Exit Codes")
+    $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5,2,5,2)))
+    $ignoreHeaderTextFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+    $ignoreHeaderTemplate = New-Object System.Windows.DataTemplate
+    $ignoreHeaderTemplate.VisualTree = $ignoreHeaderTextFactory
+    $ignoreHeader.ContentTemplate = $ignoreHeaderTemplate
+
+    $ignoreColumn.Header = $ignoreHeader
+    $ignoreColumn.Width = 140
+
+    $ignoreCellTemplate = New-Object System.Windows.DataTemplate
+
+    # Center the checkbox in the cell
+    $ignoreCellGridFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Grid])
+    $ignoreCellGridFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
+    $ignoreCellGridFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
+
+    $ignoreCheckFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
+    $ignoreCheckFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+    $ignoreCheckFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+    $ignoreBinding = New-Object System.Windows.Data.Binding("IgnoreNonZeroExitCodes")
+    $ignoreBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+    $ignoreCheckFactory.SetBinding([System.Windows.Controls.Primitives.ToggleButton]::IsCheckedProperty, $ignoreBinding)
+
+    # Build the visual tree: Grid -> CheckBox
+    $ignoreCellGridFactory.AppendChild($ignoreCheckFactory)
+    $ignoreCellTemplate.VisualTree = $ignoreCellGridFactory
+
+    $ignoreColumn.CellTemplate = $ignoreCellTemplate
+    $wingetGridView.Columns.Add($ignoreColumn)
+    # --- END: Add Ignore Non-Zero Exit Codes Column ---
+
     Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
     $State.Controls.lstWingetResults.AddHandler(
         [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,

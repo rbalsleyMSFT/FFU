@@ -885,13 +885,15 @@ function Import-ConfigSupplementalAssets {
                             if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch }
                         }
                         $appsBuffer.Add([PSCustomObject]@{
-                                IsSelected     = $true
-                                Name           = $appInfo.name
-                                Id             = $appInfo.id
-                                Version        = ""
-                                Source         = $appInfo.source
-                                Architecture   = $arch
-                                DownloadStatus = ""
+                                IsSelected               = $true
+                                Name                     = $appInfo.name
+                                Id                       = $appInfo.id
+                                Version                  = ""
+                                Source                   = $appInfo.source
+                                Architecture             = $arch
+                                AdditionalExitCodes      = if ($appInfo.PSObject.Properties['AdditionalExitCodes']) { $appInfo.AdditionalExitCodes } else { "" }
+                                IgnoreNonZeroExitCodes   = if ($appInfo.PSObject.Properties['IgnoreNonZeroExitCodes']) { [bool]$appInfo.IgnoreNonZeroExitCodes } else { $false }
+                                DownloadStatus           = ""
                             })
                     }
                     $State.Controls.lstWingetResults.ItemsSource = $appsBuffer.ToArray()

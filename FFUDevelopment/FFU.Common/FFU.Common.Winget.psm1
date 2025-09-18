@@ -426,12 +426,16 @@ function Get-Apps {
         $overrideMap = @{}
         foreach ($app in $apps.apps) {
             if ($app.source -in @('winget', 'msstore')) {
-                $hasCmd = ($app.PSObject.Properties['CommandLine'] -and -not [string]::IsNullOrWhiteSpace($app.CommandLine))
-                $hasArgs = ($app.PSObject.Properties['Arguments'] -and -not [string]::IsNullOrWhiteSpace($app.Arguments))
-                if ($hasCmd -or $hasArgs) {
+                $hasCmd    = ($app.PSObject.Properties['CommandLine'] -and -not [string]::IsNullOrWhiteSpace($app.CommandLine))
+                $hasArgs   = ($app.PSObject.Properties['Arguments'] -and -not [string]::IsNullOrWhiteSpace($app.Arguments))
+                $hasAdd    = ($app.PSObject.Properties['AdditionalExitCodes'] -and -not [string]::IsNullOrWhiteSpace($app.AdditionalExitCodes))
+                $hasIgnore = ($app.PSObject.Properties['IgnoreNonZeroExitCodes'])
+                if ($hasCmd -or $hasArgs -or $hasAdd -or $hasIgnore) {
                     $overrideMap[$app.name] = @{
-                        CommandLine = if ($hasCmd) { $app.CommandLine } else { $null }
-                        Arguments   = if ($hasArgs) { $app.Arguments } else { $null }
+                        CommandLine             = if ($hasCmd) { $app.CommandLine } else { $null }
+                        Arguments               = if ($hasArgs) { $app.Arguments } else { $null }
+                        AdditionalExitCodes     = if ($hasAdd) { $app.AdditionalExitCodes } else { $null }
+                        IgnoreNonZeroExitCodes  = if ($hasIgnore) { [bool]$app.IgnoreNonZeroExitCodes } else { $null }
                     }
                 }
             }
@@ -453,6 +457,16 @@ function Get-Apps {
                         if ($ov.Arguments) {
                             WriteLog "Override (AppList.json) Arguments for $($entry.Name)"
                             $entry.Arguments = $ov.Arguments
+                            $changed = $true
+                        }
+                        if ($ov.ContainsKey('AdditionalExitCodes') -and $null -ne $ov.AdditionalExitCodes) {
+                            WriteLog "Override (AppList.json) AdditionalExitCodes for $($entry.Name)"
+                            $entry | Add-Member -NotePropertyName AdditionalExitCodes -NotePropertyValue $ov.AdditionalExitCodes -Force
+                            $changed = $true
+                        }
+                        if ($ov.ContainsKey('IgnoreNonZeroExitCodes') -and $null -ne $ov.IgnoreNonZeroExitCodes) {
+                            WriteLog "Override (AppList.json) IgnoreNonZeroExitCodes for $($entry.Name)"
+                            $entry | Add-Member -NotePropertyName IgnoreNonZeroExitCodes -NotePropertyValue ([bool]$ov.IgnoreNonZeroExitCodes) -Force
                             $changed = $true
                         }
                     }
