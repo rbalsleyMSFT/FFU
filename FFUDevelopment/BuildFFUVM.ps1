@@ -383,6 +383,8 @@ param(
     [bool]$CopyPEDrivers,
     [bool]$UseDriversAsPEDrivers,
     [bool]$RemoveFFU,
+    [bool]$CopyAdditionalFFUFiles,
+    [string[]]$AdditionalFFUFiles,
     [bool]$UpdateLatestCU,
     [bool]$UpdatePreviewCU,
     [bool]$UpdateLatestMicrocode,
@@ -3462,7 +3464,8 @@ Function Get-USBDrive {
 }
 Function New-DeploymentUSB {
     param(
-        [switch]$CopyFFU
+        [switch]$CopyFFU,
+        [string[]]$FFUFilesToCopy
     )
     WriteLog "CopyFFU is set to $CopyFFU"
     $BuildUSBPath = $PSScriptRoot
@@ -3472,46 +3475,58 @@ Function New-DeploymentUSB {
 
     # 1. Get FFU File(s) - This happens once before parallel processing
     if ($CopyFFU.IsPresent) {
-        $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
-        $FFUCount = $FFUFiles.count
-
-        if ($FFUCount -eq 1) {
-            $SelectedFFUFile = $FFUFiles.FullName
-            WriteLog "One FFU file found, will use: $SelectedFFUFile"
-        }
-        elseif ($FFUCount -gt 1) {
-            WriteLog "Found $FFUCount FFU files"
-            if ($VerbosePreference -ne 'Continue') {
-                Write-Host "Found $FFUCount FFU files"
+        if ($null -ne $FFUFilesToCopy -and $FFUFilesToCopy.Count -gt 0) {
+            $SelectedFFUFile = $FFUFilesToCopy
+            WriteLog "Using preselected FFU file list. Count: $($FFUFilesToCopy.Count)"
+            WriteLog "FFU files to copy:"
+            foreach ($f in $FFUFilesToCopy) {
+                WriteLog ("- {0}" -f (Split-Path $f -Leaf))
             }
-            $output = @()
-            for ($i = 0; $i -lt $FFUCount; $i++) {
-                $output += [PSCustomObject]@{
-                    'FFU Number'    = $i + 1
-                    'FFU Name'      = $FFUFiles[$i].Name
-                    'Last Modified' = $FFUFiles[$i].LastWriteTime
-                }
-            }
-            $output | Format-Table -AutoSize | Out-String | Write-Host
-            
-            do {
-                $inputChoice = Read-Host "Enter the number for the FFU to copy, or 'A' for all"
-                if ($inputChoice -eq 'A') {
-                    $SelectedFFUFile = $FFUFiles.FullName
-                    WriteLog 'Will copy all FFU Files'
-                }
-                elseif ($inputChoice -match '^\d+$' -and [int]$inputChoice -ge 1 -and [int]$inputChoice -le $FFUCount) {
-                    $SelectedFFUFile = $FFUFiles[[int]$inputChoice - 1].FullName
-                    WriteLog "$SelectedFFUFile was selected"
-                }
-                else {
-                    Write-Host "Invalid selection. Please try again."
-                }
-            } while ($null -eq $SelectedFFUFile)
         }
         else {
-            Write-Error "No FFU files found in $BuildUSBPath\FFU. Cannot copy FFU to USB drive."
-            Return
+            $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+            $FFUCount = $FFUFiles.count
+    
+            switch ($FFUCount) {
+                0 {
+                    Write-Error "No FFU files found in $BuildUSBPath\FFU. Cannot copy FFU to USB drive."
+                    return
+                }
+                1 {
+                    $SelectedFFUFile = $FFUFiles.FullName
+                    WriteLog "One FFU file found, will use: $SelectedFFUFile"
+                }
+                default {
+                    WriteLog "Found $FFUCount FFU files"
+                    if ($VerbosePreference -ne 'Continue') {
+                        Write-Host "Found $FFUCount FFU files"
+                    }
+                    $output = @()
+                    for ($i = 0; $i -lt $FFUCount; $i++) {
+                        $output += [PSCustomObject]@{
+                            'FFU Number'    = $i + 1
+                            'FFU Name'      = $FFUFiles[$i].Name
+                            'Last Modified' = $FFUFiles[$i].LastWriteTime
+                        }
+                    }
+                    $output | Format-Table -AutoSize | Out-String | Write-Host
+    
+                    do {
+                        $inputChoice = Read-Host "Enter the number for the FFU to copy, or 'A' for all"
+                        if ($inputChoice -eq 'A') {
+                            $SelectedFFUFile = $FFUFiles.FullName
+                            WriteLog 'Will copy all FFU Files'
+                        }
+                        elseif ($inputChoice -match '^\d+$' -and [int]$inputChoice -ge 1 -and [int]$inputChoice -le $FFUCount) {
+                            $SelectedFFUFile = $FFUFiles[[int]$inputChoice - 1].FullName
+                            WriteLog "$SelectedFFUFile was selected"
+                        }
+                        else {
+                            Write-Host "Invalid selection. Please try again."
+                        }
+                    } while ($null -eq $SelectedFFUFile)
+                }
+            }
         }
     }
 
@@ -4817,6 +4832,49 @@ If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
 WriteLog 'Creating dirty.txt file'
 New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
 
+# Early CLI prompt for additional FFUs (only if enabled and not provided)
+if ($BuildUSBDrive -and $CopyAdditionalFFUFiles -and ((-not $AdditionalFFUFiles) -or ($AdditionalFFUFiles.Count -eq 0))) {
+    try {
+        $ffuFolder = Join-Path $FFUDevelopmentPath 'FFU'
+        if (Test-Path -Path $ffuFolder) {
+            $cand = Get-ChildItem -Path $ffuFolder -Filter '*.ffu' -File | Sort-Object LastWriteTime -Descending
+            if ($cand.Count -gt 0) {
+                Write-Host ""
+                Write-Host "Additional FFU files available in $($ffuFolder):"
+                $i = 1
+                foreach ($c in $cand) {
+                    Write-Host ("{0,3}. {1}  [{2}]" -f $i, $c.Name, $c.LastWriteTime)
+                    $i++
+                }
+                Write-Host ""
+                $resp = Read-Host "Select additional FFUs to copy (e.g. 1,3,5) or 'A' for all, or press Enter to skip"
+                if ($resp -match '^[Aa]$') {
+                    $AdditionalFFUFiles = @($cand.FullName)
+                }
+                elseif ($resp -match '^\s*\d+(\s*,\s*\d+)*\s*$') {
+                    $indices = $resp.Split(',') | ForEach-Object { [int]($_.Trim()) }
+                    $sel = @()
+                    foreach ($idx in $indices) {
+                        if ($idx -ge 1 -and $idx -le $cand.Count) {
+                            $sel += $cand[$idx - 1].FullName
+                        }
+                    }
+                    $AdditionalFFUFiles = @($sel | Select-Object -Unique)
+                }
+                else {
+                    # Skip if blank or invalid
+                    if (-not [string]::IsNullOrWhiteSpace($resp)) {
+                        WriteLog "Invalid additional FFU selection input. Skipping."
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        WriteLog "Early additional FFU selection prompt failed: $($_.Exception.Message)"
+    }
+}
+
 #Get drivers first since user could be prompted for additional info
 Set-Progress -Percentage 3 -Message "Processing drivers..."
 if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or $CopyDrivers)) {
@@ -6084,7 +6142,35 @@ If ($BuildUSBDrive) {
     Set-Progress -Percentage 95 -Message "Building USB drive..."
     try {
         If (Test-Path -Path $DeployISO) {
-            New-DeploymentUSB -CopyFFU
+            $ffuFilesToCopy = @()
+
+            # Always include the FFU that was just built (fallback to most recent .ffu in capture folder)
+            $currentFFU = $null
+            if ($null -ne $FFUFile -and -not [string]::IsNullOrWhiteSpace($FFUFile) -and (Test-Path -LiteralPath $FFUFile)) {
+                $currentFFU = $FFUFile
+            }
+            else {
+                try {
+                    $ffuDir = if (-not [string]::IsNullOrWhiteSpace($FFUCaptureLocation)) { $FFUCaptureLocation } else { Join-Path $FFUDevelopmentPath 'FFU' }
+                    if (Test-Path -LiteralPath $ffuDir) {
+                        $latest = Get-ChildItem -Path $ffuDir -Filter '*.ffu' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($null -ne $latest) { $currentFFU = $latest.FullName }
+                    }
+                }
+                catch {
+                    WriteLog "Failed to resolve latest FFU file to copy: $($_.Exception.Message)"
+                }
+            }
+            if ($null -ne $currentFFU) {
+                $ffuFilesToCopy += $currentFFU
+            }
+
+            if ($CopyAdditionalFFUFiles -and ($null -ne $AdditionalFFUFiles) -and ($AdditionalFFUFiles.Count -gt 0)) {
+                $ffuFilesToCopy += $AdditionalFFUFiles
+            }
+
+            $ffuFilesToCopy = $ffuFilesToCopy | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+            New-DeploymentUSB -CopyFFU -FFUFilesToCopy $ffuFilesToCopy
         }
         else {
             WriteLog "$BuildUSBDrive set to true, however unable to find $DeployISO. USB drive not built."

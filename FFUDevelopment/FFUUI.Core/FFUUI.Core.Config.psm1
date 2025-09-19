@@ -37,6 +37,7 @@ function Get-UIConfig {
         UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
+        CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
         CreateCaptureMedia             = $State.Controls.chkCreateCaptureMedia.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
@@ -114,6 +115,16 @@ function Get-UIConfig {
 
     $State.Controls.lstUSBDrives.Items | Where-Object { $_.IsSelected } | ForEach-Object {
         $config.USBDriveList[$_.Model] = $_.SerialNumber
+    }
+
+    # Additional FFU file selections
+    $config.AdditionalFFUFiles = @()
+    if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) {
+        $config.AdditionalFFUFiles = @(
+            $State.Controls.lstAdditionalFFUs.Items |
+                Where-Object { $_.IsSelected } |
+                ForEach-Object { $_.FullName }
+        )
     }
     
     return $config
@@ -360,6 +371,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkAllowVHDXCaching' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AllowVHDXCaching' -State $State
     Set-UIValue -ControlName 'chkAllowExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AllowExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'PromptExternalHardDiskMedia' -State $State
+    Set-UIValue -ControlName 'chkCopyAdditionalFFUFiles' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAdditionalFFUFiles' -State $State
     Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateCaptureMedia' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
     Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
@@ -369,7 +381,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State
     Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyUnattend' -State $State
     Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPPKG' -State $State
-
+    
     # Post Build Cleanup group (Build Tab)
     Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupAppsISO' -State $State
     Set-UIValue -ControlName 'chkCleanupCaptureISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupCaptureISO' -State $State
@@ -654,8 +666,46 @@ function Update-UIFromConfig {
     else {
         WriteLog "LoadConfig: Condition to auto-check 'Select Specific USB Drives' was NOT met."
     }
-    WriteLog "LoadConfig: Configuration loading process finished."
-}
+        # Populate additional FFU list and apply selections
+        try {
+            if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) {
+                $State.Controls.additionalFFUPanel.Visibility = 'Visible'
+                if ($State.Controls.btnRefreshAdditionalFFUs) {
+                    $State.Controls.btnRefreshAdditionalFFUs.RaiseEvent([System.Windows.RoutedEventArgs]::new([System.Windows.Controls.Button]::ClickEvent))
+                }
+                $selectedFiles = @()
+                $addFFUKeyExists = $false
+                if ($ConfigContent -is [System.Management.Automation.PSCustomObject] -and $null -ne $ConfigContent.PSObject.Properties) {
+                    if (($ConfigContent.PSObject.Properties.Match('AdditionalFFUFiles')).Count -gt 0) {
+                        $addFFUKeyExists = $true
+                    }
+                }
+                if ($addFFUKeyExists -and $null -ne $ConfigContent.AdditionalFFUFiles) {
+                    $selectedFiles = @($ConfigContent.AdditionalFFUFiles)
+                }
+                if ($selectedFiles.Count -gt 0) {
+                    foreach ($item in $State.Controls.lstAdditionalFFUs.Items) {
+                        if ($selectedFiles -contains $item.FullName) {
+                            $item.IsSelected = $true
+                        }
+                    }
+                    $State.Controls.lstAdditionalFFUs.Items.Refresh()
+                    $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
+                    if ($null -ne $headerChk) {
+                        Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
+                    }
+                }
+            }
+            else {
+                $State.Controls.additionalFFUPanel.Visibility = 'Collapsed'
+            }
+        }
+        catch {
+            WriteLog "LoadConfig: Error applying Additional FFU selections: $($_.Exception.Message)"
+        }
+    
+        WriteLog "LoadConfig: Configuration loading process finished."
+    }
 
 function Invoke-SaveConfiguration {
     param(

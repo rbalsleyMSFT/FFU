@@ -400,6 +400,15 @@ $script:uiState.Controls.btnRun.Add_Click({
             
             # Gather config on the UI thread before starting the job
             $config = Get-UIConfig -State $script:uiState
+
+            # Validate Additional FFU selection if enabled
+            if ($config.BuildUSBDrive -and $config.CopyAdditionalFFUFiles -and (($null -eq $config.AdditionalFFUFiles) -or ($config.AdditionalFFUFiles.Count -eq 0))) {
+                [System.Windows.MessageBox]::Show("Please select at least one additional FFU file to copy, or uncheck 'Copy Additional FFU Files'.", "Selection Required", "OK", "Warning") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: Additional FFU selection required."
+                return
+            }
+
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
             $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
             $script:uiState.Data.lastConfigFilePath = $configFilePath

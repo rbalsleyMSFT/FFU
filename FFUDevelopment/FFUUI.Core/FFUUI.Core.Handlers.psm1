@@ -152,6 +152,50 @@ function Register-EventHandlers {
             $localState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $false
         })
 
+    # Additional FFU Files events
+    $State.Controls.chkCopyAdditionalFFUFiles.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.additionalFFUPanel.Visibility = 'Visible'
+            Update-AdditionalFFUList -State $localState
+        })
+    $State.Controls.chkCopyAdditionalFFUFiles.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.additionalFFUPanel.Visibility = 'Collapsed'
+            $localState.Controls.lstAdditionalFFUs.Items.Clear()
+            $headerChk = $localState.Controls.chkSelectAllAdditionalFFUs
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
+            }
+        })
+    $State.Controls.btnRefreshAdditionalFFUs.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Update-AdditionalFFUList -State $localState
+        })
+    $State.Controls.lstAdditionalFFUs.Add_PreviewKeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllAdditionalFFUs'
+                $keyEvent.Handled = $true
+            }
+        })
+    $State.Controls.lstAdditionalFFUs.Add_SelectionChanged({
+            param($eventSource, $selChangeEvent)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $headerChk = $localState.Controls.chkSelectAllAdditionalFFUs
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
+            }
+        })
+
     $State.Controls.btnCheckUSBDrives.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

@@ -128,6 +128,7 @@ function Get-GeneralDefaults {
         AllowExternalHardDiskMedia     = $false
         PromptExternalHardDiskMedia    = $true
         SelectSpecificUSBDrives        = $false
+        CopyAdditionalFFUFiles         = $false
         CopyAutopilot                  = $false
         CopyUnattend                   = $false
         CopyPPKG                       = $false
@@ -195,6 +196,65 @@ function Get-USBDrives {
             Size         = $size
             DriveIndex   = $_.Index
         }
+    }
+}
+
+# Returns a list of FFU files from the provided folder with selection metadata
+function Get-FFUFiles {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    if (-not (Test-Path -Path $Path)) {
+        return @()
+    }
+    Get-ChildItem -Path $Path -Filter '*.ffu' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        [PSCustomObject]@{
+            IsSelected   = $false
+            Name         = $_.Name
+            LastModified = $_.LastWriteTime
+            FullName     = $_.FullName
+        }
+    }
+}
+
+# Helper: Populate Additional FFU List from the capture folder
+function Update-AdditionalFFUList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State
+    )
+    try {
+        $ffuFolder = $State.Controls.txtFFUCaptureLocation.Text
+        $listView = $State.Controls.lstAdditionalFFUs
+        if ($null -eq $listView) { return }
+        $listView.Items.Clear()
+        if ([string]::IsNullOrWhiteSpace($ffuFolder) -or -not (Test-Path -Path $ffuFolder)) {
+            WriteLog "Additional FFUs: Capture folder not set or not found: $ffuFolder"
+        }
+        else {
+            $items = Get-ChildItem -Path $ffuFolder -Filter '*.ffu' -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        IsSelected   = $false
+                        Name         = $_.Name
+                        LastModified = $_.LastWriteTime
+                        FullName     = $_.FullName
+                    }
+                }
+            foreach ($it in $items) { $listView.Items.Add($it) | Out-Null }
+            WriteLog "Additional FFUs: Found $($listView.Items.Count) FFU files in $ffuFolder."
+        }
+        $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
+        if ($null -ne $headerChk) {
+            Update-SelectAllHeaderCheckBoxState -ListView $listView -HeaderCheckBox $headerChk
+        }
+    }
+    catch {
+        WriteLog "Update-AdditionalFFUList error: $($_.Exception.Message)"
     }
 }
 

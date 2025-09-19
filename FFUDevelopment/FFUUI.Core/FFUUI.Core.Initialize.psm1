@@ -59,6 +59,10 @@ function Initialize-UIControls {
     $State.Controls.usbSelectionPanel = $window.FindName('usbDriveSelectionPanel')
     $State.Controls.chkAllowExternalHardDiskMedia = $window.FindName('chkAllowExternalHardDiskMedia')
     $State.Controls.chkPromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia')
+    $State.Controls.chkCopyAdditionalFFUFiles = $window.FindName('chkCopyAdditionalFFUFiles')
+    $State.Controls.additionalFFUPanel = $window.FindName('additionalFFUPanel')
+    $State.Controls.lstAdditionalFFUs = $window.FindName('lstAdditionalFFUs')
+    $State.Controls.btnRefreshAdditionalFFUs = $window.FindName('btnRefreshAdditionalFFUs')
     $State.Controls.chkInstallWingetApps = $window.FindName('chkInstallWingetApps')
     $State.Controls.wingetPanel = $window.FindName('wingetPanel')
     $State.Controls.btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
@@ -257,6 +261,8 @@ function Initialize-UIDefaults {
     $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.chkSelectSpecificUSBDrives.IsEnabled = $State.Controls.chkBuildUSBDriveEnable.IsChecked
     $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked
+    $State.Controls.chkCopyAdditionalFFUFiles.IsChecked = $State.Defaults.generalDefaults.CopyAdditionalFFUFiles
+    $State.Controls.additionalFFUPanel.Visibility = if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) { 'Visible' } else { 'Collapsed' }
 
     # Hyper-V Settings defaults from General Defaults
     Initialize-VMSwitchData -State $State
@@ -454,7 +460,7 @@ function Initialize-DynamicUIElements {
 
     $exitHeaderTextFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
     $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Additional Exit Codes")
-    $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5,2,5,2)))
+    $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5, 2, 5, 2)))
     $exitHeaderTextFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
 
     $exitHeaderTemplate = New-Object System.Windows.DataTemplate
@@ -482,7 +488,7 @@ function Initialize-DynamicUIElements {
 
     $ignoreHeaderTextFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
     $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Ignore Exit Codes")
-    $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5,2,5,2)))
+    $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5, 2, 5, 2)))
     $ignoreHeaderTextFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
 
     $ignoreHeaderTemplate = New-Object System.Windows.DataTemplate
@@ -681,6 +687,51 @@ function Initialize-DynamicUIElements {
     }
     else {
         WriteLog "Warning: lstUSBDrives.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
+    }
+    
+    # Additional FFUs ListView setup
+    $itemStyleAdditionalFFUs = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleAdditionalFFUs.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstAdditionalFFUs.ItemContainerStyle = $itemStyleAdditionalFFUs
+    
+    if ($State.Controls.lstAdditionalFFUs.View -is [System.Windows.Controls.GridView]) {
+        Add-SelectableGridViewColumn -ListView $State.Controls.lstAdditionalFFUs -State $State -HeaderCheckBoxKeyName "chkSelectAllAdditionalFFUs" -ColumnWidth 70
+    
+        $additionalFFUsGridView = $State.Controls.lstAdditionalFFUs.View
+    
+        if ($additionalFFUsGridView.Columns.Count -gt 1) {
+            $nameColumn = $additionalFFUsGridView.Columns[1]
+            $nameHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $nameHeader.Content = "FFU Name"
+            $nameHeader.Tag = "Name"
+            $nameHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $nameColumn.Header = $nameHeader
+        }
+        if ($additionalFFUsGridView.Columns.Count -gt 2) {
+            $lastModColumn = $additionalFFUsGridView.Columns[2]
+            $lastModHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $lastModHeader.Content = "Last Modified"
+            $lastModHeader.Tag = "LastModified"
+            $lastModHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $lastModColumn.Header = $lastModHeader
+        }
+    
+        $State.Controls.lstAdditionalFFUs.AddHandler(
+            [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+            [System.Windows.RoutedEventHandler] {
+                param($eventSource, $e)
+                $header = $e.OriginalSource
+                if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                    $listViewControl = $eventSource
+                    $window = [System.Windows.Window]::GetWindow($listViewControl)
+                    $uiStateFromWindowTag = $window.Tag
+                    Invoke-ListViewSort -listView $eventSource -property $header.Tag -State $uiStateFromWindowTag
+                }
+            }
+        )
+    }
+    else {
+        WriteLog "Warning: lstAdditionalFFUs.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
     }
 }
 

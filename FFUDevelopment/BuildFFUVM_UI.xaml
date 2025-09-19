@@ -756,6 +756,29 @@
                                 <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
                                 <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
                                 <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
+                                <CheckBox x:Name="chkCopyAdditionalFFUFiles" Content="Copy Additional FFU Files" Margin="5" VerticalAlignment="Center" Tag="When set to $true, allows selecting existing FFU files in the capture folder to also copy to the USB drive."/>
+
+                                <!-- Additional FFU Selection Section -->
+                                <Grid x:Name="additionalFFUPanel" Margin="5,0,0,10" Visibility="Collapsed">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <!-- Header row -->
+                                    <DockPanel Grid.Row="0" Margin="0,5" LastChildFill="False">
+                                        <TextBlock Text="Additional FFU Files" DockPanel.Dock="Left" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <Button x:Name="btnRefreshAdditionalFFUs" Content="Refresh" DockPanel.Dock="Left" Padding="10,5" ToolTip="Refresh the list of FFU files from the capture folder"/>
+                                    </DockPanel>
+                                    <!-- ListView row -->
+                                    <ListView x:Name="lstAdditionalFFUs" Grid.Row="1" Margin="0,5" Height="150">
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="FFU Name" DisplayMemberBinding="{Binding Name}" Width="300"/>
+                                                <GridViewColumn Header="Last Modified" DisplayMemberBinding="{Binding LastModified}" Width="200"/>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                </Grid>
 
                                 <!-- Max USB Drives -->
                                 <StackPanel Orientation="Horizontal" Margin="5">
