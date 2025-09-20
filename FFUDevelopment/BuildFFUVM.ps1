@@ -4004,7 +4004,7 @@ function Export-ConfigFile {
     }
     
     # Convert to JSON and save
-    $orderedParams | ConvertTo-Json | Out-File $ExportConfigFile -Force
+    $orderedParams | ConvertTo-Json -Depth 10 | Set-Content -Path $ExportConfigFile -Encoding UTF8
 }
 function Get-PEArchitecture {
     param(

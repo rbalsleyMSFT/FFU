@@ -410,7 +410,10 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
 
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
-            $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
+            # Sort top-level keys alphabetically for consistent output
+            $sortedConfig = [ordered]@{}
+            foreach ($k in ($config.Keys | Sort-Object)) { $sortedConfig[$k] = $config[$k] }
+            $sortedConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
             $script:uiState.Data.lastConfigFilePath = $configFilePath
             
             if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {

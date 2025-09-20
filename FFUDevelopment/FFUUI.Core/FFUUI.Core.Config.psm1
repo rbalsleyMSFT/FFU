@@ -727,7 +727,10 @@ function Invoke-SaveConfiguration {
             -DefaultExt ".json"
 
         if ($savePath) {
-            $config | ConvertTo-Json -Depth 10 | Set-Content -Path $savePath -Encoding UTF8
+            # Sort top-level keys alphabetically for consistent output
+            $sortedConfig = [ordered]@{}
+            foreach ($k in ($config.Keys | Sort-Object)) { $sortedConfig[$k] = $config[$k] }
+            $sortedConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $savePath -Encoding UTF8
             [System.Windows.MessageBox]::Show("Configuration file saved to:`n$savePath", "Success", "OK", "Information")
         }
     }
