@@ -126,7 +126,7 @@ $script:mctWindowsReleases = @(
 
 $script:windowsVersionMap = @{
     10   = @("22H2")
-    11   = @("22H2", "23H2", "24H2")
+    11   = @("22H2", "23H2", "24H2", "25H2")
     2016 = @("1607") # Windows 10 LTSB 2016 & Server 2016
     2019 = @("1809") # Windows 10 LTSC 2019 & Server 2019
     # Note: Server 2016 and LTSB 2016 now share the key 2016, mapping to version "1607"
