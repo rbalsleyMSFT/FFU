@@ -234,7 +234,7 @@ $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2508.1Preview'
+$version = '2509.1Preview'
 WriteLog 'Begin Logging'
 WriteLog "Script version: $version"
 

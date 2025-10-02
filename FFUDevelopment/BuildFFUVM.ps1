@@ -436,7 +436,7 @@ param(
     [switch]$Cleanup
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2508.1Preview'
+$version = '2509.1Preview'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
