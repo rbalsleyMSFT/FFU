@@ -1,5 +1,125 @@
 # Change Log
 
+# 2509.1 UI Preview
+
+## What's Changed
+
+### [Refactor: Enhance artifact cleanup for disabled features](https://github.com/rbalsleyMSFT/FFU/commit/1ab4093d54b7d9bda9f47d7819694e66ae8de357)
+
+  Renames `Remove-DisabledUpdates` to `Remove-DisabledArtifacts` to better reflect its expanded scope.
+
+  This function now also removes Office installation scripts and downloaded content if the Office installation is disabled via the `$InstallOffice` flag.
+
+  The function call is moved to run before app installations to ensure artifacts are removed prior to the installation phase.
+
+### [Removes the VM workaround for MCT ESD builds](https://github.com/rbalsleyMSFT/FFU/commit/dc5877f398316969299ee03800f3d07c7d98a9ab)
+
+  Comments out the logic that forces app installation when building from a downloaded ESD file. This workaround was implemented to prevent an OOBE reboot loop but is no longer required. This should speed up scenarios where you want to download the ESD media, install the latest CU and .NET CU, and capture the FFU.
+
+### [Update default disk size to 50GB in FFU scripts and UI](https://github.com/rbalsleyMSFT/FFU/commit/372360d7392ad945be0db889a68e1fff0ed3b5d6)
+
+  Changed the default disk size parameter from 30GB to 50GB in BuildFFUVM.ps1 and FFUUI.Core.psm1 to accommodate larger virtual machines.
+  Updated tooltip and default value in the UI XAML file to reflect the new disk size.
+
+### [Adds auto-loading of previous configuration on startup](https://github.com/rbalsleyMSFT/FFU/commit/3ef26f2918977906ebe14e328f015ce4f1941dc3)
+
+Implements a new feature to automatically load the previously saved environment when the UI is launched.
+
+This improves user experience by restoring the last saved configuration, including selected applications and drivers, eliminating the need to manually reload them on each run.
+
+The process loads the main `FFUConfig.json` and then proceeds to load associated Winget, BYO App, and Driver lists if they are defined. UI elements and checkboxes are updated accordingly to reflect the loaded state.
+
+### [Improves UI state after environment autoload](https://github.com/rbalsleyMSFT/FFU/commit/bdf1b63833c83171aed63e8fc16702078ccd577b)
+
+Updates the visibility of UI panels for Winget and drivers when a previous environment is automatically loaded.
+
+This ensures that if Winget apps or driver models are present, their corresponding UI sections are made visible. Additionally, it updates the "select all" checkbox state for Winget results and attempts to pre-select the hardware make for loaded drivers.
+
+### [Add restore defaults and centralize cleanup logic](https://github.com/rbalsleyMSFT/FFU/commit/f3316a017b73bf12cf1a66e3d03a63e29c437cb1)
+
+Introduces a "Restore Defaults" feature in the UI to reset the environment. This action removes generated configuration files, ISOs, downloaded apps, updates, drivers, and FFUs.
+
+The post-build cleanup logic is refactored from the main build script into a new common function. This new function is used by both the standard build process and the new restore defaults feature, promoting code reuse and simplifying maintenance.
+
+### [Add option to dynamically build PE drivers](https://github.com/rbalsleyMSFT/FFU/commit/e2ccd11f07217b389f1622a69794224412e046e1)
+
+Thanks to @JonasKloseBW for the original code for this in https://github.com/rbalsleyMSFT/FFU/pull/115
+
+Introduces a new parameter, `UseDriversAsPEDrivers`, that allows WinPE drivers to be sourced directly from the main driver repository.
+
+When enabled, the script scans all available drivers, parses their INF files, and copies only the essential driver types (e.g., storage, mouse, keyboard, touchpad, system devices) needed for WinPE. This eliminates the need to maintain a separate, manually curated `PEDrivers` folder.
+
+The UI is updated with a new checkbox that becomes visible when "Copy PE Drivers" is selected, making this a sub-option. Parameter validation is also adjusted to support this new workflow.
+
+### [Improve model name normalization for driver mapping](https://github.com/rbalsleyMSFT/FFU/commit/50713188bffcb64f1b0c1f9eb89e02a300e3de98)
+
+Enhances the model name normalization function to better handle variations in hardware model strings. This change introduces specific rules to canonicalize "All-in-One" and screen size variants (e.g., "-in" or "inch") for more reliable matching against driver mapping rules.
+
+Additionally, optimizes performance by normalizing the system model once before the comparison loop. Logging is also added to show the original and normalized model strings for easier debugging.
+
+### [Defer cleanup of compressed driver source folders](https://github.com/rbalsleyMSFT/FFU/commit/c30ed923b68b933f719b9a2941043b813bf4fd3f)
+
+Implements a deferred cleanup mechanism for driver source folders when they are compressed to a WIM and also used for WinPE.
+
+When drivers are compressed, the original source folders are now preserved if they are also needed for WinPE driver injection. A marker file is created in these preserved folders.
+
+A new cleanup step is added after the WinPE media creation to remove these preserved folders, ensuring they are available when needed but not left behind permanently.
+
+### [Refactor config loading and improve error handling](https://github.com/rbalsleyMSFT/FFU/commit/8d7e4d106620761d0ae1a5133f6d6ba301131471)
+
+Extracts the logic for importing supplemental assets (Winget, BYO, Drivers) into a new reusable function. This function is now called by both the manual and automatic configuration loaders, reducing code duplication.
+
+Enhances the manual configuration loading process with more robust error handling. It now provides specific user-facing error messages for file read failures, empty files, and invalid JSON, improving the user experience when loading a malformed configuration.
+
+When loading a configuration, if optional supplemental files like AppList.json are referenced but not found, an informational message is now displayed to the user instead of failing silently.
+
+### [Add robust sanitization for names used in paths](https://github.com/rbalsleyMSFT/FFU/commit/cb14e84a26acaf5863aa3bb094dbf18424798875)
+
+Introduces a new common function, `ConvertTo-SafeName`, to sanitize strings by removing characters that are invalid in Windows file paths.
+
+This function is now used consistently when creating directory and file names for drivers (Dell, HP, Lenovo, Microsoft) and applications to prevent path-related errors. It replaces several ad-hoc sanitization methods with a single, more robust implementation.
+
+### [Includes exit code fields when using Copy Apps button](https://github.com/rbalsleyMSFT/FFU/commit/f37647599a318da29b62154bebff8c8a857d3002)
+
+Adds persistence of AdditionalExitCodes and IgnoreNonZeroExitCodes when exporting the UI list to prevent losing custom exit handling settings and maintain parity with the primary save routine.
+
+### [Sanitizes app names for storage and paths](https://github.com/rbalsleyMSFT/FFU/commit/d1ca1231045e38316733495e1fdb8590a225be67)
+
+Applies name sanitization when persisting the app list and when building/checking Win32 and Store download directories.
+Prevents invalid characters in folder names, aligns persisted names with on-disk structure, and improves detection of existing content to avoid redundant downloads and errors.
+
+### [Adds exit-code overrides and UI for winget apps](https://github.com/rbalsleyMSFT/FFU/commit/d9c0c9c68ee1769230c9789b5c7cb84bcff4d642)
+
+Adds per-app control for additional accepted exit codes and ignoring non‑zero exit codes to improve handling of installers with nonstandard returns.
+
+Exposes editable fields in the app list UI, persists them across search defaults, import/export, and pre-download save, and applies overrides during app resolution to honor configured behavior.
+
+### [Adds UI/CLI to copy additional FFUs to USB build](https://github.com/rbalsleyMSFT/FFU/commit/15a5b16b39887b71ae545c638d57183c97bdf629)
+
+- Enables selecting multiple existing FFU images to include on the deployment USB for easier distribution and testing.
+- Adds a UI option with selectable, sortable list from the capture folder, refresh support, and persisted selections.
+- Validates that selections exist when the option is enabled to prevent empty runs.
+- Supports unattended/CLI flows by prompting early or accepting a preselected list for USB creation; deduplicates and logs chosen files.
+- Always includes the just-built (or latest available) FFU as a base.
+- Improves no-FFU handling and streamlines multi-FFU selection workflow.
+
+### [Standardizes JSON output: depth, UTF-8, key order](https://github.com/rbalsleyMSFT/FFU/commit/6562d16ce500197b428b51915332c6649df302df)
+
+- Sorts top-level config keys before serialization for deterministic files and cleaner diffs.
+- Increases JSON depth to 10 to retain nested settings.
+- Writes JSON as UTF-8 via Set-Content for consistent encoding.
+- Applies across config export and UI save flows.
+
+### [Adds Windows 11 25H2 mapping](https://github.com/rbalsleyMSFT/FFU/commit/eaa3e1e6af5c25e0f8b185f8107e017782b0f00f)
+
+Extends supported Windows 11 releases to include 25H2. Default is still 24H2.
+
+* Update USBImagingToolCreator.ps1 by @jrollmann in https://github.com/rbalsleyMSFT/FFU/pull/262
+
+## New Contributors
+
+* @jrollmann made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/262
+
 # 2507.1 UI Preview
 
 Waaay too many to list. Just watch the Youtube video in the Readme :)
