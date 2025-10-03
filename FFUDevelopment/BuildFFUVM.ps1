@@ -230,7 +230,7 @@ Integer value of 10 or 11. This is used to identify which release of Windows to 
 Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'.
 
 .PARAMETER WindowsVersion
-String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'.
+String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'.
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
@@ -358,7 +358,7 @@ param(
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
-    [string]$WindowsVersion = '24h2',
+    [string]$WindowsVersion = '25h2',
     [Parameter(Mandatory = $false)]
     [ValidateSet('x86', 'x64', 'arm64')]
     [string]$WindowsArch = 'x64',
@@ -1929,6 +1929,96 @@ function Get-ADK {
     }
     return $adkPath
 }
+function Get-ProductsCab {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OutFile,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x64', 'arm64')]
+        [string]$Architecture,
+        [Parameter(Mandatory = $true)]
+        [string]$BuildVersion
+    )
+
+    $productsArchitecture = if ($Architecture -eq 'arm64') { 'arm64' } else { 'amd64' }
+    $productsParam = "PN=Windows.Products.Cab.$productsArchitecture&V=$BuildVersion"
+    $deviceAttributes = "DUScan=1;OSVersion=10.0.26100.1"
+
+    $bodyObj = [ordered]@{
+        Products         = $productsParam
+        DeviceAttributes = $deviceAttributes
+    }
+    $bodyJson = $bodyObj | ConvertTo-Json -Compress
+
+    $searchUri = 'https://fe3.delivery.mp.microsoft.com/UpdateMetadataService/updates/search/v1/bydeviceinfo'
+
+    WriteLog "Requesting products.cab location from Windows Update service..."
+    try {
+        $searchResponse = Invoke-RestMethod -Uri $searchUri -Method Post -ContentType 'application/json' -Headers @{ Accept = '*/*' } -Body $bodyJson
+    }
+    catch {
+        WriteLog "Failed to retrieve products.cab metadata: $($_.Exception.Message)"
+        throw
+    }
+
+    if ($searchResponse -is [System.Array]) { $searchResponse = $searchResponse[0] }
+    if (-not $searchResponse.FileLocations) { throw "Search response did not include FileLocations." }
+
+    $fileRec = $searchResponse.FileLocations | Where-Object { $_.FileName -eq 'products.cab' } | Select-Object -First 1
+    if (-not $fileRec) { throw "products.cab entry not found in FileLocations." }
+
+    $downloadUrl = $fileRec.Url
+    $serverDigestB64 = $fileRec.Digest
+    $serverSize = [int64]$fileRec.Size
+    $updateId = $searchResponse.UpdateIds[0]
+
+    try {
+        $metaUri = "https://fe3.delivery.mp.microsoft.com/UpdateMetadataService/updates/v1/$updateId"
+        $meta = Invoke-RestMethod -Uri $metaUri -Method Get -Headers @{ Accept = '*/*' }
+        if ($meta.LocalizedProperties.Count -gt 0) {
+            $title = $meta.LocalizedProperties[0].Title
+            WriteLog "Resolved update: $title"
+        }
+        else {
+            WriteLog "Resolved update id: $updateId"
+        }
+    }
+    catch {
+        WriteLog "Resolved update id: $updateId"
+    }
+
+    $destDir = Split-Path -Path $OutFile -Parent
+    if ($destDir -and -not (Test-Path $destDir)) {
+        [void](New-Item -ItemType Directory -Path $destDir)
+    }
+
+    WriteLog "Downloading products.cab to $OutFile ..."
+    $downloadHeaders = @{ Accept = '*/*' }
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $OutFile -Headers $downloadHeaders -UserAgent $UserAgent
+
+    $actualSize = (Get-Item $OutFile).Length
+    if ($actualSize -ne $serverSize) {
+        throw "Size check failed. Expected $serverSize bytes. Got $actualSize bytes."
+    }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    $fs = [System.IO.File]::OpenRead($OutFile)
+    try {
+        $hashBytes = $sha256.ComputeHash($fs)
+    }
+    finally {
+        $fs.Dispose()
+    }
+    $actualDigestB64 = [Convert]::ToBase64String($hashBytes)
+
+    if ($actualDigestB64 -ne $serverDigestB64) {
+        throw "Digest check failed. Expected $serverDigestB64. Got $actualDigestB64."
+    }
+
+    WriteLog "products.cab downloaded and verified successfully."
+    return $OutFile
+}
+
 function Get-WindowsESD {
     param(
         [Parameter(Mandatory = $false)]
@@ -1951,25 +2041,42 @@ function Get-WindowsESD {
     WriteLog "Windows Language: $WindowsLang"
     WriteLog "Windows Media Type: $MediaType"
 
-    # Select cab file URL based on Windows Release
-    $cabFileUrl = if ($WindowsRelease -eq 10) {
-        'https://go.microsoft.com/fwlink/?LinkId=841361'
-    }
-    elseif ($WindowsRelease -eq 11) {
-        'https://go.microsoft.com/fwlink/?LinkId=2156292'
-    }
-    else {
-        throw "Downloading Windows $WindowsRelease is not supported. Please use the -ISOPath parameter to specify the path to the Windows $WindowsRelease ISO file."
-    }
-
-    # Download cab file
-    WriteLog "Downloading Cab file"
     $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri $cabFileUrl -OutFile $cabFilePath -Headers $Headers -UserAgent $UserAgent
-    $VerbosePreference = $OriginalVerbosePreference
-    WriteLog "Download succeeded"
+    try {
+        if ($WindowsRelease -eq 10) {
+            WriteLog "Downloading Cab file"
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?LinkId=841361' -OutFile $cabFilePath -Headers $Headers -UserAgent $UserAgent
+        }
+        elseif ($WindowsRelease -eq 11) {
+            WriteLog "Downloading Cab file"
+            $buildVersionMap = @{
+                '22H2' = '22621.0.0.0'
+                '23H2' = '22631.0.0.0'
+                '24H2' = '26100.0.0.0'
+                '25H2' = '26100.0.0.0'
+            }
+            $normalizedVersion = $WindowsVersion.ToUpper()
+            if ($buildVersionMap.ContainsKey($normalizedVersion)) {
+                $buildVersion = $buildVersionMap[$normalizedVersion]
+            }
+            else {
+                WriteLog "No explicit build mapping found for Windows 11 version '$WindowsVersion'. Defaulting products.cab build token to 26100.0.0.0."
+                $buildVersion = '26100.0.0.0'
+            }
+
+            $cabArchitecture = if ($WindowsArch -eq 'ARM64') { 'arm64' } else { 'x64' }
+            Get-ProductsCab -OutFile $cabFilePath -Architecture $cabArchitecture -BuildVersion $buildVersion | Out-Null
+        }
+        else {
+            throw "Downloading Windows $WindowsRelease is not supported. Please use the -ISOPath parameter to specify the path to the Windows $WindowsRelease ISO file."
+        }
+        WriteLog "Download succeeded"
+    }
+    finally {
+        $VerbosePreference = $OriginalVerbosePreference
+    }
 
     # Extract XML from cab file
     WriteLog "Extracting Products XML from cab"
@@ -1989,8 +2096,6 @@ function Get-WindowsESD {
             $esdFilePath = Join-Path $PSScriptRoot (Split-Path $file.FilePath -Leaf)
             #Download if ESD file doesn't already exist
             If (-not (Test-Path $esdFilePath)) {
-                #Required to fix slow downloads
-                # $ProgressPreference = 'SilentlyContinue'
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
@@ -1999,8 +2104,6 @@ function Get-WindowsESD {
                 Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Download succeeded"
-                #Set back to show progress
-                # $ProgressPreference = 'Continue'
                 WriteLog "Cleanup cab and xml file"
                 Remove-Item -Path $cabFilePath -Force
                 Remove-Item -Path $xmlFilePath -Force
@@ -4808,15 +4911,15 @@ if (($WindowsArch -eq 'ARM64') -and ($UpdateLatestMSRT -eq $true)) {
     $UpdateLatestMSRT = $false
     WriteLog 'Windows Malicious Software Removal Tool is not available for the ARM64 architecture.'
 }
-#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 24H2 for Windows 11
-#MCT media only provides 22H2 and 24H2 media
+#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 25H2 for Windows 11
+#MCT media only provides 22H2 and 25H2 media
 #This prevents issues with VHDX Caching unecessarily and with searching for CUs
 if ($ISOPath -eq '') {
     if ($WindowsRelease -eq '10') {
         $WindowsVersion = '22H2'
     }
     if ($WindowsRelease -eq '11') {
-        $WindowsVersion = '24H2'
+        $WindowsVersion = '25H2'
     }
 }
 
