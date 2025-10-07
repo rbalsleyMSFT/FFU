@@ -292,111 +292,328 @@ function Get-LenovoPSREFToken {
         if your alternative works is to see if you can retrieve 100e, 300w, 500w, etc. These don't show up in catalogv2.xml, but they do in PSREF.
     #>
 
-    # Path to Edge
-    $edgeExe = "$Env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
+    $token = $null
+    $socket = $null
+    $edgeProcess = $null
+    $tempProfile = $null
+    $port = $null
 
-    # Any free port works. 9222 is common.
-    $port = 9222
-    $uri = 'https://psref.lenovo.com'
-
-    # Headless run with remote debugging.
-    $flags = "--headless=new --disable-gpu --remote-debugging-port=$port $uri"
-    $edge = Start-Process -FilePath $edgeExe -ArgumentList $flags -PassThru
-    Writelog "Edge process started with PID: $($edge.Id)."
-
-    # Wait a short moment so the target appears.
-    Start-Sleep -Seconds 3
-
-    # Find the first page target.
-    $targets = Invoke-RestMethod "http://localhost:$port/json"
-    $wsUrl = ($targets | Where-Object type -eq 'page')[0].webSocketDebuggerUrl
-
-    # Connect to that WebSocket.
-    $socket = [System.Net.WebSockets.ClientWebSocket]::new()
-    $socket.ConnectAsync($wsUrl, [Threading.CancellationToken]::None).Wait()
-
-    # Helper to send a DevTools command.
-    function Send-DevToolsCommand {
-        param([int]$id, [string]$method, [hashtable]$params = @{})
-        $cmd = @{ id = $id; method = $method; params = $params } |
-        ConvertTo-Json -Compress
-        $data = [Text.Encoding]::UTF8.GetBytes($cmd)
-        $socket.SendAsync([ArraySegment[byte]]$data, 'Text', $true,
-            [Threading.CancellationToken]::None).Wait()
+    function Get-FreeLocalTcpPort {
+        $listener = $null
+        try {
+            $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            $listener.Start()
+            $endpoint = [System.Net.IPEndPoint]$listener.LocalEndpoint
+            return $endpoint.Port
+        }
+        finally {
+            if ($null -ne $listener) {
+                $listener.Stop()
+            }
+        }
     }
 
-    # Ask the page to return localStorage['asut'].
-    Send-DevToolsCommand -id 1 -method 'Runtime.evaluate' -params @{
-        expression = "localStorage.getItem('asut')"
+    function Get-EdgeDevToolsPageTarget {
+        param(
+            [Parameter(Mandatory = $true)][int]$Port,
+            [int]$MaxAttempts = 20,
+            [int]$DelayMilliseconds = 500,
+            [string]$UrlContains
+        )
+
+        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            try {
+                $targets = Invoke-RestMethod -Uri "http://localhost:$Port/json" -ErrorAction Stop
+                if ($null -ne $targets) {
+                    if ($targets -isnot [System.Array]) { $targets = @($targets) }
+                    $pageTargets = $targets | Where-Object { $_.type -eq 'page' }
+                    if (-not [string]::IsNullOrWhiteSpace($UrlContains)) {
+                        $pageTargets = $pageTargets | Where-Object {
+                            -not [string]::IsNullOrWhiteSpace($_.url) -and $_.url -like "*$UrlContains*"
+                        }
+                    }
+
+                    $target = $pageTargets | Select-Object -First 1
+                    if ($null -ne $target) {
+                        return $target
+                    }
+
+                    WriteLog "DevTools endpoint on port $Port returned targets but no page matched the criteria (attempt $attempt of $MaxAttempts)."
+                }
+                else {
+                    WriteLog "DevTools endpoint on port $Port returned no targets (attempt $attempt of $MaxAttempts)."
+                }
+            }
+            catch {
+                WriteLog "DevTools endpoint on port $Port not ready (attempt $attempt of $MaxAttempts). Error: $($_.Exception.Message)"
+            }
+
+            Start-Sleep -Milliseconds $DelayMilliseconds
+        }
+
+        throw "Edge DevTools endpoint on port $Port did not expose a matching page target after $MaxAttempts attempts."
     }
 
-    # Receive frames until the whole message arrives.
-    $ms = New-Object System.IO.MemoryStream
-    $buf = New-Object byte[] 8192
-    do {
-        $seg = [ArraySegment[byte]]::new($buf)
-        $res = $socket.ReceiveAsync($seg,
-            [Threading.CancellationToken]::None).Result
-        $ms.Write($buf, 0, $res.Count)
-    } until ($res.EndOfMessage)
-
-    $ms.Position = 0
-    $json = ([System.IO.StreamReader]::new($ms, [Text.Encoding]::UTF8)).ReadToEnd() |
-    ConvertFrom-Json
-
-    $token = $json.result.result.value
-    # Concatenate the token value with X-PSREF-USER-TOKEN=
-    $token = "X-PSREF-USER-TOKEN=$token"
-    WriteLog "Retrieved Lenovo PSREF token: $token"
-
-    # Clean up.
-    $socket.Dispose()
-
-    if ($null -ne $socket) {
-        $socket.Dispose()
-    }
-
-    # Find the PID listening on the debugging port for reliable termination.
-    $listeningPid = $null
     try {
-        # Find the process listening on the specific port. The regex now looks for the local address and port, followed by anything, then LISTENING.
-        # Dots are escaped for literal matching.
-        $netstatOutput = netstat -ano -p TCP | Where-Object { $_ -match "127\.0\.0\.1:$port.*LISTENING" }
-        if ($netstatOutput) {
-            # The last number in the line is the PID
-            $listeningPid = ($netstatOutput -split '\s+')[-1]
-            WriteLog "Found Edge process PID $listeningPid listening on port $port. This is the process we will terminate."
+        $ffuDevelopmentRoot = Split-Path -Path $PSScriptRoot -Parent
+        WriteLog "Derived FFUDevelopmentPath from module path: $ffuDevelopmentRoot"
+
+        if ([string]::IsNullOrWhiteSpace($ffuDevelopmentRoot)) {
+            throw "FFUDevelopmentPath could not be resolved. Unable to create Edge profile."
         }
-        else {
-            WriteLog "Could not find any process listening on port $port."
+
+        if (-not (Test-Path -Path $ffuDevelopmentRoot -PathType Container)) {
+            throw "Resolved FFUDevelopmentPath '$ffuDevelopmentRoot' does not exist."
         }
+
+        $tempProfile = Join-Path -Path $ffuDevelopmentRoot -ChildPath ("edge-psref-" + [guid]::NewGuid())
+        WriteLog "Creating temporary Edge profile at $tempProfile."
+        New-Item -ItemType Directory -Path $tempProfile -Force | Out-Null
+
+        $edgeExe = "$Env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
+        $uri = 'https://psref.lenovo.com'
+        $port = Get-FreeLocalTcpPort
+        WriteLog "Using Edge DevTools port $port for Lenovo PSREF token retrieval."
+
+        $flags = "--headless=new --disable-gpu --remote-debugging-port=$port $uri --user-data-dir=`"$tempProfile`""
+        $edgeProcess = Start-Process -FilePath $edgeExe -ArgumentList $flags -PassThru
+        WriteLog "Edge process started with PID: $($edgeProcess.Id)."
+
+        $pageTarget = Get-EdgeDevToolsPageTarget -Port $port -MaxAttempts 40 -DelayMilliseconds 500 -UrlContains 'psref.lenovo.com'
+        if (-not [string]::IsNullOrWhiteSpace($pageTarget.url)) {
+            WriteLog "Selected DevTools target URL: $($pageTarget.url)"
+        }
+
+        $wsUrl = $pageTarget.webSocketDebuggerUrl
+        if ([string]::IsNullOrWhiteSpace($wsUrl)) {
+            throw "Edge DevTools page target on port $port did not provide a WebSocket URL."
+        }
+
+        $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+        $socket.ConnectAsync($wsUrl, [Threading.CancellationToken]::None).Wait()
+
+        function Send-DevToolsCommand {
+            param([int]$id, [string]$method, [hashtable]$params = @{})
+            $cmd = @{ id = $id; method = $method; params = $params } | ConvertTo-Json -Compress
+            $data = [Text.Encoding]::UTF8.GetBytes($cmd)
+            $socket.SendAsync([ArraySegment[byte]]$data, 'Text', $true, [Threading.CancellationToken]::None).Wait()
+        }
+
+        $buffer = New-Object byte[] 8192
+
+        function Invoke-DevToolsValue {
+            param(
+                [Parameter(Mandatory = $true)][int]$CommandId,
+                [Parameter(Mandatory = $true)][string]$Expression,
+                [int]$MaxPolls = 25
+            )
+
+            Send-DevToolsCommand -id $CommandId -method 'Runtime.evaluate' -params @{
+                expression    = $Expression
+                returnByValue = $true
+                awaitPromise  = $true
+            }
+
+            for ($poll = 1; $poll -le $MaxPolls; $poll++) {
+                $localStream = $null
+                try {
+                    $localStream = New-Object System.IO.MemoryStream
+                    do {
+                        $segment = [ArraySegment[byte]]::new($buffer)
+                        $result = $socket.ReceiveAsync($segment, [Threading.CancellationToken]::None).Result
+                        $localStream.Write($buffer, 0, $result.Count)
+                    } until ($result.EndOfMessage)
+
+                    $jsonBytes = $localStream.ToArray()
+                    $jsonText = [Text.Encoding]::UTF8.GetString($jsonBytes)
+                    $previewPayload = $jsonText
+                    if (-not [string]::IsNullOrEmpty($previewPayload) -and $previewPayload.Length -gt 500) {
+                        $previewPayload = $previewPayload.Substring(0, 500) + '...'
+                    }
+                    WriteLog "DevTools eval payload (cmd $CommandId, poll $poll): $previewPayload"
+
+                    $message = $null
+                    try {
+                        $message = $jsonText | ConvertFrom-Json
+                    }
+                    catch {
+                        WriteLog "Failed to parse DevTools eval payload for command id $CommandId (poll $poll): $($_.Exception.Message)"
+                        continue
+                    }
+
+                    if ($message.PSObject.Properties['id'] -and $message.id -eq $CommandId) {
+                        if ($message.PSObject.Properties['error']) {
+                            $errorMessage = $message.error.message
+                            throw "Edge DevTools reported an error for expression '$Expression': $errorMessage"
+                        }
+
+                        if ($message.PSObject.Properties['result'] -and $message.result.PSObject.Properties['result']) {
+                            $innerResult = $message.result.result
+                            return [PSCustomObject]@{
+                                Value   = $innerResult.value
+                                Type    = $innerResult.type
+                                Subtype = $innerResult.subtype
+                            }
+                        }
+
+                        $serializedMessage = $message | ConvertTo-Json -Compress -Depth 5
+                        WriteLog "DevTools response for command id $CommandId lacked result data. Message: $serializedMessage"
+                        return $null
+                    }
+
+                    if ($message.PSObject.Properties['method']) {
+                        WriteLog "Received DevTools event '$($message.method)' while waiting for command id $CommandId."
+                    }
+                    else {
+                        WriteLog "Received DevTools message without id or method while waiting for command id $CommandId."
+                    }
+                }
+                finally {
+                    if ($null -ne $localStream) {
+                        $localStream.Dispose()
+                    }
+                }
+            }
+
+            throw "No DevTools response received for command id $CommandId after $MaxPolls polls."
+        }
+
+        WriteLog "Waiting for PSREF page to initialize local storage context."
+        Start-Sleep -Seconds 2
+
+        $commandCounter = 1000
+        $rawToken = $null
+        $maxTokenAttempts = 12
+        for ($attempt = 1; $attempt -le $maxTokenAttempts -and [string]::IsNullOrWhiteSpace($rawToken); $attempt++) {
+            $commandCounter++
+            $tokenResponse = Invoke-DevToolsValue -CommandId $commandCounter -Expression "window.localStorage?.getItem('asut')" -MaxPolls 25
+            if ($null -ne $tokenResponse -and -not [string]::IsNullOrWhiteSpace($tokenResponse.Value)) {
+                $rawToken = $tokenResponse.Value
+                WriteLog "DevTools response for command id $commandCounter returned token length $($rawToken.Length)."
+                break
+            }
+
+            WriteLog "Lenovo PSREF token not yet available (attempt $attempt of $maxTokenAttempts)."
+
+            $commandCounter++
+            $keysResponse = Invoke-DevToolsValue -CommandId $commandCounter -Expression "JSON.stringify(Object.keys(window.localStorage || {}))" -MaxPolls 10
+            if ($null -ne $keysResponse -and -not [string]::IsNullOrWhiteSpace($keysResponse.Value)) {
+                WriteLog "Current localStorage keys: $($keysResponse.Value)"
+            }
+
+            $commandCounter++
+            $cookieResponse = Invoke-DevToolsValue -CommandId $commandCounter -Expression "document.cookie" -MaxPolls 10
+            if ($null -ne $cookieResponse -and -not [string]::IsNullOrWhiteSpace($cookieResponse.Value)) {
+                WriteLog "document.cookie contents: $($cookieResponse.Value)"
+                $cookieEntry = ($cookieResponse.Value -split ';') | ForEach-Object { $_.Trim() } | Where-Object { $_ -like 'asut=*' } | Select-Object -First 1
+                if ($cookieEntry) {
+                    $rawToken = $cookieEntry.Substring($cookieEntry.IndexOf('=') + 1)
+                    WriteLog "Extracted Lenovo PSREF token from cookies with length $($rawToken.Length)."
+                    break
+                }
+            }
+
+            Start-Sleep -Milliseconds 750
+        }
+
+        if ([string]::IsNullOrWhiteSpace($rawToken)) {
+            throw "Received empty Lenovo PSREF token from Edge DevTools after $maxTokenAttempts attempts."
+        }
+
+        $token = "X-PSREF-USER-TOKEN=$rawToken"
+        WriteLog "Retrieved Lenovo PSREF token: $token"
     }
     catch {
-        WriteLog "Could not run netstat to find listening PID. Error: $($_.Exception.Message)"
+        WriteLog "Failed to retrieve Lenovo PSREF token. Error: $($_.Exception.Message)"
+        throw
     }
-
-    # Determine the correct PID to kill. Prioritize the one found via netstat.
-    $pidToKill = $null
-    if ($listeningPid) {
-        $pidToKill = $listeningPid
-    }
-    elseif ($null -ne $edgeProcess -and -not $edgeProcess.HasExited) {
-        $pidToKill = $edgeProcess.Id
-        WriteLog "Could not find listening process via netstat. Falling back to initial Edge process PID $($pidToKill) for termination."
-    }
-
-    if ($pidToKill) {
-        WriteLog "Attempting to terminate Edge process tree with PID: $pidToKill"
-        try {
-            taskkill /PID $pidToKill /T /F | Out-Null
-            WriteLog "Successfully issued termination command for Edge process tree with PID: $pidToKill."
+    finally {
+        if ($null -ne $socket) {
+            try {
+                $socket.Dispose()
+                WriteLog "Edge DevTools WebSocket disposed."
+            }
+            catch {
+                WriteLog "Error disposing Edge DevTools WebSocket: $($_.Exception.Message)"
+            }
         }
-        catch {
-            WriteLog "Failed to terminate Edge process tree with PID: $pidToKill. It may have already closed. Error: $($_.Exception.Message)"
+
+        $listeningPid = $null
+        if ($null -ne $port) {
+            try {
+                $netstatOutput = netstat -ano -p TCP | Where-Object { $_ -match "127\.0\.0\.1:$port.*LISTENING" }
+                if ($netstatOutput) {
+                    $listeningPid = ($netstatOutput -split '\s+')[-1]
+                    WriteLog "Found Edge process PID $listeningPid listening on port $port."
+                }
+                else {
+                    WriteLog "No process reported as listening on port $port."
+                }
+            }
+            catch {
+                WriteLog "Could not run netstat to find listening PID for port $port. Error: $($_.Exception.Message)"
+            }
         }
-    }
-    else {
-        WriteLog "No active Edge process found to terminate."
+
+        $pidToKill = $null
+        if ($null -ne $listeningPid) {
+            $pidToKill = $listeningPid
+        }
+        elseif ($null -ne $edgeProcess -and -not $edgeProcess.HasExited) {
+            $pidToKill = $edgeProcess.Id
+            WriteLog "Falling back to initial Edge process PID $pidToKill for termination."
+        }
+
+        if ($null -ne $pidToKill) {
+            try {
+                taskkill /PID $pidToKill /T /F | Out-Null
+                WriteLog "Issued termination command for Edge process tree with PID: $pidToKill."
+            }
+            catch {
+                WriteLog "Failed to terminate Edge process tree with PID: $pidToKill. Error: $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "No active Edge process found to terminate."
+        }
+
+        if ($null -ne $edgeProcess) {
+            try {
+                $edgeProcess.WaitForExit(3000) | Out-Null
+            }
+            catch {
+                WriteLog "Error while waiting for Edge process PID $($edgeProcess.Id) to exit: $($_.Exception.Message)"
+            }
+        }
+
+        Start-Sleep -Milliseconds 250
+
+        if (-not [string]::IsNullOrWhiteSpace($tempProfile) -and (Test-Path -Path $tempProfile -PathType Container)) {
+            $maxRemoveAttempts = 5
+            $originalProgressPreference = $ProgressPreference
+            try {
+                $ProgressPreference = 'SilentlyContinue'
+                for ($removeAttempt = 1; $removeAttempt -le $maxRemoveAttempts; $removeAttempt++) {
+                    try {
+                        Remove-Item -Path $tempProfile -Recurse -Force -ErrorAction Stop
+                        WriteLog "Removed temporary Edge profile at $tempProfile."
+                        break
+                    }
+                    catch {
+                        if ($removeAttempt -eq $maxRemoveAttempts) {
+                            WriteLog "Failed to remove temporary Edge profile at $tempProfile after $maxRemoveAttempts attempts. Error: $($_.Exception.Message)"
+                        }
+                        else {
+                            WriteLog "Temporary Edge profile still locked (attempt $removeAttempt of $maxRemoveAttempts). Retrying..."
+                            Start-Sleep -Milliseconds 500
+                        }
+                    }
+                }
+            }
+            finally {
+                $ProgressPreference = $originalProgressPreference
+            }
+        }
     }
 
     return $token
