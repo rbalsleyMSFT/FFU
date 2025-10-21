@@ -156,7 +156,7 @@ function Start-BitsTransferWithRetry {
             $VerbosePreference = 'SilentlyContinue' 
             $ProgressPreference = 'SilentlyContinue' 
 
-            Start-BitsTransfer -Source $Source -Destination $Destination -ErrorAction Stop
+            Start-BitsTransfer -Source $Source -Destination $Destination -Priority Normal -ErrorAction Stop
             
             $ProgressPreference = $OriginalProgressPreference
             $VerbosePreference = $OriginalVerbosePreference
