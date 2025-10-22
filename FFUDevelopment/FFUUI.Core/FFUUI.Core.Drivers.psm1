@@ -84,8 +84,8 @@ function ConvertTo-StandardizedDriverModel {
         [psobject]$State
     )
 
-    $modelDisplay = $RawDriverObject.Model # Default
-    $id = $RawDriverObject.Model           # Default
+    $modelDisplay = $RawDriverObject.Model
+    $id = $RawDriverObject.Model
     $link = $null
     $productName = $null
     $machineType = $null
@@ -96,26 +96,51 @@ function ConvertTo-StandardizedDriverModel {
 
     # Lenovo specific handling
     if ($Make -eq 'Lenovo') {
-        $modelDisplay = $RawDriverObject.Model 
+        $modelDisplay = $RawDriverObject.Model
         $productName = $RawDriverObject.ProductName
         $machineType = $RawDriverObject.MachineType
-        $id = $RawDriverObject.MachineType 
+        $id = $RawDriverObject.MachineType
     }
 
-    return [PSCustomObject]@{
+    # Dell-specific passthrough (needed for per-model cab workflow)
+    $dellBrand = $null
+    $dellModelNumber = $null
+    $dellSystemId = $null
+    $dellCabUrl = $null
+    $dellCabRelative = $null
+    if ($Make -eq 'Dell') {
+        if ($RawDriverObject.PSObject.Properties['Brand']) { $dellBrand = $RawDriverObject.Brand }
+        if ($RawDriverObject.PSObject.Properties['ModelNumber']) { $dellModelNumber = $RawDriverObject.ModelNumber }
+        if ($RawDriverObject.PSObject.Properties['SystemId']) { $dellSystemId = $RawDriverObject.SystemId }
+        if ($RawDriverObject.PSObject.Properties['CabUrl']) { $dellCabUrl = $RawDriverObject.CabUrl }
+        if ($RawDriverObject.PSObject.Properties['CabRelativePath']) { $dellCabRelative = $RawDriverObject.CabRelativePath }
+    }
+
+    $output = [PSCustomObject]@{
         IsSelected     = $false
         Make           = $Make
-        Model          = $modelDisplay 
+        Model          = $modelDisplay
         Link           = $link
-        Id             = $id            
-        ProductName    = $productName   
-        MachineType    = $machineType   
-        Version        = "" # Placeholder
-        Type           = "" # Placeholder
-        Size           = "" # Placeholder
-        Arch           = "" # Placeholder
-        DownloadStatus = "" # Initial download status
+        Id             = $id
+        ProductName    = $productName
+        MachineType    = $machineType
+        Version        = ""
+        Type           = ""
+        Size           = ""
+        Arch           = ""
+        DownloadStatus = ""
     }
+
+    if ($Make -eq 'Dell') {
+        # Add Dell-only fields so Save-DellDriversTask can use CabUrl
+        $output | Add-Member -NotePropertyName Brand           -NotePropertyValue $dellBrand
+        $output | Add-Member -NotePropertyName ModelNumber     -NotePropertyValue $dellModelNumber
+        $output | Add-Member -NotePropertyName SystemId        -NotePropertyValue $dellSystemId
+        $output | Add-Member -NotePropertyName CabUrl          -NotePropertyValue $dellCabUrl
+        $output | Add-Member -NotePropertyName CabRelativePath -NotePropertyValue $dellCabRelative
+    }
+
+    return $output
 }
 
 # Function to filter the driver model list based on text input

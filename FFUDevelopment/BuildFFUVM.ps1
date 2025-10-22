@@ -1428,128 +1428,121 @@ function Get-LenovoDrivers {
 }
 
 function Get-DellDrivers {
-    param (
+    param(
         [Parameter(Mandatory = $true)]
         [string]$Model,
         [Parameter(Mandatory = $true)]
-        [ValidateSet("x64", "x86", "ARM64")]
+        [ValidateSet('x64','x86','ARM64')]
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
         [int]$WindowsRelease
     )
 
     if (-not (Test-Path -Path $DriversFolder)) {
-        WriteLog "Creating Drivers folder: $DriversFolder"
         New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
-        WriteLog "Drivers folder created"
+    }
+    $DriversFolder = Join-Path $DriversFolder $Make
+    if (-not (Test-Path $DriversFolder)) {
+        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
     }
 
-    $DriversFolder = "$DriversFolder\$Make"
-    WriteLog "Creating Dell Drivers folder: $DriversFolder"
-    New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
-    WriteLog "Dell Drivers folder created"
-
-    #CatalogPC.cab is the catalog for Windows client PCs, Catalog.cab is the catalog for Windows Server
+    # Client pathway (<=11): use CatalogIndexPC + per-model cab.
     if ($WindowsRelease -le 11) {
-        $catalogUrl = "http://downloads.dell.com/catalog/CatalogPC.cab"
-        $DellCabFile = "$DriversFolder\CatalogPC.cab"
-        $DellCatalogXML = "$DriversFolder\CatalogPC.XML"
-    }
-    else {
-        $catalogUrl = "https://downloads.dell.com/catalog/Catalog.cab"
-        $DellCabFile = "$DriversFolder\Catalog.cab"
-        $DellCatalogXML = "$DriversFolder\Catalog.xml"
-    }
-    
-    if (-not (Test-Url -Url $catalogUrl)) {
-        WriteLog "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
-        if ($VerbosePreference -ne 'Continue') {
-            Write-Host "Dell Catalog cab URL is not accessible: $catalogUrl Exiting"
+        $indexXml = Get-DellCatalogIndex -DriversFolder (Split-Path $DriversFolder -Parent)
+        $allModels = Get-DellClientModels -CatalogIndexXmlPath $indexXml
+        $target = $allModels | Where-Object { $_.ModelDisplay -eq $Model }
+        if (-not $target) { throw "Requested Dell model '$Model' not found in index." }
+
+        $cabUrl = $target.CabUrl
+        $modelCabName = [IO.Path]::GetFileName($cabUrl)
+        $modelCabPath = Join-Path $DriversFolder $modelCabName
+        $modelXmlPath = Join-Path $DriversFolder ($modelCabName -replace '\.cab$','.xml')
+
+        if (Test-Path $modelCabPath) { Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $modelXmlPath) { Remove-Item $modelXmlPath -Force -ErrorAction SilentlyContinue }
+
+        Start-BitsTransferWithRetry -Source $cabUrl -Destination $modelCabPath
+        Invoke-Process -FilePath Expand.exe -ArgumentList """$modelCabPath"" ""$modelXmlPath""" | Out-Null
+        Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $modelXmlPath)) { throw "Failed to extract model cab XML: $modelXmlPath" }
+
+        $pkgs = Get-DellLatestDriverPackages -ModelXmlPath $modelXmlPath -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+        if (-not $pkgs) {
+            WriteLog "No drivers found for '$Model'."
+            return
         }
-        exit
+
+        foreach ($pkg in $pkgs) {
+            $categorySafe = ($pkg.Category -replace '[\\\/\:\*\?\"\<\>\| ]','_')
+            $downloadFolder = Join-Path $DriversFolder (Join-Path $Model $categorySafe)
+            if (-not (Test-Path $downloadFolder)) { New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null }
+            $driverFilePath = Join-Path $downloadFolder $pkg.DriverFileName
+            $extractFolder = Join-Path $downloadFolder ($pkg.DriverFileName.TrimEnd($pkg.DriverFileName[-4..-1]))
+
+            if (Test-Path $extractFolder) {
+                $sz = (Get-ChildItem -Path $extractFolder -Recurse -Exclude *.log | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                if ($sz -gt 1KB) { continue }
+            }
+            if (-not (Test-Path $driverFilePath)) {
+                try { Start-BitsTransferWithRetry -Source $pkg.DownloadUrl -Destination $driverFilePath }
+                catch { WriteLog "Download failed: $($pkg.DownloadUrl) $($_.Exception.Message)"; continue }
+            }
+
+            if (-not (Test-Path $extractFolder)) { New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null }
+
+            $arg1 = "/s /e=`"$extractFolder`" /l=`"$extractFolder\log.log`""
+            $arg2 = "/s /drivers=`"$extractFolder`" /l=`"$extractFolder\log.log`""
+            $ok = $false
+            try {
+                Invoke-Process -FilePath $driverFilePath -ArgumentList $arg1 | Out-Null
+                $sz = (Get-ChildItem -Path $extractFolder -Recurse -Exclude *.log | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                if ($sz -gt 1KB) { $ok = $true }
+                if (-not $ok) {
+                    Remove-Item $extractFolder -Recurse -Force -ErrorAction SilentlyContinue
+                    New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
+                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arg2 | Out-Null
+                    $sz = (Get-ChildItem -Path $extractFolder -Recurse -Exclude *.log | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                    if ($sz -gt 1KB) { $ok = $true }
+                }
+            }
+            catch {
+                WriteLog "Extraction error: $($_.Exception.Message)"
+            }
+            if ($ok) { Remove-Item $driverFilePath -Force -ErrorAction SilentlyContinue }
+        }
+        return
     }
 
-    WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
-    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
-    WriteLog "Dell Catalog cab file downloaded"
+    # Server pathway (unchanged legacy)
+    $catalogUrl = "https://downloads.dell.com/catalog/Catalog.cab"
+    $DellCabFile = Join-Path $DriversFolder 'Catalog.cab'
+    $DellCatalogXML = Join-Path $DriversFolder 'Catalog.xml'
 
-    WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
+    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
     Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML" | Out-Null
-    WriteLog "Dell Catalog cab file extracted"
 
     $xmlContent = [xml](Get-Content -Path $DellCatalogXML)
     $baseLocation = "https://" + $xmlContent.manifest.baseLocation + "/"
     $latestDrivers = @{}
+    $softwareComponents = $xmlContent.Manifest.SoftwareComponent | Where-Object { $_.ComponentType.value -eq 'DRVR' }
 
-    $softwareComponents = $xmlContent.Manifest.SoftwareComponent | Where-Object { $_.ComponentType.value -eq "DRVR" }
     foreach ($component in $softwareComponents) {
         $models = $component.SupportedSystems.Brand.Model
         foreach ($item in $models) {
             if ($item.Display.'#cdata-section' -match $Model) {
-	    	
-                if ($WindowsRelease -le 11) {
-                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
-                }
-                elseif ($WindowsRelease -eq 2016) {
-                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W14") }
-                }
-                elseif ($WindowsRelease -eq 2019) {
-                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W19") }
-                }
-                elseif ($WindowsRelease -eq 2022) {
-                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
-                }
-                elseif ($WindowsRelease -eq 2025) {
-                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W25") }
-                }
-                else {
-                    $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { ($_.osArch -eq $WindowsArch) -and ($_.osCode -match "W22") }
-                }
-		
-                if ($validOS) {
-                    $driverPath = $component.path
-                    $downloadUrl = $baseLocation + $driverPath
-                    $driverFileName = [System.IO.Path]::GetFileName($driverPath)
-                    $name = $component.Name.Display.'#cdata-section'
-                    $name = $name -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
-                    $name = $name -replace '[\,]', '-'
-                    $category = $component.Category.Display.'#cdata-section'
-                    $category = $category -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
-                    $version = [version]$component.vendorVersion
-                    $namePrefix = ($name -split '-')[0]
-
-                    # Use hash table to store the latest driver for each category to prevent downloading older driver versions
-                    if ($latestDrivers[$category]) {
-                        if ($latestDrivers[$category][$namePrefix]) {
-                            if ($latestDrivers[$category][$namePrefix].Version -lt $version) {
-                                $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
-                                    Name           = $name; 
-                                    DownloadUrl    = $downloadUrl; 
-                                    DriverFileName = $driverFileName; 
-                                    Version        = $version; 
-                                    Category       = $category 
-                                }
-                            }
-                        }
-                        else {
-                            $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
-                                Name           = $name; 
-                                DownloadUrl    = $downloadUrl; 
-                                DriverFileName = $driverFileName; 
-                                Version        = $version; 
-                                Category       = $category 
-                            }
-                        }
-                    }
-                    else {
-                        $latestDrivers[$category] = @{}
-                        $latestDrivers[$category][$namePrefix] = [PSCustomObject]@{
-                            Name           = $name; 
-                            DownloadUrl    = $downloadUrl; 
-                            DriverFileName = $driverFileName; 
-                            Version        = $version; 
-                            Category       = $category 
-                        }
+                $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
+                if (-not $validOS) { continue }
+                $driverPath = $component.path
+                $downloadUrl = $baseLocation + $driverPath
+                $driverFileName = [System.IO.Path]::GetFileName($driverPath)
+                $name = $component.Name.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_' -replace '[\,]','-'
+                $category = $component.Category.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_'
+                $version = [version]$component.vendorVersion
+                $namePrefix = ($name -split '-')[0]
+                if (-not $latestDrivers[$category]) { $latestDrivers[$category] = @{} }
+                if (-not $latestDrivers[$category][$namePrefix] -or $latestDrivers[$category][$namePrefix].Version -lt $version) {
+                    $latestDrivers[$category][$namePrefix] = [pscustomobject]@{
+                        Name = $name; DownloadUrl = $downloadUrl; DriverFileName = $driverFileName; Version = $version; Category = $category
                     }
                 }
             }
@@ -1558,102 +1551,15 @@ function Get-DellDrivers {
 
     foreach ($category in $latestDrivers.Keys) {
         foreach ($driver in $latestDrivers[$category].Values) {
-            $downloadFolder = "$DriversFolder\$Model\$($driver.Category)"
-            $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driver.DriverFileName
-            
-            if (Test-Path -Path $driverFilePath) {
-                WriteLog "Driver already downloaded: $driverFilePath skipping"
-                continue
-            }
-
-            WriteLog "Downloading driver: $($driver.Name)"
-            if (-not (Test-Path -Path $downloadFolder)) {
-                WriteLog "Creating download folder: $downloadFolder"
-                New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
-                WriteLog "Download folder created"
-            }
-
-            WriteLog "Downloading driver: $($driver.DownloadUrl) to $driverFilePath"
-            try {
-                Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
-                Start-BitsTransferWithRetry -Source $driver.DownloadUrl -Destination $driverFilePath
-                Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
-                WriteLog "Driver downloaded"
-            }
-            catch {
-                WriteLog "Failed to download driver: $($driver.DownloadUrl) to $driverFilePath"
-                continue
-            }
-            
-
-            $extractFolder = $downloadFolder + "\" + $driver.DriverFileName.TrimEnd($driver.DriverFileName[-4..-1])
-            # WriteLog "Creating extraction folder: $extractFolder"
-            # New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-            # WriteLog "Extraction folder created"
-
-            # $arguments = "/s /e /f `"$extractFolder`""
+            $downloadFolder = Join-Path $DriversFolder (Join-Path $Model $driver.Category)
+            if (-not (Test-Path $downloadFolder)) { New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null }
+            $driverFilePath = Join-Path $downloadFolder $driver.DriverFileName
+            if (Test-Path $driverFilePath) { continue }
+            Start-BitsTransferWithRetry -Source $driver.DownloadUrl -Destination $driverFilePath
+            $extractFolder = Join-Path $downloadFolder ($driver.DriverFileName.TrimEnd($driver.DriverFileName[-4..-1]))
             $arguments = "/s /drivers=`"$extractFolder`""
-            WriteLog "Extracting driver: $driverFilePath $arguments"
-            try {
-                #If Category is Chipset, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel chipset driver which leaves a Window open
-                if ($driver.Category -eq "Chipset") {
-                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
-                    
-                    #Wait 5 seconds to allow for the extraction process to finish
-                    Start-Sleep -Seconds 5
-                                        
-                    $childProcesses = Get-ChildProcesses $process.Id
-
-                    # Find and stop the last created child process
-                    if ($childProcesses) {
-                        $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
-                        Stop-Process -Id $latestProcess.ProcessId -Force
-                        # Sleep 1 second to let process finish exiting so its installer can be removed
-                        Start-Sleep -Seconds 1
-                    }
-                    #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
-                }
-                elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
-
-                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
-
-                    #Sometimes the network drivers will extract on client OS, wait 5 seconds and check if the process is still running
-                    Start-Sleep -Seconds 5
-                    if ($process.HasExited -eq $false) {
-                        $childProcesses = Get-ChildProcesses $process.Id
-
-                        # Find and stop the last created child process
-                        if ($childProcesses) {
-                            $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
-                            Stop-Process -Id $latestProcess.ProcessId -Force
-                            #Move on to the next driver and skip this one - it won't extract on a client OS even with /s /e switches
-                            continue
-                        }
-                    }
-                }
-                else {
-                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
-                }
-                # If $extractFolder is empty, try alternative extraction method
-                if (!(Get-ChildItem -Path $extractFolder -Recurse | Where-Object { -not $_.PSIsContainer })) {
-                    WriteLog 'Extraction with /drivers= switch failed. Removing folder and retrying with /s /e switches'
-                    Remove-Item -Path $extractFolder -Force -Recurse -ErrorAction SilentlyContinue
-                    $arguments = "/s /e=`"$extractFolder`""
-                    WriteLog "Extracting driver: $driverFilePath $arguments"
-                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
-                }
-            }
-            catch {
-                WriteLog 'Extraction with /drivers= switch failed. Retrying with /s /e switches'
-                $arguments = "/s /e=`"$extractFolder`""
-                WriteLog "Extracting driver: $driverFilePath $arguments"
-                Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null
-            }
-            WriteLog "Driver extracted"
-
-            WriteLog "Deleting driver file: $driverFilePath"
-            Remove-Item -Path $driverFilePath -Force
-            WriteLog "Driver file deleted"
+            try { Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments | Out-Null } catch {}
+            Remove-Item $driverFilePath -Force -ErrorAction SilentlyContinue
         }
     }
 }

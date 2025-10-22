@@ -67,6 +67,7 @@ Description = 'Common functions shared between FFU Builder UI and the BuildFFUVM
 
 # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
 NestedModules = @('FFU.Common.Drivers.psm1', 
+               'FFU.Common.Drivers.Dell.psm1',
                'FFU.Common.Winget.psm1', 
                'FFU.Common.Parallel.psm1',
                'FFU.Common.Cleanup.psm1')
