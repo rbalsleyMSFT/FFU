@@ -90,7 +90,20 @@ function Get-DellClientModels {
                 $pathAttr = $manifestInfo.GetAttribute('path')
                 if (-not $pathAttr) { continue }
                 $cabUrl = 'https://downloads.dell.com/' + $pathAttr
-                $modelDisplay = "$brandDisplay $modelNumber ($systemId)"
+                # Normalize model display to avoid duplicate brand (e.g. Latitude Latitude 13 (0432))
+                $prefixedModelNumber = $modelNumber
+                if ($modelNumber -and $brandDisplay) {
+                    if ($modelNumber.StartsWith($brandDisplay,[System.StringComparison]::OrdinalIgnoreCase)) {
+                        $prefixedModelNumber = $modelNumber
+                    }
+                    else {
+                        $prefixedModelNumber = "$brandDisplay $modelNumber"
+                    }
+                }
+                elseif ($brandDisplay -and -not $modelNumber) {
+                    $prefixedModelNumber = $brandDisplay
+                }
+                $modelDisplay = "$prefixedModelNumber ($systemId)"
                 $models.Add([pscustomobject]@{
                     Brand           = $brandDisplay
                     ModelNumber     = $modelNumber
