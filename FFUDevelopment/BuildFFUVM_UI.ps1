@@ -15,6 +15,7 @@
 
     This script acts as the primary host for the UI, connecting the user interface with the underlying build and logic modules.
 #>
+#Requires -RunAsAdministrator
 
 [CmdletBinding()]
 [System.STAThread()]
