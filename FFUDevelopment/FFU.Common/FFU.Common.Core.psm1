@@ -143,7 +143,10 @@ function Start-BitsTransferWithRetry {
         [string]$Source,
         [Parameter(Mandatory = $true)]
         [string]$Destination,
-        [int]$Retries = 3
+        [int]$Retries = 3,
+        [PSCredential]$Credential = $null,
+        [ValidateSet('Basic', 'Digest', 'NTLM', 'Negotiate', 'Passport')]
+        [string]$Authentication = 'Negotiate'
     )
 
     $attempt = 0
@@ -153,21 +156,54 @@ function Start-BitsTransferWithRetry {
         $OriginalVerbosePreference = $VerbosePreference
         $OriginalProgressPreference = $ProgressPreference
         try {
-            $VerbosePreference = 'SilentlyContinue' 
-            $ProgressPreference = 'SilentlyContinue' 
+            $VerbosePreference = 'SilentlyContinue'
+            $ProgressPreference = 'SilentlyContinue'
 
-            Start-BitsTransfer -Source $Source -Destination $Destination -Priority Normal -ErrorAction Stop
-            
+            # Build BITS transfer parameters
+            $bitsParams = @{
+                Source      = $Source
+                Destination = $Destination
+                Priority    = 'Normal'
+                ErrorAction = 'Stop'
+            }
+
+            # Add credential parameters if provided
+            if ($null -ne $Credential) {
+                $bitsParams['Credential'] = $Credential
+                $bitsParams['Authentication'] = $Authentication
+                WriteLog "Using explicit credentials for BITS transfer with authentication: $Authentication"
+            }
+
+            Start-BitsTransfer @bitsParams
+
             $ProgressPreference = $OriginalProgressPreference
             $VerbosePreference = $OriginalVerbosePreference
-            WriteLog "Successfully transferred $Source to $Destination." 
-            return 
+            WriteLog "Successfully transferred $Source to $Destination."
+            return
         }
         catch {
             $lastError = $_
             $attempt++
-            WriteLog "Attempt $attempt of $Retries failed to download $Source. Error: $($lastError.Exception.Message)." 
-            Start-Sleep -Seconds (1 * $attempt) 
+
+            # Check for specific BITS authentication error
+            $errorCode = $lastError.Exception.HResult
+            if ($errorCode -eq 0x800704DD -or $errorCode -eq -2147023651) {
+                WriteLog "BITS authentication error detected (0x800704DD: ERROR_NOT_LOGGED_ON)."
+                WriteLog "This typically means the current process does not have network credentials."
+                WriteLog "Solution: Ensure the script runs with Start-ThreadJob instead of Start-Job."
+                WriteLog "Or provide explicit credentials using -Credential parameter."
+                # Don't retry authentication errors
+                break
+            }
+
+            WriteLog "Attempt $attempt of $Retries failed to download $Source. Error: $($lastError.Exception.Message)."
+
+            # Only sleep and retry if we haven't hit max retries
+            if ($attempt -lt $Retries) {
+                $sleepSeconds = 2 * $attempt  # Exponential backoff: 2s, 4s, 6s, etc.
+                WriteLog "Waiting $sleepSeconds seconds before retry..."
+                Start-Sleep -Seconds $sleepSeconds
+            }
         }
         finally {
             if (Get-Variable -Name 'OriginalProgressPreference' -ErrorAction SilentlyContinue) {
@@ -179,8 +215,8 @@ function Start-BitsTransferWithRetry {
         }
     }
 
-    WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)" 
-    throw $lastError 
+    WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)"
+    throw $lastError
 }
     
 function Set-Progress {

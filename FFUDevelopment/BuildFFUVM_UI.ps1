@@ -71,7 +71,31 @@ if (Get-Module -Name 'FFUUI.Core' -ErrorAction SilentlyContinue) {
 Import-Module "$PSScriptRoot\FFU.Common" -Force
 Import-Module "$PSScriptRoot\FFUUI.Core" -Force
 
-# Set the log path 
+# Import ThreadJob module for better credential handling in background jobs
+# ThreadJob runs jobs as threads in the current process, preserving network credentials
+# This fixes BITS authentication error 0x800704DD (ERROR_NOT_LOGGED_ON)
+if (-not (Get-Module -ListAvailable -Name ThreadJob)) {
+    WriteLog "ThreadJob module not found. Attempting to install..."
+    try {
+        Install-Module -Name ThreadJob -Force -Scope CurrentUser -ErrorAction Stop
+        WriteLog "ThreadJob module installed successfully."
+    }
+    catch {
+        Write-Warning "Failed to install ThreadJob module: $($_.Exception.Message)"
+        Write-Warning "BITS transfers may fail with authentication errors (0x800704DD)."
+        Write-Warning "Install ThreadJob manually: Install-Module -Name ThreadJob -Scope CurrentUser"
+    }
+}
+
+if (Get-Module -ListAvailable -Name ThreadJob) {
+    Import-Module ThreadJob -Force
+    WriteLog "ThreadJob module loaded successfully."
+}
+else {
+    Write-Warning "ThreadJob module not available. Using Start-Job (may cause BITS authentication issues)."
+}
+
+# Set the log path
 Set-CommonCoreLogPath -Path $script:uiState.LogFilePath
 
 # Setting long path support - this prevents issues where some applications have deep directory structures
@@ -294,8 +318,16 @@ $script:uiState.Controls.btnRun.Add_Click({
                     & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
                 }
 
-                # Start cleanup job
-                $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $cleanupScriptBlock -ArgumentList @($cleanupParams, $PSScriptRoot)
+                # Start cleanup job using ThreadJob for credential inheritance
+                # ThreadJob preserves network credentials, preventing BITS error 0x800704DD
+                if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue) {
+                    $script:uiState.Data.currentBuildJob = Start-ThreadJob -ScriptBlock $cleanupScriptBlock -ArgumentList @($cleanupParams, $PSScriptRoot)
+                    WriteLog "Cleanup job started using ThreadJob (with network credential inheritance)."
+                }
+                else {
+                    $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $cleanupScriptBlock -ArgumentList @($cleanupParams, $PSScriptRoot)
+                    WriteLog "WARNING: Cleanup job started using Start-Job (network credentials may not be available for BITS transfers)."
+                }
 
                 # Wait for log file to appear (or open immediately if it exists)
                 $logWaitTimeout = 60
@@ -449,7 +481,15 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
 
             # Start the job and store it in the shared state object
-            $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
+            # Use ThreadJob for credential inheritance (fixes BITS error 0x800704DD)
+            if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue) {
+                $script:uiState.Data.currentBuildJob = Start-ThreadJob -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
+                WriteLog "Build job started using ThreadJob (with network credential inheritance)."
+            }
+            else {
+                $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
+                WriteLog "WARNING: Build job started using Start-Job (network credentials may not be available for BITS transfers)."
+            }
 
             # Wait for the new log file to be created by the background job.
             $logWaitTimeout = 15 # seconds
