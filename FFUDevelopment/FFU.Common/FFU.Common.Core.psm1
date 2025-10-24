@@ -136,19 +136,89 @@ function Invoke-Process {
     return $cmd
 }
 
-# Function to download a file using BITS with retry and error handling
+# Function to download a file using BITS with automatic fallback to other methods
 function Start-BitsTransferWithRetry {
+    <#
+    .SYNOPSIS
+        Downloads a file using BITS with automatic fallback to alternate methods
+
+    .DESCRIPTION
+        Attempts to download using BITS first. If BITS fails (especially with
+        authentication error 0x800704DD), automatically falls back to:
+        1. Invoke-WebRequest
+        2. System.Net.WebClient
+        3. curl.exe
+
+        This ensures downloads work even when BITS credentials are unavailable.
+
+    .PARAMETER Source
+        URL to download from
+
+    .PARAMETER Destination
+        Local file path to save to
+
+    .PARAMETER Retries
+        Number of retry attempts per method (default: 3)
+
+    .PARAMETER Credential
+        Optional credentials for authenticated downloads
+
+    .PARAMETER Authentication
+        Authentication method for BITS (default: Negotiate)
+
+    .PARAMETER UseResilientDownload
+        Use multi-method fallback system (default: $true)
+        Set to $false to use BITS-only behavior (legacy)
+    #>
     param (
         [Parameter(Mandatory = $true)]
         [string]$Source,
+
         [Parameter(Mandatory = $true)]
         [string]$Destination,
+
         [int]$Retries = 3,
+
         [PSCredential]$Credential = $null,
+
         [ValidateSet('Basic', 'Digest', 'NTLM', 'Negotiate', 'Passport')]
-        [string]$Authentication = 'Negotiate'
+        [string]$Authentication = 'Negotiate',
+
+        [bool]$UseResilientDownload = $true
     )
 
+    # If resilient download is enabled, use the multi-method fallback system
+    if ($UseResilientDownload) {
+        try {
+            # Check if Start-ResilientDownload is available from FFU.Common.Download module
+            if (Get-Command Start-ResilientDownload -ErrorAction SilentlyContinue) {
+                WriteLog "Using resilient multi-method download system"
+
+                $downloadParams = @{
+                    Source      = $Source
+                    Destination = $Destination
+                    Retries     = $Retries
+                }
+
+                if ($Credential) {
+                    $downloadParams['Credential'] = $Credential
+                }
+
+                Start-ResilientDownload @downloadParams
+                return
+            }
+            else {
+                WriteLog "WARNING: Start-ResilientDownload not available, falling back to BITS-only mode"
+            }
+        }
+        catch {
+            # If resilient download fails, log and fall through to legacy BITS behavior
+            WriteLog "Resilient download failed: $($_.Exception.Message)"
+            WriteLog "Attempting legacy BITS-only download as fallback"
+        }
+    }
+
+    # Legacy BITS-only behavior (preserved for compatibility)
     $attempt = 0
     $lastError = $null
 
@@ -190,9 +260,9 @@ function Start-BitsTransferWithRetry {
             if ($errorCode -eq 0x800704DD -or $errorCode -eq -2147023651) {
                 WriteLog "BITS authentication error detected (0x800704DD: ERROR_NOT_LOGGED_ON)."
                 WriteLog "This typically means the current process does not have network credentials."
-                WriteLog "Solution: Ensure the script runs with Start-ThreadJob instead of Start-Job."
-                WriteLog "Or provide explicit credentials using -Credential parameter."
-                # Don't retry authentication errors
+                WriteLog "RECOMMENDATION: Enable -UseResilientDownload for automatic fallback to alternate download methods."
+                WriteLog "Or ensure the script runs with Start-ThreadJob instead of Start-Job."
+                # Don't retry authentication errors with BITS
                 break
             }
 

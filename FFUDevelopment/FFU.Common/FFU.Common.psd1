@@ -66,10 +66,11 @@ Description = 'Common functions shared between FFU Builder UI and the BuildFFUVM
 # FormatsToProcess = @()
 
 # Modules to import as nested modules of the module specified in RootModule/ModuleToProcess
-NestedModules = @('FFU.Common.Drivers.psm1', 
-               'FFU.Common.Winget.psm1', 
+NestedModules = @('FFU.Common.Drivers.psm1',
+               'FFU.Common.Winget.psm1',
                'FFU.Common.Parallel.psm1',
-               'FFU.Common.Cleanup.psm1')
+               'FFU.Common.Cleanup.psm1',
+               'FFU.Common.Download.psm1')
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
 FunctionsToExport = '*'
