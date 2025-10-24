@@ -1336,9 +1336,12 @@ function Get-LenovoDrivers {
         # Download the package XML
         $packageXMLPath = "$DriversFolder\$packageName"
         WriteLog "Downloading $category package XML $packageUrl to $packageXMLPath"
-        If ((Start-BitsTransferWithRetry -Source $packageUrl -Destination $packageXMLPath) -eq $false) {
-            Write-Output "Failed to download $category package XML: $packageXMLPath"
-            WriteLog "Failed to download $category package XML: $packageXMLPath"
+        try {
+            Start-BitsTransferWithRetry -Source $packageUrl -Destination $packageXMLPath -ErrorAction Stop
+        }
+        catch {
+            Write-Output "Failed to download $category package XML: $packageXMLPath - $($_.Exception.Message)"
+            WriteLog "Failed to download $category package XML: $packageXMLPath - $($_.Exception.Message)"
             continue
         }
 
@@ -2320,35 +2323,38 @@ function Save-KB {
             if ($link -match 'x64' -or $link -match 'amd64') {
                 if ($WindowsArch -eq 'x64') {
                     Writelog "Downloading $link for $WindowsArch to $Path"
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
                     $fileName = ($link -split '/')[-1]
                     Writelog "Returning $fileName"
+                    return $fileName
                 }
-                
+
             }
             elseif ($link -match 'arm64') {
                 if ($WindowsArch -eq 'arm64') {
                     Writelog "Downloading $Link for $WindowsArch to $Path"
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
                     $fileName = ($link -split '/')[-1]
                     Writelog "Returning $fileName"
+                    return $fileName
                 }
             }
             elseif ($link -match 'x86') {
                 if ($WindowsArch -eq 'x86') {
                     Writelog "Downloading $link for $WindowsArch to $Path"
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
                     $fileName = ($link -split '/')[-1]
                     Writelog "Returning $fileName"
+                    return $fileName
                 }
 
             }
             else {
                 WriteLog "No architecture found in $link"
-                
+
                 #If no architecture is found, download the file and run it through Get-PEArchitecture to determine the architecture
                 Writelog "Downloading $link to $Path and analyzing file for architecture"
-                Start-BitsTransferWithRetry -Source $link -Destination $Path
+                Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
 
                 #Take the file and run it through Get-PEArchitecture to determine the architecture
                 $fileName = ($link -split '/')[-1]
