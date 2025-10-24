@@ -151,6 +151,8 @@ function Start-BitsTransferWithRetry {
 
         This ensures downloads work even when BITS credentials are unavailable.
 
+        Supports proxy configuration for corporate environments (addresses Issue #327).
+
     .PARAMETER Source
         URL to download from
 
@@ -169,6 +171,10 @@ function Start-BitsTransferWithRetry {
     .PARAMETER UseResilientDownload
         Use multi-method fallback system (default: $true)
         Set to $false to use BITS-only behavior (legacy)
+
+    .PARAMETER ProxyConfig
+        Optional FFUNetworkConfiguration object for proxy support
+        If not provided, proxy settings will be auto-detected
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -184,8 +190,22 @@ function Start-BitsTransferWithRetry {
         [ValidateSet('Basic', 'Digest', 'NTLM', 'Negotiate', 'Passport')]
         [string]$Authentication = 'Negotiate',
 
-        [bool]$UseResilientDownload = $true
+        [bool]$UseResilientDownload = $true,
+
+        [object]$ProxyConfig = $null
     )
+
+    # Auto-detect proxy configuration if not provided
+    if ($null -eq $ProxyConfig) {
+        try {
+            if ([FFUNetworkConfiguration] -as [type]) {
+                $ProxyConfig = [FFUNetworkConfiguration]::DetectProxySettings()
+            }
+        }
+        catch {
+            WriteLog "Could not auto-detect proxy settings: $($_.Exception.Message)"
+        }
+    }
 
     # If resilient download is enabled, use the multi-method fallback system
     if ($UseResilientDownload) {
@@ -202,6 +222,10 @@ function Start-BitsTransferWithRetry {
 
                 if ($Credential) {
                     $downloadParams['Credential'] = $Credential
+                }
+
+                if ($ProxyConfig) {
+                    $downloadParams['ProxyConfig'] = $ProxyConfig
                 }
 
                 Start-ResilientDownload @downloadParams
@@ -242,6 +266,29 @@ function Start-BitsTransferWithRetry {
                 $bitsParams['Credential'] = $Credential
                 $bitsParams['Authentication'] = $Authentication
                 WriteLog "Using explicit credentials for BITS transfer with authentication: $Authentication"
+            }
+
+            # Add proxy configuration if available (addresses Issue #327)
+            if ($null -ne $ProxyConfig) {
+                try {
+                    $proxyUsage = $ProxyConfig.GetBITSProxyUsage()
+                    $proxyList = $ProxyConfig.GetBITSProxyList()
+
+                    $bitsParams['ProxyUsage'] = $proxyUsage
+
+                    if ($proxyList -and $proxyList.Count -gt 0) {
+                        $bitsParams['ProxyList'] = $proxyList
+                        WriteLog "Using proxy for BITS transfer: $($proxyList -join ', ')"
+                    }
+
+                    if ($ProxyConfig.ProxyCredential) {
+                        $bitsParams['ProxyCredential'] = $ProxyConfig.ProxyCredential
+                        WriteLog "Using proxy credentials for BITS transfer"
+                    }
+                }
+                catch {
+                    WriteLog "Warning: Failed to apply proxy configuration to BITS transfer: $($_.Exception.Message)"
+                }
             }
 
             Start-BitsTransfer @bitsParams

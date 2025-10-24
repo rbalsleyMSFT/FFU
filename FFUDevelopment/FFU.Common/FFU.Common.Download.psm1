@@ -47,7 +47,7 @@ function Start-ResilientDownload {
         4. curl.exe (Windows native)
 
         Automatically falls back if a method fails, with special handling for
-        authentication errors.
+        authentication errors. Supports proxy configuration for corporate environments.
 
     .PARAMETER Source
         The URL to download from
@@ -66,6 +66,9 @@ function Start-ResilientDownload {
 
     .PARAMETER SkipBITS
         Skip BITS entirely and go straight to fallback methods
+
+    .PARAMETER ProxyConfig
+        Optional FFUNetworkConfiguration object for proxy support
 
     .EXAMPLE
         Start-ResilientDownload -Source "https://example.com/file.zip" -Destination "C:\temp\file.zip"
@@ -87,7 +90,9 @@ function Start-ResilientDownload {
 
         [DownloadMethod]$PreferredMethod = [DownloadMethod]::BITS,
 
-        [switch]$SkipBITS
+        [switch]$SkipBITS,
+
+        [object]$ProxyConfig = $null
     )
 
     $attemptedMethods = @()
@@ -116,7 +121,7 @@ function Start-ResilientDownload {
 
             switch ($method) {
                 ([DownloadMethod]::BITS) {
-                    $result = Invoke-BITSDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential
+                    $result = Invoke-BITSDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using BITS"
                         return $true
@@ -124,7 +129,7 @@ function Start-ResilientDownload {
                 }
 
                 ([DownloadMethod]::WebRequest) {
-                    $result = Invoke-WebRequestDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential
+                    $result = Invoke-WebRequestDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using Invoke-WebRequest"
                         return $true
@@ -132,7 +137,7 @@ function Start-ResilientDownload {
                 }
 
                 ([DownloadMethod]::WebClient) {
-                    $result = Invoke-WebClientDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential
+                    $result = Invoke-WebClientDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using WebClient"
                         return $true
@@ -140,7 +145,7 @@ function Start-ResilientDownload {
                 }
 
                 ([DownloadMethod]::Curl) {
-                    $result = Invoke-CurlDownload -Source $Source -Destination $Destination -Retries $Retries
+                    $result = Invoke-CurlDownload -Source $Source -Destination $Destination -Retries $Retries -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using curl"
                         return $true
@@ -185,7 +190,8 @@ function Invoke-BITSDownload {
         [string]$Source,
         [string]$Destination,
         [int]$Retries,
-        [PSCredential]$Credential
+        [PSCredential]$Credential,
+        [object]$ProxyConfig = $null
     )
 
     # Check if BITS is available
@@ -209,6 +215,28 @@ function Invoke-BITSDownload {
             if ($Credential) {
                 $bitsParams['Credential'] = $Credential
                 $bitsParams['Authentication'] = 'Negotiate'
+            }
+
+            # Apply proxy configuration if provided
+            if ($null -ne $ProxyConfig) {
+                try {
+                    $proxyUsage = $ProxyConfig.GetBITSProxyUsage()
+                    $proxyList = $ProxyConfig.GetBITSProxyList()
+
+                    $bitsParams['ProxyUsage'] = $proxyUsage
+
+                    if ($proxyList -and $proxyList.Count -gt 0) {
+                        $bitsParams['ProxyList'] = $proxyList
+                        WriteLog "Using proxy for BITS: $($proxyList -join ', ')"
+                    }
+
+                    if ($ProxyConfig.ProxyCredential) {
+                        $bitsParams['ProxyCredential'] = $ProxyConfig.ProxyCredential
+                    }
+                }
+                catch {
+                    WriteLog "Warning: Could not apply proxy configuration to BITS: $($_.Exception.Message)"
+                }
             }
 
             # Suppress progress for cleaner output
@@ -263,7 +291,8 @@ function Invoke-WebRequestDownload {
         [string]$Source,
         [string]$Destination,
         [int]$Retries,
-        [PSCredential]$Credential
+        [PSCredential]$Credential,
+        [object]$ProxyConfig = $null
     )
 
     $attempt = 0
@@ -285,6 +314,19 @@ function Invoke-WebRequestDownload {
             else {
                 # Try to use default credentials
                 $webRequestParams['UseDefaultCredentials'] = $true
+            }
+
+            # Apply proxy configuration if provided
+            if ($null -ne $ProxyConfig -and $ProxyConfig.ProxyServer) {
+                $webRequestParams['Proxy'] = $ProxyConfig.ProxyServer
+                WriteLog "Using proxy for Invoke-WebRequest: $($ProxyConfig.ProxyServer)"
+
+                if ($ProxyConfig.ProxyCredential) {
+                    $webRequestParams['ProxyCredential'] = $ProxyConfig.ProxyCredential
+                }
+                else {
+                    $webRequestParams['ProxyUseDefaultCredentials'] = $true
+                }
             }
 
             # Suppress progress for large files (much faster)
@@ -331,7 +373,8 @@ function Invoke-WebClientDownload {
         [string]$Source,
         [string]$Destination,
         [int]$Retries,
-        [PSCredential]$Credential
+        [PSCredential]$Credential,
+        [object]$ProxyConfig = $null
     )
 
     $attempt = 0
@@ -347,6 +390,25 @@ function Invoke-WebClientDownload {
             }
             else {
                 $webClient.UseDefaultCredentials = $true
+            }
+
+            # Apply proxy configuration if provided
+            if ($null -ne $ProxyConfig -and $ProxyConfig.ProxyServer) {
+                $proxy = New-Object System.Net.WebProxy($ProxyConfig.ProxyServer)
+
+                if ($ProxyConfig.ProxyCredential) {
+                    $proxy.Credentials = $ProxyConfig.ProxyCredential.GetNetworkCredential()
+                }
+                else {
+                    $proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+                }
+
+                if ($ProxyConfig.ProxyBypass -and $ProxyConfig.ProxyBypass.Count -gt 0) {
+                    $proxy.BypassList = $ProxyConfig.ProxyBypass
+                }
+
+                $webClient.Proxy = $proxy
+                WriteLog "Using proxy for WebClient: $($ProxyConfig.ProxyServer)"
             }
 
             # Set modern TLS protocols
@@ -395,7 +457,8 @@ function Invoke-CurlDownload {
     param(
         [string]$Source,
         [string]$Destination,
-        [int]$Retries
+        [int]$Retries,
+        [object]$ProxyConfig = $null
     )
 
     # Check if curl.exe is available
@@ -418,13 +481,35 @@ function Invoke-CurlDownload {
                 '--fail',                  # Fail on HTTP errors
                 '--retry', '2',            # Retry on transient errors
                 '--retry-delay', '2',      # Delay between retries
-                '--max-time', '300',       # 5 minute timeout
-                '--output', "`"$Destination`"",  # Output file
-                "`"$Source`""              # URL (quoted for spaces)
+                '--max-time', '300'        # 5 minute timeout
             )
 
+            # Apply proxy configuration if provided
+            if ($null -ne $ProxyConfig -and $ProxyConfig.ProxyServer) {
+                $curlArgs += '--proxy'
+                $curlArgs += "`"$($ProxyConfig.ProxyServer)`""
+                WriteLog "Using proxy for curl: $($ProxyConfig.ProxyServer)"
+
+                if ($ProxyConfig.ProxyCredential) {
+                    $proxyUser = $ProxyConfig.ProxyCredential.UserName
+                    $proxyPass = $ProxyConfig.ProxyCredential.GetNetworkCredential().Password
+                    $curlArgs += '--proxy-user'
+                    $curlArgs += "`"${proxyUser}:${proxyPass}`""
+                }
+            }
+
+            $curlArgs += '--output'
+            $curlArgs += "`"$Destination`""
+            $curlArgs += "`"$Source`""
+
             WriteLog "curl.exe attempt $attempt/$Retries"
-            WriteLog "Command: curl.exe $($curlArgs -join ' ')"
+            # Don't log the full command if it contains credentials
+            if ($ProxyConfig -and $ProxyConfig.ProxyCredential) {
+                WriteLog "Command: curl.exe [args with credentials redacted]"
+            }
+            else {
+                WriteLog "Command: curl.exe $($curlArgs -join ' ')"
+            }
 
             $process = Start-Process -FilePath $curlPath -ArgumentList $curlArgs -Wait -PassThru -NoNewWindow
 
