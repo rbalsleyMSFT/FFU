@@ -1432,7 +1432,7 @@ function Get-DellDrivers {
         [Parameter(Mandatory = $true)]
         [string]$Model,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('x64','x86','ARM64')]
+        [ValidateSet('x64', 'x86', 'ARM64')]
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
         [int]$WindowsRelease
@@ -1454,9 +1454,18 @@ function Get-DellDrivers {
         if (-not $target) { throw "Requested Dell model '$Model' not found in index." }
 
         $cabUrl = $target.CabUrl
+        if ([string]::IsNullOrWhiteSpace($cabUrl)) {
+            WriteLog "CabUrl missing for '$($target.Model)'; resolving via CatalogIndexPC."
+            $resolved = Resolve-DellCabUrlFromModel -DriversFolder $DriversFolder -ModelDisplay $target.Model
+            if ($null -eq $resolved -or [string]::IsNullOrWhiteSpace($resolved.CabUrl)) {
+                throw "Unable to resolve CabUrl for $($target.Model) from CatalogIndexPC."
+            }
+            $cabUrl = $resolved.CabUrl
+            $target.CabUrl = $cabUrl
+        }
         $modelCabName = [IO.Path]::GetFileName($cabUrl)
         $modelCabPath = Join-Path $DriversFolder $modelCabName
-        $modelXmlPath = Join-Path $DriversFolder ($modelCabName -replace '\.cab$','.xml')
+        $modelXmlPath = Join-Path $DriversFolder ($modelCabName -replace '\.cab$', '.xml')
 
         if (Test-Path $modelCabPath) { Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue }
         if (Test-Path $modelXmlPath) { Remove-Item $modelXmlPath -Force -ErrorAction SilentlyContinue }
@@ -1473,7 +1482,7 @@ function Get-DellDrivers {
         }
 
         foreach ($pkg in $pkgs) {
-            $categorySafe = ($pkg.Category -replace '[\\\/\:\*\?\"\<\>\| ]','_')
+            $categorySafe = ($pkg.Category -replace '[\\\/\:\*\?\"\<\>\| ]', '_')
             $downloadFolder = Join-Path $DriversFolder (Join-Path $Model $categorySafe)
             if (-not (Test-Path $downloadFolder)) { New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null }
             $driverFilePath = Join-Path $downloadFolder $pkg.DriverFileName
@@ -1535,8 +1544,8 @@ function Get-DellDrivers {
                 $driverPath = $component.path
                 $downloadUrl = $baseLocation + $driverPath
                 $driverFileName = [System.IO.Path]::GetFileName($driverPath)
-                $name = $component.Name.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_' -replace '[\,]','-'
-                $category = $component.Category.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_'
+                $name = $component.Name.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]', '_' -replace '[\,]', '-'
+                $category = $component.Category.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
                 $version = [version]$component.vendorVersion
                 $namePrefix = ($name -split '-')[0]
                 if (-not $latestDrivers[$category]) { $latestDrivers[$category] = @{} }

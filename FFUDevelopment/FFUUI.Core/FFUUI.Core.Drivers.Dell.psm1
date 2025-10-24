@@ -182,75 +182,35 @@ function Save-DellDriversTask {
         if ($WindowsRelease -le 11) {
             $cabUrl = $DriverItemData.CabUrl
             if ([string]::IsNullOrWhiteSpace($cabUrl)) {
-                WriteLog "CabUrl missing for '$modelDisplay' – falling back to legacy CatalogPC parsing."
-                # Fallback legacy client method
-                $catalogCab = Join-Path $makeDriversPath 'CatalogPC.cab'
-                $catalogXml = Join-Path $makeDriversPath 'CatalogPC.xml'
-                $catalogUrl = 'http://downloads.dell.com/catalog/CatalogPC.cab'
-                $need = $true
-                if (Test-Path $catalogXml) {
-                    if (((Get-Date) - (Get-Item $catalogXml).CreationTime).TotalDays -lt 7) { $need = $false }
+                WriteLog "CabUrl missing for '$modelDisplay' – resolving via CatalogIndexPC."
+                $resolved = Resolve-DellCabUrlFromModel -DriversFolder $DriversFolder -ModelDisplay $modelDisplay
+                if ($null -eq $resolved -or [string]::IsNullOrWhiteSpace($resolved.CabUrl)) {
+                    throw "Unable to resolve CabUrl for $modelDisplay from CatalogIndexPC."
                 }
-                if ($need) {
-                    if (Test-Path $catalogCab) { Remove-SafeFolder $catalogCab }
-                    if (Test-Path $catalogXml) { Remove-SafeFolder $catalogXml }
-                    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $catalogCab
-                    Invoke-Process -FilePath Expand.exe -ArgumentList """$catalogCab"" ""$catalogXml""" | Out-Null
-                    Remove-Item $catalogCab -Force -ErrorAction SilentlyContinue
+                $cabUrl = $resolved.CabUrl
+                # Optionally persist back into the incoming object if property exists
+                if ($DriverItemData.PSObject.Properties['CabUrl']) {
+                    $DriverItemData.CabUrl = $cabUrl
                 }
-                if (-not (Test-Path $catalogXml)) { throw "Legacy fallback failed; missing $catalogXml" }
-                [xml]$xmlContent = Get-Content -Path $catalogXml -Raw
-                $baseLocation = "https://$($xmlContent.manifest.baseLocation)/"
-                $softwareComponents = $xmlContent.Manifest.SoftwareComponent | Where-Object { $_.ComponentType.value -eq 'DRVR' }
-
-                $latestDrivers = @{}
-                foreach ($component in $softwareComponents) {
-                    $models = $component.SupportedSystems.Brand.Model
-                    foreach ($m in $models) {
-                        if ($m.Display.'#cdata-section' -eq $modelDisplay) {
-                            $validOS = $component.SupportedOperatingSystems.OperatingSystem | Where-Object { $_.osArch -eq $WindowsArch }
-                            if (-not $validOS) { continue }
-                            $driverPath = $component.path
-                            $downloadUrl = $baseLocation + $driverPath
-                            $fileName = [IO.Path]::GetFileName($driverPath)
-                            $name = $component.Name.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_' -replace '[\,]','-'
-                            $category = $component.Category.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_'
-                            $version = [version]$component.vendorVersion
-                            $namePrefix = ($name -split '-')[0]
-                            if (-not $latestDrivers[$category]) { $latestDrivers[$category] = @{} }
-                            if (-not $latestDrivers[$category][$namePrefix] -or $latestDrivers[$category][$namePrefix].Version -lt $version) {
-                                $latestDrivers[$category][$namePrefix] = [pscustomobject]@{
-                                    Name = $name
-                                    DownloadUrl = $downloadUrl
-                                    DriverFileName = $fileName
-                                    Version = $version
-                                    Category = $category
-                                }
-                            }
-                        }
-                    }
-                }
-                foreach ($cat in $latestDrivers.Keys) { foreach ($drv in $latestDrivers[$cat].Values) { $packages += $drv } }
             }
-            else {
-                # Normal new model-based workflow
-                $modelCabName = [IO.Path]::GetFileName($cabUrl)
-                if ([string]::IsNullOrWhiteSpace($modelCabName)) { throw "Derived model cab name empty for $modelDisplay" }
-                $modelCabPath = Join-Path $makeDriversPath $modelCabName
-                $modelXmlPath = Join-Path $makeDriversPath ([IO.Path]::GetFileNameWithoutExtension($modelCabName) + '.xml')
-
-                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Downloading catalog...' }
-                if (Test-Path $modelCabPath) { Remove-SafeFolder $modelCabPath }
-                if (Test-Path $modelXmlPath) { Remove-SafeFolder $modelXmlPath }
-
-                Start-BitsTransferWithRetry -Source $cabUrl -Destination $modelCabPath
-                Invoke-Process -FilePath Expand.exe -ArgumentList """$modelCabPath"" ""$modelXmlPath""" | Out-Null
-                Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue
-                if (-not (Test-Path $modelXmlPath)) { throw "Model XML not found after extraction: $modelXmlPath" }
-
-                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Selecting latest drivers...' }
-                $packages = Get-DellLatestDriverPackages -ModelXmlPath $modelXmlPath -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
-            }
+            
+            # Model-based workflow (always used for client pathway now)
+            $modelCabName = [IO.Path]::GetFileName($cabUrl)
+            if ([string]::IsNullOrWhiteSpace($modelCabName)) { throw "Derived model cab name empty for $modelDisplay" }
+            $modelCabPath = Join-Path $makeDriversPath $modelCabName
+            $modelXmlPath = Join-Path $makeDriversPath ([IO.Path]::GetFileNameWithoutExtension($modelCabName) + '.xml')
+            
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Downloading catalog...' }
+            if (Test-Path $modelCabPath) { Remove-SafeFolder $modelCabPath }
+            if (Test-Path $modelXmlPath) { Remove-SafeFolder $modelXmlPath }
+            
+            Start-BitsTransferWithRetry -Source $cabUrl -Destination $modelCabPath
+            Invoke-Process -FilePath Expand.exe -ArgumentList """$modelCabPath"" ""$modelXmlPath""" | Out-Null
+            Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path $modelXmlPath)) { throw "Model XML not found after extraction: $modelXmlPath" }
+            
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Selecting latest drivers...' }
+            $packages = Get-DellLatestDriverPackages -ModelXmlPath $modelXmlPath -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
         }
         else {
             # Server legacy logic unchanged (kept as before)

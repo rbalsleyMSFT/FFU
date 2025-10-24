@@ -231,4 +231,50 @@ function Get-DellLatestDriverPackages {
     return $chosen
 }
 
-Export-ModuleMember -Function Convert-DellVendorVersion,Compare-DellVendorVersion,Get-DellCatalogIndex,Get-DellClientModels,Get-DellLatestDriverPackages
+# Resolve a Dell per‑model CabUrl when missing by inspecting CatalogIndexPC
+function Resolve-DellCabUrlFromModel {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$DriversFolder,
+        [Parameter()][string]$ModelDisplay,
+        [Parameter()][string]$SystemId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SystemId) -and -not [string]::IsNullOrWhiteSpace($ModelDisplay)) {
+        # Try to parse the trailing (XXXX) token (SystemId)
+        if ($ModelDisplay -match '\(([0-9A-Fa-f]{4})\)\s*$') {
+            $SystemId = $matches[1].ToUpperInvariant()
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SystemId)) {
+        WriteLog "Resolve-DellCabUrlFromModel: No SystemId could be determined from '$ModelDisplay'."
+        return $null
+    }
+
+    try {
+        $indexXml = Get-DellCatalogIndex -DriversFolder $DriversFolder
+        # Reuse existing model parsing to avoid duplicating streaming logic
+        $allModels = Get-DellClientModels -CatalogIndexXmlPath $indexXml
+        $match = $allModels | Where-Object { $_.SystemId -eq $SystemId } | Select-Object -First 1
+        if ($null -eq $match) {
+            WriteLog "Resolve-DellCabUrlFromModel: SystemId '$SystemId' not found in CatalogIndexPC.xml."
+            return $null
+        }
+        WriteLog "Resolve-DellCabUrlFromModel: Resolved CabUrl for '$($match.ModelDisplay)' -> $($match.CabUrl)"
+        return [pscustomobject]@{
+            Brand           = $match.Brand
+            ModelNumber     = $match.ModelNumber
+            SystemId        = $match.SystemId
+            CabRelativePath = $match.CabRelativePath
+            CabUrl          = $match.CabUrl
+            ModelDisplay    = $match.ModelDisplay
+        }
+    }
+    catch {
+        WriteLog "Resolve-DellCabUrlFromModel: Failure resolving CabUrl for '$ModelDisplay' / SystemId '$SystemId' : $($_.Exception.Message)"
+        return $null
+    }
+}
+
+Export-ModuleMember -Function Convert-DellVendorVersion,Compare-DellVendorVersion,Get-DellCatalogIndex,Get-DellClientModels,Get-DellLatestDriverPackages,Resolve-DellCabUrlFromModel

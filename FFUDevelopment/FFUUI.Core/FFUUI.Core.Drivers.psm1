@@ -225,6 +225,15 @@ function Save-DriversJson {
                     $modelObject = @{
                         Name = $driverItem.Model
                     }
+                    if ($driverItem.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverItem.SystemId)) {
+                        $modelObject.SystemId = $driverItem.SystemId
+                    }
+                    if ($driverItem.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabUrl)) {
+                        $modelObject.CabUrl = $driverItem.CabUrl
+                    }
+                    if ($driverItem.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabRelativePath)) {
+                        $modelObject.CabRelativePath = $driverItem.CabRelativePath
+                    }
                 }
                 'HP' {
                     $modelObject = @{
@@ -337,7 +346,7 @@ function Import-DriversJson {
                     if ($null -ne $existingModel) {
                         $existingModel.IsSelected = $true
                         $existingModel.DownloadStatus = "Imported"
-
+                    
                         if ($makeName -eq 'Microsoft' -and $importedModelObject.PSObject.Properties['Link']) {
                             if ($existingModel.Link -ne $importedModelObject.Link) {
                                 $existingModel.Link = $importedModelObject.Link
@@ -352,13 +361,35 @@ function Import-DriversJson {
                             }
                             if ($importedModelObject.PSObject.Properties['MachineType'] -and $existingModel.PSObject.Properties['MachineType'] -and $existingModel.MachineType -ne $importedModelObject.MachineType) {
                                 $existingModel.MachineType = $importedModelObject.MachineType
-                                $existingModel.Id = $importedModelObject.MachineType # Update Id as well
+                                $existingModel.Id = $importedModelObject.MachineType
                                 $updateExistingLenovo = $true
                             }
                             if ($updateExistingLenovo) {
                                 WriteLog "Import-DriversJson: Updated ProductName/MachineType/Id for existing Lenovo model '$($existingModel.Model)'."
                             }
                         }
+                        elseif ($makeName -eq 'Dell') {
+                            # Update Dell extended fields if provided
+                            if ($importedModelObject.PSObject.Properties['SystemId'] -and $existingModel.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) {
+                                if ($existingModel.SystemId -ne $importedModelObject.SystemId) {
+                                    $existingModel.SystemId = $importedModelObject.SystemId
+                                    WriteLog "Import-DriversJson: Updated SystemId for existing Dell model '$($existingModel.Model)'."
+                                }
+                            }
+                            if ($importedModelObject.PSObject.Properties['CabUrl'] -and $existingModel.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabUrl)) {
+                                if ($existingModel.CabUrl -ne $importedModelObject.CabUrl) {
+                                    $existingModel.CabUrl = $importedModelObject.CabUrl
+                                    WriteLog "Import-DriversJson: Updated CabUrl for existing Dell model '$($existingModel.Model)'."
+                                }
+                            }
+                            if ($importedModelObject.PSObject.Properties['CabRelativePath'] -and $existingModel.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabRelativePath)) {
+                                if ($existingModel.CabRelativePath -ne $importedModelObject.CabRelativePath) {
+                                    $existingModel.CabRelativePath = $importedModelObject.CabRelativePath
+                                    WriteLog "Import-DriversJson: Updated CabRelativePath for existing Dell model '$($existingModel.Model)'."
+                                }
+                            }
+                        }
+                    
                         $existingModelsUpdated++
                         WriteLog "Import-DriversJson: Marked existing model '$($existingModel.Make) - $($existingModel.Model)' as imported."
                     }
@@ -395,7 +426,7 @@ function Import-DriversJson {
                         $newDriverModel = [PSCustomObject]@{
                             IsSelected     = $true
                             Make           = $makeName
-                            Model          = $importedModelNameFromObject # Full display name
+                            Model          = $importedModelNameFromObject
                             Link           = $importedLink
                             Id             = $importedId
                             ProductName    = $importedProductName
@@ -405,6 +436,18 @@ function Import-DriversJson {
                             Size           = ""
                             Arch           = ""
                             DownloadStatus = "Imported"
+                        }
+                        if ($makeName -eq 'Dell') {
+                            # Attach optional Dell extended fields if present
+                            if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) {
+                                $newDriverModel | Add-Member -NotePropertyName SystemId -NotePropertyValue $importedModelObject.SystemId
+                            }
+                            if ($importedModelObject.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabUrl)) {
+                                $newDriverModel | Add-Member -NotePropertyName CabUrl -NotePropertyValue $importedModelObject.CabUrl
+                            }
+                            if ($importedModelObject.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabRelativePath)) {
+                                $newDriverModel | Add-Member -NotePropertyName CabRelativePath -NotePropertyValue $importedModelObject.CabRelativePath
+                            }
                         }
                         $State.Data.allDriverModels.Add($newDriverModel)
                         $newModelsAdded++
@@ -753,7 +796,16 @@ function Invoke-DownloadSelectedDrivers {
                         }
                         'Dell' {
                             $modelObject = @{
-                                Name = $driverItem.Model # Model is the display name
+                                Name = $driverItem.Model
+                            }
+                            if ($driverItem.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverItem.SystemId)) {
+                                $modelObject.SystemId = $driverItem.SystemId
+                            }
+                            if ($driverItem.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabUrl)) {
+                                $modelObject.CabUrl = $driverItem.CabUrl
+                            }
+                            if ($driverItem.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabRelativePath)) {
+                                $modelObject.CabRelativePath = $driverItem.CabRelativePath
                             }
                         }
                         'HP' {
