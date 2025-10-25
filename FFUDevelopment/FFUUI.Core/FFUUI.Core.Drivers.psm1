@@ -650,10 +650,10 @@ function Invoke-DownloadSelectedDrivers {
         WriteLog "Dell drivers selected. Ensuring Dell Catalog is up-to-date..."
         try {
             $dellDriversFolder = Join-Path -Path $localDriversFolder -ChildPath "Dell"
-            $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+            $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogIndexPC" } else { "Catalog" }
             $dellCabFile = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).cab"
             $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
-            $catalogUrl = if ($localWindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+            $catalogUrl = if ($localWindowsRelease -le 11) { "https://downloads.dell.com/catalog/CatalogIndexPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
 
             $downloadCatalog = $true
             if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
