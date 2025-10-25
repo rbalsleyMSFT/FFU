@@ -226,7 +226,7 @@ function Save-MicrosoftDriversTask {
             ### DOWNLOAD AND EXTRACT
             if ($downloadLink) {
                 WriteLog "Selected Download Link for $modelName (Actual: Windows $downloadedVersion): $downloadLink"
-                $status = "Downloading (Win$downloadedVersion)..." # Update status message
+                $status = "Downloading Win$downloadedVersion $fileName"
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
                 # Create directories
@@ -257,7 +257,7 @@ function Save-MicrosoftDriversTask {
 
                 ### EXTRACT
                 if ($fileExtension -eq ".msi") {
-                    $status = "Waiting for MSI lock..." # Set initial status
+                    $status = "Waiting for MSI lock..."
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
                     # Use a named mutex to ensure only one MSI extraction happens at a time across all parallel tasks
@@ -286,14 +286,14 @@ function Save-MicrosoftDriversTask {
                             catch [System.Threading.WaitHandleCannotBeOpenedException] {
                                 # Mutex is clear, proceed to extraction attempt
                                 WriteLog "System MSI mutex clear. Proceeding with MSI extraction attempt for $modelName."
-                                $status = "Extracting MSI..."
+                                $status = "Extracting Win$downloadedVersion $fileName"
                                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
                                 $mutexClear = $true
                             }
                             catch {
                                 # Handle other potential errors when checking the mutex
                                 WriteLog "Warning: Error checking system MSI mutex for $($modelName): $_. Proceeding with caution."
-                                $status = "Extracting MSI (Mutex Error)..."
+                                $status = "Extracting Win$downloadedVersion $fileName (Mutex Error)"
                                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
                                 $mutexClear = $true # Proceed despite mutex error
                             }
@@ -351,7 +351,7 @@ function Save-MicrosoftDriversTask {
                     }
                 }
                 elseif ($fileExtension -eq ".zip") {
-                    $status = "Extracting ZIP..." # Set status before extraction
+                    $status = "Extracting Win$downloadedVersion $fileName"
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
                     WriteLog "Extracting ZIP file to $modelPath"
                     $ProgressPreference = 'SilentlyContinue'

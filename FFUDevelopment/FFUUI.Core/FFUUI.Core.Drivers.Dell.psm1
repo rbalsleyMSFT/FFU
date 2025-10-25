@@ -273,7 +273,9 @@ function Save-DellDriversTask {
         $idx = 0
         foreach ($pkg in $packages) {
             $idx++
-            $status = "Downloading $idx/$total"
+            $driverName = $pkg.Name
+            if ([string]::IsNullOrWhiteSpace($driverName)) { $driverName = $pkg.DriverFileName }
+            $status = "$idx/$total Downloading $driverName"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $status }
 
             $categorySafe = ($pkg.Category -replace '[\\\/\:\*\?\"\<\>\| ]','_')
@@ -293,6 +295,9 @@ function Save-DellDriversTask {
                 try { Start-BitsTransferWithRetry -Source $pkg.DownloadUrl -Destination $driverFilePath }
                 catch { WriteLog "Download failed: $($pkg.DownloadUrl) $($_.Exception.Message)"; continue }
             }
+
+            $status = "$idx/$total Extracting $driverName"
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $status }
 
             if (-not (Test-Path $extractFolder)) { New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null }
 

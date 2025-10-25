@@ -330,7 +330,7 @@ function Save-HPDriversTask {
             $extractFolder = Join-Path -Path $downloadFolder -ChildPath ($driverName + "_" + $version + "_" + ($driverFileName -replace '\.exe$', ''))
 
             $downloadedCount++
-            $progressMsg = "($downloadedCount/$totalDrivers) Downloading $driverName..."
+            $progressMsg = "$downloadedCount/$totalDrivers Downloading $driverName"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
             WriteLog "$progressMsg URL: $driverUrl"
 
@@ -344,6 +344,8 @@ function Save-HPDriversTask {
             WriteLog "Downloading driver to: $driverFilePath"
             Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath -ErrorAction Stop
             WriteLog "Driver downloaded: $driverFilePath"
+            $progressMsg = "$downloadedCount/$totalDrivers Extracting $driverName"
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
             WriteLog "Creating extraction folder: $extractFolder"
             New-Item -Path $extractFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
             $arguments = "/s /e /f `"$extractFolder`"" 

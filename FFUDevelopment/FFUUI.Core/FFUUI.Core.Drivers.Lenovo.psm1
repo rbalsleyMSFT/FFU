@@ -278,7 +278,7 @@ function Save-LenovoDriversTask {
             }
 
             # Download the driver .exe
-            $status = "($processedPackages/$totalPackages) Downloading $packageTitle..."
+            $status = "$processedPackages/$totalPackages Downloading $packageTitle"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
             WriteLog "($processedPackages/$totalPackages) Downloading driver: $driverUrl to $driverFilePath"
             try {
@@ -292,7 +292,7 @@ function Save-LenovoDriversTask {
             }
 
             # --- Extraction Logic ---
-            $status = "($processedPackages/$totalPackages) Extracting $packageTitle..."
+            $status = "$processedPackages/$totalPackages Extracting $packageTitle"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
     
             # Always use a temporary extraction path to avoid long path issues
@@ -317,7 +317,7 @@ function Save-LenovoDriversTask {
     
             # Modify the extract command to point to the temporary folder
             $modifiedExtractCommand = $extractCommand -replace '%PACKAGEPATH%', "`"$extractFolder`""
-            WriteLog "($processedPackages/$totalPackages) Extracting driver: $driverFilePath using command: $modifiedExtractCommand"
+            WriteLog "$processedPackages/$totalPackages Extracting driver: $driverFilePath using command: $modifiedExtractCommand"
                 
             try {
                 Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait $true | Out-Null
