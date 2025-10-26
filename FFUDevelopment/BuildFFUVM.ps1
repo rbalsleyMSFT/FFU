@@ -2103,10 +2103,19 @@ function Get-WindowsESD {
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
                 Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
-                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath -Headers $Headers -UserAgent $UserAgent
+                try {
+                    # Use resilient download with BITS fallback for large ESD files
+                    Start-BitsTransferWithRetry -Source $file.FilePath -Destination $esdFilePath -Retries 3 -ErrorAction Stop | Out-Null
+                    WriteLog "Download succeeded using resilient download system"
+                }
+                catch {
+                    WriteLog "ERROR: ESD download failed after retries - $($_.Exception.Message)"
+                    Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
+                    $VerbosePreference = $OriginalVerbosePreference
+                    throw "Failed to download ESD file: $($_.Exception.Message)"
+                }
                 Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 $VerbosePreference = $OriginalVerbosePreference
-                WriteLog "Download succeeded"
                 WriteLog "Cleanup cab and xml file"
                 Remove-Item -Path $cabFilePath -Force
                 Remove-Item -Path $xmlFilePath -Force
@@ -2894,8 +2903,34 @@ function New-PEMedia {
     }
     WriteLog 'Files copied successfully'
 
+    # Clean up any stale DISM mount points before attempting to mount
+    WriteLog 'Checking for stale DISM mount points'
+    try {
+        $dismCleanup = & Dism.exe /Cleanup-Mountpoints 2>&1
+        WriteLog "DISM cleanup result: $($dismCleanup -join ' ')"
+    }
+    catch {
+        WriteLog "WARNING: DISM cleanup failed (may be normal if no stale mounts): $($_.Exception.Message)"
+    }
+
+    # Ensure mount directory exists and is empty
+    $mountPath = "$WinPEFFUPath\mount"
+    if (Test-Path $mountPath) {
+        WriteLog "Removing existing mount directory: $mountPath"
+        Remove-Item -Path $mountPath -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    WriteLog "Creating clean mount directory: $mountPath"
+    New-Item -Path $mountPath -ItemType Directory -Force | Out-Null
+
+    # Verify boot.wim exists before attempting to mount
+    $bootWimPath = "$WinPEFFUPath\media\sources\boot.wim"
+    if (-not (Test-Path $bootWimPath)) {
+        throw "Boot.wim not found at expected path: $bootWimPath. WinPE media creation may have failed."
+    }
+    WriteLog "Verified boot.wim exists at: $bootWimPath"
+
     WriteLog 'Mounting WinPE media to add WinPE optional components'
-    Mount-WindowsImage -ImagePath "$WinPEFFUPath\media\sources\boot.wim" -Index 1 -Path "$WinPEFFUPath\mount" | Out-Null
+    Mount-WindowsImage -ImagePath $bootWimPath -Index 1 -Path $mountPath -ErrorAction Stop | Out-Null
     WriteLog 'Mounting complete'
 
     $Packages = @(
