@@ -505,21 +505,29 @@ function Invoke-ListViewSort {
         [PSCustomObject]$State
     )
 
+    # Preserve any active CollectionView filter so sorting does not reset a filtered driver model list
+    $existingFilter = $null
+    $existingCollectionView = $null
+    if ($null -ne $listView.ItemsSource) {
+        $existingCollectionView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($listView.ItemsSource)
+        if ($null -ne $existingCollectionView -and $existingCollectionView.Filter) {
+            $existingFilter = $existingCollectionView.Filter
+        }
+    }
+
     # Ensure $State.Flags is a hashtable and contains the required sort properties
     if ($State.Flags -is [hashtable]) {
         if (-not $State.Flags.ContainsKey('lastSortProperty')) {
             $State.Flags['lastSortProperty'] = $null
         }
         if (-not $State.Flags.ContainsKey('lastSortAscending')) {
-            $State.Flags['lastSortAscending'] = $true # Default to ascending
+            $State.Flags['lastSortAscending'] = $true
         }
     }
     else {
         Write-Warning "Invoke-ListViewSort: \$State.Flags is not a hashtable or is null. Sort state may not work correctly."
-        # Attempt to initialize if $State.Flags is null or unexpectedly not a hashtable,
-        # though this might indicate a deeper issue with $State.Flags initialization.
         if ($null -eq $State.Flags) { $State.Flags = @{} }
-        if ($State.Flags -is [hashtable]) { # Check again after potential initialization
+        if ($State.Flags -is [hashtable]) {
             if (-not $State.Flags.ContainsKey('lastSortProperty')) { $State.Flags['lastSortProperty'] = $null }
             if (-not $State.Flags.ContainsKey('lastSortAscending')) { $State.Flags['lastSortAscending'] = $true }
         }
@@ -534,10 +542,15 @@ function Invoke-ListViewSort {
     }
     $State.Flags.lastSortProperty = $property
 
-    # Get items from ItemsSource or Items collection
+    # Build the set of items to sort, enumerating the filtered view if a filter is active
     $currentItemsSource = $listView.ItemsSource
     $itemsToSort = @()
-    if ($null -ne $currentItemsSource) {
+    if ($null -ne $existingCollectionView -and $null -ne $existingFilter) {
+        foreach ($vItem in $existingCollectionView) {
+            $itemsToSort += $vItem
+        }
+    }
+    elseif ($null -ne $currentItemsSource) {
         $itemsToSort = @($currentItemsSource)
     }
     else {
@@ -548,16 +561,17 @@ function Invoke-ListViewSort {
         return
     }
 
+    # Separate selected vs unselected for selected-first ordering
     $selectedItems = @($itemsToSort | Where-Object { $_.IsSelected })
     $unselectedItems = @($itemsToSort | Where-Object { -not $_.IsSelected })
 
-    # Define the primary sort criterion
+    # Define primary sort criterion
     $primarySortDefinition = @{
         Expression = {
             $val = $_.$property
             if ($null -eq $val) { '' } else { $val }
         }
-        Ascending  = $State.Flags.lastSortAscending
+        Ascending = $State.Flags.lastSortAscending
     }
 
     $sortCriteria = [System.Collections.Generic.List[hashtable]]::new()
@@ -579,11 +593,11 @@ function Invoke-ListViewSort {
             $secondarySortPropertyName = "Key"
         }
         else {
-            # Default secondary sort for IsSelected or other properties
             $secondarySortPropertyName = "Key"
         }
     }
 
+    # Add secondary sort definition if applicable
     if ($null -ne $secondarySortPropertyName -and $property -ne $secondarySortPropertyName) {
         $itemsHaveSecondaryProperty = $false
         if ($unselectedItems.Count -gt 0) {
@@ -598,35 +612,40 @@ function Invoke-ListViewSort {
         }
 
         if ($itemsHaveSecondaryProperty) {
-            # Create a scriptblock for the secondary sort expression dynamically
             $expressionScriptBlock = [scriptblock]::Create("`$_.$secondarySortPropertyName")
-
             $secondarySortDefinition = @{
                 Expression = {
                     $val = Invoke-Command -ScriptBlock $expressionScriptBlock -ArgumentList $_
                     if ($null -eq $val) { '' } else { $val }
                 }
-                Ascending  = $true # Secondary sort always ascending
+                Ascending = $true
             }
             $sortCriteria.Add($secondarySortDefinition)
         }
     }
 
+    # Sort unselected items by combined sort criteria
     $sortedUnselected = $unselectedItems | Sort-Object -Property $sortCriteria.ToArray()
-    # Ensure $sortedUnselected is not null before attempting to add its range
     if ($null -eq $sortedUnselected) {
         $sortedUnselected = @()
     }
 
-    # Combine sorted items: selected items first, then sorted unselected items
+    # Merge selected first, then sorted unselected
     $newSortedList = [System.Collections.Generic.List[object]]::new()
     $newSortedList.AddRange($selectedItems)
     $newSortedList.AddRange($sortedUnselected)
 
-    # Set the new sorted list as the ItemsSource
-    # Try nulling out ItemsSource first to force a more complete refresh
+    # Reset ItemsSource and assign sorted list
     $listView.ItemsSource = $null
     $listView.ItemsSource = $newSortedList.ToArray()
+
+    # Reapply preserved filter to maintain the user's filtered view
+    if ($null -ne $existingFilter) {
+        $newView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($listView.ItemsSource)
+        if ($null -ne $newView) {
+            $newView.Filter = $existingFilter
+        }
+    }
 }
 
 # --------------------------------------------------------------------------
