@@ -322,11 +322,15 @@ function Initialize-UIDefaults {
 
     # Drivers tab UI logic
     $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo')
-    foreach ($m in $makeList) {
-        [void]$State.Controls.cmbMake.Items.Add($m)
-    }
-    if ($State.Controls.cmbMake.Items.Count -gt 0) {
-        $State.Controls.cmbMake.SelectedIndex = 0
+    if ($null -ne $State.Controls.cmbMake) {
+        # Clear existing items to prevent duplication on re-initialization (e.g., after Restore Defaults)
+        $State.Controls.cmbMake.Items.Clear()
+        foreach ($m in $makeList) {
+            [void]$State.Controls.cmbMake.Items.Add($m)
+        }
+        if ($State.Controls.cmbMake.Items.Count -gt 0) {
+            $State.Controls.cmbMake.SelectedIndex = 0
+        }
     }
     Update-DriverDownloadPanelVisibility -State $State
 
