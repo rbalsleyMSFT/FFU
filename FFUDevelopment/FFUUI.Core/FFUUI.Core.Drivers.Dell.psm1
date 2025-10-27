@@ -204,6 +204,7 @@ function Save-DellDriversTask {
             if (Test-Path $modelCabPath) { Remove-SafeFolder $modelCabPath }
             if (Test-Path $modelXmlPath) { Remove-SafeFolder $modelXmlPath }
             
+            WriteLog "Downloading Dell model catalog from $cabUrl to $modelCabPath"
             Start-BitsTransferWithRetry -Source $cabUrl -Destination $modelCabPath
             Invoke-Process -FilePath Expand.exe -ArgumentList """$modelCabPath"" ""$modelXmlPath""" | Out-Null
             Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue
@@ -225,6 +226,7 @@ function Save-DellDriversTask {
             if ($need) {
                 if (Test-Path $catalogCab) { Remove-SafeFolder $catalogCab }
                 if (Test-Path $catalogXml) { Remove-SafeFolder $catalogXml }
+                WriteLog "Downloading Dell server catalog from $catalogUrl to $catalogCab"
                 Start-BitsTransferWithRetry -Source $catalogUrl -Destination $catalogCab
                 Invoke-Process -FilePath Expand.exe -ArgumentList """$catalogCab"" ""$catalogXml""" | Out-Null
                 Remove-Item $catalogCab -Force -ErrorAction SilentlyContinue
@@ -292,6 +294,7 @@ function Save-DellDriversTask {
             }
 
             if (-not (Test-Path $driverFilePath)) {
+                WriteLog "$status URL: $($pkg.DownloadUrl)"
                 try { Start-BitsTransferWithRetry -Source $pkg.DownloadUrl -Destination $driverFilePath }
                 catch { WriteLog "Download failed: $($pkg.DownloadUrl) $($_.Exception.Message)"; continue }
             }
