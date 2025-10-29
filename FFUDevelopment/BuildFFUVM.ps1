@@ -2386,6 +2386,154 @@ function Save-KB {
     return $fileName
 }
 
+function Add-WindowsPackageWithUnattend {
+    <#
+    .SYNOPSIS
+    Applies Windows update packages (MSU/CAB) with robust unattend.xml handling
+
+    .DESCRIPTION
+    Some MSU packages contain unattend.xml files that DISM fails to extract and apply automatically.
+    This function extracts unattend.xml from MSU packages and applies it separately before
+    applying the update package, working around DISM's "An error occurred applying the
+    Unattend.xml file from the .msu package" error.
+
+    Addresses Issue #301: Unattend.xml Extraction from MSU
+
+    .PARAMETER Path
+    The path to the mounted Windows image
+
+    .PARAMETER PackagePath
+    The path to the MSU or CAB package file
+
+    .EXAMPLE
+    Add-WindowsPackageWithUnattend -Path "W:\" -PackagePath "C:\KB\kb5066835.msu"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath
+    )
+
+    $packageName = Split-Path $PackagePath -Leaf
+    WriteLog "Applying package: $packageName"
+
+    # For CAB files, apply directly (no unattend.xml issues)
+    if ($PackagePath -match '\.cab$') {
+        WriteLog "CAB file detected, applying directly with DISM"
+        Add-WindowsPackage -Path $Path -PackagePath $PackagePath | Out-Null
+        WriteLog "Package $packageName applied successfully"
+        return
+    }
+
+    # For MSU files, check for unattend.xml and handle it separately
+    if ($PackagePath -match '\.msu$') {
+        $extractPath = Join-Path $env:TEMP "MSU_Extract_$(Get-Date -Format 'yyyyMMddHHmmss')"
+        $unattendExtracted = $false
+
+        try {
+            # Create extraction directory
+            New-Item -Path $extractPath -ItemType Directory -Force | Out-Null
+            WriteLog "Extracting MSU package to check for unattend.xml: $extractPath"
+
+            # Extract MSU package using expand.exe
+            $expandArgs = @(
+                '-F:*',
+                "`"$PackagePath`"",
+                "`"$extractPath`""
+            )
+            $expandProcess = Start-Process -FilePath 'expand.exe' -ArgumentList $expandArgs -Wait -PassThru -NoNewWindow
+
+            if ($expandProcess.ExitCode -ne 0) {
+                WriteLog "WARNING: expand.exe returned exit code $($expandProcess.ExitCode), attempting direct package application"
+                Add-WindowsPackage -Path $Path -PackagePath $PackagePath | Out-Null
+                WriteLog "Package $packageName applied successfully (direct method)"
+                return
+            }
+
+            WriteLog "MSU extraction completed"
+
+            # Look for unattend.xml in extracted files
+            $unattendFiles = Get-ChildItem -Path $extractPath -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match "unattend" -or $_.Name -match "Unattend" }
+
+            if ($unattendFiles) {
+                WriteLog "Found unattend.xml file(s) in MSU package: $($unattendFiles.Count) file(s)"
+
+                foreach ($unattendFile in $unattendFiles) {
+                    WriteLog "Processing unattend file: $($unattendFile.Name)"
+
+                    # Copy unattend.xml to Windows\Panther directory for DISM to apply
+                    $pantherPath = Join-Path $Path "Windows\Panther"
+                    if (-not (Test-Path $pantherPath)) {
+                        New-Item -Path $pantherPath -ItemType Directory -Force | Out-Null
+                        WriteLog "Created Panther directory: $pantherPath"
+                    }
+
+                    $destUnattend = Join-Path $pantherPath "unattend.xml"
+
+                    # Backup existing unattend.xml if present
+                    if (Test-Path $destUnattend) {
+                        $backupUnattend = Join-Path $pantherPath "unattend_backup_$(Get-Date -Format 'yyyyMMddHHmmss').xml"
+                        Copy-Item -Path $destUnattend -Destination $backupUnattend -Force
+                        WriteLog "Backed up existing unattend.xml to: $backupUnattend"
+                    }
+
+                    # Copy extracted unattend.xml
+                    Copy-Item -Path $unattendFile.FullName -Destination $destUnattend -Force
+                    WriteLog "Copied unattend.xml to Panther directory for DISM processing"
+                    $unattendExtracted = $true
+                }
+            }
+            else {
+                WriteLog "No unattend.xml files found in MSU package (this is normal for most updates)"
+            }
+
+            # Now apply the package with DISM
+            WriteLog "Applying package with Add-WindowsPackage"
+            Add-WindowsPackage -Path $Path -PackagePath $PackagePath | Out-Null
+            WriteLog "Package $packageName applied successfully"
+
+        }
+        catch {
+            WriteLog "ERROR: Failed to apply package $packageName - $($_.Exception.Message)"
+
+            # If unattend.xml was extracted, clean it up to avoid affecting next package
+            if ($unattendExtracted) {
+                $pantherUnattend = Join-Path (Join-Path $Path "Windows\Panther") "unattend.xml"
+                if (Test-Path $pantherUnattend) {
+                    Remove-Item -Path $pantherUnattend -Force -ErrorAction SilentlyContinue
+                    WriteLog "Cleaned up unattend.xml from Panther directory"
+                }
+            }
+
+            throw $_
+        }
+        finally {
+            # Clean up extraction directory
+            if (Test-Path $extractPath) {
+                Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+                WriteLog "Cleaned up MSU extraction directory"
+            }
+
+            # Clean up unattend.xml from Panther after successful application
+            if ($unattendExtracted) {
+                $pantherUnattend = Join-Path (Join-Path $Path "Windows\Panther") "unattend.xml"
+                if (Test-Path $pantherUnattend) {
+                    Remove-Item -Path $pantherUnattend -Force -ErrorAction SilentlyContinue
+                    WriteLog "Removed unattend.xml from Panther directory after package application"
+                }
+            }
+        }
+    }
+    else {
+        WriteLog "ERROR: Unknown package format: $packageName (expected .msu or .cab)"
+        throw "Unsupported package format: $packageName"
+    }
+}
+
 function New-AppsISO {
     #Create Apps ISO file
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -5937,45 +6085,28 @@ try {
                 # If WindowsRelease is 2016, we need to add the SSU first
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
                     WriteLog 'WindowsRelease is 2016, adding SSU first'
-                    WriteLog "Adding SSU to $WindowsPartition"
-                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
-                    # Commenting out -preventpending as it causes an issue with the SSU being applied
-                    # Seems to be because of the registry being mounted per dism.log
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
-                    WriteLog "SSU added to $WindowsPartition"
-                    # WriteLog "Removing $SSUFilePath"
-                    # Remove-Item -Path $SSUFilePath -Force | Out-Null
-                    # WriteLog 'SSU removed'
+                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $SSUFilePath
                 }
                 if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                     WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
-                    WriteLog "Adding SSU to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
-                    WriteLog "SSU added to $WindowsPartition"
-                    # WriteLog "Removing $SSUFilePath"
-                    # Remove-Item -Path $SSUFilePath -Force | Out-Null
-                    # WriteLog 'SSU removed'
+                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $SSUFilePath
                 }
                 # Break out CU and NET updates to be added separately to abide by Checkpoint Update recommendations
                 if ($UpdateLatestCU) {
                     WriteLog "Adding $CUPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
-                    WriteLog "$CUPath added to $WindowsPartition"
+                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $CUPath
                 }
                 if ($UpdatePreviewCU) {
                     WriteLog "Adding $CUPPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
-                    WriteLog "$CUPPath added to $WindowsPartition"
+                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $CUPPath
                 }
                 if ($UpdateLatestNet) {
                     WriteLog "Adding $NETPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
-                    WriteLog "$NETPath added to $WindowsPartition"
+                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $NETPath
                 }
                 if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
                     WriteLog "Adding $MicrocodePath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
-                    WriteLog "$MicrocodePath added to $WindowsPartition"
+                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $MicrocodePath
                 }
                 WriteLog "KBs added to $WindowsPartition"
                 if ($AllowVHDXCaching) {
