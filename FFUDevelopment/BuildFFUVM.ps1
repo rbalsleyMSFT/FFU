@@ -3023,6 +3023,72 @@ function Copy-Drivers {
     }
 }
 
+function Start-RequiredServicesForDISM {
+    <#
+    .SYNOPSIS
+    Ensures required Windows services are running for DISM operations
+
+    .DESCRIPTION
+    DISM operations require certain Windows services to be running, primarily
+    the Windows Modules Installer (TrustedInstaller) service. This function
+    checks if required services are running and starts them if needed.
+
+    Addresses "The specified service does not exist" error during Mount-WindowsImage
+    and other DISM cmdlets.
+
+    .EXAMPLE
+    Start-RequiredServicesForDISM
+    #>
+    [CmdletBinding()]
+    param()
+
+    WriteLog 'Checking required Windows services for DISM operations'
+    $requiredServices = @(
+        @{Name = 'TrustedInstaller'; DisplayName = 'Windows Modules Installer'},
+        @{Name = 'wuauserv'; DisplayName = 'Windows Update'}
+    )
+
+    $allServicesOk = $true
+
+    foreach ($svc in $requiredServices) {
+        try {
+            $service = Get-Service -Name $svc.Name -ErrorAction Stop
+            WriteLog "Service '$($svc.DisplayName)' current status: $($service.Status)"
+
+            if ($service.Status -ne 'Running') {
+                WriteLog "Starting service '$($svc.DisplayName)'..."
+                Start-Service -Name $svc.Name -ErrorAction Stop
+                Start-Sleep -Seconds 2
+                $service = Get-Service -Name $svc.Name
+                if ($service.Status -eq 'Running') {
+                    WriteLog "Service '$($svc.DisplayName)' started successfully"
+                }
+                else {
+                    WriteLog "WARNING: Service '$($svc.DisplayName)' did not start. Status: $($service.Status)"
+                    $allServicesOk = $false
+                }
+            }
+            else {
+                WriteLog "Service '$($svc.DisplayName)' is already running"
+            }
+        }
+        catch {
+            WriteLog "WARNING: Could not check/start service '$($svc.DisplayName)' - $($_.Exception.Message)"
+            WriteLog "DISM operations may fail if this service is required"
+            $allServicesOk = $false
+        }
+    }
+
+    if ($allServicesOk) {
+        WriteLog 'All required services for DISM are running'
+    }
+    else {
+        WriteLog 'WARNING: Some required services could not be started. DISM operations may fail.'
+    }
+
+    return $allServicesOk
+}
+
 function New-PEMedia {
     param (
         [Parameter()]
@@ -3076,6 +3142,9 @@ function New-PEMedia {
         throw "Boot.wim not found at expected path: $bootWimPath. WinPE media creation may have failed."
     }
     WriteLog "Verified boot.wim exists at: $bootWimPath"
+
+    # Ensure required Windows services are running for DISM operations
+    Start-RequiredServicesForDISM
 
     WriteLog 'Mounting WinPE media to add WinPE optional components'
     Mount-WindowsImage -ImagePath $bootWimPath -Index 1 -Path $mountPath -ErrorAction Stop | Out-Null
@@ -3450,6 +3519,10 @@ function New-FFU {
         WriteLog "Creating $FFUDevelopmentPath\Mount directory"
         New-Item -Path "$FFUDevelopmentPath\Mount" -ItemType Directory -Force | Out-Null
         WriteLog "Created $FFUDevelopmentPath\Mount directory"
+
+        # Ensure required Windows services are running for DISM operations
+        Start-RequiredServicesForDISM
+
         WriteLog "Mounting $FFUFile to $FFUDevelopmentPath\Mount"
         Mount-WindowsImage -ImagePath $FFUFile -Index 1 -Path "$FFUDevelopmentPath\Mount" | Out-null
         WriteLog 'Mounting complete'
