@@ -3031,7 +3031,8 @@ function Start-RequiredServicesForDISM {
     .DESCRIPTION
     DISM operations require certain Windows services to be running, primarily
     the Windows Modules Installer (TrustedInstaller) service. This function
-    checks if required services are running and starts them if needed.
+    checks if required services are running and starts them if needed, with
+    robust waiting and validation to ensure services are fully initialized.
 
     Addresses "The specified service does not exist" error during Mount-WindowsImage
     and other DISM cmdlets.
@@ -3044,8 +3045,8 @@ function Start-RequiredServicesForDISM {
 
     WriteLog 'Checking required Windows services for DISM operations'
     $requiredServices = @(
-        @{Name = 'TrustedInstaller'; DisplayName = 'Windows Modules Installer'},
-        @{Name = 'wuauserv'; DisplayName = 'Windows Update'}
+        @{Name = 'TrustedInstaller'; DisplayName = 'Windows Modules Installer'; InitDelay = 5},
+        @{Name = 'wuauserv'; DisplayName = 'Windows Update'; InitDelay = 3}
     )
 
     $allServicesOk = $true
@@ -3058,13 +3059,32 @@ function Start-RequiredServicesForDISM {
             if ($service.Status -ne 'Running') {
                 WriteLog "Starting service '$($svc.DisplayName)'..."
                 Start-Service -Name $svc.Name -ErrorAction Stop
-                Start-Sleep -Seconds 2
-                $service = Get-Service -Name $svc.Name
-                if ($service.Status -eq 'Running') {
-                    WriteLog "Service '$($svc.DisplayName)' started successfully"
+
+                # Wait for service to fully initialize with retry logic
+                $initDelay = $svc.InitDelay
+                WriteLog "Waiting $initDelay seconds for service to fully initialize..."
+                Start-Sleep -Seconds $initDelay
+
+                # Verify service is actually running and ready
+                $retryCount = 0
+                $maxRetries = 3
+                $serviceReady = $false
+
+                while ($retryCount -lt $maxRetries -and -not $serviceReady) {
+                    $service = Get-Service -Name $svc.Name
+                    if ($service.Status -eq 'Running') {
+                        WriteLog "Service '$($svc.DisplayName)' started successfully"
+                        $serviceReady = $true
+                    }
+                    else {
+                        $retryCount++
+                        WriteLog "Service status: $($service.Status), waiting 2 more seconds (retry $retryCount/$maxRetries)..."
+                        Start-Sleep -Seconds 2
+                    }
                 }
-                else {
-                    WriteLog "WARNING: Service '$($svc.DisplayName)' did not start. Status: $($service.Status)"
+
+                if (-not $serviceReady) {
+                    WriteLog "WARNING: Service '$($svc.DisplayName)' did not fully start after $maxRetries retries. Status: $($service.Status)"
                     $allServicesOk = $false
                 }
             }
@@ -3080,10 +3100,17 @@ function Start-RequiredServicesForDISM {
     }
 
     if ($allServicesOk) {
-        WriteLog 'All required services for DISM are running'
+        WriteLog 'All required services for DISM are running and ready'
     }
     else {
         WriteLog 'WARNING: Some required services could not be started. DISM operations may fail.'
+    }
+
+    # Additional wait after all services started to ensure DISM subsystem is ready
+    if ($allServicesOk) {
+        WriteLog 'Waiting additional 3 seconds for DISM subsystem initialization...'
+        Start-Sleep -Seconds 3
+        WriteLog 'DISM subsystem should be ready'
     }
 
     return $allServicesOk
