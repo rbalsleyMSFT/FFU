@@ -4948,46 +4948,78 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
             -ListViewControl $null `
             -MainThreadLogPath $LogFile
 
-        # After processing, update the driver mapping file
+        # After processing, update the driver mapping file and detect failures
         $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
+        $failedDownloads = [System.Collections.Generic.List[PSCustomObject]]::new()
+
         if ($null -ne $parallelResults) {
             # Create a lookup table from the original items to get the 'Make'
             $makeLookup = @{}
             $driversToProcess | ForEach-Object { $makeLookup[$_.Model] = $_.Make }
 
-            # Filter for objects that could be results, avoiding stray log strings
-            foreach ($result in ($parallelResults | Where-Object { $_ -is [hashtable] })) {
+            foreach ($result in $parallelResults) {
                 if ($null -eq $result) { continue }
 
-                # The result from Invoke-ParallelProcessing is a hashtable.
-                # Access properties using their keys.
-                $modelName = $result['Identifier']
-                $resultCode = $result['ResultCode']
-                $driverPath = $result['DriverPath']
+                $lookupModelName = $null
+                $resultStatus = $null
+                $resultDriverPath = $null
+                $resultSuccess = $false
 
-                if ([string]::IsNullOrWhiteSpace($modelName)) {
-                    WriteLog "Could not determine model name from result object: $($result | ConvertTo-Json -Compress -Depth 3)"
-                    continue
+                if ($result -is [hashtable]) {
+                    $lookupModelName = $result['Identifier']
+                    $resultStatus = $result['Status']
+                    if ($result.ContainsKey('DriverPath')) { $resultDriverPath = $result['DriverPath'] }
+                    if ($result.ContainsKey('Success')) {
+                        $resultSuccess = [bool]$result['Success']
+                    }
+                    elseif ($result.ContainsKey('ResultCode')) {
+                        $resultSuccess = ($result['ResultCode'] -eq 0)
+                    }
+                }
+                elseif ($result -is [pscustomobject]) {
+                    if ($result.PSObject.Properties.Name -contains 'Identifier' -and -not [string]::IsNullOrWhiteSpace($result.Identifier)) {
+                        $lookupModelName = $result.Identifier
+                    }
+                    elseif ($result.PSObject.Properties.Name -contains 'Model' -and -not [string]::IsNullOrWhiteSpace($result.Model)) {
+                        $lookupModelName = $result.Model
+                    }
+
+                    if ($result.PSObject.Properties.Name -contains 'Status') { $resultStatus = $result.Status }
+                    if ($result.PSObject.Properties.Name -contains 'DriverPath') { $resultDriverPath = $result.DriverPath }
+                    if ($result.PSObject.Properties.Name -contains 'Success') {
+                        $resultSuccess = [bool]$result.Success
+                    }
+                    elseif ($result.PSObject.Properties.Name -contains 'ResultCode') {
+                        $resultSuccess = ($result.ResultCode -eq 0)
+                    }
                 }
 
-                if ($resultCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($driverPath)) {
-                    # The task was successful and returned a driver path.
-                    $makeJson = $makeLookup[$modelName]
+                if ($resultSuccess -and -not [string]::IsNullOrWhiteSpace($resultDriverPath)) {
+                    $modelKey = if (-not [string]::IsNullOrWhiteSpace($lookupModelName)) { $lookupModelName } else { 'Unknown model' }
+                    $makeJson = $null
+                    if (-not [string]::IsNullOrWhiteSpace($lookupModelName) -and $makeLookup.ContainsKey($lookupModelName)) {
+                        $makeJson = $makeLookup[$lookupModelName]
+                    }
+
                     if ($makeJson) {
                         $successfullyDownloaded.Add([PSCustomObject]@{
                                 Make       = $makeJson
-                                Model      = $modelName
-                                DriverPath = $driverPath
+                                Model      = $modelKey
+                                DriverPath = $resultDriverPath
                             })
                     }
                     else {
-                        WriteLog "Warning: Could not find 'Make' for successful download of model '$modelName'. Skipping from DriverMapping.json."
+                        WriteLog "Warning: Could not find 'Make' for successful download of model '$modelKey'. Skipping from DriverMapping.json."
                     }
                 }
                 else {
-                    $logMessage = "Driver download failed or did not return a path for model '$modelName'. Status: $($result['Status'])"
-                    WriteLog $logMessage
-                    Write-Warning $logMessage
+                    $failureModel = if (-not [string]::IsNullOrWhiteSpace($lookupModelName)) { $lookupModelName } else { 'Unknown model' }
+                    $failureStatus = if (-not [string]::IsNullOrWhiteSpace($resultStatus)) { $resultStatus } else { 'Driver download failed without a status message. Check the log for details.' }
+                    $failedDownloads.Add([PSCustomObject]@{
+                            Model  = $failureModel
+                            Status = $failureStatus
+                        })
+                    WriteLog "Driver download failed for '$failureModel'. Status: $failureStatus"
                 }
             }
         }
@@ -4995,52 +5027,13 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
             WriteLog "Invoke-ParallelProcessing returned null or no results."
         }
 
-        # Update the driver mapping JSON if there are any successful downloads
-        if ($successfullyDownloaded.Count -gt 0) {
-            try {
-                WriteLog "Updating DriverMapping.json with $($successfullyDownloaded.Count) successfully downloaded drivers."
-                Update-DriverMappingJson -DownloadedDrivers $successfullyDownloaded -DriversFolder $DriversFolder
-            }
-            catch {
-                WriteLog "Warning: Failed to update DriverMapping.json: $($_.Exception.Message)"
-                # This is not a fatal error for the build process itself, so just show a warning.
-                Write-Warning "The driver download process completed, but failed to update the DriverMapping.json file. Please check the log for details."
-            }
+        if ($failedDownloads.Count -gt 0) {
+            $firstFailure = $failedDownloads[0]
+            $errorMessage = "Driver download failed for model '$($firstFailure.Model)': $($firstFailure.Status)"
+            WriteLog $errorMessage
+            throw $errorMessage
         }
-        WriteLog "Finished processing drivers from $driversJsonPath."
-        
-        # After processing, update the driver mapping file
-        $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
-        if ($null -ne $parallelResults) {
-            # Create a lookup table from the original items to get the 'Make'
-            $makeLookup = @{}
-            $driversToProcess | ForEach-Object { $makeLookup[$_.Model] = $_.Make }
-        
-            foreach ($result in $parallelResults) {
-                if ($null -ne $result) {
-                    # Collect successful results for driver mapping
-                    if ($result.PSObject.Properties['Success'] -and $result.Success -and $result.PSObject.Properties['DriverPath'] -and -not [string]::IsNullOrWhiteSpace($result.DriverPath)) {
-                        $modelName = if ($result.PSObject.Properties.Name -contains 'Identifier') { $result.Identifier } else { $result.Model }
-                                
-                        # Find the 'Make' from the original list
-                        $makeJson = $makeLookup[$modelName]
 
-                        if ($makeJson) {
-                            $successfullyDownloaded.Add([PSCustomObject]@{
-                                    Make       = $makeJson
-                                    Model      = $modelName
-                                    DriverPath = $result.DriverPath
-                                })
-                        }
-                        else {
-                            WriteLog "Warning: Could not find 'Make' for successful download of model '$modelName'. Skipping from DriverMapping.json."
-                        }
-                    }
-                }
-            }
-        }
-        
-        # Update the driver mapping JSON if there are any successful downloads
         if ($successfullyDownloaded.Count -gt 0) {
             try {
                 WriteLog "Updating DriverMapping.json with $($successfullyDownloaded.Count) successfully downloaded drivers."
@@ -5052,6 +5045,8 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                 Write-Warning "The driver download process completed, but failed to update the DriverMapping.json file. Please check the log for details."
             }
         }
+
+        WriteLog "Finished processing drivers from $driversJsonPath."
     }
 }
 # Existing single-model driver download logic

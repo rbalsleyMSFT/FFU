@@ -716,6 +716,7 @@ function Invoke-DownloadSelectedDrivers {
 
     $overallSuccess = $true
     $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $failedDownloads = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # Check the results from the parallel processing tasks
     if ($null -ne $parallelResults) {
@@ -737,11 +738,21 @@ function Invoke-DownloadSelectedDrivers {
             if ([string]::IsNullOrWhiteSpace($modelName)) {
                 WriteLog "Could not determine model name from result object: $($result | ConvertTo-Json -Compress -Depth 3)"
                 $overallSuccess = $false
+                $failedDownloads.Add([PSCustomObject]@{
+                        Model  = 'Unknown model'
+                        Status = 'Driver task returned without a model identifier.'
+                    })
                 continue
             }
 
             if ($resultCode -ne 0) {
                 $overallSuccess = $false
+                $failureStatus = $result['Status']
+                if ([string]::IsNullOrWhiteSpace($failureStatus)) { $failureStatus = 'Driver download failed. Check the log for details.' }
+                $failedDownloads.Add([PSCustomObject]@{
+                        Model  = $modelName
+                        Status = $failureStatus
+                    })
                 WriteLog "Error detected for model $modelName."
             }
             elseif (-not [string]::IsNullOrWhiteSpace($driverPath)) {
@@ -757,6 +768,16 @@ function Invoke-DownloadSelectedDrivers {
                 else {
                     WriteLog "Warning: Could not find 'Make' for successful download of model '$modelName'. Skipping from DriverMapping.json."
                 }
+            }
+            else {
+                $overallSuccess = $false
+                $fallbackStatus = $result['Status']
+                if ([string]::IsNullOrWhiteSpace($fallbackStatus)) { $fallbackStatus = 'Driver download did not return a driver path.' }
+                $failedDownloads.Add([PSCustomObject]@{
+                        Model  = $modelName
+                        Status = $fallbackStatus
+                    })
+                WriteLog "Driver download did not provide a path for model $modelName."
             }
         }
     }
@@ -855,8 +876,21 @@ function Invoke-DownloadSelectedDrivers {
         [System.Windows.MessageBox]::Show("All selected driver downloads processed. Check status column for details.", "Download Process Finished", "OK", "Information")
     }
     else {
-        $State.Controls.txtStatus.Text = "Driver downloads processed with some errors. Check status column and log."
-        [System.Windows.MessageBox]::Show("Driver downloads processed, but some errors occurred. Please check the status column for each driver and the log file for details.", "Download Process Finished with Errors", "OK", "Warning")
+        $State.Controls.txtStatus.Text = "Driver download failed. Resolve the errors and try again."
+        $messageLines = [System.Collections.Generic.List[string]]::new()
+        if ($failedDownloads.Count -gt 0) {
+            $messageLines.Add("Driver download failed for:")
+            foreach ($item in ($failedDownloads | Select-Object -First 5)) {
+                $messageLines.Add("- $($item.Model): $($item.Status)")
+            }
+            if ($failedDownloads.Count -gt 5) {
+                $messageLines.Add("...see the log for additional failures.")
+            }
+        }
+        else {
+            $messageLines.Add("One or more driver downloads failed. Check the log for details.")
+        }
+        [System.Windows.MessageBox]::Show(($messageLines -join [System.Environment]::NewLine), "Driver Download Failed", "OK", "Error")
     }
 }
 

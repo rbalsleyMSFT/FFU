@@ -23,14 +23,14 @@ function Get-DellDriversModelList {
         $final = [System.Collections.Generic.List[pscustomobject]]::new()
         foreach ($m in $dellModels) {
             $final.Add([pscustomobject]@{
-                Make            = $Make
-                Model           = $m.ModelDisplay
-                Brand           = $m.Brand
-                ModelNumber     = $m.ModelNumber
-                SystemId        = $m.SystemId
-                CabRelativePath = $m.CabRelativePath
-                CabUrl          = $m.CabUrl
-            })
+                    Make            = $Make
+                    Model           = $m.ModelDisplay
+                    Brand           = $m.Brand
+                    ModelNumber     = $m.ModelNumber
+                    SystemId        = $m.SystemId
+                    CabRelativePath = $m.CabRelativePath
+                    CabUrl          = $m.CabUrl
+                })
         }
         return $final
     }
@@ -66,7 +66,7 @@ function Get-DellDriversModelList {
     $settings = New-Object System.Xml.XmlReaderSettings
     $settings.IgnoreWhitespace = $true
     $settings.IgnoreComments = $true
-    $reader = [System.Xml.XmlReader]::Create($dellCatalogXML,$settings)
+    $reader = [System.Xml.XmlReader]::Create($dellCatalogXML, $settings)
     $inDriver = $false
     $inModel = $false
     $depthModel = -1
@@ -144,7 +144,7 @@ function Save-DellDriversTask {
         $target = (Resolve-Path $Path -ErrorAction SilentlyContinue)?.ProviderPath
         if ($null -eq $target) { return }
         if ($target -eq $dellRoot) { return }
-        if (-not ($target.StartsWith($dellRoot,[System.StringComparison]::OrdinalIgnoreCase))) { return }
+        if (-not ($target.StartsWith($dellRoot, [System.StringComparison]::OrdinalIgnoreCase))) { return }
         Remove-Item -Path $target -Recurse -Force -ErrorAction SilentlyContinue
     }
 
@@ -246,18 +246,18 @@ function Save-DellDriversTask {
                         $driverPath = $component.path
                         $downloadUrl = $baseLocation + $driverPath
                         $fileName = [IO.Path]::GetFileName($driverPath)
-                        $name = $component.Name.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_' -replace '[\,]','-'
-                        $category = $component.Category.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]','_'
+                        $name = $component.Name.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]', '_' -replace '[\,]', '-'
+                        $category = $component.Category.Display.'#cdata-section' -replace '[\\\/\:\*\?\"\<\>\| ]', '_'
                         $version = [version]$component.vendorVersion
                         $namePrefix = ($name -split '-')[0]
                         if (-not $latestDrivers[$category]) { $latestDrivers[$category] = @{} }
                         if (-not $latestDrivers[$category][$namePrefix] -or $latestDrivers[$category][$namePrefix].Version -lt $version) {
                             $latestDrivers[$category][$namePrefix] = [pscustomobject]@{
-                                Name = $name
-                                DownloadUrl = $downloadUrl
+                                Name           = $name
+                                DownloadUrl    = $downloadUrl
                                 DriverFileName = $fileName
-                                Version = $version
-                                Category = $category
+                                Version        = $version
+                                Category       = $category
                             }
                         }
                     }
@@ -280,7 +280,7 @@ function Save-DellDriversTask {
             $status = "$idx/$total Downloading $driverName"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $status }
 
-            $categorySafe = ($pkg.Category -replace '[\\\/\:\*\?\"\<\>\| ]','_')
+            $categorySafe = ($pkg.Category -replace '[\\\/\:\*\?\"\<\>\| ]', '_')
             $downloadFolder = Join-Path $modelPath $categorySafe
             if (-not (Test-Path $downloadFolder)) { New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null }
             $driverFilePath = Join-Path $downloadFolder $pkg.DriverFileName
@@ -296,7 +296,11 @@ function Save-DellDriversTask {
             if (-not (Test-Path $driverFilePath)) {
                 WriteLog "$status URL: $($pkg.DownloadUrl)"
                 try { Start-BitsTransferWithRetry -Source $pkg.DownloadUrl -Destination $driverFilePath }
-                catch { WriteLog "Download failed: $($pkg.DownloadUrl) $($_.Exception.Message)"; continue }
+                catch {
+                    $failureMessage = "Failed to download driver '$driverName' from $($pkg.DownloadUrl): $($_.Exception.Message)"
+                    WriteLog $failureMessage
+                    throw (New-Object System.Exception($failureMessage, $_.Exception))
+                }
             }
 
             $status = "$idx/$total Extracting $driverName"
@@ -326,6 +330,11 @@ function Save-DellDriversTask {
             if ($ok) {
                 Remove-Item $driverFilePath -Force -ErrorAction SilentlyContinue
             }
+            else {
+                $failureMessage = "Failed to extract driver '$driverName'."
+                WriteLog $failureMessage
+                throw (New-Object System.Exception($failureMessage))
+            }
         }
 
         if ($CompressToWim) {
@@ -349,10 +358,10 @@ function Save-DellDriversTask {
         return [pscustomobject]@{ Model = $modelDisplay; Status = $statusFinal; Success = $true; DriverPath = $driverRelativePath }
     }
     catch {
-        $err = "Error: $($_.Exception.Message.Split('.')[0])"
+        $errorStatus = "Error: $($_.Exception.Message)"
         WriteLog "Save-DellDriversTask error for $($modelDisplay): $($_.Exception.ToString())"
-        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $err }
-        return [pscustomobject]@{ Model = $modelDisplay; Status = $err; Success = $false; DriverPath = $null }
+        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $errorStatus }
+        return [pscustomobject]@{ Model = $modelDisplay; Status = $errorStatus; Success = $false; DriverPath = $null }
     }
 }
 

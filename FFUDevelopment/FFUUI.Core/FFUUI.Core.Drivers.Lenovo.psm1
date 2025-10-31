@@ -216,8 +216,10 @@ function Save-LenovoDriversTask {
                 Start-BitsTransferWithRetry -Source $packageUrl -Destination $packageXMLPath
             }
             catch {
-                WriteLog "($processedPackages/$totalPackages) Failed to download package XML '$packageUrl'. Skipping. Error: $($_.Exception.Message)"
-                continue # Skip this package
+                $failureMessage = "Failed to download Lenovo package XML '$packageUrl': $($_.Exception.Message)"
+                WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+                throw (New-Object System.Exception($failureMessage, $_.Exception))
             }
 
             # Load and parse the package XML
@@ -286,9 +288,10 @@ function Save-LenovoDriversTask {
                 WriteLog "($processedPackages/$totalPackages) Driver downloaded: $driverFileName"
             }
             catch {
-                WriteLog "($processedPackages/$totalPackages) Failed to download driver '$driverUrl'. Skipping. Error: $($_.Exception.Message)"
-                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue # Clean up package XML
-                continue # Skip this driver
+                $failureMessage = "Failed to download driver '$packageTitle' from $($driverUrl): $($_.Exception.Message)"
+                WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+                throw (New-Object System.Exception($failureMessage, $_.Exception))
             }
 
             # --- Extraction Logic ---
@@ -325,14 +328,13 @@ function Save-LenovoDriversTask {
                 $extractionSucceeded = $true
             }
             catch {
-                WriteLog "($processedPackages/$totalPackages) Failed to extract driver '$driverFilePath' to temporary path. Skipping. Error: $($_.Exception.Message)"
-                # Don't delete the downloaded exe yet if extraction fails
-                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue # Clean up package XML
-                # Clean up temp folder if extraction failed
+                $failureMessage = "Failed to extract driver package '$packageTitle': $($_.Exception.Message)"
+                WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
                 if ($tempExtractBase -and (Test-Path -Path $tempExtractBase)) {
                     Remove-Item -Path $tempExtractBase -Recurse -Force -ErrorAction SilentlyContinue
                 }
-                continue # Skip further processing for this driver
+                throw (New-Object System.Exception($failureMessage, $_.Exception))
             }
     
             # --- Post-Extraction Handling (Move from Temp to Final Destination) ---
@@ -375,10 +377,9 @@ function Save-LenovoDriversTask {
                             Move-Item -Path $item.FullName -Destination $finalDestinationPath -Force -ErrorAction Stop
                         }
                         catch {
-                            WriteLog "($processedPackages/$totalPackages) Failed to move item '$($item.FullName)' to '$finalDestinationPath'. Error: $($_.Exception.Message)"
-                            # Decide if this should stop the whole process or just skip this item
-                            # For now, we'll log and continue, but mark overall success as false
-                            $extractionSucceeded = $false
+                            $failureMessage = "Failed to move extracted item '$($item.FullName)' to '$finalDestinationPath': $($_.Exception.Message)"
+                            WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                            throw (New-Object System.Exception($failureMessage, $_.Exception))
                         }
                     } # End foreach ($item in $extractedItems)
     
@@ -415,6 +416,9 @@ function Save-LenovoDriversTask {
             # Always delete the package XML
             WriteLog "($processedPackages/$totalPackages) Deleting package XML file: $packageXMLPath"
             Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+            if (-not $extractionSucceeded) {
+                throw (New-Object System.Exception("Failed to extract driver '$packageTitle'. See log for details."))
+            }
     
         } # End foreach package
         
@@ -451,12 +455,10 @@ function Save-LenovoDriversTask {
         
     }
     catch {
-        $status = "Error: $($_.Exception.Message.Split('.')[0])" # Shorten error message
-        WriteLog "Error saving Lenovo drivers for '$identifier': $($_.Exception.ToString())" # Log full exception string
+        $status = "Error: $($_.Exception.Message)"
+        WriteLog "Error saving Lenovo drivers for '$identifier': $($_.Exception.ToString())"
         $success = $false
-        # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-        # Ensure return object is created even on error
         return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null }
     }
     finally {
