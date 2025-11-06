@@ -188,10 +188,19 @@ function Get-DellLatestDriverPackages {
         # Build a deterministic sortable key: zero-pad each numeric segment to 6 digits
         $versionSortable = ($versionArr | ForEach-Object { $_.ToString('D6') }) -join '-'
 
+        # Capture a human‑readable driver name (preserve spaces like HP/Lenovo; remove only illegal path chars and extra whitespace)
+        $displayNode = $comp.SelectSingleNode("*[local-name()='Name']/*[local-name()='Display']")
+        $nameRaw     = if ($displayNode) { $displayNode.InnerText.Trim() } else { $fileName }
+        # Remove characters not suitable for display (and disallowed in file names) but keep spaces
+        $nameDisplay = $nameRaw -replace '[\\\/:\*\?\"\<\>\|]', ' ' -replace '[,]', '-' 
+        # Collapse multiple spaces to single
+        $nameDisplay = ($nameDisplay -replace '\s+', ' ').Trim()
+
         $rawPackages.Add([pscustomobject]@{
             Path            = $path
             DownloadUrl     = $downloadUrl
             FileName        = $fileName
+            Name            = $nameDisplay
             Category        = $category
             VendorVersion   = $vendorVersion
             VersionArray    = $versionArr
@@ -225,6 +234,7 @@ function Get-DellLatestDriverPackages {
             Path           = $pkg.Path
             DownloadUrl    = $pkg.DownloadUrl
             DriverFileName = $pkg.FileName
+            Name           = $pkg.Name
             Category       = $pkg.Category
             VendorVersion  = $pkg.VendorVersion
             DateTime       = $pkg.DateTime
