@@ -15,6 +15,9 @@ This fork focuses on addressing critical bugs (#327, #324, #319, #318, #301, #29
 
 ## Architecture
 
+## Workflow Requirements
+- Update CLAUDE.md before every git commit
+
 ### Component Structure
 
 ```
@@ -187,6 +190,51 @@ class NewOEMDriverProvider : DriverProvider {
 # See DriverProviderFactory class in FFU.Common\Drivers\
 ```
 
+### ADK Pre-Flight Validation (New Feature)
+
+FFUBuilder automatically validates Windows ADK installation before creating WinPE media to prevent silent failures.
+
+**Automatic Validation:**
+When `-CreateCaptureMedia` or `-CreateDeploymentMedia` is enabled, the system performs comprehensive pre-flight checks:
+
+```powershell
+# Automatically triggered when creating WinPE media
+.\BuildFFUVM.ps1 -CreateCaptureMedia $true -UpdateADK $true
+```
+
+**What is validated:**
+- ADK installation (registry and file system)
+- Deployment Tools feature
+- Windows PE add-on
+- Critical executables (oscdimg.exe, copype.cmd, DandISetEnv.bat)
+- Architecture-specific boot files (etfsboot.com, Efisys.bin, Efisys_noprompt.bin)
+- ADK version currency (warning only)
+
+**Error handling:**
+- Clear error messages with specific missing components
+- Direct links to Microsoft download pages
+- Automatic installation when `-UpdateADK $true` is set
+- Detailed logging with severity levels (Info, Success, Warning, Error, Critical)
+
+**Manual validation:**
+```powershell
+# Explicitly validate ADK prerequisites
+$validation = Test-ADKPrerequisites -WindowsArch 'x64' -AutoInstall $false -ThrowOnFailure $false
+
+if (-not $validation.IsValid) {
+    Write-Host "ADK validation failed:"
+    $validation.Errors | ForEach-Object { Write-Host "  - $_" }
+}
+```
+
+**Common error resolution:**
+If ADK validation fails:
+1. Check error message for specific missing components
+2. Run with `-UpdateADK $true` for automatic installation
+3. Or manually install from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
+   - Install "Windows ADK" with "Deployment Tools" feature
+   - Install "Windows PE add-on"
+
 ### Pre-flight Validation
 
 Always validate configuration before starting builds:
@@ -241,6 +289,24 @@ $env:HTTPS_PROXY = "http://proxy.corp.com:8080"
 
 **Symptoms:** DISM fails to apply unattend.xml from update packages
 **Workaround:** Use `Get-UnattendFromMSU` function for robust extraction with validation
+
+### WinPE boot.wim Creation Failures (FIXED)
+
+**Symptoms:** Build fails with "Boot.wim not found at expected path" when creating WinPE capture media
+**Root Cause:** Missing Windows ADK or Windows PE add-on installation
+**Solution (Implemented):**
+- Automatic ADK pre-flight validation now detects missing components before build starts
+- Clear error messages with installation instructions
+- Run with `-UpdateADK $true` for automatic installation
+- Validation checks:
+  - ADK installation presence
+  - Deployment Tools feature
+  - Windows PE add-on
+  - Critical files (copype.cmd, oscdimg.exe, boot files)
+- Enhanced error handling in `copype` command execution with proper exit code checking
+
+**Previous Behavior:** Silent failure during WinPE media creation
+**Current Behavior:** Early detection with actionable error messages
 
 ### Issue #298: OS Partition Size Limitations
 
