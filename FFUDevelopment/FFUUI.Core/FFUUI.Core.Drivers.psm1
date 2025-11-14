@@ -5,6 +5,91 @@
     This module contains all the business logic for the 'Drivers' tab in the FFU Builder UI. It handles fetching driver model lists from various manufacturers (Microsoft, Dell, HP, Lenovo), displaying and filtering them in the UI, and managing the selection state. It also includes functions to import and export driver selections to a JSON file (Drivers.json) and to orchestrate the parallel download of selected driver packages using the common parallel processing module.
 #>
 
+function ConvertTo-DriverBaseName {
+    param(
+        [string]$ModelString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ModelString)) {
+        return $ModelString
+    }
+
+    if ($ModelString -match '^(.*?)\s*\((.+)\)\s*$') {
+        return $matches[1].Trim()
+    }
+
+    return $ModelString.Trim()
+}
+
+function Get-DriverDisplayName {
+    param(
+        [string]$BaseName,
+        [string]$Identifier
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BaseName)) {
+        return $Identifier
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Identifier)) {
+        return $BaseName.Trim()
+    }
+
+    return "$($BaseName.Trim()) ($($Identifier.Trim()))"
+}
+
+function Convert-DriverItemToJsonModel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$DriverItem
+    )
+
+    $makeName = $DriverItem.Make
+    switch ($makeName) {
+        'Microsoft' {
+            $modelObject = @{ Name = $DriverItem.Model }
+            if ($DriverItem.PSObject.Properties['Link'] -and -not [string]::IsNullOrWhiteSpace($DriverItem.Link)) {
+                $modelObject.Link = $DriverItem.Link
+            }
+            return $modelObject
+        }
+        'Dell' {
+            $systemId = if ($DriverItem.PSObject.Properties['SystemId']) { $DriverItem.SystemId } else { $null }
+            $baseName = ConvertTo-DriverBaseName -ModelString $DriverItem.Model
+            if ([string]::IsNullOrWhiteSpace($baseName)) {
+                $baseName = $DriverItem.Model
+            }
+            $modelObject = @{ Name = $baseName }
+            if (-not [string]::IsNullOrWhiteSpace($systemId)) {
+                $modelObject.SystemId = $systemId
+            }
+            if ($DriverItem.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($DriverItem.CabUrl)) {
+                $modelObject.CabUrl = $DriverItem.CabUrl
+            }
+            return $modelObject
+        }
+        'HP' {
+            return @{ Name = $DriverItem.Model }
+        }
+        'Lenovo' {
+            $machineType = $DriverItem.MachineType
+            $baseName = if ($DriverItem.ProductName) { $DriverItem.ProductName } else { ConvertTo-DriverBaseName -ModelString $DriverItem.Model }
+            if ([string]::IsNullOrWhiteSpace($baseName) -or [string]::IsNullOrWhiteSpace($machineType)) {
+                WriteLog "Skipping Lenovo driver '$($DriverItem.Model)' because Name or MachineType is missing."
+                return $null
+            }
+            return @{
+                Name        = $baseName
+                MachineType = $machineType
+            }
+        }
+        default {
+            WriteLog "Convert-DriverItemToJsonModel: Unsupported Make '$makeName'."
+            return $null
+        }
+    }
+}
+
 # Helper function to get models for a selected Make and standardize them
 function Get-ModelsForMake {
     param(
@@ -107,13 +192,11 @@ function ConvertTo-StandardizedDriverModel {
     $dellModelNumber = $null
     $dellSystemId = $null
     $dellCabUrl = $null
-    $dellCabRelative = $null
     if ($Make -eq 'Dell') {
         if ($RawDriverObject.PSObject.Properties['Brand']) { $dellBrand = $RawDriverObject.Brand }
         if ($RawDriverObject.PSObject.Properties['ModelNumber']) { $dellModelNumber = $RawDriverObject.ModelNumber }
         if ($RawDriverObject.PSObject.Properties['SystemId']) { $dellSystemId = $RawDriverObject.SystemId }
         if ($RawDriverObject.PSObject.Properties['CabUrl']) { $dellCabUrl = $RawDriverObject.CabUrl }
-        if ($RawDriverObject.PSObject.Properties['CabRelativePath']) { $dellCabRelative = $RawDriverObject.CabRelativePath }
     }
 
     $output = [PSCustomObject]@{
@@ -137,7 +220,6 @@ function ConvertTo-StandardizedDriverModel {
         $output | Add-Member -NotePropertyName ModelNumber     -NotePropertyValue $dellModelNumber
         $output | Add-Member -NotePropertyName SystemId        -NotePropertyValue $dellSystemId
         $output | Add-Member -NotePropertyName CabUrl          -NotePropertyValue $dellCabUrl
-        $output | Add-Member -NotePropertyName CabRelativePath -NotePropertyValue $dellCabRelative
     }
 
     return $output
@@ -213,44 +295,7 @@ function Save-DriversJson {
         $modelsForThisMake = @() # Initialize an array to hold model objects
 
         foreach ($driverItem in $_.Group) {
-            $modelObject = $null
-            switch ($makeName) {
-                'Microsoft' {
-                    $modelObject = @{
-                        Name = $driverItem.Model # Model is the display name
-                        Link = $driverItem.Link
-                    }
-                }
-                'Dell' {
-                    $modelObject = @{
-                        Name = $driverItem.Model
-                    }
-                    if ($driverItem.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverItem.SystemId)) {
-                        $modelObject.SystemId = $driverItem.SystemId
-                    }
-                    if ($driverItem.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabUrl)) {
-                        $modelObject.CabUrl = $driverItem.CabUrl
-                    }
-                    if ($driverItem.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabRelativePath)) {
-                        $modelObject.CabRelativePath = $driverItem.CabRelativePath
-                    }
-                }
-                'HP' {
-                    $modelObject = @{
-                        Name = $driverItem.Model
-                    }
-                }
-                'Lenovo' {
-                    $modelObject = @{
-                        Name        = $driverItem.Model       # This is "ProductName (MachineType)"
-                        ProductName = $driverItem.ProductName # This is "ProductName"
-                        MachineType = $driverItem.MachineType # This is "MachineType"
-                    }
-                }
-                default {
-                    WriteLog "Save-DriversJson: Unknown Make '$makeName' encountered for model '$($driverItem.Model)'. Skipping."
-                }
-            }
+            $modelObject = Convert-DriverItemToJsonModel -DriverItem $driverItem
             if ($null -ne $modelObject) {
                 $modelsForThisMake += $modelObject
             }
@@ -340,7 +385,70 @@ function Import-DriversJson {
                         WriteLog "Import-DriversJson: Skipping empty model name for Make '$makeName'."
                         continue
                     }
-
+        
+                    $normalizedName = $importedModelNameFromObject
+                    $skipModel = $false
+                    switch ($makeName) {
+                        'Lenovo' {
+                            $productName = if ($importedModelObject.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.ProductName)) { $importedModelObject.ProductName } else { ConvertTo-DriverBaseName -ModelString $normalizedName }
+                            $machineType = if ($importedModelObject.PSObject.Properties['MachineType'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.MachineType)) { $importedModelObject.MachineType } else { $null }
+                            if ([string]::IsNullOrWhiteSpace($machineType) -and $normalizedName -match '(.+?)\s*\((.+?)\)$') {
+                                if ([string]::IsNullOrWhiteSpace($productName)) { $productName = $matches[1].Trim() }
+                                $machineType = $matches[2].Trim()
+                            }
+                            if ([string]::IsNullOrWhiteSpace($productName) -or [string]::IsNullOrWhiteSpace($machineType)) {
+                                WriteLog "Import-DriversJson: Skipping Lenovo model '$normalizedName' due to missing ProductName or MachineType."
+                                $skipModel = $true
+                            }
+                            else {
+                                $normalizedName = Get-DriverDisplayName -BaseName $productName -Identifier $machineType
+                                if ($importedModelObject.PSObject.Properties['ProductName']) {
+                                    $importedModelObject.ProductName = $productName
+                                }
+                                else {
+                                    $importedModelObject | Add-Member -NotePropertyName ProductName -NotePropertyValue $productName
+                                }
+                                if ($importedModelObject.PSObject.Properties['MachineType']) {
+                                    $importedModelObject.MachineType = $machineType
+                                }
+                                else {
+                                    $importedModelObject | Add-Member -NotePropertyName MachineType -NotePropertyValue $machineType
+                                }
+                            }
+                        }
+                        'Dell' {
+                            $baseName = ConvertTo-DriverBaseName -ModelString $normalizedName
+                            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $normalizedName }
+                            $systemId = if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) { $importedModelObject.SystemId } else { $null }
+                            if ([string]::IsNullOrWhiteSpace($systemId) -and $normalizedName -match '(.+?)\s*\((.+?)\)$') {
+                                if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $matches[1].Trim() }
+                                $systemId = $matches[2].Trim()
+                            }
+                            $normalizedName = if ([string]::IsNullOrWhiteSpace($systemId)) { $baseName.Trim() } else { Get-DriverDisplayName -BaseName $baseName -Identifier $systemId }
+                            if ($importedModelObject.PSObject.Properties['SystemId']) {
+                                $importedModelObject.SystemId = $systemId
+                            }
+                            else {
+                                $importedModelObject | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemId
+                            }
+                        }
+                        default {
+                            $normalizedName = $normalizedName.Trim()
+                        }
+                    }
+        
+                    if ($skipModel) {
+                        continue
+                    }
+        
+                    if ([string]::IsNullOrWhiteSpace($normalizedName)) {
+                        WriteLog "Import-DriversJson: Skipping normalized model name for Make '$makeName'."
+                        continue
+                    }
+        
+                    $importedModelObject.Name = $normalizedName
+                    $importedModelNameFromObject = $normalizedName
+        
                     $existingModel = $State.Data.allDriverModels | Where-Object { $_.Make -eq $makeName -and $_.Model -eq $importedModelNameFromObject } | Select-Object -First 1
 
                     if ($null -ne $existingModel) {
@@ -380,12 +488,6 @@ function Import-DriversJson {
                                 if ($existingModel.CabUrl -ne $importedModelObject.CabUrl) {
                                     $existingModel.CabUrl = $importedModelObject.CabUrl
                                     WriteLog "Import-DriversJson: Updated CabUrl for existing Dell model '$($existingModel.Model)'."
-                                }
-                            }
-                            if ($importedModelObject.PSObject.Properties['CabRelativePath'] -and $existingModel.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabRelativePath)) {
-                                if ($existingModel.CabRelativePath -ne $importedModelObject.CabRelativePath) {
-                                    $existingModel.CabRelativePath = $importedModelObject.CabRelativePath
-                                    WriteLog "Import-DriversJson: Updated CabRelativePath for existing Dell model '$($existingModel.Model)'."
                                 }
                             }
                         }
@@ -444,9 +546,6 @@ function Import-DriversJson {
                             }
                             if ($importedModelObject.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabUrl)) {
                                 $newDriverModel | Add-Member -NotePropertyName CabUrl -NotePropertyValue $importedModelObject.CabUrl
-                            }
-                            if ($importedModelObject.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabRelativePath)) {
-                                $newDriverModel | Add-Member -NotePropertyName CabRelativePath -NotePropertyValue $importedModelObject.CabRelativePath
                             }
                         }
                         $State.Data.allDriverModels.Add($newDriverModel)
@@ -806,52 +905,17 @@ function Invoke-DownloadSelectedDrivers {
                 $makeName = $_.Name
                 $modelsForThisMake = @() # Initialize an array to hold model objects
 
-                foreach ($driverItem in $_.Group) {
-                    $modelObject = $null
-                    switch ($makeName) {
-                        'Microsoft' {
-                            $modelObject = @{
-                                Name = $driverItem.Model # Model is the display name
-                                Link = $driverItem.Link
-                            }
-                        }
-                        'Dell' {
-                            $modelObject = @{
-                                Name = $driverItem.Model
-                            }
-                            if ($driverItem.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverItem.SystemId)) {
-                                $modelObject.SystemId = $driverItem.SystemId
-                            }
-                            if ($driverItem.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabUrl)) {
-                                $modelObject.CabUrl = $driverItem.CabUrl
-                            }
-                            if ($driverItem.PSObject.Properties['CabRelativePath'] -and -not [string]::IsNullOrWhiteSpace($driverItem.CabRelativePath)) {
-                                $modelObject.CabRelativePath = $driverItem.CabRelativePath
-                            }
-                        }
-                        'HP' {
-                            $modelObject = @{
-                                Name = $driverItem.Model
-                            }
-                        }
-                        'Lenovo' {
-                            $modelObject = @{
-                                Name        = $driverItem.Model
-                                ProductName = $driverItem.ProductName
-                                MachineType = $driverItem.MachineType
-                            }
-                        }
-                        default {
-                            WriteLog "Auto-Save Drivers.json: Unrecognized Make '$makeName' for driver '$($driverItem.Model)'. Skipping."
+                            foreach ($driverItem in $_.Group) {
+                        $modelObject = Convert-DriverItemToJsonModel -DriverItem $driverItem
+                        if ($null -ne $modelObject) {
+                            $modelsForThisMake += $modelObject
                         }
                     }
-                    if ($null -ne $modelObject) {
-                        $modelsForThisMake += $modelObject
+            
+                    if ($modelsForThisMake.Count -gt 0) {
+                        $outputJson[$makeName] = @{ Models = $modelsForThisMake }
                     }
                 }
-                # Add the models array to the make-specific object
-                $outputJson[$makeName] = @{ Models = $modelsForThisMake }
-            }
 
             # Ensure directory exists
             $parentDir = Split-Path -Path $driversJsonPath -Parent

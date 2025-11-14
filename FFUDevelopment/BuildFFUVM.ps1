@@ -4907,16 +4907,75 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         $makeName = $makeEntry.Name
         if ($makeEntry.Value.PSObject.Properties['Models']) {
             foreach ($modelEntry in $makeEntry.Value.Models) {
-                # Construct the PSCustomObject exactly as the Save-*DriversTask functions expect $DriverItemData
-                $driverItem = [PSCustomObject]@{
-                    Make        = $makeName
-                    Model       = $modelEntry.Name # This is the display name, e.g., "Surface Book 3" or "Lenovo 500w (83LH)"
-                    Link        = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
-                    ProductName = if ($modelEntry.PSObject.Properties['ProductName']) { $modelEntry.ProductName } else { $null } # Specifically for Lenovo
-                    MachineType = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null } # Specifically for Lenovo
-                    # Ensure all properties potentially accessed by any Save-*DriversTask via $DriverItemData are present
+                if ($null -eq $modelEntry -or -not $modelEntry.PSObject.Properties['Name']) {
+                    WriteLog "Skipping model entry for Make '$makeName' due to missing Name."
+                    continue
                 }
-                $driversToProcess += $driverItem
+
+                $modelName = $modelEntry.Name
+                if ([string]::IsNullOrWhiteSpace($modelName)) {
+                    WriteLog "Skipping model entry for Make '$makeName' because Name is empty."
+                    continue
+                }
+                $modelName = $modelName.Trim()
+
+                $driverItem = $null
+                switch ($makeName) {
+                    'Microsoft' {
+                        $driverItem = [PSCustomObject]@{
+                            Make  = $makeName
+                            Model = $modelName
+                            Link  = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
+                        }
+                    }
+                    'HP' {
+                        $driverItem = [PSCustomObject]@{
+                            Make  = $makeName
+                            Model = $modelName
+                        }
+                    }
+                    'Lenovo' {
+                        $machineType = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null }
+                        $productName = $modelName
+                        if ([string]::IsNullOrWhiteSpace($machineType) -and $modelName -match '(.+?)\s*\((.+?)\)$') {
+                            $productName = $matches[1].Trim()
+                            $machineType = $matches[2].Trim()
+                        }
+                        if ([string]::IsNullOrWhiteSpace($machineType)) {
+                            WriteLog "Skipping Lenovo model '$modelName' because MachineType is missing."
+                            continue
+                        }
+                        $displayModel = "$productName ($machineType)"
+                        $driverItem = [PSCustomObject]@{
+                            Make        = $makeName
+                            Model       = $displayModel
+                            ProductName = $productName
+                            MachineType = $machineType
+                        }
+                    }
+                    'Dell' {
+                        $systemId = if ($modelEntry.PSObject.Properties['SystemId']) { $modelEntry.SystemId } else { $null }
+                        $baseName = $modelName
+                        if ([string]::IsNullOrWhiteSpace($systemId) -and $modelName -match '(.+?)\s*\((.+?)\)$') {
+                            $baseName = $matches[1].Trim()
+                            $systemId = $matches[2].Trim()
+                        }
+                        $displayModel = if ([string]::IsNullOrWhiteSpace($systemId)) { $baseName } else { "$baseName ($systemId)" }
+                        $driverItem = [PSCustomObject]@{
+                            Make     = $makeName
+                            Model    = $displayModel
+                            SystemId = $systemId
+                            CabUrl   = if ($modelEntry.PSObject.Properties['CabUrl']) { $modelEntry.CabUrl } else { $null }
+                        }
+                    }
+                    default {
+                        WriteLog "Skipping unsupported Make '$makeName' in Drivers.json."
+                    }
+                }
+
+                if ($null -ne $driverItem) {
+                    $driversToProcess += $driverItem
+                }
             }
         }
     }
