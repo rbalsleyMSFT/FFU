@@ -4929,9 +4929,27 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                         }
                     }
                     'HP' {
+                        $systemId = if ($modelEntry.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($modelEntry.SystemId)) { $modelEntry.SystemId.Trim() } else { $null }
+                        $baseName = if ($modelEntry.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($modelEntry.ProductName)) { $modelEntry.ProductName } else { $modelName }
+                        if ($modelName -match '(.+?)\s*\((.+?)\)$') {
+                            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $matches[1].Trim() }
+                            if ([string]::IsNullOrWhiteSpace($systemId)) { $systemId = $matches[2].Trim() }
+                        }
+                        if ($baseName -match '(.+?)\s*\((.+?)\)$') {
+                            $baseName = $matches[1].Trim()
+                            if ([string]::IsNullOrWhiteSpace($systemId)) { $systemId = $matches[2].Trim() }
+                        }
+                        if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $modelName }
+                        $displayModel = if ([string]::IsNullOrWhiteSpace($systemId)) { $baseName.Trim() } else { "$($baseName.Trim()) ($($systemId.Trim()))" }
                         $driverItem = [PSCustomObject]@{
                             Make  = $makeName
-                            Model = $modelName
+                            Model = $displayModel
+                        }
+                        if (-not [string]::IsNullOrWhiteSpace($baseName)) {
+                            $driverItem | Add-Member -NotePropertyName ProductName -NotePropertyValue $baseName.Trim()
+                        }
+                        if (-not [string]::IsNullOrWhiteSpace($systemId)) {
+                            $driverItem | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemId
                         }
                     }
                     'Lenovo' {
@@ -5012,9 +5030,13 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         $failedDownloads = [System.Collections.Generic.List[PSCustomObject]]::new()
 
         if ($null -ne $parallelResults) {
-            # Create a lookup table from the original items to get the 'Make'
-            $makeLookup = @{}
-            $driversToProcess | ForEach-Object { $makeLookup[$_.Model] = $_.Make }
+            # Create a lookup table from the original items to retain full metadata for mapping.
+            $driverLookup = @{}
+            foreach ($driver in $driversToProcess) {
+                if (-not [string]::IsNullOrWhiteSpace($driver.Model)) {
+                    $driverLookup[$driver.Model] = $driver
+                }
+            }
 
             foreach ($result in $parallelResults) {
                 if ($null -eq $result) { continue }
@@ -5055,20 +5077,30 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
 
                 if ($resultSuccess -and -not [string]::IsNullOrWhiteSpace($resultDriverPath)) {
                     $modelKey = if (-not [string]::IsNullOrWhiteSpace($lookupModelName)) { $lookupModelName } else { 'Unknown model' }
-                    $makeJson = $null
-                    if (-not [string]::IsNullOrWhiteSpace($lookupModelName) -and $makeLookup.ContainsKey($lookupModelName)) {
-                        $makeJson = $makeLookup[$lookupModelName]
+                    $driverMetadata = $null
+                    if (-not [string]::IsNullOrWhiteSpace($lookupModelName) -and $driverLookup.ContainsKey($lookupModelName)) {
+                        $driverMetadata = $driverLookup[$lookupModelName]
                     }
 
-                    if ($makeJson) {
-                        $successfullyDownloaded.Add([PSCustomObject]@{
-                                Make       = $makeJson
-                                Model      = $modelKey
-                                DriverPath = $resultDriverPath
-                            })
+                    if ($driverMetadata) {
+                        $driverRecord = [PSCustomObject]@{
+                            Make       = $driverMetadata.Make
+                            Model      = $modelKey
+                            DriverPath = $resultDriverPath
+                        }
+                        if ($driverMetadata.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.SystemId)) {
+                            $driverRecord | Add-Member -NotePropertyName SystemId -NotePropertyValue $driverMetadata.SystemId
+                        }
+                        if ($driverMetadata.PSObject.Properties['MachineType'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.MachineType)) {
+                            $driverRecord | Add-Member -NotePropertyName MachineType -NotePropertyValue $driverMetadata.MachineType
+                        }
+                        if ($driverMetadata.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.ProductName)) {
+                            $driverRecord | Add-Member -NotePropertyName ProductName -NotePropertyValue $driverMetadata.ProductName
+                        }
+                        $successfullyDownloaded.Add($driverRecord)
                     }
                     else {
-                        WriteLog "Warning: Could not find 'Make' for successful download of model '$modelKey'. Skipping from DriverMapping.json."
+                        WriteLog "Warning: Could not find driver metadata for successful download of model '$modelKey'. Skipping from DriverMapping.json."
                     }
                 }
                 else {

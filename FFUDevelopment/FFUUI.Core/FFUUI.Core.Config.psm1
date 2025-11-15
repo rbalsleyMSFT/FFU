@@ -243,6 +243,55 @@ function Set-UIValue {
     }
 }
 
+function Get-ConfigDriverBaseName {
+    param(
+        [string]$RawName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RawName)) {
+        return $RawName
+    }
+
+    if ($RawName -match '^(.*?)\s*\((.+)\)\s*$') {
+        return $matches[1].Trim()
+    }
+
+    return $RawName.Trim()
+}
+
+function Get-ConfigDriverDisplayName {
+    param(
+        [string]$Make,
+        [string]$StoredName,
+        [string]$ProductName,
+        [string]$SystemId,
+        [string]$MachineType
+    )
+
+    $baseName = if (-not [string]::IsNullOrWhiteSpace($ProductName)) { $ProductName } else { Get-ConfigDriverBaseName -RawName $StoredName }
+
+    switch ($Make) {
+        'Dell' {
+            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $StoredName }
+            if ([string]::IsNullOrWhiteSpace($SystemId)) { return $baseName }
+            return "{0} ({1})" -f $baseName.Trim(), $SystemId.Trim()
+        }
+        'HP' {
+            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $StoredName }
+            if ([string]::IsNullOrWhiteSpace($SystemId)) { return $baseName }
+            return "{0} ({1})" -f $baseName.Trim(), $SystemId.Trim()
+        }
+        'Lenovo' {
+            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $StoredName }
+            if ([string]::IsNullOrWhiteSpace($MachineType)) { return $baseName }
+            return "{0} ({1})" -f $baseName.Trim(), $MachineType.Trim()
+        }
+        default {
+            return $StoredName
+        }
+    }
+}
+
 function Invoke-LoadConfiguration {
     param(
         [Parameter(Mandatory = $true)]
@@ -1056,15 +1105,28 @@ function Import-ConfigSupplementalAssets {
                                 if ($null -eq $modelEntry -or -not ($modelEntry.PSObject.Properties['Name'])) { continue }
                                 $modelName = $modelEntry.Name
                                 if ([string]::IsNullOrWhiteSpace($modelName)) { continue }
+                                $downloadStatus = if ($modelEntry.PSObject.Properties['DownloadStatus']) { $modelEntry.DownloadStatus } else { "" }
+                                $linkValue = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
+                                $productName = if ($modelEntry.PSObject.Properties['ProductName']) { $modelEntry.ProductName } else { $null }
+                                $machineType = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null }
+                                $systemId = if ($modelEntry.PSObject.Properties['SystemId']) { $modelEntry.SystemId } else { $null }
+                                $idValue = if ($modelEntry.PSObject.Properties['Id']) { $modelEntry.Id } else { $null }
+                                if ($null -eq $idValue -and -not [string]::IsNullOrWhiteSpace($systemId)) { $idValue = $systemId }
+                                if ($null -eq $idValue -and -not [string]::IsNullOrWhiteSpace($machineType)) { $idValue = $machineType }
+                                $displayModel = Get-ConfigDriverDisplayName -Make $makeName -StoredName $modelName -ProductName $productName -SystemId $systemId -MachineType $machineType
+                                if ([string]::IsNullOrWhiteSpace($displayModel)) {
+                                    $displayModel = $modelName
+                                }
                                 $driverObj = [PSCustomObject]@{
                                     IsSelected     = $true
                                     Make           = $makeName
-                                    Model          = $modelName
-                                    DownloadStatus = if ($modelEntry.PSObject.Properties['DownloadStatus']) { $modelEntry.DownloadStatus } else { "" }
-                                    Link           = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
-                                    ProductName    = if ($modelEntry.PSObject.Properties['ProductName']) { $modelEntry.ProductName } else { $null }
-                                    MachineType    = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null }
-                                    Id             = if ($modelEntry.PSObject.Properties['Id']) { $modelEntry.Id } else { $null }
+                                    Model          = $displayModel
+                                    DownloadStatus = $downloadStatus
+                                    Link           = $linkValue
+                                    ProductName    = $productName
+                                    MachineType    = $machineType
+                                    SystemId       = $systemId
+                                    Id             = $idValue
                                 }
                                 $State.Data.allDriverModels.Add($driverObj)
                             }
