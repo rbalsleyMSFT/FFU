@@ -155,31 +155,185 @@ function Update-DriverMappingJson {
     $updatedCount = 0
     $addedCount = 0
 
+    $hpSystemIdCache = @{}
+    $normalizeHpName = {
+        param([string]$text)
+
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            return $null
+        }
+
+        return ([regex]::Replace($text.ToLowerInvariant(), '[^a-z0-9]', ''))
+    }
+    $getHpSystemId = {
+        param([string]$modelName)
+
+        if ([string]::IsNullOrWhiteSpace($modelName)) {
+            return $null
+        }
+
+        if ($hpSystemIdCache.ContainsKey($modelName)) {
+            return $hpSystemIdCache[$modelName]
+        }
+
+        $hpFolder = Join-Path -Path $DriversFolder -ChildPath 'HP'
+        if (-not (Test-Path -Path $hpFolder -PathType Container)) {
+            $hpSystemIdCache[$modelName] = $null
+            return $null
+        }
+
+        $platformListXml = Join-Path -Path $hpFolder -ChildPath 'PlatformList.xml'
+        $platformListCab = Join-Path -Path $hpFolder -ChildPath 'platformList.cab'
+        if (-not (Test-Path -Path $platformListXml -PathType Leaf)) {
+            try {
+                WriteLog "Attempting to refresh HP PlatformList.xml for SystemID lookup."
+                Start-BitsTransferWithRetry -Source 'https://hpia.hpcloud.hp.com/ref/platformList.cab' -Destination $platformListCab -ErrorAction Stop
+                if (Test-Path -Path $platformListXml) { Remove-Item -Path $platformListXml -Force -ErrorAction SilentlyContinue }
+                Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$platformListCab`"", "`"$platformListXml`"") -ErrorAction Stop | Out-Null
+                if (Test-Path -Path $platformListCab) { Remove-Item -Path $platformListCab -Force -ErrorAction SilentlyContinue }
+            }
+            catch {
+                WriteLog "Failed to refresh HP PlatformList.xml: $($_.Exception.Message)"
+                $hpSystemIdCache[$modelName] = $null
+                return $null
+            }
+        }
+
+        try {
+            [xml]$platformListContent = Get-Content -Path $platformListXml -Raw -Encoding UTF8 -ErrorAction Stop
+
+            $targetName = $modelName.Trim()
+            $normalizedTarget = & $normalizeHpName $targetName
+
+            $modelMatch = $platformListContent.ImagePal.Platform | Where-Object {
+                [string]::Equals($_.ProductName.'#text'.Trim(), $targetName, [System.StringComparison]::OrdinalIgnoreCase)
+            } | Select-Object -First 1
+
+            if (-not $modelMatch -and $normalizedTarget) {
+                $modelMatch = $platformListContent.ImagePal.Platform | Where-Object {
+                    $candidateName = $_.ProductName.'#text'
+                    $normalizedCandidate = & $normalizeHpName $candidateName
+                    $normalizedCandidate -eq $normalizedTarget
+                } | Select-Object -First 1
+            }
+
+            if (-not $modelMatch -and $normalizedTarget) {
+                $modelMatch = $platformListContent.ImagePal.Platform | Where-Object {
+                    $candidateName = $_.ProductName.'#text'
+                    $normalizedCandidate = & $normalizeHpName $candidateName
+                    ($normalizedCandidate -like "*$normalizedTarget*") -or ($normalizedTarget -like "*$normalizedCandidate*")
+                } | Select-Object -First 1
+            }
+
+            if ($modelMatch -and -not [string]::IsNullOrWhiteSpace($modelMatch.SystemID)) {
+                $resolvedId = $modelMatch.SystemID.Trim().ToUpperInvariant()
+                $hpSystemIdCache[$modelName] = $resolvedId
+                return $resolvedId
+            }
+            else {
+                WriteLog "HP SystemId lookup: no match found in PlatformList.xml for model '$modelName'."
+            }
+        }
+        catch {
+            WriteLog "Failed to parse HP PlatformList.xml for model '$modelName': $($_.Exception.Message)"
+        }
+
+        $hpSystemIdCache[$modelName] = $null
+        return $null
+    }
+
     foreach ($driver in $DownloadedDrivers) {
-        # Skip if any required property is missing or null
         if (-not $driver.PSObject.Properties['Make'] -or -not $driver.PSObject.Properties['Model'] -or -not $driver.PSObject.Properties['DriverPath'] -or [string]::IsNullOrWhiteSpace($driver.DriverPath)) {
             WriteLog "Skipping driver entry due to missing or empty Make, Model, or DriverPath. Details: $(($driver | ConvertTo-Json -Compress -Depth 3))"
             continue
         }
 
-        # Find existing entry
+        $systemIdValue = $null
+        $machineTypeValue = $null
+
+        if ($driver.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driver.SystemId)) {
+            $systemIdValue = $driver.SystemId.Trim().ToUpperInvariant()
+        }
+        if ($driver.PSObject.Properties['MachineType'] -and -not [string]::IsNullOrWhiteSpace($driver.MachineType)) {
+            $machineTypeValue = $driver.MachineType.Trim()
+        }
+
+        switch ($driver.Make) {
+            'Dell' {
+                if (-not $systemIdValue -and $driver.Model -match '\(([^)]+)\)\s*$') {
+                    $systemIdValue = $matches[1].Trim().ToUpperInvariant()
+                }
+            }
+            'HP' {
+                if (-not $systemIdValue) {
+                    $systemIdValue = & $getHpSystemId $driver.Model
+                }
+            }
+            'Lenovo' {
+                if (-not $machineTypeValue -and $driver.Model -match '\(([^)]+)\)\s*$') {
+                    $machineTypeValue = $matches[1].Trim()
+                }
+            }
+        }
+
         $existingEntry = $mappingList | Where-Object { $_.Manufacturer -eq $driver.Make -and $_.Model -eq $driver.Model } | Select-Object -First 1
 
         if ($null -ne $existingEntry) {
-            # Update existing entry if the path is different
+            $entryUpdated = $false
             if ($existingEntry.DriverPath -ne $driver.DriverPath) {
                 WriteLog "Updating driver path for '$($driver.Make) - $($driver.Model)' from '$($existingEntry.DriverPath)' to '$($driver.DriverPath)'."
                 $existingEntry.DriverPath = $driver.DriverPath
+                $entryUpdated = $true
+            }
+
+            if ($driver.Make -in @('HP', 'Dell') -and -not [string]::IsNullOrWhiteSpace($systemIdValue)) {
+                if ($existingEntry.PSObject.Properties['SystemId']) {
+                    if ($existingEntry.SystemId -ne $systemIdValue) {
+                        WriteLog "Updating SystemId for '$($driver.Make) - $($driver.Model)' to '$systemIdValue'."
+                        $existingEntry.SystemId = $systemIdValue
+                        $entryUpdated = $true
+                    }
+                }
+                else {
+                    WriteLog "Adding SystemId '$systemIdValue' for '$($driver.Make) - $($driver.Model)'."
+                    $existingEntry | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemIdValue
+                    $entryUpdated = $true
+                }
+            }
+
+            if ($driver.Make -eq 'Lenovo' -and -not [string]::IsNullOrWhiteSpace($machineTypeValue)) {
+                if ($existingEntry.PSObject.Properties['MachineType']) {
+                    if ($existingEntry.MachineType -ne $machineTypeValue) {
+                        WriteLog "Updating MachineType for '$($driver.Make) - $($driver.Model)' to '$machineTypeValue'."
+                        $existingEntry.MachineType = $machineTypeValue
+                        $entryUpdated = $true
+                    }
+                }
+                else {
+                    WriteLog "Adding MachineType '$machineTypeValue' for '$($driver.Make) - $($driver.Model)'."
+                    $existingEntry | Add-Member -NotePropertyName MachineType -NotePropertyValue $machineTypeValue
+                    $entryUpdated = $true
+                }
+            }
+
+            if ($entryUpdated) {
                 $updatedCount++
             }
         }
         else {
-            # Add new entry
             $newEntry = [PSCustomObject]@{
                 Manufacturer = $driver.Make
                 Model        = $driver.Model
                 DriverPath   = $driver.DriverPath
             }
+
+            if ($driver.Make -in @('HP', 'Dell') -and -not [string]::IsNullOrWhiteSpace($systemIdValue)) {
+                $newEntry | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemIdValue
+            }
+            if ($driver.Make -eq 'Lenovo' -and -not [string]::IsNullOrWhiteSpace($machineTypeValue)) {
+                $newEntry | Add-Member -NotePropertyName MachineType -NotePropertyValue $machineTypeValue
+            }
+
             $mappingList.Add($newEntry)
             WriteLog "Adding new mapping for '$($driver.Make) - $($driver.Model)' with path '$($driver.DriverPath)'."
             $addedCount++
