@@ -2882,7 +2882,7 @@ function New-PEMedia {
                 Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver $PEDriversFolder -Recurse -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-null
             }
             catch {
-                WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+                WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
             }
             WriteLog "Adding drivers complete"
         }
