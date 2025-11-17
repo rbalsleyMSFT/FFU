@@ -155,7 +155,7 @@ The failure is expected when ADK is not fully installed - it demonstrates the va
 11/07/2025 11:57:26 [FAIL] ADK Pre-Flight: Missing: Deployment and Imaging environment setup
     Path : C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat
 11/07/2025 11:57:26 [FAIL] ADK Pre-Flight: Missing: WinPE media creation script (copype.cmd)
-    Path : C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\copype.cmd
+    Path : C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\copype.cmd
 11/07/2025 11:57:26 [CRIT] ADK Pre-Flight: === ADK pre-flight validation FAILED ===
 ```
 

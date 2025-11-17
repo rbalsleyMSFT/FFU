@@ -310,7 +310,7 @@ try {
             "$($validation.ADKPath)Assessment and Deployment Kit\Deployment Tools\$archPath\Oscdimg\oscdimg.exe",
             "$($validation.ADKPath)Assessment and Deployment Kit\Deployment Tools\$archPath\Oscdimg\Efisys.bin",
             "$($validation.ADKPath)Assessment and Deployment Kit\Deployment Tools\$archPath\Oscdimg\Efisys_noprompt.bin",
-            "$($validation.ADKPath)Assessment and Deployment Kit\Windows Preinstallation Environment\$archPath\copype.cmd"
+            "$($validation.ADKPath)Assessment and Deployment Kit\Windows Preinstallation Environment\copype.cmd"
         )
 
         if ($WindowsArch -eq 'x64') {
