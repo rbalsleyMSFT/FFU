@@ -172,6 +172,102 @@ function Get-NormalizedManufacturer {
     return $Manufacturer.Trim()
 }
 
+function Get-SystemIdentityMetadata {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Microsoft.Management.Infrastructure.CimInstance]$ComputerSystem,
+        [Parameter()]
+        [Microsoft.Management.Infrastructure.CimInstance]$ComputerSystemProduct,
+        [Parameter()]
+        [Microsoft.Management.Infrastructure.CimInstance]$MsSystemInformation
+    )
+
+    # Consolidate manufacturer normalization so UI and driver mapping share the same identifiers.
+    $normalizedManufacturer = Get-NormalizedManufacturer -Manufacturer $ComputerSystem.Manufacturer
+    if (-not $ComputerSystemProduct) {
+        $ComputerSystemProduct = Get-CimInstance -Class Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
+    }
+    $modelCandidate = if ($normalizedManufacturer -eq 'Lenovo' -and $ComputerSystemProduct -and -not [string]::IsNullOrWhiteSpace($ComputerSystemProduct.Version)) {
+        $ComputerSystemProduct.Version
+    }
+    else {
+        $ComputerSystem.Model
+    }
+    if ([string]::IsNullOrWhiteSpace($modelCandidate)) {
+        $modelCandidate = $ComputerSystem.Model
+    }
+
+    $identity = [pscustomobject]@{
+        ManufacturerOriginal   = $ComputerSystem.Manufacturer
+        ManufacturerNormalized = if ($normalizedManufacturer) { $normalizedManufacturer } else { $ComputerSystem.Manufacturer }
+        ModelOriginal          = $modelCandidate
+        ModelNormalized        = ConvertTo-ComparableModelName -Text $modelCandidate
+        SystemSkuNormalized    = $null
+        FallbackSkuNormalized  = $null
+        MachineTypeNormalized  = $null
+        IdentifierLabel        = 'System ID'
+        IdentifierValue        = $null
+    }
+
+    if ($MsSystemInformation -and $MsSystemInformation.SystemSku) {
+        $identity.SystemSkuNormalized = $MsSystemInformation.SystemSku.Trim().ToUpperInvariant()
+    }
+
+    switch ($identity.ManufacturerNormalized) {
+        'Dell' {
+            if ($MsSystemInformation -and $MsSystemInformation.SystemSku) {
+                $identity.SystemSkuNormalized = $MsSystemInformation.SystemSku.Trim().ToUpperInvariant()
+            }
+            $oemStringArray = $ComputerSystem | Select-Object -ExpandProperty OEMStringArray -ErrorAction SilentlyContinue
+            if ($oemStringArray) {
+                $joinedOemString = ($oemStringArray -join ' ')
+                $fallbackMatches = [regex]::Matches($joinedOemString, '\[\S*]')
+                if ($fallbackMatches.Count -gt 0) {
+                    $identity.FallbackSkuNormalized = $fallbackMatches[0].Value.TrimStart('[').TrimEnd(']').Trim().ToUpperInvariant()
+                }
+            }
+            if ($identity.FallbackSkuNormalized) {
+                $identity.IdentifierValue = $identity.FallbackSkuNormalized
+            }
+            elseif ($identity.SystemSkuNormalized) {
+                $identity.IdentifierValue = $identity.SystemSkuNormalized
+            }
+            break
+        }
+        'HP' {
+            if ($MsSystemInformation -and $MsSystemInformation.BaseBoardProduct) {
+                $identity.SystemSkuNormalized = $MsSystemInformation.BaseBoardProduct.Trim().ToUpperInvariant()
+            }
+            break
+        }
+        'Lenovo' {
+            $modelValue = $ComputerSystem.Model
+            if (-not [string]::IsNullOrWhiteSpace($modelValue) -and $modelValue.Length -ge 4) {
+                $identity.MachineTypeNormalized = $modelValue.Substring(0, 4).Trim().ToUpperInvariant()
+            }
+            $identity.IdentifierLabel = 'Machine Type'
+            if ($identity.MachineTypeNormalized) {
+                $identity.IdentifierValue = $identity.MachineTypeNormalized
+            }
+            break
+        }
+        default {
+            break
+        }
+    }
+
+    if ($null -eq $identity.IdentifierValue) {
+        if ($identity.MachineTypeNormalized) {
+            $identity.IdentifierValue = $identity.MachineTypeNormalized
+        }
+        elseif ($identity.SystemSkuNormalized) {
+            $identity.IdentifierValue = $identity.SystemSkuNormalized
+        }
+    }
+
+    return $identity
+}
+
 function Get-SystemInformation {
     param(
         [Parameter(Mandatory = $true)]
@@ -179,16 +275,9 @@ function Get-SystemInformation {
     )
 
     $computerSystem = Get-CimInstance -Class Win32_ComputerSystem
-    $systemManufacturer = $computerSystem.Manufacturer
-    $systemModel = if ($systemManufacturer -like '*LENOVO*') {
-        (Get-CimInstance -Class Win32_ComputerSystemProduct).Version
-    }
-    else {
-        $computerSystem.Model
-    }
-    if ([string]::IsNullOrWhiteSpace($systemModel)) {
-        $systemModel = $computerSystem.Model
-    }
+    $computerSystemProduct = Get-CimInstance -Class Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
+    $msSystemInformation = Get-CimInstance -Namespace 'root\WMI' -Class MS_SystemInformation -ErrorAction SilentlyContinue
+    $systemIdentity = Get-SystemIdentityMetadata -ComputerSystem $computerSystem -ComputerSystemProduct $computerSystemProduct -MsSystemInformation $msSystemInformation
 
     $biosInfo = Get-CimInstance -Class Win32_Bios
     $processorInfo = Get-CimInstance -Class Win32_Processor | Select-Object -First 1
@@ -199,77 +288,6 @@ function Get-SystemInformation {
     }
     $totalMemoryGB = [math]::Round(($totalMemory / 1GB), 2)
     $diskSizeGB = [math]::Round(($HardDrive.DiskSize / 1GB), 2)
-
-    $normalizedManufacturer = Get-NormalizedManufacturer -Manufacturer $systemManufacturer
-    $msSystemInformation = Get-CimInstance -Namespace 'root\WMI' -Class MS_SystemInformation -ErrorAction SilentlyContinue
-    # Capture manufacturer-specific identifiers once so downstream logic stays simple.
-    $manufacturerMetadata = [pscustomobject]@{
-        Label           = 'System ID'
-        SystemSku       = $null
-        FallbackSku     = $null
-        MachineType     = $null
-        IdentifierValue = $null
-    }
-
-    switch ($normalizedManufacturer) {
-        'Dell' {
-            if ($msSystemInformation -and $msSystemInformation.SystemSku) {
-                $manufacturerMetadata.SystemSku = $msSystemInformation.SystemSku.Trim()
-            }
-            $oemStringArray = $computerSystem | Select-Object -ExpandProperty OEMStringArray -ErrorAction SilentlyContinue
-            if ($oemStringArray) {
-                $joinedOemString = ($oemStringArray -join ' ')
-                $fallbackMatches = [regex]::Matches($joinedOemString, '\[\S*]')
-                if ($fallbackMatches.Count -gt 0) {
-                    $manufacturerMetadata.FallbackSku = $fallbackMatches[0].Value.TrimStart('[').TrimEnd(']')
-                }
-            }
-            if ($manufacturerMetadata.FallbackSku) {
-                $manufacturerMetadata.IdentifierValue = $manufacturerMetadata.FallbackSku
-            }
-            elseif ($manufacturerMetadata.SystemSku) {
-                $manufacturerMetadata.IdentifierValue = $manufacturerMetadata.SystemSku
-            }
-            break
-        }
-        'HP' {
-            if ($msSystemInformation -and $msSystemInformation.BaseBoardProduct) {
-                $manufacturerMetadata.SystemSku = $msSystemInformation.BaseBoardProduct.Trim()
-            }
-            break
-        }
-        'Lenovo' {
-            $modelValue = $computerSystem.Model
-            if (-not [string]::IsNullOrWhiteSpace($modelValue) -and $modelValue.Length -ge 4) {
-                $manufacturerMetadata.MachineType = $modelValue.Substring(0, 4).Trim()
-            }
-            $manufacturerMetadata.Label = 'Machine Type'
-            if ($manufacturerMetadata.MachineType) {
-                $manufacturerMetadata.IdentifierValue = $manufacturerMetadata.MachineType
-            }
-            break
-        }
-        default {
-            if ($msSystemInformation -and $msSystemInformation.SystemSku) {
-                $manufacturerMetadata.SystemSku = $msSystemInformation.SystemSku.Trim()
-            }
-            break
-        }
-    }
-
-    # Normalize identifiers once for UI display and driver mapping.
-    $normalizedSystemSku = if ($manufacturerMetadata.SystemSku) { $manufacturerMetadata.SystemSku.Trim().ToUpperInvariant() } else { $null }
-    $normalizedFallbackSku = if ($manufacturerMetadata.FallbackSku) { $manufacturerMetadata.FallbackSku.Trim().ToUpperInvariant() } else { $null }
-    $normalizedMachineType = if ($manufacturerMetadata.MachineType) { $manufacturerMetadata.MachineType.Trim().ToUpperInvariant() } else { $null }
-
-    if ($null -eq $manufacturerMetadata.IdentifierValue) {
-        if ($normalizedManufacturer -eq 'Lenovo' -and $normalizedMachineType) {
-            $manufacturerMetadata.IdentifierValue = $normalizedMachineType
-        }
-        elseif ($normalizedSystemSku) {
-            $manufacturerMetadata.IdentifierValue = $normalizedSystemSku
-        }
-    }
 
     $baseBoardManufacturer = if ($msSystemInformation -and $msSystemInformation.BaseBoardManufacturer) { $msSystemInformation.BaseBoardManufacturer.Trim() } else { $null }
     $baseBoardProduct = if ($msSystemInformation -and $msSystemInformation.BaseBoardProduct) { $msSystemInformation.BaseBoardProduct.Trim() } else { $null }
@@ -290,10 +308,12 @@ function Get-SystemInformation {
     $ecFirmwareMajorRelease = if ($msSystemInformation -and $null -ne $msSystemInformation.ECFirmwareMajorRelease) { [string]$msSystemInformation.ECFirmwareMajorRelease } else { $null }
     $ecFirmwareMinorRelease = if ($msSystemInformation -and $null -ne $msSystemInformation.ECFirmwareMinorRelease) { [string]$msSystemInformation.ECFirmwareMinorRelease } else { $null }
 
-    $normalizedModel = ConvertTo-ComparableModelName -Text $systemModel
+    $displayManufacturer = if ($systemIdentity.ManufacturerNormalized) { $systemIdentity.ManufacturerNormalized } else { $computerSystem.Manufacturer }
+    $displayModel = if ($systemIdentity.ModelNormalized) { $systemIdentity.ModelNormalized } else { $systemIdentity.ModelOriginal }
+
     $sysInfoData = [ordered]@{
-        "Manufacturer"           = if ($normalizedManufacturer) { $normalizedManufacturer } else { $systemManufacturer }
-        "Model"                  = if ($normalizedModel) { $normalizedModel } else { $systemModel }
+        "Manufacturer"           = $displayManufacturer
+        "Model"                  = $displayModel
         "Serial Number"          = $biosInfo.SerialNumber
         "Processor"              = $processor
         "Memory"                 = "{0} GB" -f $totalMemoryGB
@@ -309,11 +329,15 @@ function Get-SystemInformation {
         "BiosVersion"            = if ($biosVersion) { $biosVersion } else { 'Not Detected' }
         "ECFirmwareMajorRelease" = if ($ecFirmwareMajorRelease) { $ecFirmwareMajorRelease } else { 'Not Detected' }
         "ECFirmwareMinorRelease" = if ($ecFirmwareMinorRelease) { $ecFirmwareMinorRelease } else { 'Not Detected' }
-        "SystemSkuNormalized"    = $normalizedSystemSku
-        "FallbackSkuNormalized"  = $normalizedFallbackSku
-        "MachineTypeNormalized"  = $normalizedMachineType
+        "ManufacturerNormalized" = $systemIdentity.ManufacturerNormalized
+        "ModelNormalized"        = $systemIdentity.ModelNormalized
+        "DriverIdentifierLabel"  = $systemIdentity.IdentifierLabel
+        "DriverIdentifierValue"  = $systemIdentity.IdentifierValue
+        "SystemSkuNormalized"    = $systemIdentity.SystemSkuNormalized
+        "FallbackSkuNormalized"  = $systemIdentity.FallbackSkuNormalized
+        "MachineTypeNormalized"  = $systemIdentity.MachineTypeNormalized
     }
-    $sysInfoData[$manufacturerMetadata.Label] = if ($manufacturerMetadata.IdentifierValue) { $manufacturerMetadata.IdentifierValue } else { 'Not Detected' }
+    $sysInfoData[$systemIdentity.IdentifierLabel] = if ($systemIdentity.IdentifierValue) { $systemIdentity.IdentifierValue } else { 'Not Detected' }
 
     return [PSCustomObject]$sysInfoData
 }
@@ -324,7 +348,15 @@ function Write-SystemInformation {
         [pscustomobject]$SystemInformation
     )
 
-    $hiddenProperties = @('SystemSkuNormalized', 'FallbackSkuNormalized', 'MachineTypeNormalized')
+    $hiddenProperties = @(
+        'SystemSkuNormalized',
+        'FallbackSkuNormalized',
+        'MachineTypeNormalized',
+        'ManufacturerNormalized',
+        'ModelNormalized',
+        'DriverIdentifierLabel',
+        'DriverIdentifierValue'
+    )
 
     WriteLog '--- System Information ---'
     foreach ($property in $SystemInformation.psobject.Properties) {
@@ -356,7 +388,12 @@ function Find-DriverMappingRule {
         [object[]]$DriverMappings
     )
 
-    $normalizedManufacturer = Get-NormalizedManufacturer -Manufacturer $SystemInformation.Manufacturer
+    $normalizedManufacturer = if ($SystemInformation.PSObject.Properties['ManufacturerNormalized']) {
+        $SystemInformation.ManufacturerNormalized
+    }
+    else {
+        Get-NormalizedManufacturer -Manufacturer $SystemInformation.Manufacturer
+    }
     if ([string]::IsNullOrWhiteSpace($normalizedManufacturer)) {
         WriteLog 'DriverMapping: Unable to determine manufacturer for automatic matching.'
         return $null
@@ -385,10 +422,11 @@ function Find-DriverMappingRule {
     $systemSkuNormalized = if ($SystemInformation.PSObject.Properties['SystemSkuNormalized']) { $SystemInformation.SystemSkuNormalized } else { $null }
     $fallbackSkuNormalized = if ($SystemInformation.PSObject.Properties['FallbackSkuNormalized']) { $SystemInformation.FallbackSkuNormalized } else { $null }
     $machineTypeNormalized = if ($SystemInformation.PSObject.Properties['MachineTypeNormalized']) { $SystemInformation.MachineTypeNormalized } else { $null }
-    $normalizedModel = $SystemInformation.Model
+    $normalizedModel = if ($SystemInformation.PSObject.Properties['ModelNormalized']) { $SystemInformation.ModelNormalized } else { $null }
     if ([string]::IsNullOrWhiteSpace($normalizedModel)) {
         $normalizedModel = ConvertTo-ComparableModelName -Text $SystemInformation.Model
     }
+
     switch ($normalizedManufacturer) {
         'Dell' {
             if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
@@ -431,7 +469,7 @@ function Find-DriverMappingRule {
             return $null
         }
         'Microsoft' {
-            if ($SystemInformation.Model -notmatch 'Surface') {
+            if (-not [regex]::IsMatch($SystemInformation.Model, 'Surface', 'IgnoreCase')) {
                 WriteLog "DriverMapping: Manufacturer Microsoft detected but model '$($SystemInformation.Model)' is not a Surface device."
                 return $null
             }
