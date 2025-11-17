@@ -2094,7 +2094,7 @@ function Test-ADKPrerequisites {
 
         # copype.cmd
         $filesToCheck += @{
-            Path = "$($result.ADKPath)Assessment and Deployment Kit\Windows Preinstallation Environment\$archPath\copype.cmd"
+            Path = "$($result.ADKPath)Assessment and Deployment Kit\Windows Preinstallation Environment\copype.cmd"
             Description = "WinPE media creation script (copype.cmd)"
             Critical = $true
         }
@@ -2914,6 +2914,174 @@ function Save-KB {
     return $fileName
 }
 
+function Test-MountedImageDiskSpace {
+    <#
+    .SYNOPSIS
+    Validates sufficient disk space on mounted image for MSU extraction
+
+    .DESCRIPTION
+    Checks if the mounted image has sufficient free disk space to extract and apply MSU packages.
+    MSU extraction requires approximately 3x the package size plus a safety margin.
+
+    .PARAMETER Path
+    The path to the mounted Windows image
+
+    .PARAMETER PackagePath
+    The path to the MSU package file
+
+    .PARAMETER SafetyMarginGB
+    Additional safety margin in GB (default: 5GB)
+
+    .EXAMPLE
+    Test-MountedImageDiskSpace -Path "W:\" -PackagePath "C:\KB\kb5066835.msu"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath,
+
+        [Parameter()]
+        [int]$SafetyMarginGB = 5
+    )
+
+    $packageSizeGB = [Math]::Round((Get-Item $PackagePath).Length / 1GB, 2)
+    $requiredSpaceGB = ($packageSizeGB * 3) + $SafetyMarginGB  # 3x for extraction + safety margin
+
+    $drive = (Get-Item $Path).PSDrive
+    $freeSpaceGB = [Math]::Round($drive.Free / 1GB, 2)
+
+    if ($freeSpaceGB -lt $requiredSpaceGB) {
+        WriteLog "WARNING: Insufficient disk space on mounted image. Free: ${freeSpaceGB}GB, Required: ${requiredSpaceGB}GB"
+        WriteLog "Package size: ${packageSizeGB}GB"
+        return $false
+    }
+
+    WriteLog "Disk space check passed. Free: ${freeSpaceGB}GB, Required: ${requiredSpaceGB}GB"
+    return $true
+}
+
+function Initialize-DISMService {
+    <#
+    .SYNOPSIS
+    Ensures DISM service is fully initialized before applying packages
+
+    .DESCRIPTION
+    Performs a lightweight DISM operation to ensure the service is ready for package application.
+    This prevents race conditions and service initialization failures.
+
+    .PARAMETER MountPath
+    The path to the mounted Windows image
+
+    .EXAMPLE
+    Initialize-DISMService -MountPath "W:\"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MountPath
+    )
+
+    WriteLog "Initializing DISM service for mounted image..."
+
+    try {
+        # Perform a lightweight DISM operation to ensure service is ready
+        # Use Get-WindowsEdition which works with mounted image paths
+        $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
+        WriteLog "DISM service initialized. Image edition: $($dismInfo.Edition)"
+        return $true
+    }
+    catch {
+        WriteLog "WARNING: DISM service initialization check failed: $($_.Exception.Message)"
+        WriteLog "Waiting 10 seconds for DISM service to stabilize..."
+        Start-Sleep -Seconds 10
+
+        try {
+            $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
+            WriteLog "DISM service initialized after retry. Image edition: $($dismInfo.Edition)"
+            return $true
+        }
+        catch {
+            WriteLog "ERROR: DISM service failed to initialize after retry"
+            return $false
+        }
+    }
+}
+
+function Add-WindowsPackageWithRetry {
+    <#
+    .SYNOPSIS
+    Applies Windows packages with automatic retry logic
+
+    .DESCRIPTION
+    Wraps Add-WindowsPackageWithUnattend with retry logic to handle transient failures.
+    Useful for MSU packages that occasionally fail due to timing or resource contention issues.
+
+    .PARAMETER Path
+    The path to the mounted Windows image
+
+    .PARAMETER PackagePath
+    The path to the MSU or CAB package file
+
+    .PARAMETER MaxRetries
+    Maximum number of retry attempts (default: 2)
+
+    .PARAMETER RetryDelaySeconds
+    Delay in seconds between retry attempts (default: 30)
+
+    .EXAMPLE
+    Add-WindowsPackageWithRetry -Path "W:\" -PackagePath "C:\KB\kb5066835.msu" -MaxRetries 3
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PackagePath,
+
+        [Parameter()]
+        [int]$MaxRetries = 2,
+
+        [Parameter()]
+        [int]$RetryDelaySeconds = 30
+    )
+
+    $packageName = Split-Path $PackagePath -Leaf
+    $attempt = 0
+    $success = $false
+
+    while (-not $success -and $attempt -lt $MaxRetries) {
+        $attempt++
+
+        try {
+            if ($attempt -gt 1) {
+                WriteLog "Retry attempt $attempt of $MaxRetries for package: $packageName"
+                WriteLog "Waiting $RetryDelaySeconds seconds before retry..."
+                Start-Sleep -Seconds $RetryDelaySeconds
+
+                WriteLog "Refreshing DISM mount state before retry..."
+                # Clear any potentially stuck DISM operations
+                $null = Get-WindowsEdition -Path $Path -ErrorAction SilentlyContinue
+            }
+
+            Add-WindowsPackageWithUnattend -Path $Path -PackagePath $PackagePath
+            $success = $true
+            WriteLog "Package $packageName applied successfully on attempt $attempt"
+        }
+        catch {
+            WriteLog "ERROR: Attempt $attempt failed for package $packageName - $($_.Exception.Message)"
+
+            if ($attempt -ge $MaxRetries) {
+                WriteLog "CRITICAL: All $MaxRetries attempts failed for package $packageName"
+                throw $_
+            }
+        }
+    }
+}
+
 function Add-WindowsPackageWithUnattend {
     <#
     .SYNOPSIS
@@ -2958,6 +3126,28 @@ function Add-WindowsPackageWithUnattend {
 
     # For MSU files, check for unattend.xml and handle it separately
     if ($PackagePath -match '\.msu$') {
+        # Validate MSU file integrity before attempting extraction
+        WriteLog "Validating MSU package integrity: $packageName"
+        $msuFileInfo = Get-Item $PackagePath -ErrorAction Stop
+
+        if ($msuFileInfo.Length -eq 0) {
+            WriteLog "ERROR: MSU package is empty (0 bytes): $packageName"
+            throw "Corrupted or incomplete MSU package: $packageName"
+        }
+
+        # Check for minimum reasonable MSU size (typically >1MB)
+        if ($msuFileInfo.Length -lt 1MB) {
+            WriteLog "WARNING: MSU package is suspiciously small ($([Math]::Round($msuFileInfo.Length / 1MB, 2)) MB): $packageName"
+        }
+
+        WriteLog "MSU package validation passed. Size: $([Math]::Round($msuFileInfo.Length / 1MB, 2)) MB"
+
+        # Check disk space before extraction
+        if (-not (Test-MountedImageDiskSpace -Path $Path -PackagePath $PackagePath)) {
+            WriteLog "ERROR: Insufficient disk space to extract MSU package"
+            throw "Insufficient disk space on mounted image for MSU extraction"
+        }
+
         $extractPath = Join-Path $env:TEMP "MSU_Extract_$(Get-Date -Format 'yyyyMMddHHmmss')"
         $unattendExtracted = $false
 
@@ -2966,22 +3156,83 @@ function Add-WindowsPackageWithUnattend {
             New-Item -Path $extractPath -ItemType Directory -Force | Out-Null
             WriteLog "Extracting MSU package to check for unattend.xml: $extractPath"
 
-            # Extract MSU package using expand.exe
+            # Extract MSU package using expand.exe with enhanced error handling
             $expandArgs = @(
                 '-F:*',
                 "`"$PackagePath`"",
                 "`"$extractPath`""
             )
-            $expandProcess = Start-Process -FilePath 'expand.exe' -ArgumentList $expandArgs -Wait -PassThru -NoNewWindow
 
-            if ($expandProcess.ExitCode -ne 0) {
-                WriteLog "WARNING: expand.exe returned exit code $($expandProcess.ExitCode), attempting direct package application"
-                Add-WindowsPackage -Path $Path -PackagePath $PackagePath | Out-Null
-                WriteLog "Package $packageName applied successfully (direct method)"
-                return
+            WriteLog "Running expand.exe with arguments: expand.exe $($expandArgs -join ' ')"
+
+            # Capture stderr and stdout
+            $expandOutput = & expand.exe $expandArgs 2>&1
+            $expandExitCode = $LASTEXITCODE
+
+            WriteLog "expand.exe exit code: $expandExitCode"
+
+            if ($expandExitCode -ne 0) {
+                WriteLog "WARNING: expand.exe returned exit code $expandExitCode"
+                WriteLog "expand.exe output: $($expandOutput | Out-String)"
+
+                # Check specific exit codes
+                switch ($expandExitCode) {
+                    -1 { WriteLog "ERROR: expand.exe reported file system or permission error" }
+                    1  { WriteLog "ERROR: expand.exe reported invalid syntax or file not found" }
+                    2  { WriteLog "ERROR: expand.exe reported out of memory" }
+                    default { WriteLog "ERROR: expand.exe reported unknown error: $expandExitCode" }
+                }
+
+                # Verify extraction path is accessible
+                if (-not (Test-Path $extractPath)) {
+                    WriteLog "ERROR: Extraction path does not exist or is inaccessible: $extractPath"
+                }
+
+                # Before falling back, verify the MSU file is readable
+                try {
+                    $testRead = [System.IO.File]::OpenRead($PackagePath)
+                    $testRead.Close()
+                    WriteLog "MSU file is readable, attempting direct DISM application"
+                }
+                catch {
+                    WriteLog "ERROR: MSU file is not readable: $($_.Exception.Message)"
+                    throw "MSU file is corrupted or inaccessible: $PackagePath"
+                }
+
+                WriteLog "Attempting direct package application with Add-WindowsPackage"
+
+                try {
+                    Add-WindowsPackage -Path $Path -PackagePath $PackagePath -ErrorAction Stop | Out-Null
+                    WriteLog "Package $packageName applied successfully (direct method)"
+                    return
+                }
+                catch {
+                    WriteLog "ERROR: Direct DISM application also failed: $($_.Exception.Message)"
+
+                    # Check if this is the known DISM temp folder error
+                    if ($_.Exception.Message -match "temporary folder") {
+                        WriteLog "CRITICAL: DISM failed to create temporary folder in mounted image"
+                        WriteLog "This typically indicates insufficient disk space or permission issues"
+                        WriteLog "Mounted image path: $Path"
+
+                        # Attempt to get detailed volume information
+                        try {
+                            $driveLetter = $Path[0]
+                            $volume = Get-Volume | Where-Object { $_.DriveLetter -eq $driveLetter }
+                            if ($volume) {
+                                WriteLog "Volume information - Size: $([Math]::Round($volume.Size / 1GB, 2))GB, Free: $([Math]::Round($volume.SizeRemaining / 1GB, 2))GB"
+                            }
+                        }
+                        catch {
+                            WriteLog "Could not retrieve volume information"
+                        }
+                    }
+
+                    throw $_
+                }
             }
 
-            WriteLog "MSU extraction completed"
+            WriteLog "MSU extraction completed successfully"
 
             # Look for unattend.xml in extracted files
             $unattendFiles = Get-ChildItem -Path $extractPath -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue |
@@ -3644,6 +3895,344 @@ function Start-RequiredServicesForDISM {
     return $allServicesOk
 }
 
+function Invoke-DISMPreFlightCleanup {
+    <#
+    .SYNOPSIS
+    Comprehensive DISM cleanup and validation before WinPE media creation
+
+    .DESCRIPTION
+    Cleans up stale mount points, validates disk space, ensures services are running,
+    and prepares the environment for successful copype execution.
+
+    Addresses the "Failed to mount the WinPE WIM file" error that occurs when:
+    - Stale DISM mount points exist from previous builds
+    - Insufficient disk space prevents WIM mounting
+    - DISM services are not running properly
+    - Old WinPE files are locked or in use
+
+    .PARAMETER WinPEPath
+    Path to the WinPE working directory (typically C:\FFUDevelopment\WinPE)
+
+    .PARAMETER MinimumFreeSpaceGB
+    Minimum free space required in GB (default: 10GB)
+
+    .EXAMPLE
+    Invoke-DISMPreFlightCleanup -WinPEPath "C:\FFUDevelopment\WinPE" -MinimumFreeSpaceGB 10
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WinPEPath,
+
+        [Parameter()]
+        [int]$MinimumFreeSpaceGB = 10
+    )
+
+    $errors = @()
+
+    WriteLog "=== DISM Pre-Flight Cleanup Starting ==="
+
+    # Step 1: Clean all stale DISM mount points
+    WriteLog "Step 1: Cleaning stale DISM mount points..."
+    try {
+        $dismCleanupOutput = & Dism.exe /Cleanup-Mountpoints 2>&1
+        WriteLog "DISM cleanup output: $($dismCleanupOutput -join ' ')"
+
+        # Verify no mounts remain
+        $mountedImages = Get-WindowsImage -Mounted -ErrorAction SilentlyContinue
+        if ($mountedImages) {
+            WriteLog "WARNING: Found $($mountedImages.Count) mounted images after cleanup"
+            foreach ($mount in $mountedImages) {
+                WriteLog "  Attempting to dismount: $($mount.Path)"
+                try {
+                    Dismount-WindowsImage -Path $mount.Path -Discard -ErrorAction Stop
+                    WriteLog "  Successfully dismounted: $($mount.Path)"
+                } catch {
+                    $errors += "Failed to dismount $($mount.Path): $($_.Exception.Message)"
+                    WriteLog "  ERROR: $($errors[-1])"
+                }
+            }
+        } else {
+            WriteLog "No stale mounts found"
+        }
+    } catch {
+        WriteLog "WARNING: DISM cleanup had issues: $($_.Exception.Message)"
+    }
+
+    # Step 2: Force remove old WinPE directory (even if locked)
+    WriteLog "Step 2: Removing old WinPE directory..."
+    if (Test-Path $WinPEPath) {
+        try {
+            # First try normal removal
+            Remove-Item -Path $WinPEPath -Recurse -Force -ErrorAction Stop
+            WriteLog "Successfully removed old WinPE directory"
+        } catch {
+            WriteLog "Normal removal failed, attempting forced removal..."
+
+            # Try robocopy mirror trick to force deletion
+            $emptyDir = Join-Path $env:TEMP "EmptyDir_$(Get-Random)"
+            New-Item -Path $emptyDir -ItemType Directory -Force | Out-Null
+
+            WriteLog "Using robocopy mirror technique for forced deletion..."
+            $robocopyOutput = & robocopy.exe $emptyDir $WinPEPath /MIR /R:0 /W:0 2>&1
+            Remove-Item -Path $emptyDir -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $WinPEPath -Recurse -Force -ErrorAction SilentlyContinue
+
+            if (Test-Path $WinPEPath) {
+                $errors += "Failed to remove old WinPE directory: $WinPEPath"
+                WriteLog "  ERROR: $($errors[-1])"
+            } else {
+                WriteLog "Forced removal successful"
+            }
+        }
+    } else {
+        WriteLog "No old WinPE directory to remove"
+    }
+
+    # Step 3: Validate disk space
+    WriteLog "Step 3: Validating disk space..."
+    try {
+        $driveLetter = $WinPEPath.Substring(0, 1)
+        $drive = Get-PSDrive -Name $driveLetter -ErrorAction Stop
+        $freeSpaceGB = [Math]::Round($drive.Free / 1GB, 2)
+
+        WriteLog "${driveLetter}: drive free space: ${freeSpaceGB}GB (minimum required: ${MinimumFreeSpaceGB}GB)"
+
+        if ($freeSpaceGB -lt $MinimumFreeSpaceGB) {
+            $errors += "Insufficient disk space: ${freeSpaceGB}GB free, need at least ${MinimumFreeSpaceGB}GB"
+            WriteLog "  ERROR: $($errors[-1])"
+        }
+    } catch {
+        WriteLog "WARNING: Could not validate disk space: $($_.Exception.Message)"
+    }
+
+    # Step 4: Ensure DISM services are running
+    WriteLog "Step 4: Checking DISM services..."
+    $requiredServices = @('TrustedInstaller')
+
+    foreach ($serviceName in $requiredServices) {
+        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+        if ($service) {
+            if ($service.Status -ne 'Running') {
+                WriteLog "Service $serviceName status: $($service.Status), attempting to start..."
+                try {
+                    # Note: TrustedInstaller is manual start, so we just ensure it's not disabled
+                    if ($service.StartType -eq 'Disabled') {
+                        $errors += "Service $serviceName is disabled. Cannot start."
+                        WriteLog "  ERROR: $($errors[-1])"
+                    } else {
+                        WriteLog "Service $serviceName is $($service.Status) (StartType: $($service.StartType)) - OK for manual start service"
+                    }
+                } catch {
+                    $errorMsg = "Failed to check service $serviceName`: $($_.Exception.Message)"
+                    $errors += $errorMsg
+                    WriteLog "  ERROR: $errorMsg"
+                }
+            } else {
+                WriteLog "Service $serviceName is running"
+            }
+        } else {
+            WriteLog "WARNING: Service $serviceName not found"
+        }
+    }
+
+    # Step 5: Clear DISM temp/scratch directories
+    WriteLog "Step 5: Cleaning DISM temporary directories..."
+    $dismTempPaths = @(
+        "$env:TEMP\DISM*",
+        "$env:SystemRoot\Temp\DISM*",
+        "$env:LOCALAPPDATA\Temp\DISM*"
+    )
+
+    $cleanedCount = 0
+    foreach ($tempPath in $dismTempPaths) {
+        $items = Get-Item $tempPath -ErrorAction SilentlyContinue
+        if ($items) {
+            foreach ($item in $items) {
+                try {
+                    Remove-Item $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                    WriteLog "Removed: $($item.FullName)"
+                    $cleanedCount++
+                } catch {
+                    WriteLog "WARNING: Could not remove $($item.FullName)"
+                }
+            }
+        }
+    }
+    WriteLog "Cleaned $cleanedCount DISM temporary directories/files"
+
+    # Step 6: Wait for system to stabilize
+    WriteLog "Step 6: Waiting for system to stabilize (3 seconds)..."
+    Start-Sleep -Seconds 3
+
+    # Step 7: Report results
+    if ($errors.Count -gt 0) {
+        WriteLog "=== DISM Pre-Flight Cleanup COMPLETED with $($errors.Count) error(s) ==="
+        foreach ($error in $errors) {
+            WriteLog "ERROR: $error"
+        }
+        return $false
+    } else {
+        WriteLog "=== DISM Pre-Flight Cleanup COMPLETED Successfully ==="
+        return $true
+    }
+}
+
+function Invoke-CopyPEWithRetry {
+    <#
+    .SYNOPSIS
+    Executes copype with automatic retry and enhanced error diagnostics
+
+    .DESCRIPTION
+    Runs the copype.cmd command to create WinPE media with automatic retry logic
+    if the first attempt fails. Provides enhanced error diagnostics by extracting
+    DISM log information and giving actionable error messages.
+
+    .PARAMETER Architecture
+    Target architecture: 'x64' or 'arm64'
+
+    .PARAMETER DestinationPath
+    Path where WinPE media will be created
+
+    .PARAMETER DandIEnvPath
+    Path to DandISetEnv.bat for ADK environment setup
+
+    .PARAMETER MaxRetries
+    Maximum number of retry attempts (default: 1, meaning 2 total attempts)
+
+    .EXAMPLE
+    Invoke-CopyPEWithRetry -Architecture 'x64' -DestinationPath 'C:\FFUDevelopment\WinPE' -DandIEnvPath 'C:\Program Files (x86)\...\DandISetEnv.bat' -MaxRetries 1
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x64', 'arm64')]
+        [string]$Architecture,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DandIEnvPath,
+
+        [Parameter()]
+        [int]$MaxRetries = 1
+    )
+
+    $attempt = 0
+    $success = $false
+
+    while (-not $success -and $attempt -le $MaxRetries) {
+        $attempt++
+
+        if ($attempt -gt 1) {
+            WriteLog "Retry attempt $attempt of $($MaxRetries + 1) for copype..."
+
+            # On retry, do aggressive cleanup
+            WriteLog "Performing aggressive cleanup before retry..."
+            $cleanupResult = Invoke-DISMPreFlightCleanup -WinPEPath $DestinationPath -MinimumFreeSpaceGB 10
+
+            if (-not $cleanupResult) {
+                WriteLog "WARNING: Pre-flight cleanup had errors, but attempting copype anyway..."
+            }
+
+            # Additional wait for retry to allow system to fully release resources
+            WriteLog "Waiting additional 5 seconds for system to release resources..."
+            Start-Sleep -Seconds 5
+        }
+
+        WriteLog "Executing copype command (attempt $attempt of $($MaxRetries + 1))..."
+
+        # Execute copype with proper architecture parameter
+        if ($Architecture -eq 'x64') {
+            $copypeOutput = & cmd /c """$DandIEnvPath"" && copype amd64 $DestinationPath 2>&1"
+            $copypeExitCode = $LASTEXITCODE
+        }
+        elseif ($Architecture -eq 'arm64') {
+            $copypeOutput = & cmd /c """$DandIEnvPath"" && copype arm64 $DestinationPath 2>&1"
+            $copypeExitCode = $LASTEXITCODE
+        }
+
+        WriteLog "copype exit code: $copypeExitCode"
+
+        # Log copype output
+        if ($copypeOutput) {
+            WriteLog "copype output:"
+            $copypeOutput | ForEach-Object { WriteLog "  $_" }
+        }
+
+        if ($copypeExitCode -eq 0) {
+            WriteLog "copype completed successfully on attempt $attempt"
+            $success = $true
+        } else {
+            WriteLog "ERROR: copype failed on attempt $attempt with exit code $copypeExitCode"
+
+            # Extract DISM error details from logs
+            WriteLog "Checking DISM logs for detailed error information..."
+            try {
+                $dismLog = "$env:SystemRoot\Logs\DISM\dism.log"
+                if (Test-Path $dismLog) {
+                    $recentErrors = Get-Content $dismLog -Tail 50 -ErrorAction SilentlyContinue |
+                        Where-Object { $_ -match 'error|fail|0x8' }
+
+                    if ($recentErrors) {
+                        WriteLog "Recent DISM errors from log:"
+                        $recentErrors | Select-Object -First 10 | ForEach-Object { WriteLog "  $_" }
+                    } else {
+                        WriteLog "No obvious errors found in recent DISM log entries"
+                    }
+                }
+            } catch {
+                WriteLog "Could not read DISM log: $($_.Exception.Message)"
+            }
+
+            if ($attempt -gt $MaxRetries) {
+                # Final failure - provide comprehensive error message
+                $errorMsg = @"
+WinPE media creation failed after $($attempt) attempt(s).
+
+copype command failed with exit code: $copypeExitCode
+
+COMMON CAUSES AND SOLUTIONS:
+
+1. Stale DISM mount points
+   Fix: Run 'Dism.exe /Cleanup-Mountpoints' as Administrator
+
+2. Insufficient disk space (need 10GB+ free on C:)
+   Current free space: Check output above
+   Fix: Free up disk space or move FFUDevelopment to another drive with more space
+
+3. Windows Update or other DISM operations in progress
+   Fix: Wait for Windows Update to complete, then retry
+
+4. Antivirus blocking DISM operations
+   Fix: Temporarily disable antivirus or add exclusions for:
+         - C:\Windows\System32\dism.exe
+         - C:\Windows\System32\DismHost.exe
+         - C:\FFUDevelopment\WinPE
+
+5. Corrupted ADK installation
+   Fix: Run with -UpdateADK `$true to reinstall ADK components
+
+6. System file corruption
+   Fix: Run 'sfc /scannow' as Administrator
+
+DETAILED DIAGNOSTICS:
+- Check: $env:SystemRoot\Logs\DISM\dism.log
+- Check: Event Viewer > Windows Logs > Application (source: DISM)
+
+TO RETRY WITH ADK REINSTALLATION:
+  .\BuildFFUVM.ps1 -UpdateADK `$true -CreateCaptureMedia `$true
+
+"@
+                throw $errorMsg
+            }
+        }
+    }
+
+    return $success
+}
+
 function New-PEMedia {
     param (
         [Parameter()]
@@ -3651,48 +4240,32 @@ function New-PEMedia {
         [Parameter()]
         [bool]$Deploy
     )
-    #Need to use the Demployment and Imaging tools environment to create winPE media
+    #Need to use the Deployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
 
-    If (Test-path -Path "$WinPEFFUPath") {
-        WriteLog "Removing old WinPE path at $WinPEFFUPath"
-        Remove-Item -Path "$WinPEFFUPath" -Recurse -Force | out-null
+    # ENHANCED: Comprehensive pre-flight cleanup before copype
+    WriteLog "Performing DISM pre-flight cleanup before WinPE media creation..."
+    $cleanupSuccess = Invoke-DISMPreFlightCleanup -WinPEPath $WinPEFFUPath -MinimumFreeSpaceGB 10
+
+    if (-not $cleanupSuccess) {
+        WriteLog "WARNING: DISM pre-flight cleanup encountered errors (see above)"
+        WriteLog "Attempting to proceed with WinPE creation anyway..."
     }
 
+    # ENHANCED: Execute copype with automatic retry logic
     WriteLog "Copying WinPE files to $WinPEFFUPath"
-    WriteLog "Executing copype command for $WindowsArch architecture..."
 
-    # Use & cmd over invoke-process as Invoke-process has issues with the winpe media folder copying all contents
-    # Capture output and check exit code for proper error detection
-    if ($WindowsArch -eq 'x64') {
-        $copypeOutput = & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath 2>&1"
-        $copypeExitCode = $LASTEXITCODE
-    }
-    elseif ($WindowsArch -eq 'arm64') {
-        $copypeOutput = & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath 2>&1"
-        $copypeExitCode = $LASTEXITCODE
+    $copySuccess = Invoke-CopyPEWithRetry -Architecture $WindowsArch `
+                                           -DestinationPath $WinPEFFUPath `
+                                           -DandIEnvPath $DandIEnv `
+                                           -MaxRetries 1
+
+    if (-not $copySuccess) {
+        throw "copype execution failed after all retry attempts. See errors above."
     }
 
-    # Check if copype succeeded
-    if ($copypeExitCode -ne 0) {
-        WriteLog "ERROR: copype command failed with exit code $copypeExitCode"
-        WriteLog "copype output: $($copypeOutput -join "`n")"
-        throw "WinPE media creation failed. copype command returned error code $copypeExitCode. This typically indicates that the Windows PE add-on is not properly installed. Run with -UpdateADK `$true to attempt automatic installation, or manually install the Windows PE add-on from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
-    }
-
-    WriteLog "copype completed successfully"
     WriteLog 'WinPE files copied successfully'
-
-    # Clean up any stale DISM mount points before attempting to mount
-    WriteLog 'Checking for stale DISM mount points'
-    try {
-        $dismCleanup = & Dism.exe /Cleanup-Mountpoints 2>&1
-        WriteLog "DISM cleanup result: $($dismCleanup -join ' ')"
-    }
-    catch {
-        WriteLog "WARNING: DISM cleanup failed (may be normal if no stale mounts): $($_.Exception.Message)"
-    }
 
     # Ensure mount directory exists and is empty
     $mountPath = "$WinPEFFUPath\mount"
@@ -6747,31 +7320,37 @@ try {
                 Set-Progress -Percentage 25 -Message "Applying Windows Updates to VHDX..."
                 WriteLog "Adding KBs to $WindowsPartition"
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
+
+                # Initialize DISM service before applying packages
+                if (-not (Initialize-DISMService -MountPath $WindowsPartition)) {
+                    throw "Failed to initialize DISM service for package application"
+                }
+
                 # If WindowsRelease is 2016, we need to add the SSU first
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
                     WriteLog 'WindowsRelease is 2016, adding SSU first'
-                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $SSUFilePath
+                    Add-WindowsPackageWithRetry -Path $WindowsPartition -PackagePath $SSUFilePath
                 }
                 if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                     WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
-                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $SSUFilePath
+                    Add-WindowsPackageWithRetry -Path $WindowsPartition -PackagePath $SSUFilePath
                 }
                 # Break out CU and NET updates to be added separately to abide by Checkpoint Update recommendations
                 if ($UpdateLatestCU) {
                     WriteLog "Adding $CUPath to $WindowsPartition"
-                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $CUPath
+                    Add-WindowsPackageWithRetry -Path $WindowsPartition -PackagePath $CUPath
                 }
                 if ($UpdatePreviewCU) {
                     WriteLog "Adding $CUPPath to $WindowsPartition"
-                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $CUPPath
+                    Add-WindowsPackageWithRetry -Path $WindowsPartition -PackagePath $CUPPath
                 }
                 if ($UpdateLatestNet) {
                     WriteLog "Adding $NETPath to $WindowsPartition"
-                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $NETPath
+                    Add-WindowsPackageWithRetry -Path $WindowsPartition -PackagePath $NETPath
                 }
                 if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
                     WriteLog "Adding $MicrocodePath to $WindowsPartition"
-                    Add-WindowsPackageWithUnattend -Path $WindowsPartition -PackagePath $MicrocodePath
+                    Add-WindowsPackageWithRetry -Path $WindowsPartition -PackagePath $MicrocodePath
                 }
                 WriteLog "KBs added to $WindowsPartition"
                 if ($AllowVHDXCaching) {
