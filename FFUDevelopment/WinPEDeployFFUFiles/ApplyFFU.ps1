@@ -202,76 +202,72 @@ function Get-SystemInformation {
 
     $normalizedManufacturer = Get-NormalizedManufacturer -Manufacturer $systemManufacturer
     $msSystemInformation = Get-CimInstance -Namespace 'root\WMI' -Class MS_SystemInformation -ErrorAction SilentlyContinue
-    $systemSkuValue = $null
-    $fallbackSkuValue = $null
-    $machineTypeValue = $null
-    $deviceIdentifierLabel = 'System ID'
-    $deviceIdentifierValue = $null
+    # Capture manufacturer-specific identifiers once so downstream logic stays simple.
+    $manufacturerMetadata = [pscustomobject]@{
+        Label           = 'System ID'
+        SystemSku       = $null
+        FallbackSku     = $null
+        MachineType     = $null
+        IdentifierValue = $null
+    }
 
     switch ($normalizedManufacturer) {
         'Dell' {
             if ($msSystemInformation -and $msSystemInformation.SystemSku) {
-                $systemSkuValue = $msSystemInformation.SystemSku.Trim()
+                $manufacturerMetadata.SystemSku = $msSystemInformation.SystemSku.Trim()
             }
             $oemStringArray = $computerSystem | Select-Object -ExpandProperty OEMStringArray -ErrorAction SilentlyContinue
             if ($oemStringArray) {
                 $joinedOemString = ($oemStringArray -join ' ')
                 $fallbackMatches = [regex]::Matches($joinedOemString, '\[\S*]')
                 if ($fallbackMatches.Count -gt 0) {
-                    $fallbackSkuValue = $fallbackMatches[0].Value.TrimStart('[').TrimEnd(']')
+                    $manufacturerMetadata.FallbackSku = $fallbackMatches[0].Value.TrimStart('[').TrimEnd(']')
                 }
+            }
+            if ($manufacturerMetadata.FallbackSku) {
+                $manufacturerMetadata.IdentifierValue = $manufacturerMetadata.FallbackSku
+            }
+            elseif ($manufacturerMetadata.SystemSku) {
+                $manufacturerMetadata.IdentifierValue = $manufacturerMetadata.SystemSku
             }
             break
         }
         'HP' {
             if ($msSystemInformation -and $msSystemInformation.BaseBoardProduct) {
-                $systemSkuValue = $msSystemInformation.BaseBoardProduct.Trim()
+                $manufacturerMetadata.SystemSku = $msSystemInformation.BaseBoardProduct.Trim()
             }
             break
         }
         'Lenovo' {
             $modelValue = $computerSystem.Model
             if (-not [string]::IsNullOrWhiteSpace($modelValue) -and $modelValue.Length -ge 4) {
-                $machineTypeValue = $modelValue.Substring(0, 4).Trim()
+                $manufacturerMetadata.MachineType = $modelValue.Substring(0, 4).Trim()
+            }
+            $manufacturerMetadata.Label = 'Machine Type'
+            if ($manufacturerMetadata.MachineType) {
+                $manufacturerMetadata.IdentifierValue = $manufacturerMetadata.MachineType
             }
             break
         }
         default {
             if ($msSystemInformation -and $msSystemInformation.SystemSku) {
-                $systemSkuValue = $msSystemInformation.SystemSku.Trim()
+                $manufacturerMetadata.SystemSku = $msSystemInformation.SystemSku.Trim()
             }
             break
         }
     }
 
-    $normalizedSystemSku = if ($systemSkuValue) { $systemSkuValue.Trim().ToUpperInvariant() } else { $null }
-    $normalizedFallbackSku = if ($fallbackSkuValue) { $fallbackSkuValue.Trim().ToUpperInvariant() } else { $null }
-    $normalizedMachineType = if ($machineTypeValue) { $machineTypeValue.Trim().ToUpperInvariant() } else { $null }
+    # Normalize identifiers once for UI display and driver mapping.
+    $normalizedSystemSku = if ($manufacturerMetadata.SystemSku) { $manufacturerMetadata.SystemSku.Trim().ToUpperInvariant() } else { $null }
+    $normalizedFallbackSku = if ($manufacturerMetadata.FallbackSku) { $manufacturerMetadata.FallbackSku.Trim().ToUpperInvariant() } else { $null }
+    $normalizedMachineType = if ($manufacturerMetadata.MachineType) { $manufacturerMetadata.MachineType.Trim().ToUpperInvariant() } else { $null }
 
-    switch ($normalizedManufacturer) {
-        'Lenovo' {
-            $deviceIdentifierLabel = 'Machine Type'
-            if ($normalizedMachineType) {
-                $deviceIdentifierValue = $normalizedMachineType
-            }
+    if ($null -eq $manufacturerMetadata.IdentifierValue) {
+        if ($normalizedManufacturer -eq 'Lenovo' -and $normalizedMachineType) {
+            $manufacturerMetadata.IdentifierValue = $normalizedMachineType
         }
-        'Dell' {
-            if ($normalizedFallbackSku) {
-                $deviceIdentifierValue = $normalizedFallbackSku
-            }
-            elseif ($normalizedSystemSku) {
-                $deviceIdentifierValue = $normalizedSystemSku
-            }
-        }
-        'HP' {
-            if ($normalizedSystemSku) {
-                $deviceIdentifierValue = $normalizedSystemSku
-            }
-        }
-        default {
-            if ($normalizedSystemSku) {
-                $deviceIdentifierValue = $normalizedSystemSku
-            }
+        elseif ($normalizedSystemSku) {
+            $manufacturerMetadata.IdentifierValue = $normalizedSystemSku
         }
     }
 
@@ -317,7 +313,7 @@ function Get-SystemInformation {
         "FallbackSkuNormalized"  = $normalizedFallbackSku
         "MachineTypeNormalized"  = $normalizedMachineType
     }
-    $sysInfoData[$deviceIdentifierLabel] = if ($deviceIdentifierValue) { $deviceIdentifierValue } else { 'Not Detected' }
+    $sysInfoData[$manufacturerMetadata.Label] = if ($manufacturerMetadata.IdentifierValue) { $manufacturerMetadata.IdentifierValue } else { 'Not Detected' }
 
     return [PSCustomObject]$sysInfoData
 }
