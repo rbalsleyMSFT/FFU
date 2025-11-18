@@ -1120,21 +1120,59 @@ if ($null -eq $DriverSourcePath) {
         # Get all WIM files
         $WimFiles = Get-ChildItem -Path $DriversPath -Filter *.wim -Recurse
         
-        # Get all top-level driver folders
+        # Build folder list that surfaces Manufacturer\Model entries
         $DriverFolders = Get-ChildItem -Path $DriversPath -Directory
+        $driversRootFullPath = (Get-Item -Path $DriversPath).FullName.TrimEnd('\')
+        $relativePathResolver = {
+            param(
+                [string]$candidatePath,
+                [string]$rootPath
+            )
+            try {
+                $normalizedPath = [System.IO.Path]::GetFullPath($candidatePath)
+                if ($normalizedPath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $relativeSegment = $normalizedPath.Substring($rootPath.Length).TrimStart('\','/')
+                    if ([string]::IsNullOrWhiteSpace($relativeSegment)) {
+                        return Split-Path -Path $normalizedPath -Leaf
+                    }
+                    return $relativeSegment
+                }
+                return $normalizedPath
+            }
+            catch {
+                return $candidatePath
+            }
+        }
 
         # Create a combined list
         $DriverSources = @()
-        $WimFiles | ForEach-Object {
+        foreach ($wimFile in $WimFiles) {
+            $relativePath = & $relativePathResolver -candidatePath $wimFile.FullName -rootPath $driversRootFullPath
             $DriverSources += [PSCustomObject]@{
-                Type = 'WIM'
-                Path = $_.FullName
+                Type         = 'WIM'
+                Path         = $wimFile.FullName
+                RelativePath = $relativePath
             }
         }
-        $DriverFolders | ForEach-Object {
-            $DriverSources += [PSCustomObject]@{
-                Type = 'Folder'
-                Path = $_.FullName
+        foreach ($driverFolder in $DriverFolders) {
+            $childModelFolders = Get-ChildItem -Path $driverFolder.FullName -Directory -ErrorAction SilentlyContinue
+            if (($childModelFolders.Count -gt 0) -and ($driverFolder.Parent.FullName -eq $driversRootFullPath)) {
+                foreach ($modelFolder in $childModelFolders) {
+                    $relativePath = & $relativePathResolver -candidatePath $modelFolder.FullName -rootPath $driversRootFullPath
+                    $DriverSources += [PSCustomObject]@{
+                        Type         = 'Folder'
+                        Path         = $modelFolder.FullName
+                        RelativePath = $relativePath
+                    }
+                }
+            }
+            else {
+                $relativePath = & $relativePathResolver -candidatePath $driverFolder.FullName -rootPath $driversRootFullPath
+                $DriverSources += [PSCustomObject]@{
+                    Type         = 'Folder'
+                    Path         = $driverFolder.FullName
+                    RelativePath = $relativePath
+                }
             }
         }
 
@@ -1145,8 +1183,9 @@ if ($null -eq $DriverSourcePath) {
             if ($DriverSourcesCount -eq 1) {
                 $DriverSourcePath = $DriverSources[0].Path
                 $DriverSourceType = $DriverSources[0].Type
-                WriteLog "Single driver source found. Type: $DriverSourceType, Path: $DriverSourcePath"
-                Write-Host "Single driver source found. Type: $DriverSourceType, Path: $DriverSourcePath"
+                $selectedRelativePath = $DriverSources[0].RelativePath
+                WriteLog "Single driver source found. Type: $DriverSourceType, Path: $DriverSourcePath, RelativePath: $selectedRelativePath"
+                Write-Host "Single driver source found. Type: $DriverSourceType, RelativePath: $selectedRelativePath"
             }
             else {
                 # Multiple sources found, prompt user
@@ -1154,12 +1193,13 @@ if ($null -eq $DriverSourcePath) {
                 $displayArray = @()
                 for ($i = 0; $i -lt $DriverSourcesCount; $i++) {
                     $displayArray += [PSCustomObject]@{
-                        Number = $i + 1
-                        Type   = $DriverSources[$i].Type
-                        Path   = $DriverSources[$i].Path
+                        Number       = $i + 1
+                        Type         = $DriverSources[$i].Type
+                        RelativePath = $DriverSources[$i].RelativePath
+                        Path         = $DriverSources[$i].Path
                     }
                 }
-                $displayArray | Format-Table -AutoSize
+                $displayArray | Format-Table -Property Number,Type,RelativePath,Path -AutoSize
                 
                 do {
                     try {
@@ -1175,8 +1215,9 @@ if ($null -eq $DriverSourcePath) {
                 
                 $DriverSourcePath = $DriverSources[$DriverSelected].Path
                 $DriverSourceType = $DriverSources[$DriverSelected].Type
-                WriteLog "User selected Type: $DriverSourceType, Path: $DriverSourcePath"
-                Write-Host "`nUser selected Type: $DriverSourceType, Path: $DriverSourcePath"
+                $selectedRelativePath = $DriverSources[$DriverSelected].RelativePath
+                WriteLog "User selected Type: $DriverSourceType, Path: $DriverSourcePath, RelativePath: $selectedRelativePath"
+                Write-Host "`nUser selected Type: $DriverSourceType, RelativePath: $selectedRelativePath"
             }
         }
         else {
