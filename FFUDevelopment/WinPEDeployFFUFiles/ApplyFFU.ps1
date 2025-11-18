@@ -657,7 +657,16 @@ function Find-DriverMappingRule {
             return $null
         }
         default {
-            WriteLog "DriverMapping: Automatic matching not implemented for manufacturer '$normalizedManufacturer'."
+            # Generic fallback for manufacturers without explicit handling
+            foreach ($rule in $rulesForMake) {
+                if (-not $rule.PSObject.Properties['Model']) { continue }
+                $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
+                if (-not [string]::IsNullOrWhiteSpace($ruleModelNorm) -and $ruleModelNorm -eq $normalizedModel) {
+                    WriteLog "DriverMapping: Manufacturer '$normalizedManufacturer' model '$normalizedModel' matched '$($rule.Model)'."
+                    return $rule
+                }
+            }
+            WriteLog "DriverMapping: No generic match found for manufacturer '$normalizedManufacturer' using model '$normalizedModel'."
             return $null
         }
     }
