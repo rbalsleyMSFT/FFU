@@ -567,18 +567,14 @@ function Find-DriverMappingRule {
             return $null
         }
         'Microsoft' {
-            if (-not [regex]::IsMatch($SystemInformation.Model, 'Surface', 'IgnoreCase')) {
-                WriteLog "DriverMapping: Manufacturer Microsoft detected but model '$($SystemInformation.Model)' is not a Surface device."
-                return $null
-            }
             foreach ($rule in $rulesForMake) {
                 $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
                 if (-not [string]::IsNullOrWhiteSpace($ruleModelNorm) -and $ruleModelNorm -eq $normalizedModel) {
-                    WriteLog "DriverMapping: Surface model '$normalizedModel' matched '$($rule.Model)'."
+                    WriteLog "DriverMapping: Microsoft model '$normalizedModel' matched '$($rule.Model)'."
                     return $rule
                 }
             }
-            WriteLog 'DriverMapping: No Surface model match found in mapping.'
+            WriteLog 'DriverMapping: Microsoft model not present in mapping.'
             return $null
         }
         'Panasonic Corporation' {
