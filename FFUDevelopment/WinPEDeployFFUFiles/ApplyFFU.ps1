@@ -168,6 +168,27 @@ function Get-NormalizedManufacturer {
     elseif ($normalized -like '*MICROSOFT*' -or $normalized -like '*SURFACE*') {
         return 'Microsoft'
     }
+    elseif ($normalized -like '*PANASONIC*') {
+        return 'Panasonic Corporation'
+    }
+    elseif ($normalized -like '*VIGLEN*') {
+        return 'Viglen'
+    }
+    elseif ($normalized -like '*AZW*') {
+        return 'AZW'
+    }
+    elseif ($normalized -like '*FUJITSU*') {
+        return 'Fujitsu'
+    }
+    elseif ($normalized -like '*GETAC*') {
+        return 'Getac'
+    }
+    elseif ($normalized -like '*BYTESPEED*') {
+        return 'ByteSpeed'
+    }
+    elseif ($normalized -like '*INTEL*') {
+        return 'Intel'
+    }
 
     return $Manufacturer.Trim()
 }
@@ -187,6 +208,10 @@ function Get-SystemIdentityMetadata {
     if (-not $ComputerSystemProduct) {
         $ComputerSystemProduct = Get-CimInstance -Class Win32_ComputerSystemProduct -ErrorAction SilentlyContinue
     }
+    $baseBoardInfo = Get-CimInstance -Class Win32_BaseBoard -ErrorAction SilentlyContinue | Select-Object -First 1
+    $baseBoardSku = if ($baseBoardInfo -and -not [string]::IsNullOrWhiteSpace($baseBoardInfo.SKU)) { $baseBoardInfo.SKU.Trim() } else { $null }
+    $msBaseBoardProduct = if ($MsSystemInformation -and $MsSystemInformation.BaseBoardProduct) { $MsSystemInformation.BaseBoardProduct.Trim() } else { $null }
+
     $modelCandidate = if ($normalizedManufacturer -eq 'Lenovo' -and $ComputerSystemProduct -and -not [string]::IsNullOrWhiteSpace($ComputerSystemProduct.Version)) {
         $ComputerSystemProduct.Version
     }
@@ -195,6 +220,9 @@ function Get-SystemIdentityMetadata {
     }
     if ([string]::IsNullOrWhiteSpace($modelCandidate)) {
         $modelCandidate = $ComputerSystem.Model
+    }
+    if ($modelCandidate) {
+        $modelCandidate = $modelCandidate.Trim()
     }
 
     $identity = [pscustomobject]@{
@@ -235,8 +263,8 @@ function Get-SystemIdentityMetadata {
             break
         }
         'HP' {
-            if ($MsSystemInformation -and $MsSystemInformation.BaseBoardProduct) {
-                $identity.SystemSkuNormalized = $MsSystemInformation.BaseBoardProduct.Trim().ToUpperInvariant()
+            if ($msBaseBoardProduct) {
+                $identity.SystemSkuNormalized = $msBaseBoardProduct.ToUpperInvariant()
             }
             break
         }
@@ -248,6 +276,76 @@ function Get-SystemIdentityMetadata {
             $identity.IdentifierLabel = 'Machine Type'
             if ($identity.MachineTypeNormalized) {
                 $identity.IdentifierValue = $identity.MachineTypeNormalized
+            }
+            break
+        }
+        'Panasonic Corporation' {
+            $identity.IdentifierLabel = 'System ID'
+            if ($msBaseBoardProduct) {
+                $identity.SystemSkuNormalized = $msBaseBoardProduct.ToUpperInvariant()
+                $identity.IdentifierValue = $msBaseBoardProduct
+            }
+            break
+        }
+        'Viglen' {
+            $identity.IdentifierLabel = 'System ID'
+            if ($baseBoardSku) {
+                $identity.SystemSkuNormalized = $baseBoardSku.ToUpperInvariant()
+                $identity.IdentifierValue = $baseBoardSku
+            }
+            break
+        }
+        'AZW' {
+            $identity.IdentifierLabel = 'System ID'
+            if ($msBaseBoardProduct) {
+                $identity.SystemSkuNormalized = $msBaseBoardProduct.ToUpperInvariant()
+                $identity.IdentifierValue = $msBaseBoardProduct
+            }
+            break
+        }
+        'Fujitsu' {
+            $identity.IdentifierLabel = 'System ID'
+            if ($baseBoardSku) {
+                $identity.SystemSkuNormalized = $baseBoardSku.ToUpperInvariant()
+                $identity.IdentifierValue = $baseBoardSku
+            }
+            break
+        }
+        'Getac' {
+            $identity.IdentifierLabel = 'System ID'
+            if ($msBaseBoardProduct) {
+                $identity.SystemSkuNormalized = $msBaseBoardProduct.ToUpperInvariant()
+                $identity.IdentifierValue = $msBaseBoardProduct
+            }
+            break
+        }
+        'Intel' {
+            $identity.IdentifierLabel = 'Model'
+            if ($identity.ModelOriginal) {
+                $identity.IdentifierValue = $identity.ModelOriginal
+            }
+            break
+        }
+        'ByteSpeed' {
+            $modelValue = if ($ComputerSystem.Model) { $ComputerSystem.Model.Trim() } else { $null }
+            if ($modelValue -and $modelValue -like '*NUC*') {
+                $identity.ManufacturerNormalized = 'Intel'
+                if ($msBaseBoardProduct) {
+                    $identity.ModelOriginal = $msBaseBoardProduct
+                    $identity.ModelNormalized = ConvertTo-ComparableModelName -Text $msBaseBoardProduct
+                    $identity.IdentifierLabel = 'Model'
+                    $identity.IdentifierValue = $msBaseBoardProduct
+                }
+                elseif ($modelValue) {
+                    $identity.IdentifierLabel = 'Model'
+                    $identity.IdentifierValue = $modelValue
+                }
+            }
+            else {
+                $identity.IdentifierLabel = 'Model'
+                if ($modelValue) {
+                    $identity.IdentifierValue = $modelValue
+                }
             }
             break
         }
@@ -481,6 +579,85 @@ function Find-DriverMappingRule {
                 }
             }
             WriteLog 'DriverMapping: No Surface model match found in mapping.'
+            return $null
+        }
+        'Panasonic Corporation' {
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                $match = $rulesForMake | Where-Object { $_.PSObject.Properties['SystemId'] -and $_.SystemId.Trim().ToUpperInvariant() -eq $systemSkuNormalized } | Select-Object -First 1
+                if ($match) {
+                    WriteLog "DriverMapping: Panasonic SystemId '$systemSkuNormalized' matched '$($match.Model)'."
+                    return $match
+                }
+            }
+            WriteLog 'DriverMapping: Panasonic SystemId not detected or not present in mapping.'
+            return $null
+        }
+        'Viglen' {
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                $match = $rulesForMake | Where-Object { $_.PSObject.Properties['SystemId'] -and $_.SystemId.Trim().ToUpperInvariant() -eq $systemSkuNormalized } | Select-Object -First 1
+                if ($match) {
+                    WriteLog "DriverMapping: Viglen SystemId '$systemSkuNormalized' matched '$($match.Model)'."
+                    return $match
+                }
+            }
+            WriteLog 'DriverMapping: Viglen SystemId not detected or not present in mapping.'
+            return $null
+        }
+        'AZW' {
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                $match = $rulesForMake | Where-Object { $_.PSObject.Properties['SystemId'] -and $_.SystemId.Trim().ToUpperInvariant() -eq $systemSkuNormalized } | Select-Object -First 1
+                if ($match) {
+                    WriteLog "DriverMapping: AZW SystemId '$systemSkuNormalized' matched '$($match.Model)'."
+                    return $match
+                }
+            }
+            WriteLog 'DriverMapping: AZW SystemId not detected or not present in mapping.'
+            return $null
+        }
+        'Fujitsu' {
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                $match = $rulesForMake | Where-Object { $_.PSObject.Properties['SystemId'] -and $_.SystemId.Trim().ToUpperInvariant() -eq $systemSkuNormalized } | Select-Object -First 1
+                if ($match) {
+                    WriteLog "DriverMapping: Fujitsu SystemId '$systemSkuNormalized' matched '$($match.Model)'."
+                    return $match
+                }
+            }
+            WriteLog 'DriverMapping: Fujitsu SystemId not detected or not present in mapping.'
+            return $null
+        }
+        'Getac' {
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                $match = $rulesForMake | Where-Object { $_.PSObject.Properties['SystemId'] -and $_.SystemId.Trim().ToUpperInvariant() -eq $systemSkuNormalized } | Select-Object -First 1
+                if ($match) {
+                    WriteLog "DriverMapping: Getac SystemId '$systemSkuNormalized' matched '$($match.Model)'."
+                    return $match
+                }
+            }
+            WriteLog 'DriverMapping: Getac SystemId not detected or not present in mapping.'
+            return $null
+        }
+        'Intel' {
+            foreach ($rule in $rulesForMake) {
+                if (-not $rule.PSObject.Properties['Model']) { continue }
+                $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
+                if (-not [string]::IsNullOrWhiteSpace($ruleModelNorm) -and $ruleModelNorm -eq $normalizedModel) {
+                    WriteLog "DriverMapping: Intel model '$normalizedModel' matched '$($rule.Model)'."
+                    return $rule
+                }
+            }
+            WriteLog 'DriverMapping: Intel model not detected or not present in mapping.'
+            return $null
+        }
+        'ByteSpeed' {
+            foreach ($rule in $rulesForMake) {
+                if (-not $rule.PSObject.Properties['Model']) { continue }
+                $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
+                if (-not [string]::IsNullOrWhiteSpace($ruleModelNorm) -and $ruleModelNorm -eq $normalizedModel) {
+                    WriteLog "DriverMapping: ByteSpeed model '$normalizedModel' matched '$($rule.Model)'."
+                    return $rule
+                }
+            }
+            WriteLog 'DriverMapping: ByteSpeed model not detected or not present in mapping.'
             return $null
         }
         default {
