@@ -711,7 +711,39 @@ function ConvertTo-ComparableModelName {
     }
     return $normalized
 }
-
+    
+function Test-DriverFolderHasInstallableContent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    
+    if (-not (Test-Path -Path $Path -PathType Container)) {
+        return $false
+    }
+    
+    try {
+        $nonWimFile = Get-ChildItem -Path $Path -File -Recurse -ErrorAction Stop | Where-Object {
+            $extension = $_.Extension
+            if ([string]::IsNullOrWhiteSpace($extension)) {
+                return $true
+            }
+            return $extension.ToLowerInvariant() -ne '.wim'
+        } | Select-Object -First 1
+    
+        if ($nonWimFile) {
+            return $true
+        }
+    
+        return $false
+    }
+    catch {
+        WriteLog "Failed to inspect driver folder '$Path': $($_.Exception.Message)"
+        return $false
+    }
+}
+    
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
@@ -1131,7 +1163,7 @@ if ($null -eq $DriverSourcePath) {
             try {
                 $normalizedPath = [System.IO.Path]::GetFullPath($candidatePath)
                 if ($normalizedPath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $relativeSegment = $normalizedPath.Substring($rootPath.Length).TrimStart('\','/')
+                    $relativeSegment = $normalizedPath.Substring($rootPath.Length).TrimStart('\', '/')
                     if ([string]::IsNullOrWhiteSpace($relativeSegment)) {
                         return Split-Path -Path $normalizedPath -Leaf
                     }
@@ -1158,6 +1190,10 @@ if ($null -eq $DriverSourcePath) {
             $childModelFolders = Get-ChildItem -Path $driverFolder.FullName -Directory -ErrorAction SilentlyContinue
             if (($childModelFolders.Count -gt 0) -and ($driverFolder.Parent.FullName -eq $driversRootFullPath)) {
                 foreach ($modelFolder in $childModelFolders) {
+                    if (-not (Test-DriverFolderHasInstallableContent -Path $modelFolder.FullName)) {
+                        WriteLog "Skipping driver folder '$($modelFolder.FullName)' because no installable files were found."
+                        continue
+                    }
                     $relativePath = & $relativePathResolver -candidatePath $modelFolder.FullName -rootPath $driversRootFullPath
                     $DriverSources += [PSCustomObject]@{
                         Type         = 'Folder'
@@ -1167,6 +1203,10 @@ if ($null -eq $DriverSourcePath) {
                 }
             }
             else {
+                if (-not (Test-DriverFolderHasInstallableContent -Path $driverFolder.FullName)) {
+                    WriteLog "Skipping driver folder '$($driverFolder.FullName)' because no installable files were found."
+                    continue
+                }
                 $relativePath = & $relativePathResolver -candidatePath $driverFolder.FullName -rootPath $driversRootFullPath
                 $DriverSources += [PSCustomObject]@{
                     Type         = 'Folder'
@@ -1199,7 +1239,7 @@ if ($null -eq $DriverSourcePath) {
                         Path         = $DriverSources[$i].Path
                     }
                 }
-                $displayArray | Format-Table -Property Number,Type,RelativePath,Path -AutoSize
+                $displayArray | Format-Table -Property Number, Type, RelativePath, Path -AutoSize
                 
                 do {
                     try {
