@@ -1155,6 +1155,7 @@ if ($null -eq $DriverSourcePath) {
         # Build folder list that surfaces Manufacturer\Model entries
         $DriverFolders = Get-ChildItem -Path $DriversPath -Directory
         $driversRootFullPath = (Get-Item -Path $DriversPath).FullName.TrimEnd('\')
+        $manufacturerFolderNames = @('dell','hp','lenovo','microsoft')
         $relativePathResolver = {
             param(
                 [string]$candidatePath,
@@ -1187,8 +1188,13 @@ if ($null -eq $DriverSourcePath) {
             }
         }
         foreach ($driverFolder in $DriverFolders) {
-            $childModelFolders = Get-ChildItem -Path $driverFolder.FullName -Directory -ErrorAction SilentlyContinue
-            if (($childModelFolders.Count -gt 0) -and ($driverFolder.Parent.FullName -eq $driversRootFullPath)) {
+            $parentIsRoot = $driverFolder.Parent.FullName -eq $driversRootFullPath
+            $folderNameLower = $driverFolder.Name.ToLowerInvariant()
+            $isManufacturerFolder = $parentIsRoot -and ($manufacturerFolderNames -contains $folderNameLower)
+
+            if ($isManufacturerFolder) {
+                # Only manufacturer folders (Dell/HP/Lenovo/Microsoft) should surface child model folders.
+                $childModelFolders = Get-ChildItem -Path $driverFolder.FullName -Directory -ErrorAction SilentlyContinue
                 foreach ($modelFolder in $childModelFolders) {
                     if (-not (Test-DriverFolderHasInstallableContent -Path $modelFolder.FullName)) {
                         WriteLog "Skipping driver folder '$($modelFolder.FullName)' because no installable files were found."
@@ -1201,18 +1207,18 @@ if ($null -eq $DriverSourcePath) {
                         RelativePath = $relativePath
                     }
                 }
+                continue
             }
-            else {
-                if (-not (Test-DriverFolderHasInstallableContent -Path $driverFolder.FullName)) {
-                    WriteLog "Skipping driver folder '$($driverFolder.FullName)' because no installable files were found."
-                    continue
-                }
-                $relativePath = & $relativePathResolver -candidatePath $driverFolder.FullName -rootPath $driversRootFullPath
-                $DriverSources += [PSCustomObject]@{
-                    Type         = 'Folder'
-                    Path         = $driverFolder.FullName
-                    RelativePath = $relativePath
-                }
+
+            if (-not (Test-DriverFolderHasInstallableContent -Path $driverFolder.FullName)) {
+                WriteLog "Skipping driver folder '$($driverFolder.FullName)' because no installable files were found."
+                continue
+            }
+            $relativePath = & $relativePathResolver -candidatePath $driverFolder.FullName -rootPath $driversRootFullPath
+            $DriverSources += [PSCustomObject]@{
+                Type         = 'Folder'
+                Path         = $driverFolder.FullName
+                RelativePath = $relativePath
             }
         }
 
