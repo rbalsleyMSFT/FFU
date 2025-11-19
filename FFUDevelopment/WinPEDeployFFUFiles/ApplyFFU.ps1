@@ -1149,13 +1149,12 @@ if ($null -eq $DriverSourcePath) {
     If (Test-Path -Path $DriversPath) {
         WriteLog "Searching for driver WIMs and folders in $DriversPath"
     
-        # Get all WIM files
-        $WimFiles = Get-ChildItem -Path $DriversPath -Filter *.wim -Recurse
+        # Collect all WIM-based driver sources anywhere under Drivers
+        $wimFiles = Get-ChildItem -Path $DriversPath -Filter *.wim -File -Recurse -ErrorAction SilentlyContinue
         
-        # Build folder list that surfaces Manufacturer\Model entries
-        $DriverFolders = Get-ChildItem -Path $DriversPath -Directory
+        # Treat each immediate child folder as a manufacturer container (supports known and unknown vendors)
+        $manufacturerFolders = Get-ChildItem -Path $DriversPath -Directory -ErrorAction SilentlyContinue
         $driversRootFullPath = (Get-Item -Path $DriversPath).FullName.TrimEnd('\')
-        $manufacturerFolderNames = @('dell','hp','lenovo','microsoft')
         $relativePathResolver = {
             param(
                 [string]$candidatePath,
@@ -1168,7 +1167,7 @@ if ($null -eq $DriverSourcePath) {
                     if ([string]::IsNullOrWhiteSpace($relativeSegment)) {
                         return Split-Path -Path $normalizedPath -Leaf
                     }
-                    return $relativeSegment
+                    return $relativePath = $relativeSegment
                 }
                 return $normalizedPath
             }
@@ -1179,7 +1178,7 @@ if ($null -eq $DriverSourcePath) {
 
         # Create a combined list
         $DriverSources = @()
-        foreach ($wimFile in $WimFiles) {
+        foreach ($wimFile in $wimFiles) {
             $relativePath = & $relativePathResolver -candidatePath $wimFile.FullName -rootPath $driversRootFullPath
             $DriverSources += [PSCustomObject]@{
                 Type         = 'WIM'
@@ -1187,38 +1186,36 @@ if ($null -eq $DriverSourcePath) {
                 RelativePath = $relativePath
             }
         }
-        foreach ($driverFolder in $DriverFolders) {
-            $parentIsRoot = $driverFolder.Parent.FullName -eq $driversRootFullPath
-            $folderNameLower = $driverFolder.Name.ToLowerInvariant()
-            $isManufacturerFolder = $parentIsRoot -and ($manufacturerFolderNames -contains $folderNameLower)
+        foreach ($manufacturerFolder in $manufacturerFolders) {
+            $modelFolders = Get-ChildItem -Path $manufacturerFolder.FullName -Directory -ErrorAction SilentlyContinue
 
-            if ($isManufacturerFolder) {
-                # Only manufacturer folders (Dell/HP/Lenovo/Microsoft) should surface child model folders.
-                $childModelFolders = Get-ChildItem -Path $driverFolder.FullName -Directory -ErrorAction SilentlyContinue
-                foreach ($modelFolder in $childModelFolders) {
-                    if (-not (Test-DriverFolderHasInstallableContent -Path $modelFolder.FullName)) {
-                        WriteLog "Skipping driver folder '$($modelFolder.FullName)' because no installable files were found."
-                        continue
-                    }
-                    $relativePath = & $relativePathResolver -candidatePath $modelFolder.FullName -rootPath $driversRootFullPath
+            if ($null -eq $modelFolders -or $modelFolders.Count -eq 0) {
+                if (Test-DriverFolderHasInstallableContent -Path $manufacturerFolder.FullName) {
+                    $relativePath = & $relativePathResolver -candidatePath $manufacturerFolder.FullName -rootPath $driversRootFullPath
                     $DriverSources += [PSCustomObject]@{
                         Type         = 'Folder'
-                        Path         = $modelFolder.FullName
+                        Path         = $manufacturerFolder.FullName
                         RelativePath = $relativePath
                     }
+                    WriteLog "Using manufacturer folder '$($manufacturerFolder.FullName)' as a driver source because it contains installable content."
+                }
+                else {
+                    WriteLog "Skipping '$($manufacturerFolder.FullName)' because it has no model folders with installable content."
                 }
                 continue
             }
 
-            if (-not (Test-DriverFolderHasInstallableContent -Path $driverFolder.FullName)) {
-                WriteLog "Skipping driver folder '$($driverFolder.FullName)' because no installable files were found."
-                continue
-            }
-            $relativePath = & $relativePathResolver -candidatePath $driverFolder.FullName -rootPath $driversRootFullPath
-            $DriverSources += [PSCustomObject]@{
-                Type         = 'Folder'
-                Path         = $driverFolder.FullName
-                RelativePath = $relativePath
+            foreach ($modelFolder in $modelFolders) {
+                if (-not (Test-DriverFolderHasInstallableContent -Path $modelFolder.FullName)) {
+                    WriteLog "Skipping driver folder '$($modelFolder.FullName)' because no installable files were found."
+                    continue
+                }
+                $relativePath = & $relativePathResolver -candidatePath $modelFolder.FullName -rootPath $driversRootFullPath
+                $DriverSources += [PSCustomObject]@{
+                    Type         = 'Folder'
+                    Path         = $modelFolder.FullName
+                    RelativePath = $relativePath
+                }
             }
         }
 
