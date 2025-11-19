@@ -1239,7 +1239,7 @@ if ($null -eq $DriverSourcePath) {
                         Path         = $DriverSources[$i].Path
                     }
                 }
-                $displayArray | Format-Table -Property Number, Type, RelativePath, Path -AutoSize
+                $displayArray | Format-Table -Property Number, Type, RelativePath -AutoSize
                 
                 do {
                     try {
