@@ -1298,23 +1298,38 @@ if ($null -eq $DriverSourcePath) {
                 }
                 $displayArray | Format-Table -Property Number, Type, RelativePath -AutoSize
                 
+                $DriverSelected = -1
+                $skipDriverInstall = $false
                 do {
                     try {
                         $var = $true
-                        [int]$DriverSelected = Read-Host 'Enter the number of the driver source to install'
-                        $DriverSelected = $DriverSelected - 1
+                        [int]$userSelection = Read-Host 'Enter the number of the driver source to install (0 to skip)'
+                        if ($userSelection -eq 0) {
+                            $skipDriverInstall = $true
+                            break
+                        }
+                        $DriverSelected = $userSelection - 1
                     }
                     catch {
                         Write-Host 'Input was not in correct format. Please enter a valid number.'
                         $var = $false
                     }
-                } until (($DriverSelected -ge 0) -and ($DriverSelected -lt $DriverSourcesCount) -and $var)
+                } until ((($DriverSelected -ge 0 -and $DriverSelected -lt $DriverSourcesCount) -or $skipDriverInstall) -and $var)
                 
-                $DriverSourcePath = $DriverSources[$DriverSelected].Path
-                $DriverSourceType = $DriverSources[$DriverSelected].Type
-                $selectedRelativePath = $DriverSources[$DriverSelected].RelativePath
-                WriteLog "User selected Type: $DriverSourceType, Path: $DriverSourcePath, RelativePath: $selectedRelativePath"
-                Write-Host "`nUser selected Type: $DriverSourceType, RelativePath: $selectedRelativePath"
+                if ($skipDriverInstall) {
+                    $DriverSourcePath = $null
+                    $DriverSourceType = $null
+                    $selectedRelativePath = $null
+                    WriteLog 'User chose to skip driver installation.'
+                    Write-Host "`nDriver installation was skipped."
+                }
+                else {
+                    $DriverSourcePath = $DriverSources[$DriverSelected].Path
+                    $DriverSourceType = $DriverSources[$DriverSelected].Type
+                    $selectedRelativePath = $DriverSources[$DriverSelected].RelativePath
+                    WriteLog "User selected Type: $DriverSourceType, Path: $DriverSourcePath, RelativePath: $selectedRelativePath"
+                    Write-Host "`nUser selected Type: $DriverSourceType, RelativePath: $selectedRelativePath"
+                }
             }
         }
         else {
