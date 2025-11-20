@@ -738,13 +738,67 @@ function Test-DriverFolderHasInstallableContent {
     
         return $false
     }
-    catch {
-        WriteLog "Failed to inspect driver folder '$Path': $($_.Exception.Message)"
-        return $false
+        catch {
+            WriteLog "Failed to inspect driver folder '$Path': $($_.Exception.Message)"
+            return $false
+        }
     }
-}
     
-#Get USB Drive and create log file
+    function Get-AvailableDriveLetter {
+        $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name | ForEach-Object { $_.ToUpperInvariant() }
+        for ($ascii = [int][char]'Z'; $ascii -ge [int][char]'A'; $ascii--) {
+            $candidate = [char]$ascii
+            if ($usedLetters -notcontains $candidate) {
+                return $candidate
+            }
+        }
+        return $null
+    }
+    
+    function New-DriverSubstMapping {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$SourcePath
+        )
+    
+        $resolvedPath = (Resolve-Path -Path $SourcePath -ErrorAction Stop).Path
+        $driveLetter = Get-AvailableDriveLetter
+        if ($null -eq $driveLetter) {
+            throw 'No drive letters are available for SUBST mapping.'
+        }
+        $driveName = "$driveLetter`:"
+        $mappedPath = "$driveLetter`:\"
+        WriteLog "Mapping driver folder '$resolvedPath' to $driveName with SUBST."
+        $escapedPath = $resolvedPath -replace '"', '""'
+        $arguments = "/c subst $driveName `"$escapedPath`""
+        Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
+        return [PSCustomObject]@{
+            DriveLetter = $driveLetter
+            DriveName   = $driveName
+            DrivePath   = $mappedPath
+        }
+    }
+    
+    function Remove-DriverSubstMapping {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$DriveLetter
+        )
+    
+        $driveName = "$DriveLetter`:"
+        WriteLog "Removing SUBST drive $driveName"
+        try {
+            $arguments = "/c subst $driveName /d"
+            Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
+        }
+        catch {
+            WriteLog "Failed to remove SUBST drive $($driveName): $_"
+        }
+    }
+        
+    #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
@@ -1481,12 +1535,27 @@ if ($null -ne $DriverSourcePath) {
         }
     }
     elseif ($DriverSourceType -eq 'Folder') {
-        WriteLog "Injecting drivers from folder: $DriverSourcePath"
-        Write-Host "Injecting drivers from folder: $DriverSourcePath"
-        Write-Host "This may take a while, please be patient."
-        Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$DriverSourcePath"" /Recurse"
-        WriteLog "Driver injection from folder succeeded."
-        Write-Host "Driver injection from folder succeeded."
+        $substMapping = $null
+        try {
+            $substMapping = New-DriverSubstMapping -SourcePath $DriverSourcePath
+            $shortDriverPath = $substMapping.DrivePath
+            WriteLog "Injecting drivers from folder via SUBST. Source: $DriverSourcePath, Mapped: $($substMapping.DriveName)"
+            Write-Host "Injecting drivers from folder: $shortDriverPath"
+            Write-Host "This may take a while, please be patient."
+            Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:$shortDriverPath /Recurse"
+            WriteLog "Driver injection from folder succeeded."
+            Write-Host "Driver injection from folder succeeded."
+        }
+        catch {
+            WriteLog "An error occurred during folder driver installation: $_"
+            Invoke-Process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
+            throw $_
+        }
+        finally {
+            if ($null -ne $substMapping) {
+                Remove-DriverSubstMapping -DriveLetter $substMapping.DriveLetter
+            }
+        }
     }
 }
 else {
