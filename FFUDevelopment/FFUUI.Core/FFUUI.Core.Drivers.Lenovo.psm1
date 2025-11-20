@@ -132,13 +132,14 @@ function Save-LenovoDriversTask {
             # Special handling for existing folders that need compression
             if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
                 $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($sanitizedIdentifier).wim"
+                $wimRelativePath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
                 $sourceFolderPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedIdentifier
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
-                    $existingDriver.Status = "Already downloaded & Compressed"
-                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
+                    $null = Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+                    $existingDriver.Status = "Compression successful"
+                    $existingDriver.DriverPath = $wimRelativePath
                     $existingDriver.Success = $true
                     WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
                 }

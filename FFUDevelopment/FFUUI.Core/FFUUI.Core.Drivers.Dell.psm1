@@ -157,17 +157,19 @@ function Save-DellDriversTask {
             }
             if ($CompressToWim -and $existing.Status -eq 'Already downloaded') {
                 $wimPath = Join-Path $makeDriversPath "$sanitizedModelName.wim"
+                $wimRelativePath = Join-Path $make "$sanitizedModelName.wim"
                 $srcPath = Join-Path $makeDriversPath $sanitizedModelName
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Compressing existing...' }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $srcPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription "Drivers for $modelDisplay" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
-                    $existing.Status = 'Already downloaded & Compressed'
-                    $existing.DriverPath = Join-Path $make "$sanitizedModelName.wim"
+                    $null = Compress-DriverFolderToWim -SourceFolderPath $srcPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription "Drivers for $modelDisplay" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+                    $existing.Status = 'Compression successful'
+                    $existing.DriverPath = $wimRelativePath
                     $existing.Success = $true
                 }
                 catch {
                     WriteLog "Compression failed for $($modelDisplay): $($_.Exception.Message)"
                     $existing.Status = 'Already downloaded (Compression failed)'
+                    $existing.Success = $false
                 }
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $existing.Status }
             }
@@ -341,7 +343,7 @@ function Save-DellDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Compressing...' }
             $wimPath = Join-Path $makeDriversPath "$sanitizedModelName.wim"
             try {
-                Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription $modelDisplay -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+                $null = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription $modelDisplay -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                 $driverRelativePath = Join-Path $make "$sanitizedModelName.wim"
                 $statusFinal = 'Completed & Compressed'
             }

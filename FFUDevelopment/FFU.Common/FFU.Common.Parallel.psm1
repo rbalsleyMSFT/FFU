@@ -269,7 +269,7 @@ function Invoke-ParallelProcessing {
                             else {
                                 # Fallback for any task that *still* doesn't return 'Success'. This is now the exceptional case.
                                 WriteLog "Warning: Task for '$taskSpecificIdentifier' did not return a 'Success' property. Inferring from status: '$($taskResult.Status)'"
-                                if ($taskResult.Status -like 'Completed*' -or $taskResult.Status -like 'Already downloaded*') {
+                                if ($taskResult.Status -like 'Completed*' -or $taskResult.Status -like 'Already downloaded*' -or $taskResult.Status -like 'Compression successful*') {
                                     $resultCode = 0 # Treat as success
                                 }
                                 else {
