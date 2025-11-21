@@ -1,0 +1,97 @@
+#
+# Module manifest for module 'FFU.Core'
+#
+
+@{
+    # Script module or binary module file associated with this manifest.
+    RootModule = 'FFU.Core.psm1'
+
+    # Version number of this module.
+    ModuleVersion = '1.0.0'
+
+    # ID used to uniquely identify this module
+    GUID = '9332d136-2710-49af-b356-a0281ebd8999'
+
+    # Author of this module
+    Author = 'FFU Builder Team'
+
+    # Company or vendor of this module
+    CompanyName = 'Community'
+
+    # Copyright statement for this module
+    Copyright = '(c) 2025 FFU Builder Team. MIT License.'
+
+    # Description of the functionality provided by this module
+    Description = 'Core utility module for FFU Builder providing common configuration management, logging, session tracking, and helper operations used across all FFU Builder modules.'
+
+    # Minimum version of the PowerShell engine required by this module
+    PowerShellVersion = '5.1'
+
+    # Modules that must be imported into the global environment prior to importing this module
+    RequiredModules = @()
+
+    # Assemblies that must be loaded prior to importing this module
+    RequiredAssemblies = @()
+
+    # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
+    FunctionsToExport = @(
+        'Get-Parameters',
+        'LogVariableValues',
+        'Get-ChildProcesses',
+        'Test-Url',
+        'Get-PrivateProfileString',
+        'Get-PrivateProfileSection',
+        'Get-ShortenedWindowsSKU',
+        'New-FFUFileName',
+        'Export-ConfigFile',
+        'New-RunSession',
+        'Get-CurrentRunManifest',
+        'Save-RunManifest',
+        'Mark-DownloadInProgress',
+        'Clear-DownloadInProgress',
+        'Remove-InProgressItems',
+        'Cleanup-CurrentRunDownloads',
+        'Restore-RunJsonBackups'
+    )
+
+    # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
+    CmdletsToExport = @()
+
+    # Variables to export from this module
+    VariablesToExport = @()
+
+    # Aliases to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no aliases to export.
+    AliasesToExport = @()
+
+    # Private data to pass to the module specified in RootModule/ModuleToProcess. This may also contain a PSData hashtable with additional module metadata used by PowerShell.
+    PrivateData = @{
+        PSData = @{
+            # Tags applied to this module. These help with module discovery in online galleries.
+            Tags = @('FFU', 'Windows', 'Deployment', 'Imaging', 'Utilities')
+
+            # A URL to the license for this module.
+            LicenseUri = 'https://github.com/Schweinehund/FFU/blob/feature/improvements-and-fixes/LICENSE'
+
+            # A URL to the main website for this project.
+            ProjectUri = 'https://github.com/Schweinehund/FFU'
+
+            # ReleaseNotes of this module
+            ReleaseNotes = @'
+# Release Notes - FFU.Core v1.0.0
+
+## Initial Release
+- Extracted core utility functions from monolithic BuildFFUVM.ps1
+- 17 functions providing configuration management, logging, and session tracking
+- Foundation module for FFU Builder modular architecture
+- No external dependencies (base module)
+
+## Functions Included
+- Configuration: Get-Parameters, LogVariableValues, Export-ConfigFile
+- Session Management: New-RunSession, Get-CurrentRunManifest, Save-RunManifest
+- Download Tracking: Mark-DownloadInProgress, Clear-DownloadInProgress, Remove-InProgressItems
+- Utilities: Test-Url, Get-ChildProcesses, Get-PrivateProfileString, Get-ShortenedWindowsSKU, New-FFUFileName
+- Cleanup: Cleanup-CurrentRunDownloads, Restore-RunJsonBackups
+'@
+        }
+    }
+}

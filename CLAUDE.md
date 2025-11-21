@@ -25,12 +25,23 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 ├── FFUUI.Core (UI Framework)
 ├── FFU.Common (Business Logic Module)
 └── BuildFFUVM.ps1 (Core Build Orchestrator)
-    ├── Hyper-V VM Management
+    ├── FFU.VM Module (Hyper-V VM Management)
     ├── DISM Image Manipulation
     ├── Driver Download/Injection (Dell, HP, Lenovo, Microsoft)
     ├── Windows Update Integration
     └── USB Media Creator
 ```
+
+### Module Architecture
+
+**FFU.VM Module** (FFUDevelopment/Modules/FFU.VM/FFU.VM.psm1)
+- **Purpose:** Hyper-V virtual machine lifecycle management
+- **Functions:**
+  - `New-FFUVM`: Creates and configures Generation 2 VMs with TPM, memory, processors, and boot devices
+  - `Remove-FFUVM`: Cleans up VMs, HGS guardians, certificates, mounted images, and VHDX files
+  - `Get-FFUEnvironment`: Comprehensive environment cleanup for dirty state recovery
+- **Dependencies:** FFU.Core module for logging and common variables
+- **Requirements:** Administrator privileges, Hyper-V feature enabled
 
 ### Key Design Patterns
 
@@ -405,6 +416,9 @@ FFUDevelopment/
 ├── BuildFFUVM_UI.xaml          # UI definition (76 KB)
 ├── Create-PEMedia.ps1          # WinPE media creator
 ├── USBImagingToolCreator.ps1   # USB tool generator
+├── Modules/                    # PowerShell modules
+│   └── FFU.VM/                # Hyper-V VM management module
+│       └── FFU.VM.psm1        # VM lifecycle functions
 ├── FFU.Common/                 # Business logic module
 │   ├── Classes/                # Type definitions
 │   │   ├── FFUConfiguration.ps1
