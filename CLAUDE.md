@@ -23,18 +23,26 @@ This fork focuses on addressing critical bugs (#327, #324, #319, #318, #301, #29
 ```
 BuildFFUVM_UI.ps1 (WPF UI Host)
 ├── FFUUI.Core (UI Framework)
-├── FFU.Common (Business Logic Module)
-└── BuildFFUVM.ps1 (Core Build Orchestrator)
-    └── Modules/
-        ├── FFU.Core (Core functionality - logging, processes, utilities)
-        ├── FFU.Apps (Application management - Office, Apps ISO, cleanup)
-        ├── FFU.Drivers (OEM driver management)
-        ├── FFU.VM (Hyper-V VM operations)
-        ├── FFU.Media (WinPE media creation)
-        ├── FFU.ADK (Windows ADK management)
-        ├── FFU.Updates (Windows Update handling)
-        └── FFU.Imaging (DISM and FFU operations)
+├── FFU.Common (Business Logic Module - provides WriteLog function)
+└── BuildFFUVM.ps1 (Core Build Orchestrator - 2,404 lines after modularization)
+    └── Modules/ (Extracted functions now in 8 specialized modules)
+        ├── FFU.Core (Core functionality - 18 functions for configuration, session tracking)
+        ├── FFU.Apps (Application management - 4 functions for Office, Apps ISO, cleanup)
+        ├── FFU.Drivers (OEM driver management - 5 functions for Dell, HP, Lenovo, Microsoft)
+        ├── FFU.VM (Hyper-V VM operations - 3 functions for VM lifecycle)
+        ├── FFU.Media (WinPE media creation - 4 functions for PE media and architecture)
+        ├── FFU.ADK (Windows ADK management - 7 functions for validation and installation)
+        ├── FFU.Updates (Windows Update handling - 9 functions for KB downloads and MSU processing)
+        └── FFU.Imaging (DISM and FFU operations - 14 functions for partitioning, imaging, FFU creation)
 ```
+
+### Modularization Status (Completed)
+- **Original file:** BuildFFUVM.ps1 with 7,790 lines
+- **After extraction:** BuildFFUVM.ps1 reduced to 2,404 lines
+- **Functions extracted:** 64 total functions moved to 8 modules
+- **Lines removed:** 5,387 lines (functions from lines 674-6059)
+- **Module imports added:** After param block at line 552
+- **WriteLog function:** Provided by FFU.Common module (imported at line 452)
 
 ### Module Architecture
 

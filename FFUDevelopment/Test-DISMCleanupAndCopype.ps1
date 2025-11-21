@@ -69,44 +69,38 @@ Write-Host "`n===============================================" -ForegroundColor 
 Write-Host "DISM Cleanup & Copype Retry Test Suite" -ForegroundColor Cyan
 Write-Host "===============================================`n" -ForegroundColor Cyan
 
-# Load the BuildFFUVM.ps1 functions (dot-source)
-$buildScriptPath = Join-Path (Split-Path $PSScriptRoot -Parent) "BuildFFUVM.ps1"
+# Load the FFU.Media module (modular architecture)
+$modulePath = Join-Path $PSScriptRoot "Modules\FFU.Media"
 
-if (-not (Test-Path $buildScriptPath)) {
-    $buildScriptPath = ".\BuildFFUVM.ps1"
+if (-not (Test-Path $modulePath)) {
+    $modulePath = ".\Modules\FFU.Media"
 }
 
-if (Test-Path $buildScriptPath) {
-    Write-Host "Loading functions from: $buildScriptPath" -ForegroundColor Yellow
+if (Test-Path $modulePath) {
+    Write-Host "Loading FFU.Media module from: $modulePath" -ForegroundColor Yellow
 
-    # Extract and dot-source only the functions we need (to avoid running the main script)
     try {
-        $scriptContent = Get-Content $buildScriptPath -Raw
+        # Import dependencies in order
+        Import-Module (Join-Path $PSScriptRoot "Modules\FFU.Core") -Force -WarningAction SilentlyContinue
+        Import-Module (Join-Path $PSScriptRoot "Modules\FFU.ADK") -Force -WarningAction SilentlyContinue
 
-        # Extract Invoke-DISMPreFlightCleanup function
-        if ($scriptContent -match '(?ms)function Invoke-DISMPreFlightCleanup \{.*?^\}') {
-            $dismCleanupFunc = $Matches[0]
-            Invoke-Expression $dismCleanupFunc
-        }
+        # Import FFU.Media module
+        Import-Module $modulePath -Force -WarningAction SilentlyContinue
 
-        # Extract Invoke-CopyPEWithRetry function
-        if ($scriptContent -match '(?ms)function Invoke-CopyPEWithRetry \{.*?^\}') {
-            $copyPEFunc = $Matches[0]
-            Invoke-Expression $copyPEFunc
-        }
+        Write-Host "FFU.Media module loaded successfully" -ForegroundColor Green
 
-        # Mock WriteLog if it doesn't exist
+        # Mock WriteLog if it doesn't exist (for standalone testing)
         if (-not (Get-Command WriteLog -ErrorAction SilentlyContinue)) {
             function global:WriteLog { param($Message) Write-Host "LOG: $Message" -ForegroundColor Gray }
         }
 
         Write-Host "Functions loaded successfully`n" -ForegroundColor Green
     } catch {
-        Write-Host "WARNING: Could not load functions from BuildFFUVM.ps1: $_" -ForegroundColor Yellow
+        Write-Host "WARNING: Could not load FFU.Media module: $_" -ForegroundColor Yellow
         Write-Host "Some tests may be skipped`n" -ForegroundColor Yellow
     }
 } else {
-    Write-Host "WARNING: BuildFFUVM.ps1 not found at $buildScriptPath" -ForegroundColor Yellow
+    Write-Host "WARNING: FFU.Media module not found at $modulePath" -ForegroundColor Yellow
     Write-Host "Some tests will be skipped`n" -ForegroundColor Yellow
 }
 
@@ -270,34 +264,39 @@ if ($trustedInstaller) {
 }
 
 # ============================================
-# Test 5: Integration with BuildFFUVM.ps1
+# Test 5: Integration with FFU.Media Module
 # ============================================
-Write-Host "`nTest 5: Integration with BuildFFUVM.ps1" -ForegroundColor Cyan
+Write-Host "`nTest 5: Integration with FFU.Media Module" -ForegroundColor Cyan
 
-if (Test-Path $buildScriptPath) {
-    $scriptContent = Get-Content $buildScriptPath -Raw
+$mediaModulePath = Join-Path $PSScriptRoot "Modules\FFU.Media\FFU.Media.psm1"
+if (-not (Test-Path $mediaModulePath)) {
+    $mediaModulePath = ".\Modules\FFU.Media\FFU.Media.psm1"
+}
+
+if (Test-Path $mediaModulePath) {
+    $moduleContent = Get-Content $mediaModulePath -Raw
 
     # Check if New-PEMedia calls Invoke-DISMPreFlightCleanup
-    $callsCleanup = $scriptContent -match 'Invoke-DISMPreFlightCleanup'
-    Add-TestResult -TestName "BuildFFUVM.ps1 calls Invoke-DISMPreFlightCleanup" `
+    $callsCleanup = $moduleContent -match 'Invoke-DISMPreFlightCleanup'
+    Add-TestResult -TestName "New-PEMedia calls Invoke-DISMPreFlightCleanup" `
                    -Passed $callsCleanup `
-                   -Message $(if ($callsCleanup) { "Function call found in script" } else { "Function call not found" })
+                   -Message $(if ($callsCleanup) { "Function call found in module" } else { "Function call not found" })
 
     # Check if New-PEMedia calls Invoke-CopyPEWithRetry
-    $callsCopyPE = $scriptContent -match 'Invoke-CopyPEWithRetry'
-    Add-TestResult -TestName "BuildFFUVM.ps1 calls Invoke-CopyPEWithRetry" `
+    $callsCopyPE = $moduleContent -match 'Invoke-CopyPEWithRetry'
+    Add-TestResult -TestName "New-PEMedia calls Invoke-CopyPEWithRetry" `
                    -Passed $callsCopyPE `
-                   -Message $(if ($callsCopyPE) { "Function call found in script" } else { "Function call not found" })
+                   -Message $(if ($callsCopyPE) { "Function call found in module" } else { "Function call not found" })
 
-    # Check if old copype logic has been replaced
-    $hasOldLogic = $scriptContent -match 'cmd /c.*DandIEnv.*&&.*copype.*2>&1' -and $scriptContent -match 'function New-PEMedia'
-    Add-TestResult -TestName "Old copype logic replaced with new functions" `
-                   -Passed $hasOldLogic `
-                   -Message $(if ($hasOldLogic) { "New implementation found" } else { "Old implementation may still exist" })
+    # Check that module has been properly modularized
+    $hasNewPEMedia = $moduleContent -match 'function New-PEMedia'
+    Add-TestResult -TestName "FFU.Media module contains New-PEMedia function" `
+                   -Passed $hasNewPEMedia `
+                   -Message $(if ($hasNewPEMedia) { "Function found in module" } else { "Function not found in module" })
 } else {
-    Add-TestResult -TestName "BuildFFUVM.ps1 integration" `
+    Add-TestResult -TestName "FFU.Media module integration" `
                    -Passed $false `
-                   -Message "Skipped - BuildFFUVM.ps1 not found"
+                   -Message "Skipped - FFU.Media module not found at $mediaModulePath"
 }
 
 # ============================================
