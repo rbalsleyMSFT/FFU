@@ -459,6 +459,7 @@ function Save-LenovoDriversTask {
         $status = "Error: $($_.Exception.Message)"
         WriteLog "Error saving Lenovo drivers for '$identifier': $($_.Exception.ToString())"
         $success = $false
+        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $identifier
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
         return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null }
     }

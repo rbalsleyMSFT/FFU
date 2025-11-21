@@ -106,6 +106,10 @@ function Save-MicrosoftDriversTask {
     $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
     $status = "Getting download link..." # Initial local status
     $success = $false
+    $sanitizedModelName = ConvertTo-SafeName -Name $modelName
+    if ($sanitizedModelName -ne $modelName) { WriteLog "Sanitized model name: '$modelName' -> '$sanitizedModelName'" }
+    $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $make
+    $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedModelName
     
     # Initial status update
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Checking..." }
@@ -235,10 +239,6 @@ function Save-MicrosoftDriversTask {
                     WriteLog "Creating Drivers folder: $DriversFolder"
                     New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
                 }
-                $sanitizedModelName = ConvertTo-SafeName -Name $modelName
-                if ($sanitizedModelName -ne $modelName) { WriteLog "Sanitized model name: '$modelName' -> '$sanitizedModelName'" }
-                $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
-                $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedModelName
                 if (-Not (Test-Path -Path $modelPath)) {
                     WriteLog "Creating model folder: $modelPath"
                     New-Item -Path $modelPath -ItemType Directory -Force | Out-Null
@@ -422,6 +422,7 @@ function Save-MicrosoftDriversTask {
         $status = "Error: $($_.Exception.Message.Split('.')[0])" # Shorten error message
         WriteLog "Error saving Microsoft drivers for $($modelName): $($_.Exception.Message)"
         $success = $false
+        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelName
         # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
         # Ensure return object is created even on error

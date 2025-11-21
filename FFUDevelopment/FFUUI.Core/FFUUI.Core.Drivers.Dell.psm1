@@ -362,6 +362,7 @@ function Save-DellDriversTask {
     catch {
         $errorStatus = "Error: $($_.Exception.Message)"
         WriteLog "Save-DellDriversTask error for $($modelDisplay): $($_.Exception.ToString())"
+        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelDisplay
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $errorStatus }
         return [pscustomobject]@{ Model = $modelDisplay; Status = $errorStatus; Success = $false; DriverPath = $null }
     }

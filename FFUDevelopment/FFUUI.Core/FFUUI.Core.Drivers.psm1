@@ -92,15 +92,55 @@ function Convert-DriverItemToJsonModel {
                 MachineType = $machineType
             }
         }
-        default {
-            WriteLog "Convert-DriverItemToJsonModel: Unsupported Make '$makeName'."
-            return $null
+                default {
+                    WriteLog "Convert-DriverItemToJsonModel: Unsupported Make '$makeName'."
+                    return $null
+                }
+            }
         }
-    }
-}
-
-# Helper function to get models for a selected Make and standardize them
-function Get-ModelsForMake {
+        
+        function Remove-DriverModelFolder {
+            param(
+                [Parameter(Mandatory = $true)]
+                [string]$DriversFolder,
+                [Parameter(Mandatory = $true)]
+                [string]$TargetFolder,
+                [string]$Description
+            )
+        
+            if ([string]::IsNullOrWhiteSpace($DriversFolder) -or [string]::IsNullOrWhiteSpace($TargetFolder)) {
+                return
+            }
+        
+            try {
+                if (-not (Test-Path -Path $TargetFolder -PathType Container)) {
+                    return
+                }
+        
+                $driversRoot = [System.IO.Path]::GetFullPath((Resolve-Path -Path $DriversFolder -ErrorAction Stop).ProviderPath)
+                $targetPath = [System.IO.Path]::GetFullPath((Resolve-Path -Path $TargetFolder -ErrorAction Stop).ProviderPath)
+        
+                if ($targetPath -eq $driversRoot) {
+                    WriteLog "Remove-DriverModelFolder skipped deleting Drivers root: $targetPath"
+                    return
+                }
+        
+                if (-not ($targetPath.StartsWith($driversRoot, [System.StringComparison]::OrdinalIgnoreCase))) {
+                    WriteLog "Remove-DriverModelFolder skipped path outside Drivers root: $targetPath"
+                    return
+                }
+        
+                $contextMessage = if ([string]::IsNullOrWhiteSpace($Description)) { $targetPath } else { "$Description ($targetPath)" }
+                WriteLog "Removing driver folder $contextMessage due to failure."
+                Remove-Item -Path $targetPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                WriteLog "Remove-DriverModelFolder failed for $($TargetFolder): $($_.Exception.Message)"
+            }
+        }
+        
+        # Helper function to get models for a selected Make and standardize them
+        function Get-ModelsForMake {
     param(
         [Parameter(Mandatory = $true)]
         [string]$SelectedMake,

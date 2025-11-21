@@ -426,10 +426,7 @@ function Save-HPDriversTask {
         $finalStatus = "Error: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
         $successState = $false
         $driverRelativePath = $null # Ensure path is null on error
-        if (Test-Path -Path $modelSpecificFolder -PathType Container) {
-            WriteLog "Attempting to remove partially created folder $modelSpecificFolder due to error."
-            Remove-Item -Path $modelSpecificFolder -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelSpecificFolder -Description $identifier
     }
             
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
