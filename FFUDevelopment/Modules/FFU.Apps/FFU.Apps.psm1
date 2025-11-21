@@ -96,11 +96,53 @@ function Get-Office {
 }
 
 function New-AppsISO {
-    #Create Apps ISO file
-    $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
-    #Adding Long Path support for AppsPath to prevent issues with oscdimg
-    $AppsPath = '\\?\' + $AppsPath
-    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO" | Out-Null
+    <#
+    .SYNOPSIS
+    Creates an ISO file from the Apps folder for deployment
+
+    .DESCRIPTION
+    Uses oscdimg.exe from Windows ADK to create a bootable ISO containing
+    applications from the Apps folder. The ISO can be mounted in VMs for
+    application installation during FFU build.
+
+    .PARAMETER ADKPath
+    Path to Windows ADK installation (e.g., "C:\Program Files (x86)\Windows Kits\10\")
+
+    .PARAMETER AppsPath
+    Path to the Apps folder containing application files
+
+    .PARAMETER AppsISO
+    Output path for the ISO file
+
+    .EXAMPLE
+    New-AppsISO -ADKPath $adkPath -AppsPath "C:\FFUDevelopment\Apps" -AppsISO "C:\FFUDevelopment\Apps.iso"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ADKPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppsPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppsISO
+    )
+
+    # Construct path to oscdimg.exe in ADK
+    $OSCDIMG = Join-Path $ADKPath "Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
+
+    if (-not (Test-Path $OSCDIMG)) {
+        throw "oscdimg.exe not found at: $OSCDIMG. Ensure Windows ADK Deployment Tools are installed."
+    }
+
+    # Adding Long Path support for AppsPath to prevent issues with oscdimg
+    $AppsPathLong = '\\?\' + $AppsPath
+
+    WriteLog "Creating ISO from $AppsPath to $AppsISO"
+    WriteLog "Using oscdimg: $OSCDIMG"
+
+    Invoke-Process $OSCDIMG "-n -m -d $AppsPathLong $AppsISO" | Out-Null
 }
 
 function Remove-Apps {

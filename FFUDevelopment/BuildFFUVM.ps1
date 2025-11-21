@@ -1678,7 +1678,7 @@ if ($InstallApps) {
             }
             Set-Progress -Percentage 10 -Message "Creating Apps ISO..."
             WriteLog "Creating $AppsISO file"
-            New-AppsISO
+            New-AppsISO -ADKPath $adkPath -AppsPath $AppsPath -AppsISO $AppsISO
             WriteLog "$AppsISO created successfully"
         }
         catch {
