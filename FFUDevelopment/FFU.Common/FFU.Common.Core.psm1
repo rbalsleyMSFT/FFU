@@ -12,6 +12,10 @@ $script:CommonCoreLogFilePath = $null
 # Mutex for log file access
 $script:commonCoreLogMutexName = "Global\FFUCommonCoreLogMutex" # Unique name
 $script:commonCoreLogMutex = New-Object System.Threading.Mutex($false, $script:commonCoreLogMutexName)
+$script:BitsTransferPriority = 'Normal'
+if (-not [string]::IsNullOrWhiteSpace($env:FFU_BITS_PRIORITY)) {
+    $script:BitsTransferPriority = $env:FFU_BITS_PRIORITY
+}
 
 # Function to set the log file path for this module
 function Set-CommonCoreLogPath {
@@ -30,7 +34,24 @@ function Set-CommonCoreLogPath {
         Write-Warning "Set-CommonCoreLogPath called with an empty or null path."
     }
 }
-
+        
+function Set-BitsTransferPriority {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Foreground', 'High', 'Normal', 'Low')]
+        [string]$Priority
+    )
+    $script:BitsTransferPriority = $Priority
+    try {
+        Set-Item -Path Env:FFU_BITS_PRIORITY -Value $Priority -ErrorAction Stop
+    }
+    catch {
+        WriteLog "Failed to set FFU_BITS_PRIORITY environment variable: $($_.Exception.Message)"
+    }
+    WriteLog "BITS transfer priority set to $Priority."
+}
+        
 # Centralized WriteLog function
 function WriteLog {
     [CmdletBinding()]
@@ -143,8 +164,22 @@ function Start-BitsTransferWithRetry {
         [string]$Source,
         [Parameter(Mandatory = $true)]
         [string]$Destination,
-        [int]$Retries = 3
+        [int]$Retries = 3,
+        [ValidateSet('Foreground','High','Normal','Low')]
+        [string]$Priority
     )
+
+    if ([string]::IsNullOrWhiteSpace($Priority)) {
+        if (-not [string]::IsNullOrWhiteSpace($env:FFU_BITS_PRIORITY)) {
+            $Priority = $env:FFU_BITS_PRIORITY
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($script:BitsTransferPriority)) {
+            $Priority = $script:BitsTransferPriority
+        }
+        else {
+            $Priority = 'Normal'
+        }
+    }
 
     $attempt = 0
     $lastError = $null
@@ -158,7 +193,7 @@ function Start-BitsTransferWithRetry {
             $VerbosePreference = 'SilentlyContinue'
             $ProgressPreference = 'SilentlyContinue'
 
-            Start-BitsTransfer -Source $Source -Destination $Destination -Priority Normal -ErrorAction Stop
+            Start-BitsTransfer -Source $Source -Destination $Destination -Priority $Priority -ErrorAction Stop
             
             $ProgressPreference = $OriginalProgressPreference
             $VerbosePreference = $OriginalVerbosePreference
@@ -259,7 +294,7 @@ function ConvertTo-SafeName {
     # Collapse multiple consecutive dashes
     $sanitized = $sanitized -replace '-{2,}', '-'
     # Trim leading/trailing spaces, periods, and dashes
-    $sanitized = $sanitized.Trim(' ','.','-')
+    $sanitized = $sanitized.Trim(' ', '.', '-')
     if ([string]::IsNullOrWhiteSpace($sanitized)) {
         $sanitized = 'Unnamed'
     }

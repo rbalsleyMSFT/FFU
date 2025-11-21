@@ -220,6 +220,32 @@ function Invoke-ProgressUpdate {
     $ProgressQueue.Enqueue(@{ Identifier = $Identifier; Status = $Status })
 }
 
+function Update-BitsPrioritySetting {
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$State
+    )
+
+    $combo = $State.Controls.cmbBitsPriority
+    if ($null -eq $combo) {
+        WriteLog "BITS priority control not available; skipping priority update."
+        return
+    }
+
+    $selectedPriority = $combo.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($selectedPriority)) {
+        $selectedPriority = 'Normal'
+    }
+
+    try {
+        Set-BitsTransferPriority -Priority $selectedPriority
+        WriteLog "BITS transfer priority set to $selectedPriority."
+    }
+    catch {
+        WriteLog "Failed to set BITS transfer priority: $($_.Exception.Message)"
+    }
+}
+
 # Add a function to create a sortable list view
 function Add-SortableColumn {
     param(

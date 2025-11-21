@@ -96,6 +96,7 @@ function Get-UIConfig {
         USBDriveList                   = @{}
         Username                       = $State.Controls.txtUsername.Text
         Threads                        = [int]$State.Controls.txtThreads.Text
+        BitsPriority                    = $State.Controls.cmbBitsPriority.SelectedItem
         MaxUSBDrives                   = [int]$State.Controls.txtMaxUSBDrives.Text
         Verbose                        = $State.Controls.chkVerbose.IsChecked
         VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
@@ -412,6 +413,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtShareName' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ShareName' -State $State
     Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Username' -State $State
     Set-UIValue -ControlName 'txtThreads' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Threads' -State $State
+    Set-UIValue -ControlName 'cmbBitsPriority' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'BitsPriority' -State $State
     Set-UIValue -ControlName 'txtMaxUSBDrives' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'MaxUSBDrives' -State $State
     Set-UIValue -ControlName 'chkBuildUSBDriveEnable' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'BuildUSBDrive' -State $State
     Set-UIValue -ControlName 'chkCompactOS' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CompactOS' -State $State
@@ -748,13 +750,14 @@ function Update-UIFromConfig {
             else {
                 $State.Controls.additionalFFUPanel.Visibility = 'Collapsed'
             }
+            }
+            catch {
+                WriteLog "LoadConfig: Error applying Additional FFU selections: $($_.Exception.Message)"
+            }
+        
+            Update-BitsPrioritySetting -State $State
+            WriteLog "LoadConfig: Configuration loading process finished."
         }
-        catch {
-            WriteLog "LoadConfig: Error applying Additional FFU selections: $($_.Exception.Message)"
-        }
-    
-        WriteLog "LoadConfig: Configuration loading process finished."
-    }
 
 function Invoke-SaveConfiguration {
     param(

@@ -152,6 +152,17 @@ function Register-EventHandlers {
             $localState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $false
         })
 
+    if ($null -ne $State.Controls.cmbBitsPriority) {
+        $State.Controls.cmbBitsPriority.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                Update-BitsPrioritySetting -State $window.Tag
+            })
+    }
+
     # Additional FFU Files events
     $State.Controls.chkCopyAdditionalFFUFiles.Add_Checked({
             param($eventSource, $routedEventArgs)

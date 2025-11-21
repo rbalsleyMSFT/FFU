@@ -354,6 +354,8 @@ param(
     [bool]$BuildUSBDrive,
     [hashtable]$USBDriveList,
     [int]$MaxUSBDrives = 5,
+    [ValidateSet('Foreground', 'High', 'Normal', 'Low')]
+    [string]$BitsPriority = 'Normal',
     [Parameter(Mandatory = $false)]
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
@@ -659,6 +661,7 @@ if ($WindowsSKU -like "*LTS*") {
 
 # Set the log path for the common logger
 Set-CommonCoreLogPath -Path $LogFile
+Set-BitsTransferPriority -Priority $BitsPriority
 
 #FUNCTIONS
 
