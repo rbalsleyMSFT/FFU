@@ -27,7 +27,7 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 └── BuildFFUVM.ps1 (Core Build Orchestrator - 2,404 lines after modularization)
     └── Modules/ (Extracted functions now in 8 specialized modules)
         ├── FFU.Core (Core functionality - 18 functions for configuration, session tracking)
-        ├── FFU.Apps (Application management - 4 functions for Office, Apps ISO, cleanup)
+        ├── FFU.Apps (Application management - 5 functions for Office, Apps ISO, cleanup)
         ├── FFU.Drivers (OEM driver management - 5 functions for Dell, HP, Lenovo, Microsoft)
         ├── FFU.VM (Hyper-V VM operations - 3 functions for VM lifecycle)
         ├── FFU.Media (WinPE media creation - 4 functions for PE media and architecture)
@@ -108,6 +108,7 @@ Run `Test-UIIntegration.ps1` to verify UI compatibility:
   - `Get-Office`: Downloads and configures Office/Microsoft 365 Apps for deployment
   - `New-AppsISO`: Creates ISO file from applications folder for VM deployment
   - `Remove-Apps`: Cleans up application downloads, Office installers, and temporary files
+  - `Remove-DisabledArtifacts`: Removes downloaded artifacts for disabled features (Office, Defender, MSRT, OneDrive, Edge)
 - **Dependencies:** FFU.Core module for logging, process execution, and download tracking
 - **Requirements:** Internet access for Office downloads, ADK for ISO creation
 

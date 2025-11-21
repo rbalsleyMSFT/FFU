@@ -36,7 +36,8 @@
         'Get-ODTURL',
         'Get-Office',
         'New-AppsISO',
-        'Remove-Apps'
+        'Remove-Apps',
+        'Remove-DisabledArtifacts'
     )
 
     # Cmdlets to export from this module
