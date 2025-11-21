@@ -148,26 +148,45 @@ function Start-BitsTransferWithRetry {
 
     $attempt = 0
     $lastError = $null
+    $notLoggedOnHResult = [int]0x800704dd
+    $fallbackTriggered = $false
 
-    while ($attempt -lt $Retries) {
+    while ($attempt -lt $Retries -and -not $fallbackTriggered) {
         $OriginalVerbosePreference = $VerbosePreference
         $OriginalProgressPreference = $ProgressPreference
         try {
-            $VerbosePreference = 'SilentlyContinue' 
-            $ProgressPreference = 'SilentlyContinue' 
+            $VerbosePreference = 'SilentlyContinue'
+            $ProgressPreference = 'SilentlyContinue'
 
             Start-BitsTransfer -Source $Source -Destination $Destination -Priority Normal -ErrorAction Stop
             
             $ProgressPreference = $OriginalProgressPreference
             $VerbosePreference = $OriginalVerbosePreference
-            WriteLog "Successfully transferred $Source to $Destination." 
-            return 
+            WriteLog "Successfully transferred $Source to $Destination."
+            return
         }
         catch {
             $lastError = $_
             $attempt++
-            WriteLog "Attempt $attempt of $Retries failed to download $Source. Error: $($lastError.Exception.Message)." 
-            Start-Sleep -Seconds (1 * $attempt) 
+            $errorMessage = $lastError.Exception.Message
+            WriteLog "Attempt $attempt of $Retries failed to download $Source. Error: $errorMessage."
+            $hResult = $null
+            if ($null -ne $lastError.Exception) {
+                $hResult = $lastError.Exception.HResult
+            }
+            $needsHttpFallback = $false
+            if ($hResult -eq $notLoggedOnHResult) {
+                $needsHttpFallback = $true
+            }
+            elseif ($errorMessage -match '0x800704DD' -or $errorMessage -match 'not.*logged on to the network') {
+                $needsHttpFallback = $true
+            }
+            if ($needsHttpFallback) {
+                WriteLog "BITS cannot download $Source because the current session is not logged on to the network. Falling back to Invoke-WebRequest."
+                $fallbackTriggered = $true
+                break
+            }
+            Start-Sleep -Seconds (1 * $attempt)
         }
         finally {
             if (Get-Variable -Name 'OriginalProgressPreference' -ErrorAction SilentlyContinue) {
@@ -179,8 +198,43 @@ function Start-BitsTransferWithRetry {
         }
     }
 
-    WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)" 
-    throw $lastError 
+    if ($fallbackTriggered) {
+        $remainingAttempts = $Retries - $attempt
+        if ($remainingAttempts -lt 1) {
+            $remainingAttempts = 1
+        }
+        $httpAttempt = 0
+        while ($httpAttempt -lt $remainingAttempts) {
+            $httpAttempt++
+            $OriginalVerbosePreference = $VerbosePreference
+            $OriginalProgressPreference = $ProgressPreference
+            try {
+                $VerbosePreference = 'SilentlyContinue'
+                $ProgressPreference = 'SilentlyContinue'
+                Invoke-WebRequest -Uri $Source -OutFile $Destination -ErrorAction Stop
+                $ProgressPreference = $OriginalProgressPreference
+                $VerbosePreference = $OriginalVerbosePreference
+                WriteLog "Successfully transferred $Source to $Destination via HTTP fallback."
+                return
+            }
+            catch {
+                $lastError = $_
+                WriteLog "HTTP fallback attempt $httpAttempt of $remainingAttempts failed to download $Source. Error: $($lastError.Exception.Message)."
+                Start-Sleep -Seconds (1 * $httpAttempt)
+            }
+            finally {
+                if (Get-Variable -Name 'OriginalProgressPreference' -ErrorAction SilentlyContinue) {
+                    $ProgressPreference = $OriginalProgressPreference
+                }
+                if (Get-Variable -Name 'OriginalVerbosePreference' -ErrorAction SilentlyContinue) {
+                    $VerbosePreference = $OriginalVerbosePreference
+                }
+            }
+        }
+    }
+
+    WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)"
+    throw $lastError
 }
     
 function Set-Progress {
