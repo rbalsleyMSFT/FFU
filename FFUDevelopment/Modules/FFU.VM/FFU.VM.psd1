@@ -1,0 +1,27 @@
+#
+# Module manifest for module 'FFU.VM'
+#
+
+@{
+    RootModule = 'FFU.VM.psm1'
+    ModuleVersion = '1.0.0'
+    GUID = 'c8f3a942-7e6d-4c1a-9b85-1f4e8d2c5a76'
+    Author = 'FFU Builder Team'
+    CompanyName = 'Community'
+    Copyright = '(c) 2025 FFU Builder Team. MIT License.'
+    Description = 'Hyper-V virtual machine lifecycle management module for FFU Builder. Provides VM creation with TPM/HGS configuration, comprehensive cleanup, and environment validation for FFU build operations.'
+    PowerShellVersion = '5.1'
+    RequiredModules = @('FFU.Core')
+    FunctionsToExport = @('New-FFUVM', 'Remove-FFUVM', 'Get-FFUEnvironment')
+    CmdletsToExport = @()
+    VariablesToExport = @()
+    AliasesToExport = @()
+    PrivateData = @{
+        PSData = @{
+            Tags = @('FFU', 'Hyper-V', 'VM', 'Virtual Machine', 'TPM', 'HGS')
+            LicenseUri = 'https://github.com/Schweinehund/FFU/blob/feature/improvements-and-fixes/LICENSE'
+            ProjectUri = 'https://github.com/Schweinehund/FFU'
+            ReleaseNotes = 'v1.0.0: Initial release - Hyper-V VM management with TPM/HGS support'
+        }
+    }
+}

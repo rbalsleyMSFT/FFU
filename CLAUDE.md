@@ -57,6 +57,21 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 - **Dependencies:** FFU.Core module for logging, process execution, and download tracking
 - **Requirements:** Internet access for Office downloads, ADK for ISO creation
 
+**FFU.Updates Module** (FFUDevelopment/Modules/FFU.Updates/FFU.Updates.psm1)
+- **Purpose:** Windows Update catalog parsing, MSU package download, and DISM servicing
+- **Functions:**
+  - `Get-ProductsCab`: Downloads products.cab from Windows Update service for ESD file discovery
+  - `Get-WindowsESD`: Downloads Windows ESD files from Microsoft servers
+  - `Get-KBLink`: Searches Microsoft Update Catalog and retrieves download links
+  - `Get-UpdateFileInfo`: Gathers update file information for architecture-specific packages
+  - `Save-KB`: Downloads KB updates from Microsoft Update Catalog with architecture detection
+  - `Test-MountedImageDiskSpace`: Validates disk space for MSU extraction (3x package size + 5GB safety)
+  - `Initialize-DISMService`: Ensures DISM service readiness before package operations
+  - `Add-WindowsPackageWithRetry`: Applies packages with automatic retry logic (2 retries, 30s delays)
+  - `Add-WindowsPackageWithUnattend`: Handles MSU packages with unattend.xml extraction
+- **Dependencies:** FFU.Core module for logging, BITS transfers, and download tracking
+- **Improvements:** Enhanced MSU handling with disk space validation, retry logic, and unattend.xml extraction
+
 ### Key Design Patterns
 
 - **Event-Driven UI:** WPF with DispatcherTimer for non-blocking background job polling

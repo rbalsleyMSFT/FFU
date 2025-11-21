@@ -1,17 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)",
-      "Bash(tree:*)",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:api.github.com)",
-      "Bash(git clone:*)",
-      "Bash(git init:*)",
-      "Bash(git remote:*)",
-      "Bash(git fetch:*)",
-      "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(Select-Object -First 10 FullName, Length)",
+      "Bash(sed:*)",
+      "Bash(Get-Location)",
+      "Bash(New-Item -ItemType Directory -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.ADK\" -Force)",
+      "Bash(Out-Null)",
+      "Bash(Remove-Item \"C:\\claude\\FFUBuilder\\verify-adk-module.ps1\" -Force)",
+      "Bash(New-Item -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.Media\" -ItemType Directory -Force)",
+      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.Media\")",
+      "Bash(Select-Object -ExpandProperty Path)",
+      "Bash(New-Item -ItemType Directory -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.VM\" -Force)",
+      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.VM\")",
+      "Bash(cmd /c \"dir /b\")"
     ],
     "deny": [],
     "ask": []
