@@ -760,6 +760,35 @@ function Confirm-ADKVersionIsLatest {
 }
 
 function Get-ADK {
+    <#
+    .SYNOPSIS
+    Retrieves Windows ADK installation path and ensures required components are installed
+
+    .DESCRIPTION
+    Locates the Windows ADK installation path from registry. Optionally checks for and installs
+    the latest ADK and Windows PE add-on versions. Validates that Windows Deployment Tools
+    feature is installed and automatically installs it if missing.
+
+    .PARAMETER UpdateADK
+    If $true, checks for latest ADK and WinPE versions and updates if necessary.
+    If $false, only retrieves existing ADK path and validates Deployment Tools installation.
+
+    .EXAMPLE
+    $adkPath = Get-ADK -UpdateADK $true
+    Returns ADK path after ensuring latest versions are installed
+
+    .EXAMPLE
+    $adkPath = Get-ADK -UpdateADK $false
+    Returns ADK path without checking for updates
+
+    .OUTPUTS
+    System.String - Full path to the Windows ADK installation directory
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$UpdateADK
+    )
     # Check if latest ADK and WinPE add-on are installed
     if ($UpdateADK) {
         WriteLog "Checking if latest ADK and WinPE add-on are installed"

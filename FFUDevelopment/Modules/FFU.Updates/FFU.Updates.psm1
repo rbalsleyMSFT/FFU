@@ -273,9 +273,47 @@ function Get-WindowsESD {
 }
 
 function Get-KBLink {
+    <#
+    .SYNOPSIS
+    Retrieves download links for Windows updates from the Microsoft Update Catalog
+
+    .DESCRIPTION
+    Searches the Microsoft Update Catalog for a specific update by name and returns
+    the download URLs. Supports filtering by architecture and other criteria.
+    Extracts KB article IDs when available (not applicable to Defender/Edge updates).
+
+    .PARAMETER Name
+    The name or search term for the update (e.g., "2024-01 Cumulative Update for Windows 11")
+
+    .PARAMETER Headers
+    HTTP headers to use for catalog requests (includes session cookies and metadata)
+
+    .PARAMETER UserAgent
+    User agent string to identify the client making catalog requests
+
+    .PARAMETER Filter
+    Array of filter criteria to match against update descriptions (e.g., @('x64', 'Windows 11'))
+
+    .EXAMPLE
+    $headers = @{ 'User-Agent' = 'Mozilla/5.0' }
+    Get-KBLink -Name "2024-01 Cumulative Update" -Headers $headers -UserAgent $userAgent -Filter @('x64')
+
+    .OUTPUTS
+    System.String[] - Array of download URLs for matching updates
+    #>
+    [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [string]$Name
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Filter
     )
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
@@ -348,7 +386,7 @@ function Get-UpdateFileInfo {
     $updateFileInfos = [System.Collections.Generic.List[pscustomobject]]::new()
 
     foreach ($kb in $Name) {
-        $links = Get-KBLink -Name $kb
+        $links = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
         foreach ($link in $links) {
             $fileName = ($link -split '/')[-1]
 
@@ -383,13 +421,63 @@ function Get-UpdateFileInfo {
 }
 
 function Save-KB {
+    <#
+    .SYNOPSIS
+    Downloads Windows update files (KB, MSU, CAB) from Microsoft Update Catalog
+
+    .DESCRIPTION
+    Downloads Windows updates for the specified architecture from Microsoft Update Catalog.
+    Automatically filters by architecture and validates downloaded files match the target platform.
+    Supports fallback analysis for updates without explicit architecture in filenames.
+
+    .PARAMETER Name
+    Array of update names or KB numbers to download
+
+    .PARAMETER Path
+    Destination folder path for downloaded update files
+
+    .PARAMETER WindowsArch
+    Target Windows architecture (x64, x86, or arm64) for update filtering
+
+    .PARAMETER Headers
+    HTTP headers to use for catalog requests (includes session cookies and metadata)
+
+    .PARAMETER UserAgent
+    User agent string to identify the client making catalog requests
+
+    .PARAMETER Filter
+    Array of filter criteria to match against update descriptions
+
+    .EXAMPLE
+    Save-KB -Name @('KB5034441') -Path 'C:\Updates' -WindowsArch 'x64' `
+            -Headers $headers -UserAgent $userAgent -Filter @('Windows 11', 'x64')
+
+    .OUTPUTS
+    System.String - Filename of the downloaded update file
+    #>
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)]
         [string[]]$Name,
-        [string]$Path
+
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x64', 'x86', 'arm64')]
+        [string]$WindowsArch,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Filter
     )
     foreach ($kb in $name) {
-        $links = Get-KBLink -Name $kb
+        $links = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
         foreach ($link in $links) {
             # if (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
             #     WriteLog "No architecture found in $link, skipping"

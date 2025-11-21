@@ -320,11 +320,38 @@ function Add-BootFiles {
 }
 
 function Enable-WindowsFeaturesByName {
+    <#
+    .SYNOPSIS
+    Enables Windows optional features by name in mounted Windows image
+
+    .DESCRIPTION
+    Enables one or more Windows optional features in a mounted Windows partition.
+    Supports semicolon-separated feature names and uses a specified source path
+    for feature files.
+
+    .PARAMETER FeatureNames
+    Semicolon-separated list of Windows feature names to enable (e.g., "NetFx3;TelnetClient")
+
+    .PARAMETER Source
+    Path to feature source files (typically WIM SxS folder)
+
+    .PARAMETER WindowsPartition
+    Mounted Windows partition path where features will be enabled
+
+    .EXAMPLE
+    Enable-WindowsFeaturesByName -FeatureNames "NetFx3;TelnetClient" `
+                                -Source "C:\Mount\Sources\SxS" -WindowsPartition "C:\Mount"
+    #>
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
         [string]$FeatureNames,
+
         [Parameter(Mandatory = $true)]
-        [string]$Source
+        [string]$Source,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsPartition
     )
 
     $FeaturesArray = $FeatureNames.Split(';')
@@ -542,7 +569,11 @@ function New-FFU {
         $winverinfo = Get-WindowsVersionInfo
         WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
-            $FFUFileName = New-FFUFileName
+            # Extract WindowsRelease from winverinfo.Name (e.g., "Win11" -> 11)
+            $releaseNumber = if ($winverinfo.Name -match '\d+') { [int]$matches[0] } else { 11 }
+            $FFUFileName = New-FFUFileName -installationType $InstallationType -winverinfo $winverinfo `
+                                          -WindowsRelease $releaseNumber -CustomFFUNameTemplate $CustomFFUNameTemplate `
+                                          -WindowsVersion $winverinfo.DisplayVersion -shortenedWindowsSKU $ShortenedWindowsSKU
         }
         else {
             $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
@@ -560,7 +591,11 @@ function New-FFU {
         # Make $FFUFileName based on values in the config.json file
         WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
-            $FFUFileName = New-FFUFileName
+            $FFUFileName = New-FFUFileName -installationType $InstallationType -winverinfo $null `
+                                          -WindowsRelease $cachedVHDXInfo.WindowsRelease `
+                                          -CustomFFUNameTemplate $CustomFFUNameTemplate `
+                                          -WindowsVersion $cachedVHDXInfo.WindowsVersion `
+                                          -shortenedWindowsSKU $ShortenedWindowsSKU
         }
         else {
             $BuildDate = Get-Date -UFormat %b%Y
@@ -632,9 +667,50 @@ function New-FFU {
 }
 
 function Remove-FFU {
+    <#
+    .SYNOPSIS
+    Removes FFU build VM, VHDX, and associated resources
+
+    .DESCRIPTION
+    Cleans up Hyper-V VM, HGS Guardian, certificates, VHDX files, and mounted
+    Windows images after FFU capture completes or fails. Implements different
+    cleanup logic depending on whether VM-based or VHDX-only build was used.
+
+    .PARAMETER VMName
+    Optional name of the VM to remove
+
+    .PARAMETER InstallApps
+    Boolean indicating if apps were installed (affects cleanup logic)
+
+    .PARAMETER vhdxDisk
+    VHDX disk object for cleanup validation
+
+    .PARAMETER VMPath
+    Path to VM configuration directory to remove
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for mount folder cleanup
+
+    .EXAMPLE
+    Remove-FFU -VMName "_FFU-Build-Win11" -InstallApps $true -vhdxDisk $disk `
+              -VMPath "C:\FFU\VM\_FFU-Build-Win11" -FFUDevelopmentPath "C:\FFU"
+    #>
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $false)]
-        [string]$VMName
+        [string]$VMName,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$InstallApps,
+
+        [Parameter(Mandatory = $false)]
+        $vhdxDisk,
+
+        [Parameter(Mandatory = $true)]
+        [string]$VMPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
     )
     #Get the VM object and remove the VM, the HGSGuardian, and the certs
     If ($VMName) {

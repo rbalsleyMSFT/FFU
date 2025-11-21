@@ -273,14 +273,22 @@ function Get-FFUEnvironment {
 
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
     try {
-        Remove-InProgressItems -FFUDevelopmentPath $FFUDevelopmentPath
+        Remove-InProgressItems -FFUDevelopmentPath $FFUDevelopmentPath `
+                              -DriversFolder "$FFUDevelopmentPath\Drivers" `
+                              -OfficePath "$FFUDevelopmentPath\Office"
     }
     catch {
         WriteLog "Remove-InProgressItems failed: $($_.Exception.Message)"
     }
     if ($CleanupCurrentRunDownloads) {
         try {
-            Cleanup-CurrentRunDownloads -FFUDevelopmentPath $FFUDevelopmentPath
+            Cleanup-CurrentRunDownloads -FFUDevelopmentPath $FFUDevelopmentPath `
+                                       -AppsPath $AppsPath -DefenderPath "$FFUDevelopmentPath\Defender" `
+                                       -MSRTPath "$FFUDevelopmentPath\MSRT" -OneDrivePath "$FFUDevelopmentPath\OneDrive" `
+                                       -EdgePath "$FFUDevelopmentPath\Edge" -KBPath $KBPath `
+                                       -DriversFolder "$FFUDevelopmentPath\Drivers" `
+                                       -orchestrationPath "$FFUDevelopmentPath\Orchestration" `
+                                       -OfficePath "$FFUDevelopmentPath\Office"
         }
         catch {
             WriteLog "Cleanup-CurrentRunDownloads failed: $($_.Exception.Message)"

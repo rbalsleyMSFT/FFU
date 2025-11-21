@@ -362,11 +362,96 @@ TO RETRY WITH ADK REINSTALLATION:
 }
 
 function New-PEMedia {
+    <#
+    .SYNOPSIS
+    Creates WinPE capture and/or deployment media with FFU tools
+
+    .DESCRIPTION
+    Creates customized Windows PE bootable media for FFU capture and deployment.
+    Integrates FFU tools, drivers, network components, and optional compression.
+    Supports both capture-only and deployment-only scenarios or combined media.
+
+    .PARAMETER Capture
+    Boolean indicating whether to create capture media
+
+    .PARAMETER Deploy
+    Boolean indicating whether to create deployment media
+
+    .PARAMETER adkPath
+    Path to Windows ADK installation root
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER WindowsArch
+    Windows architecture (x64, x86, ARM64)
+
+    .PARAMETER CaptureISO
+    Output path for capture ISO file
+
+    .PARAMETER DeployISO
+    Output path for deployment ISO file
+
+    .PARAMETER CopyPEDrivers
+    Boolean indicating whether to copy PE drivers to media
+
+    .PARAMETER UseDriversAsPEDrivers
+    Boolean indicating whether to use main drivers folder as PE drivers
+
+    .PARAMETER PEDriversFolder
+    Path to PE-specific drivers folder
+
+    .PARAMETER DriversFolder
+    Path to main drivers folder
+
+    .PARAMETER CompressDownloadedDriversToWim
+    Boolean indicating whether to compress drivers into WIM format
+
+    .EXAMPLE
+    New-PEMedia -Capture $true -Deploy $true -adkPath "C:\Program Files (x86)\Windows Kits\10\" `
+                -FFUDevelopmentPath "C:\FFU" -WindowsArch "x64" -CaptureISO "C:\FFU\Capture.iso" `
+                -DeployISO "C:\FFU\Deploy.iso" -CopyPEDrivers $true -UseDriversAsPEDrivers $false `
+                -PEDriversFolder "C:\FFU\PEDrivers" -DriversFolder "C:\FFU\Drivers" `
+                -CompressDownloadedDriversToWim $true
+    #>
+    [CmdletBinding()]
     param (
-        [Parameter()]
+        [Parameter(Mandatory = $true)]
         [bool]$Capture,
-        [Parameter()]
-        [bool]$Deploy
+
+        [Parameter(Mandatory = $true)]
+        [bool]$Deploy,
+
+        [Parameter(Mandatory = $true)]
+        [string]$adkPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("x64", "x86", "ARM64")]
+        [string]$WindowsArch,
+
+        [Parameter(Mandatory = $false)]
+        [string]$CaptureISO,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DeployISO,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$CopyPEDrivers,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$UseDriversAsPEDrivers,
+
+        [Parameter(Mandatory = $false)]
+        [string]$PEDriversFolder,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$CompressDownloadedDriversToWim
     )
     #Need to use the Deployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"

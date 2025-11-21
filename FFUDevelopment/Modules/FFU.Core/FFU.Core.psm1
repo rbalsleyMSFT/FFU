@@ -187,6 +187,61 @@ function Get-ShortenedWindowsSKU {
 }
 
 function New-FFUFileName {
+    <#
+    .SYNOPSIS
+    Generates FFU filename from template with variable substitution
+
+    .DESCRIPTION
+    Creates FFU filename by replacing template placeholders with actual values
+    for Windows release, version, SKU, and build date/time. Supports custom
+    naming patterns with various date/time format specifiers.
+
+    .PARAMETER installationType
+    Installation type (Client or Server) - affects Windows release naming
+
+    .PARAMETER winverinfo
+    Windows version information object containing OS name (Win10/Win11)
+
+    .PARAMETER WindowsRelease
+    Windows release version (10, 11, 2016, 2019, 2022, 2025)
+
+    .PARAMETER CustomFFUNameTemplate
+    Template string with placeholders: {WindowsRelease}, {WindowsVersion}, {SKU},
+    {BuildDate}, {yyyy}, {MM}, {dd}, {HH}, {hh}, {mm}, {tt}
+
+    .PARAMETER WindowsVersion
+    Specific Windows version/build (e.g., "21H2", "22H2", "23H2", "24H2")
+
+    .PARAMETER shortenedWindowsSKU
+    Shortened Windows SKU name (e.g., "Pro", "Enterprise", "Education")
+
+    .EXAMPLE
+    New-FFUFileName -installationType "Client" -winverinfo $info -WindowsRelease 11 `
+                    -CustomFFUNameTemplate "Win{WindowsRelease}_{SKU}_{BuildDate}" `
+                    -WindowsVersion "23H2" -shortenedWindowsSKU "Pro"
+    Returns: "Win11_Pro_Jan2025.ffu"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Client', 'Server')]
+        [string]$installationType,
+
+        [Parameter(Mandatory = $false)]
+        $winverinfo,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CustomFFUNameTemplate,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$shortenedWindowsSKU
+    )
 
     # $Winverinfo.name will be either Win10 or Win11 for client OSes
     # Since WindowsRelease now includes dates, it breaks default name template in the config file
@@ -351,7 +406,40 @@ function Clear-DownloadInProgress {
 }
 
 function Remove-InProgressItems {
-    param([string]$FFUDevelopmentPath)
+    <#
+    .SYNOPSIS
+    Removes items marked as in-progress from previous incomplete FFU build runs
+
+    .DESCRIPTION
+    Scans the .session/inprogress folder for download markers and removes
+    corresponding files/folders that were being downloaded when the build failed.
+    Implements special handling for Drivers folder (promotes to model folder level)
+    and Office folder (preserves XML configuration files).
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER DriversFolder
+    Root path to OEM drivers folder (for smart cleanup of partial driver downloads)
+
+    .PARAMETER OfficePath
+    Path to Office installer/configs folder (preserves XML configuration files)
+
+    .EXAMPLE
+    Remove-InProgressItems -FFUDevelopmentPath "C:\FFU" -DriversFolder "C:\FFU\Drivers" `
+                          -OfficePath "C:\FFU\Office"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OfficePath
+    )
     $sessionInprog = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'inprogress'
     if (-not (Test-Path $sessionInprog)) { return }
 
@@ -509,7 +597,86 @@ function Remove-InProgressItems {
 }
 
 function Cleanup-CurrentRunDownloads {
-    param([string]$FFUDevelopmentPath)
+    <#
+    .SYNOPSIS
+    Removes downloaded files and folders created during the current FFU build run
+
+    .DESCRIPTION
+    Scans configured download paths (Apps, Defender, MSRT, OneDrive, Edge, KB, Drivers,
+    Orchestration, Office) and removes items created/modified during the current build
+    session based on timestamps. Uses per-run manifest to determine session boundaries.
+    Implements special logic for Drivers folder to preserve existing OEM trees and only
+    remove current-run additions.
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER AppsPath
+    Path to Apps download folder (Win32 and MSStore subfolders)
+
+    .PARAMETER DefenderPath
+    Path to Windows Defender updates download folder
+
+    .PARAMETER MSRTPath
+    Path to Microsoft Safety Scanner / MSRT download folder
+
+    .PARAMETER OneDrivePath
+    Path to OneDrive installer download folder
+
+    .PARAMETER EdgePath
+    Path to Microsoft Edge download folder
+
+    .PARAMETER KBPath
+    Path to Windows KB/update packages download folder
+
+    .PARAMETER DriversFolder
+    Root path to OEM drivers folder (Dell, HP, Lenovo, Microsoft subfolders)
+
+    .PARAMETER orchestrationPath
+    Path to orchestration scripts/configs folder
+
+    .PARAMETER OfficePath
+    Path to Office installer/configs folder (preserves XML configuration files)
+
+    .EXAMPLE
+    Cleanup-CurrentRunDownloads -FFUDevelopmentPath "C:\FFU" -AppsPath "C:\FFU\Apps" `
+                                -DefenderPath "C:\FFU\Defender" -MSRTPath "C:\FFU\MSRT" `
+                                -OneDrivePath "C:\FFU\OneDrive" -EdgePath "C:\FFU\Edge" `
+                                -KBPath "C:\FFU\KB" -DriversFolder "C:\FFU\Drivers" `
+                                -orchestrationPath "C:\FFU\Orchestration" -OfficePath "C:\FFU\Office"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$AppsPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DefenderPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$MSRTPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OneDrivePath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$EdgePath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$KBPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $false)]
+        [string]$orchestrationPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OfficePath
+    )
     $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
     if ($null -eq $manifest) { WriteLog "No current run manifest; skipping current-run cleanup."; return }
     $runStart = [datetime]::Parse($manifest.RunStartUtc)

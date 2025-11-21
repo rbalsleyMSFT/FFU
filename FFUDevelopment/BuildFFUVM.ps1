@@ -1249,7 +1249,7 @@ try {
     }
     else {
         # No WinPE media creation, use standard ADK validation
-        $adkPath = Get-ADK
+        $adkPath = Get-ADK -UpdateADK $UpdateADK
     }
 
     #Need to use the Deployment and Imaging tools environment to use dism from the Sept 2023 ADK to optimize FFU
@@ -1467,7 +1467,7 @@ if ($InstallApps) {
                     # Download each update
                     foreach ($update in $defenderUpdates) {
                         WriteLog "Searching for $($update.Name) from Microsoft Update Catalog and saving to $DefenderPath"
-                        $KBFilePath = Save-KB -Name $update.Name -Path $DefenderPath
+                        $KBFilePath = Save-KB -Name $update.Name -Path $DefenderPath -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter
                         WriteLog "Latest $($update.Description) saved to $DefenderPath\$KBFilePath"
                         # Add the KB file path to the installDefenderCommand
                         $installDefenderCommand += "& d:\Defender\$KBFilePath`r`n"
@@ -1546,7 +1546,7 @@ if ($InstallApps) {
                     }
                     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $MSRTPath"
                     WriteLog "Getting Windows Malicious Software Removal Tool URL"
-                    $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath
+                    $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter
                     WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
                 
                     # Create Update-MSRT.ps1
@@ -1638,7 +1638,7 @@ if ($InstallApps) {
                         New-Item -Path $EdgePath -ItemType Directory -Force | Out-Null
                     }
                     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $EdgePath"
-                    $KBFilePath = Save-KB -Name $Name -Path $EdgePath
+                    $KBFilePath = Save-KB -Name $Name -Path $EdgePath -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter
                     $EdgeCABFilePath = "$EdgePath\$KBFilePath"
                     WriteLog "Latest Edge Stable $WindowsArch release saved to $EdgeCABFilePath"
                 
@@ -2046,7 +2046,8 @@ try {
         #Enable Windows Optional Features (e.g. .Net3, etc)
         If ($OptionalFeatures) {
             $Source = Join-Path (Split-Path $wimpath) 'sxs'
-            Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+            Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source `
+                                        -WindowsPartition $WindowsPartition
         }
         If ($ISOPath) {
             WriteLog 'Dismounting Windows ISO'
@@ -2203,7 +2204,11 @@ if ($InstallApps) {
         try {
             Set-Progress -Percentage 45 -Message "Creating WinPE capture media..."
             #This should happen while the FFUVM is building
-            New-PEMedia -Capture $true
+            New-PEMedia -Capture $true -Deploy $false -adkPath $adkPath -FFUDevelopmentPath $FFUDevelopmentPath `
+                        -WindowsArch $WindowsArch -CaptureISO $CaptureISO -DeployISO $null `
+                        -CopyPEDrivers $CopyPEDrivers -UseDriversAsPEDrivers $UseDriversAsPEDrivers `
+                        -PEDriversFolder $PEDriversFolder -DriversFolder $DriversFolder `
+                        -CompressDownloadedDriversToWim $CompressDownloadedDriversToWim
         }
         catch {
             Write-Host 'Creating capture media failed'
@@ -2329,7 +2334,11 @@ catch {
 If ($CreateDeploymentMedia) {
     Set-Progress -Percentage 91 -Message "Creating deployment media..."
     try {
-        New-PEMedia -Deploy $true
+        New-PEMedia -Capture $false -Deploy $true -adkPath $adkPath -FFUDevelopmentPath $FFUDevelopmentPath `
+                    -WindowsArch $WindowsArch -CaptureISO $null -DeployISO $DeployISO `
+                    -CopyPEDrivers $CopyPEDrivers -UseDriversAsPEDrivers $UseDriversAsPEDrivers `
+                    -PEDriversFolder $PEDriversFolder -DriversFolder $DriversFolder `
+                    -CompressDownloadedDriversToWim $CompressDownloadedDriversToWim
     }
     catch {
         Write-Host 'Creating deployment media failed'
@@ -2385,7 +2394,8 @@ If ($BuildUSBDrive) {
 }
 If ($RemoveFFU) {
     try {
-        Remove-FFU
+        Remove-FFU -VMName $VMName -InstallApps $InstallApps -vhdxDisk $vhdxDisk `
+                   -VMPath $VMPath -FFUDevelopmentPath $FFUDevelopmentPath
     }
     catch {
         Write-Host 'Removing FFU files failed'
