@@ -445,53 +445,6 @@ function Test-MountedImageDiskSpace {
     return $true
 }
 
-function Initialize-DISMService {
-    <#
-    .SYNOPSIS
-    Ensures DISM service is fully initialized before applying packages
-
-    .DESCRIPTION
-    Performs a lightweight DISM operation to ensure the service is ready for package application.
-    This prevents race conditions and service initialization failures.
-
-    .PARAMETER MountPath
-    The path to the mounted Windows image
-
-    .EXAMPLE
-    Initialize-DISMService -MountPath "W:\"
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$MountPath
-    )
-
-    WriteLog "Initializing DISM service for mounted image..."
-
-    try {
-        # Perform a lightweight DISM operation to ensure service is ready
-        # Use Get-WindowsEdition which works with mounted image paths
-        $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
-        WriteLog "DISM service initialized. Image edition: $($dismInfo.Edition)"
-        return $true
-    }
-    catch {
-        WriteLog "WARNING: DISM service initialization check failed: $($_.Exception.Message)"
-        WriteLog "Waiting 10 seconds for DISM service to stabilize..."
-        Start-Sleep -Seconds 10
-
-        try {
-            $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
-            WriteLog "DISM service initialized after retry. Image edition: $($dismInfo.Edition)"
-            return $true
-        }
-        catch {
-            WriteLog "ERROR: DISM service failed to initialize after retry"
-            return $false
-        }
-    }
-}
-
 function Add-WindowsPackageWithRetry {
     <#
     .SYNOPSIS
@@ -803,7 +756,6 @@ Export-ModuleMember -Function @(
     'Get-UpdateFileInfo',
     'Save-KB',
     'Test-MountedImageDiskSpace',
-    'Initialize-DISMService',
     'Add-WindowsPackageWithRetry',
     'Add-WindowsPackageWithUnattend'
 )

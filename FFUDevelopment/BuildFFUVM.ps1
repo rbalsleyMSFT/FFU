@@ -551,14 +551,22 @@ class VhdxCacheUpdateItem {
 
 # Import FFU Builder modules
 $ModulePath = "$PSScriptRoot\Modules"
-Import-Module "$ModulePath\FFU.Core" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.ADK" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.Drivers" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.Updates" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.VM" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.Media" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.Imaging" -Force -ErrorAction Stop
-Import-Module "$ModulePath\FFU.Apps" -Force -ErrorAction Stop
+
+# Add modules folder to PSModulePath so RequiredModules in manifests can be resolved
+# This is critical when running in background jobs (e.g., from BuildFFUVM_UI.ps1)
+if ($env:PSModulePath -notlike "*$ModulePath*") {
+    $env:PSModulePath = "$ModulePath;$env:PSModulePath"
+}
+
+# Import modules in dependency order
+Import-Module "FFU.Core" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.ADK" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Drivers" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Updates" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.VM" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Imaging" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Media" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Apps" -Force -ErrorAction Stop -WarningAction SilentlyContinue
 
 class VhdxCacheItem {
     [string]$VhdxFileName = ""

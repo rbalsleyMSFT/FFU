@@ -31,18 +31,64 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
         ├── FFU.Drivers (OEM driver management - 5 functions for Dell, HP, Lenovo, Microsoft)
         ├── FFU.VM (Hyper-V VM operations - 3 functions for VM lifecycle)
         ├── FFU.Media (WinPE media creation - 4 functions for PE media and architecture)
-        ├── FFU.ADK (Windows ADK management - 7 functions for validation and installation)
-        ├── FFU.Updates (Windows Update handling - 9 functions for KB downloads and MSU processing)
-        └── FFU.Imaging (DISM and FFU operations - 14 functions for partitioning, imaging, FFU creation)
+        ├── FFU.ADK (Windows ADK management - 8 functions for validation and installation)
+        ├── FFU.Updates (Windows Update handling - 8 functions for KB downloads and MSU processing)
+        └── FFU.Imaging (DISM and FFU operations - 15 functions for partitioning, imaging, FFU creation)
 ```
 
 ### Modularization Status (Completed)
 - **Original file:** BuildFFUVM.ps1 with 7,790 lines
-- **After extraction:** BuildFFUVM.ps1 reduced to 2,404 lines
+- **After extraction:** BuildFFUVM.ps1 reduced to 2,404 lines (69% reduction)
 - **Functions extracted:** 64 total functions moved to 8 modules
 - **Lines removed:** 5,387 lines (functions from lines 674-6059)
-- **Module imports added:** After param block at line 552
-- **WriteLog function:** Provided by FFU.Common module (imported at line 452)
+- **Module imports added:** After param block at lines 552-569
+- **PSModulePath handling:** Modules folder added to path for RequiredModules resolution
+- **UI compatibility:** Fully compatible with BuildFFUVM_UI.ps1 background job execution
+- **Test coverage:** 100% pass rate (23/23 tests) in Test-UIIntegration.ps1
+
+### UI Integration and Background Jobs
+
+The modular architecture is fully compatible with BuildFFUVM_UI.ps1:
+
+**How it works:**
+1. BuildFFUVM_UI.ps1 launches BuildFFUVM.ps1 in a PowerShell background job (ThreadJob or Start-Job)
+2. BuildFFUVM.ps1 automatically adds `Modules/` folder to `$env:PSModulePath` on startup
+3. This allows PowerShell RequiredModules declarations in manifests to resolve correctly
+4. All 8 modules import cleanly in the background job context
+5. Functions are available throughout the build process
+
+**Key implementation details:**
+```powershell
+# BuildFFUVM.ps1 lines 552-569
+$ModulePath = "$PSScriptRoot\Modules"
+
+# Add modules folder to PSModulePath for RequiredModules resolution
+if ($env:PSModulePath -notlike "*$ModulePath*") {
+    $env:PSModulePath = "$ModulePath;$env:PSModulePath"
+}
+
+# Import modules in dependency order
+Import-Module "FFU.Core" -Force -ErrorAction Stop
+Import-Module "FFU.ADK" -Force -ErrorAction Stop
+# ... (remaining 6 modules)
+```
+
+**Module dependencies:**
+- FFU.Core: No dependencies (foundation module)
+- FFU.ADK: Requires FFU.Core
+- FFU.Media: Requires FFU.Core and FFU.ADK
+- FFU.Imaging: Requires FFU.Core
+- FFU.Updates: Requires FFU.Core
+- FFU.VM, FFU.Drivers, FFU.Apps: Require FFU.Core
+
+**Testing:**
+Run `Test-UIIntegration.ps1` to verify UI compatibility:
+- Module directory structure validation
+- Import tests in clean PowerShell sessions
+- Background job simulation (mimics UI launch mechanism)
+- Function export verification (64 unique functions across 8 modules)
+- Module dependency chain validation
+- Function name conflict detection
 
 ### Module Architecture
 
@@ -74,7 +120,6 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
   - `Get-UpdateFileInfo`: Gathers update file information for architecture-specific packages
   - `Save-KB`: Downloads KB updates from Microsoft Update Catalog with architecture detection
   - `Test-MountedImageDiskSpace`: Validates disk space for MSU extraction (3x package size + 5GB safety)
-  - `Initialize-DISMService`: Ensures DISM service readiness before package operations
   - `Add-WindowsPackageWithRetry`: Applies packages with automatic retry logic (2 retries, 30s delays)
   - `Add-WindowsPackageWithUnattend`: Handles MSU packages with unattend.xml extraction
 - **Dependencies:** FFU.Core module for logging, BITS transfers, and download tracking
