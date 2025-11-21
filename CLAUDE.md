@@ -25,11 +25,15 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 ├── FFUUI.Core (UI Framework)
 ├── FFU.Common (Business Logic Module)
 └── BuildFFUVM.ps1 (Core Build Orchestrator)
-    ├── FFU.VM Module (Hyper-V VM Management)
-    ├── DISM Image Manipulation
-    ├── Driver Download/Injection (Dell, HP, Lenovo, Microsoft)
-    ├── Windows Update Integration
-    └── USB Media Creator
+    └── Modules/
+        ├── FFU.Core (Core functionality - logging, processes, utilities)
+        ├── FFU.Apps (Application management - Office, Apps ISO, cleanup)
+        ├── FFU.Drivers (OEM driver management)
+        ├── FFU.VM (Hyper-V VM operations)
+        ├── FFU.Media (WinPE media creation)
+        ├── FFU.ADK (Windows ADK management)
+        ├── FFU.Updates (Windows Update handling)
+        └── FFU.Imaging (DISM and FFU operations)
 ```
 
 ### Module Architecture
@@ -42,6 +46,16 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
   - `Get-FFUEnvironment`: Comprehensive environment cleanup for dirty state recovery
 - **Dependencies:** FFU.Core module for logging and common variables
 - **Requirements:** Administrator privileges, Hyper-V feature enabled
+
+**FFU.Apps Module** (FFUDevelopment/Modules/FFU.Apps/FFU.Apps.psm1)
+- **Purpose:** Application installation and management for FFU Builder
+- **Functions:**
+  - `Get-ODTURL`: Retrieves the latest Office Deployment Tool download URL from Microsoft
+  - `Get-Office`: Downloads and configures Office/Microsoft 365 Apps for deployment
+  - `New-AppsISO`: Creates ISO file from applications folder for VM deployment
+  - `Remove-Apps`: Cleans up application downloads, Office installers, and temporary files
+- **Dependencies:** FFU.Core module for logging, process execution, and download tracking
+- **Requirements:** Internet access for Office downloads, ADK for ISO creation
 
 ### Key Design Patterns
 
@@ -534,3 +548,25 @@ Add WinGet package IDs to configuration JSON or use `Apps/` folder for MSI/EXE i
 - Driver downloads verify **HTTPS certificates** (no self-signed certs)
 - **No credentials stored** in configuration files (use Windows Credential Manager)
 - Audit logs written to `Logs/` directory for compliance tracking
+
+## Module Extraction History
+
+### FFU.Drivers Module (v1.0.0)
+**Extracted:** November 20, 2025
+**Location:** `FFUDevelopment\Modules\FFU.Drivers\`
+**Purpose:** Centralized OEM driver management functionality
+
+Extracted the following functions from BuildFFUVM.ps1 to improve modularity:
+- **Get-MicrosoftDrivers** (line 751): Downloads and extracts Microsoft Surface drivers
+- **Get-HPDrivers** (line 963): Downloads and extracts HP drivers using HPIA catalog
+- **Get-LenovoDrivers** (line 1191): Downloads and extracts Lenovo drivers using PSREF API
+- **Get-DellDrivers** (line 1433): Downloads and extracts Dell drivers from Dell catalog
+- **Copy-Drivers** (line 3738): Copies and filters drivers for WinPE boot media
+
+**Dependencies:** Requires FFU.Core module for shared functions (WriteLog, Invoke-Process, etc.)
+
+**Usage:**
+```powershell
+Import-Module "$FFUDevelopmentPath\Modules\FFU.Drivers\FFU.Drivers.psd1"
+Get-DellDrivers -Model "Latitude 7490" -WindowsArch "x64" -WindowsRelease 11
+```

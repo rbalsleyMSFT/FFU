@@ -1,0 +1,149 @@
+<#
+.SYNOPSIS
+    FFU Builder Application Management Module
+
+.DESCRIPTION
+    Application installation and management for FFU Builder.
+    Handles Office Deployment Tool, application ISO creation, and
+    provisioned app removal (bloatware cleanup).
+
+.NOTES
+    Module: FFU.Apps
+    Version: 1.0.0
+    Dependencies: FFU.Core
+#>
+
+#Requires -Version 5.1
+
+# Import dependencies
+$modulePath = Split-Path -Parent $PSScriptRoot
+Import-Module "$modulePath\FFU.Core" -Force
+
+function Get-ODTURL {
+    try {
+        [String]$ODTPage = Invoke-WebRequest 'https://www.microsoft.com/en-us/download/details.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
+
+        # Extract JSON data from the webpage
+        if ($ODTPage -match '<script>window\.__DLCDetails__=(.*?)<\/script>') {
+            # Parse JSON content
+            $jsonContent = $matches[1] | ConvertFrom-Json
+            $ODTURL = $jsonContent.dlcDetailsView.downloadFile[0].url
+
+            if ($ODTURL) {
+                return $ODTURL
+            }
+            else {
+                WriteLog 'Cannot find the ODT download URL in the JSON content'
+                throw 'Cannot find the ODT download URL in the JSON content'
+            }
+        }
+        else {
+            WriteLog 'Failed to extract JSON content from the ODT webpage'
+            throw 'Failed to extract JSON content from the ODT webpage'
+        }
+    }
+    catch {
+        WriteLog $_.Exception.Message
+        throw 'An error occurred while retrieving the ODT URL.'
+    }
+}
+
+function Get-Office {
+    # If a custom Office Config XML is provided via config file, use its filename for the installation.
+    # The UI script is responsible for copying the file itself to the OfficePath.
+    if ((Get-Variable -Name 'OfficeConfigXMLFile' -ErrorAction SilentlyContinue) -and -not([string]::IsNullOrEmpty($OfficeConfigXMLFile))) {
+        $script:OfficeInstallXML = Split-Path -Path $OfficeConfigXMLFile -Leaf
+        WriteLog "A custom Office configuration file was specified. Using '$($script:OfficeInstallXML)' for installation."
+    }
+    #Download ODT
+    $ODTUrl = Get-ODTURL
+    $ODTInstallFile = "$OfficePath\odtsetup.exe"
+    WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
+    $OriginalVerbosePreference = $VerbosePreference
+    $VerbosePreference = 'SilentlyContinue'
+    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers $Headers -UserAgent $UserAgent
+    $VerbosePreference = $OriginalVerbosePreference
+
+    # Extract ODT
+    WriteLog "Extracting ODT to $OfficePath"
+    Invoke-Process $ODTInstallFile "/extract:$OfficePath /quiet" | Out-Null
+
+    # Run setup.exe with config.xml and modify xml file to download to $OfficePath
+    $xmlContent = [xml](Get-Content $OfficeDownloadXML)
+    $xmlContent.Configuration.Add.SourcePath = $OfficePath
+    $xmlContent.Save($OfficeDownloadXML)
+    Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
+    WriteLog "Downloading M365 Apps/Office to $OfficePath"
+    Invoke-Process $OfficePath\setup.exe "/download $OfficeDownloadXML" | Out-Null
+    Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
+
+    WriteLog "Cleaning up ODT default config files"
+    #Clean up default configuration files
+    Remove-Item -Path "$OfficePath\configuration*" -Force
+
+    #Create Install-Office.ps1 in $orchestrationpath
+    WriteLog "Creating $orchestrationpath\Install-Office.ps1"
+    $installOfficePath = Join-Path -Path $orchestrationpath -ChildPath "Install-Office.ps1"
+    # Create the Install-Office.ps1 file
+    $installOfficeCommand = "& d:\Office\setup.exe /configure d:\office\$OfficeInstallXML"
+    Set-Content -Path $installOfficePath -Value $installOfficeCommand -Force
+    WriteLog "Install-Office.ps1 created successfully at $installOfficePath"
+
+    #Remove the ODT setup file
+    WriteLog "Removing ODT setup file"
+    Remove-Item -Path $ODTInstallFile -Force
+    WriteLog "ODT setup file removed"
+}
+
+function New-AppsISO {
+    #Create Apps ISO file
+    $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
+    #Adding Long Path support for AppsPath to prevent issues with oscdimg
+    $AppsPath = '\\?\' + $AppsPath
+    Invoke-Process $OSCDIMG "-n -m -d $Appspath $AppsISO" | Out-Null
+}
+
+function Remove-Apps {
+
+    # Check if the file exists before attempting to clear it
+    if (Test-Path -Path $wingetWin32jsonFile) {
+        WriteLog "Removing $wingetWin32jsonFile"
+        Remove-Item -Path $wingetWin32jsonFile -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+    # Clean up Win32 and MSStore folders
+    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
+        WriteLog "Cleaning up Win32 folder"
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+    }
+    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
+        WriteLog "Cleaning up MSStore folder"
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+    }
+
+    #Remove the Office Download and ODT
+    if ($InstallOffice) {
+        $ODTPath = "$AppsPath\Office"
+        $OfficeDownloadPath = "$ODTPath\Office"
+        WriteLog 'Removing Office and ODT download'
+        Remove-Item -Path $OfficeDownloadPath -Recurse -Force
+        Remove-Item -Path "$ODTPath\setup.exe"
+        Remove-Item -Path "$orchestrationPath\Install-Office.ps1"
+        WriteLog 'Removal complete'
+    }
+
+    #Remove AppsISO
+    if ($CleanupAppsISO) {
+        WriteLog "Removing $AppsISO"
+        Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+        WriteLog 'Removal complete'
+    }
+}
+
+# Export module members
+Export-ModuleMember -Function @(
+    'Get-ODTURL',
+    'Get-Office',
+    'New-AppsISO',
+    'Remove-Apps'
+)
