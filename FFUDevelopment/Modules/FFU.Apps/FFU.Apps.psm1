@@ -49,16 +49,81 @@ function Get-ODTURL {
 }
 
 function Get-Office {
-    # If a custom Office Config XML is provided via config file, use its filename for the installation.
-    # The UI script is responsible for copying the file itself to the OfficePath.
-    if ((Get-Variable -Name 'OfficeConfigXMLFile' -ErrorAction SilentlyContinue) -and -not([string]::IsNullOrEmpty($OfficeConfigXMLFile))) {
-        $script:OfficeInstallXML = Split-Path -Path $OfficeConfigXMLFile -Leaf
-        WriteLog "A custom Office configuration file was specified. Using '$($script:OfficeInstallXML)' for installation."
+    <#
+    .SYNOPSIS
+    Downloads and configures Microsoft 365 Apps (Office) for FFU deployment
+
+    .DESCRIPTION
+    Downloads Office Deployment Tool (ODT), extracts it, configures download settings,
+    downloads Office files, and creates installation script for VM orchestration.
+
+    .PARAMETER OfficePath
+    Destination folder for Office files (e.g., "C:\FFUDevelopment\Apps\Office")
+
+    .PARAMETER OfficeDownloadXML
+    Path to XML configuration file for Office download
+
+    .PARAMETER OfficeInstallXML
+    Name of XML configuration file for Office installation (default: "DeployFFU.xml")
+
+    .PARAMETER OrchestrationPath
+    Path to orchestration folder where Install-Office.ps1 will be created
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for download progress tracking
+
+    .PARAMETER Headers
+    HTTP headers hashtable for web requests
+
+    .PARAMETER UserAgent
+    User agent string for web requests
+
+    .PARAMETER OfficeConfigXMLFile
+    Optional custom Office configuration XML file path
+
+    .EXAMPLE
+    Get-Office -OfficePath "C:\FFU\Apps\Office" -OfficeDownloadXML "C:\FFU\Apps\Office\Download.xml" `
+               -OrchestrationPath "C:\FFU\Apps\Orchestration" -FFUDevelopmentPath "C:\FFU" `
+               -Headers @{} -UserAgent "Mozilla/5.0"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OfficePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OfficeDownloadXML,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OfficeInstallXML = "DeployFFU.xml",
+
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OfficeConfigXMLFile
+    )
+
+    # If a custom Office Config XML is provided, use its filename for installation
+    if (-not [string]::IsNullOrEmpty($OfficeConfigXMLFile)) {
+        $OfficeInstallXML = Split-Path -Path $OfficeConfigXMLFile -Leaf
+        WriteLog "A custom Office configuration file was specified. Using '$OfficeInstallXML' for installation."
     }
-    #Download ODT
+
+    # Download ODT
     $ODTUrl = Get-ODTURL
-    $ODTInstallFile = "$OfficePath\odtsetup.exe"
+    $ODTInstallFile = Join-Path $OfficePath "odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
+
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers $Headers -UserAgent $UserAgent
@@ -74,22 +139,24 @@ function Get-Office {
     $xmlContent.Save($OfficeDownloadXML)
     Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
-    Invoke-Process $OfficePath\setup.exe "/download $OfficeDownloadXML" | Out-Null
+    $setupExe = Join-Path $OfficePath "setup.exe"
+    Invoke-Process $setupExe "/download $OfficeDownloadXML" | Out-Null
     Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
 
     WriteLog "Cleaning up ODT default config files"
-    #Clean up default configuration files
+    # Clean up default configuration files
     Remove-Item -Path "$OfficePath\configuration*" -Force
 
-    #Create Install-Office.ps1 in $orchestrationpath
-    WriteLog "Creating $orchestrationpath\Install-Office.ps1"
-    $installOfficePath = Join-Path -Path $orchestrationpath -ChildPath "Install-Office.ps1"
+    # Create Install-Office.ps1 in orchestration folder
+    $installOfficePath = Join-Path -Path $OrchestrationPath -ChildPath "Install-Office.ps1"
+    WriteLog "Creating $installOfficePath"
+
     # Create the Install-Office.ps1 file
     $installOfficeCommand = "& d:\Office\setup.exe /configure d:\office\$OfficeInstallXML"
     Set-Content -Path $installOfficePath -Value $installOfficeCommand -Force
     WriteLog "Install-Office.ps1 created successfully at $installOfficePath"
 
-    #Remove the ODT setup file
+    # Remove the ODT setup file
     WriteLog "Removing ODT setup file"
     Remove-Item -Path $ODTInstallFile -Force
     WriteLog "ODT setup file removed"

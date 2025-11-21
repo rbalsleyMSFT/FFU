@@ -1399,14 +1399,20 @@ if ($InstallApps) {
                     }
                     else {
                         WriteLog 'Downloading M365 Apps/Office'
-                        Get-Office
+                        Get-Office -OfficePath $OfficePath -OfficeDownloadXML $OfficeDownloadXML `
+                                   -OfficeInstallXML $OfficeInstallXML -OrchestrationPath $OrchestrationPath `
+                                   -FFUDevelopmentPath $FFUDevelopmentPath -Headers $Headers `
+                                   -UserAgent $UserAgent -OfficeConfigXMLFile $OfficeConfigXMLFile
                         WriteLog 'Downloading M365 Apps/Office completed successfully'
                     }
 
                 }
                 else {
                     WriteLog 'Downloading M365 Apps/Office'
-                    Get-Office
+                    Get-Office -OfficePath $OfficePath -OfficeDownloadXML $OfficeDownloadXML `
+                               -OfficeInstallXML $OfficeInstallXML -OrchestrationPath $OrchestrationPath `
+                               -FFUDevelopmentPath $FFUDevelopmentPath -Headers $Headers `
+                               -UserAgent $UserAgent -OfficeConfigXMLFile $OfficeConfigXMLFile
                     WriteLog 'Downloading M365 Apps/Office completed successfully'
                 }
                 
