@@ -22,14 +22,48 @@
 #Requires -Version 5.1
 
 function Get-ProductsCab {
+    <#
+    .SYNOPSIS
+    Downloads Windows 11 products.cab file from Microsoft Update service
+
+    .DESCRIPTION
+    Retrieves the products.cab file for a specific Windows 11 build and architecture
+    from Microsoft Update servers. Validates download integrity using size and SHA-256
+    hash verification. Used for discovering available Windows updates.
+
+    .PARAMETER OutFile
+    Full path where products.cab will be saved
+
+    .PARAMETER Architecture
+    Target architecture (x64 or arm64)
+
+    .PARAMETER BuildVersion
+    Windows build version (e.g., "10.0.22621" for Windows 11 22H2)
+
+    .PARAMETER UserAgent
+    User agent string for web requests to Microsoft Update service
+
+    .EXAMPLE
+    Get-ProductsCab -OutFile "C:\Temp\products.cab" -Architecture "x64" `
+                    -BuildVersion "10.0.22621" -UserAgent $userAgent
+
+    .OUTPUTS
+    None - Downloads products.cab to specified OutFile path
+    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$OutFile,
+
         [Parameter(Mandatory = $true)]
         [ValidateSet('x64', 'arm64')]
         [string]$Architecture,
+
         [Parameter(Mandatory = $true)]
-        [string]$BuildVersion
+        [string]$BuildVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent
     )
 
     $productsArchitecture = if ($Architecture -eq 'arm64') { 'arm64' } else { 'amd64' }
@@ -216,7 +250,7 @@ function Get-WindowsESD {
             }
 
             $cabArchitecture = if ($WindowsArch -eq 'ARM64') { 'arm64' } else { 'x64' }
-            Get-ProductsCab -OutFile $cabFilePath -Architecture $cabArchitecture -BuildVersion $buildVersion | Out-Null
+            Get-ProductsCab -OutFile $cabFilePath -Architecture $cabArchitecture -BuildVersion $buildVersion -UserAgent $UserAgent | Out-Null
         }
         else {
             throw "Downloading Windows $WindowsRelease is not supported. Please use the -ISOPath parameter to specify the path to the Windows $WindowsRelease ISO file."
@@ -379,9 +413,54 @@ function Get-KBLink {
 }
 
 function Get-UpdateFileInfo {
+    <#
+    .SYNOPSIS
+    Retrieves download information for Windows updates from Microsoft Update Catalog
+
+    .DESCRIPTION
+    Searches Microsoft Update Catalog for specified updates and returns download URLs
+    filtered by target architecture. Used to discover update file names and URLs
+    before downloading. Automatically filters out duplicate entries.
+
+    .PARAMETER Name
+    Array of update names or KB numbers to search for
+
+    .PARAMETER WindowsArch
+    Target Windows architecture (x86, x64, or arm64) for update filtering
+
+    .PARAMETER Headers
+    HTTP headers hashtable for catalog requests (includes session cookies and metadata)
+
+    .PARAMETER UserAgent
+    User agent string to identify the client making catalog requests
+
+    .PARAMETER Filter
+    Array of filter criteria to match against update descriptions
+
+    .EXAMPLE
+    $updates = Get-UpdateFileInfo -Name @('KB5034441') -WindowsArch 'x64' `
+                                   -Headers $headers -UserAgent $userAgent -Filter @('Windows 11', 'x64')
+
+    .OUTPUTS
+    System.Collections.Generic.List[PSCustomObject] - Array of objects with Name and Url properties
+    #>
     [CmdletBinding()]
     param(
-        [string[]]$Name
+        [Parameter(Mandatory = $true)]
+        [string[]]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string]$WindowsArch,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Filter
     )
     $updateFileInfos = [System.Collections.Generic.List[pscustomobject]]::new()
 

@@ -294,7 +294,9 @@ function Get-FFUEnvironment {
             WriteLog "Cleanup-CurrentRunDownloads failed: $($_.Exception.Message)"
         }
         try {
-            Restore-RunJsonBackups -FFUDevelopmentPath $FFUDevelopmentPath
+            Restore-RunJsonBackups -FFUDevelopmentPath $FFUDevelopmentPath `
+                                  -DriversFolder "$FFUDevelopmentPath\Drivers" `
+                                  -orchestrationPath "$FFUDevelopmentPath\Orchestration"
         }
         catch {
             WriteLog "Restore-RunJsonBackups failed: $($_.Exception.Message)"

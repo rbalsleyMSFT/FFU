@@ -68,6 +68,28 @@ function Initialize-DISMService {
 }
 
 function Get-WimFromISO {
+    <#
+    .SYNOPSIS
+    Extracts WIM file path from mounted Windows ISO image
+
+    .DESCRIPTION
+    Mounts a Windows ISO image and locates the install.wim or install.esd file
+    in the sources folder. Returns the full path to the Windows image file.
+
+    .PARAMETER isoPath
+    Full path to the Windows ISO file to mount and extract WIM from
+
+    .EXAMPLE
+    $wimPath = Get-WimFromISO -isoPath "C:\ISOs\Windows11.iso"
+
+    .OUTPUTS
+    System.String - Full path to install.wim or install.esd file
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$isoPath
+    )
     #Mount ISO, get Wim file
     $mountResult = Mount-DiskImage -ImagePath $isoPath -PassThru
     $sourcesFolder = ($mountResult | Get-Volume).DriveLetter + ":\sources\"
@@ -86,14 +108,42 @@ function Get-WimFromISO {
 }
 
 function Get-Index {
+    <#
+    .SYNOPSIS
+    Determines the correct Windows image index for specified SKU
+
+    .DESCRIPTION
+    Analyzes a Windows image file (WIM/ESD) to find the image index that matches
+    the specified SKU. Uses different index selection logic for ISO vs ESD media.
+    Prompts user to select if exact match is not found.
+
+    .PARAMETER WindowsImagePath
+    Full path to the Windows image file (install.wim or install.esd)
+
+    .PARAMETER WindowsSKU
+    Target Windows SKU (e.g., "Pro", "Enterprise", "Home", "Education")
+
+    .PARAMETER ISOPath
+    Optional path to source ISO file. When provided, uses ISO-specific index logic (starts at index 1).
+    When not provided, uses ESD/MCT-specific logic (starts at index 4).
+
+    .EXAMPLE
+    $index = Get-Index -WindowsImagePath "C:\mount\install.wim" -WindowsSKU "Pro" -ISOPath "C:\ISOs\Win11.iso"
+
+    .OUTPUTS
+    System.Int32 - Image index number matching the specified SKU
+    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [string]$WindowsImagePath,
 
         [Parameter(Mandatory = $true)]
-        [string]$WindowsSKU
-    )
+        [string]$WindowsSKU,
 
+        [Parameter(Mandatory = $false)]
+        [string]$ISOPath
+    )
 
     # Get the available indexes using Get-WindowsImage
     $imageIndexes = Get-WindowsImage -ImagePath $WindowsImagePath

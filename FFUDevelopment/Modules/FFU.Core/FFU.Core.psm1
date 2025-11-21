@@ -280,10 +280,34 @@ function New-FFUFileName {
 }
 
 function Export-ConfigFile {
+    <#
+    .SYNOPSIS
+    Exports FFU build configuration parameters to JSON file
+
+    .DESCRIPTION
+    Filters and exports specified build parameters to a JSON configuration file
+    for reuse in future builds. Automatically sorts parameters alphabetically
+    and saves with UTF8 encoding.
+
+    .PARAMETER paramNames
+    Array of parameter names to export to the configuration file
+
+    .PARAMETER ExportConfigFile
+    Full path to the JSON configuration file where parameters will be exported
+
+    .EXAMPLE
+    Export-ConfigFile -paramNames $PSBoundParameters.Keys -ExportConfigFile "C:\FFU\config.json"
+
+    .OUTPUTS
+    None - Writes configuration to file specified by ExportConfigFile parameter
+    #>
     [CmdletBinding()]
     param (
-        [Parameter()]
-        $paramNames
+        [Parameter(Mandatory = $false)]
+        $paramNames,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExportConfigFile
     )
     $filteredParamNames = Get-Parameters -ParamNames $paramNames
 
@@ -864,7 +888,42 @@ function Cleanup-CurrentRunDownloads {
 }
 
 function Restore-RunJsonBackups {
-    param([string]$FFUDevelopmentPath)
+    <#
+    .SYNOPSIS
+    Restores JSON backup files from previous build run
+
+    .DESCRIPTION
+    Restores JSON configuration files (DriverMapping.json, WinGetWin32Apps.json) from
+    backup copies made at the start of the build run. Removes current-run JSON files
+    that don't have backups and were created after the run started.
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment directory path
+
+    .PARAMETER DriversFolder
+    Path to drivers folder containing DriverMapping.json (optional)
+
+    .PARAMETER orchestrationPath
+    Path to orchestration folder containing WinGetWin32Apps.json (optional)
+
+    .EXAMPLE
+    Restore-RunJsonBackups -FFUDevelopmentPath "C:\FFU" -DriversFolder "C:\FFU\Drivers" `
+                           -orchestrationPath "C:\FFU\Orchestration"
+
+    .OUTPUTS
+    None - Restores files in-place from backup locations
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $false)]
+        [string]$orchestrationPath
+    )
     $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
     if ($null -eq $manifest) { return }
     $runStart = [datetime]::Parse($manifest.RunStartUtc)

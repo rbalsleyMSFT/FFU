@@ -20,6 +20,34 @@ $modulePath = Split-Path -Parent $PSScriptRoot
 Import-Module "$modulePath\FFU.Core" -Force
 
 function Get-ODTURL {
+    <#
+    .SYNOPSIS
+    Retrieves the download URL for the Microsoft Office Deployment Tool (ODT)
+
+    .DESCRIPTION
+    Scrapes the Microsoft download page to extract the current ODT download URL
+    from embedded JSON data. Returns the direct download link for officedeploymenttool.exe.
+
+    .PARAMETER Headers
+    HTTP headers hashtable for web requests (includes session cookies and metadata)
+
+    .PARAMETER UserAgent
+    User agent string to identify the client making the request
+
+    .EXAMPLE
+    $url = Get-ODTURL -Headers $headers -UserAgent $userAgent
+
+    .OUTPUTS
+    System.String - Direct download URL for the Office Deployment Tool executable
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent
+    )
     try {
         [String]$ODTPage = Invoke-WebRequest 'https://www.microsoft.com/en-us/download/details.aspx?id=49117' -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
 
@@ -120,7 +148,7 @@ function Get-Office {
     }
 
     # Download ODT
-    $ODTUrl = Get-ODTURL
+    $ODTUrl = Get-ODTURL -Headers $Headers -UserAgent $UserAgent
     $ODTInstallFile = Join-Path $OfficePath "odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
 

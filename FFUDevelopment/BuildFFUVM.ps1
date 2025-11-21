@@ -717,7 +717,7 @@ if ($ExportConfigFile) {
     # Get the parameter names from the script and exclude ExportConfigFile
     $paramNames = $MyInvocation.MyCommand.Parameters.Keys | Where-Object { $_ -ne 'ExportConfigFile' }
     try {
-        Export-ConfigFile($paramNames)
+        Export-ConfigFile -paramNames $paramNames -ExportConfigFile $ExportConfigFile
         WriteLog "Config file exported to $ExportConfigFile"
     }
     catch {
@@ -1745,10 +1745,10 @@ try {
             if (($WindowsRelease -eq 2016 -and $installationType -eq "Server") -or ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC)) {
                 $SSUName = if ($isLTSC) { """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch""" } else { """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch""" }
                 WriteLog "Searching for $SSUName from Microsoft Update Catalog"
-                (Get-UpdateFileInfo -Name $SSUName) | ForEach-Object { $ssuUpdateInfos.Add($_) }
+                (Get-UpdateFileInfo -Name $SSUName -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $ssuUpdateInfos.Add($_) }
             }
             WriteLog "Searching for $Name from Microsoft Update Catalog"
-            (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $cuUpdateInfos.Add($_) }
+            (Get-UpdateFileInfo -Name $Name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $cuUpdateInfos.Add($_) }
             $cuKbArticleId = $global:LastKBArticleID
         }
 
@@ -1756,7 +1756,7 @@ try {
             Writelog "`$UpdatePreviewCU is set to true, checking for latest Preview CU"
             $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
             WriteLog "Searching for $Name from Microsoft Update Catalog"
-            (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $cupUpdateInfos.Add($_) }
+            (Get-UpdateFileInfo -Name $Name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $cupUpdateInfos.Add($_) }
             $cupKbArticleId = $global:LastKBArticleID
         }
 
@@ -1766,19 +1766,19 @@ try {
                 if ($ssuUpdateInfos.Count -eq 0) {
                     $SSUName = """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch"""
                     WriteLog "Searching for $SSUName from Microsoft Update Catalog"
-                    (Get-UpdateFileInfo -Name $SSUName) | ForEach-Object { $ssuUpdateInfos.Add($_) }
+                    (Get-UpdateFileInfo -Name $SSUName -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $ssuUpdateInfos.Add($_) }
                 }
                 if ($WindowsRelease -in 2016) { $name = """Cumulative Update for .NET Framework 4.8 for Windows 10 version $WindowsVersion for $WindowsArch""" }
                 if ($WindowsRelease -eq 2019) { $name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows 10 Version $WindowsVersion for $WindowsArch""" }
                 if ($WindowsRelease -eq 2021) { $name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1 for Windows 10 Version $WindowsVersion for $WindowsArch""" }
                 WriteLog "Searching for $name from Microsoft Update Catalog"
-                (Get-UpdateFileInfo -Name $name) | ForEach-Object { $netUpdateInfos.Add($_) }
+                (Get-UpdateFileInfo -Name $name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $netUpdateInfos.Add($_) }
                 $netKbArticleId = $global:LastKBArticleID
 
                 if ($WindowsRelease -eq 2021) { $NETFeatureName = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64""" }
                 if ($WindowsRelease -in 2016, 2019) { $NETFeatureName = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64""" }
                 WriteLog "Checking for latest .NET Framework feature pack: $NETFeatureName"
-                (Get-UpdateFileInfo -Name $NETFeatureName) | ForEach-Object { $netFeatureUpdateInfos.Add($_) }
+                (Get-UpdateFileInfo -Name $NETFeatureName -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $netFeatureUpdateInfos.Add($_) }
             }
             else {
                 if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch -preview" }
@@ -1788,7 +1788,7 @@ try {
                 if ($WindowsRelease -eq 2019 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64""" }
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64""" }
                 WriteLog "Searching for $Name from Microsoft Update Catalog"
-                (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $netUpdateInfos.Add($_) }
+                (Get-UpdateFileInfo -Name $Name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $netUpdateInfos.Add($_) }
                 $netKbArticleId = $global:LastKBArticleID
             }
         }
@@ -1798,7 +1798,7 @@ try {
             if ($WindowsRelease -eq 2016) { $name = "KB4589210 $windowsArch" }
             if ($WindowsRelease -eq 2019) { $name = "KB4589208 $windowsArch" }
             WriteLog "Searching for $name from Microsoft Update Catalog"
-            (Get-UpdateFileInfo -Name $name) | ForEach-Object { $microcodeUpdateInfos.Add($_) }
+            (Get-UpdateFileInfo -Name $name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $microcodeUpdateInfos.Add($_) }
         }
         
         $requiredUpdates.AddRange($ssuUpdateInfos)
@@ -1943,7 +1943,7 @@ try {
     if (-Not $cachedVHDXFileFound) {
         Set-Progress -Percentage 15 -Message "Creating VHDX and applying base Windows image..."
         if ($ISOPath) {
-            $wimPath = Get-WimFromISO
+            $wimPath = Get-WimFromISO -isoPath $ISOPath
         }
         else {
             $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch `
@@ -1953,7 +1953,7 @@ try {
         }
         #If index not specified by user, try and find based on WindowsSKU
         if (-not($index) -and ($WindowsSKU)) {
-            $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+            $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU -ISOPath $ISOPath
         }
 
         $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
