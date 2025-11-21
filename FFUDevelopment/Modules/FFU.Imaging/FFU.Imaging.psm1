@@ -166,7 +166,7 @@ function New-ScratchVhdx {
 
     WriteLog "Creating new Scratch VHDX..."
 
-    $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
+    $newVHDX = New-VHD -Path $VhdxPath -SizeBytes $SizeBytes -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Dynamic:($Dynamic.IsPresent)
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
@@ -377,9 +377,127 @@ function Optimize-FFUCaptureDrive {
 }
 
 function New-FFU {
+    <#
+    .SYNOPSIS
+    Creates FFU (Full Flash Update) image from VM or VHDX
+
+    .DESCRIPTION
+    Captures FFU image from a running VM (if InstallApps=true) or directly from VHDX.
+    Optionally injects drivers and optimizes the FFU for deployment.
+
+    .PARAMETER VMName
+    Optional VM name (required if InstallApps is true)
+
+    .PARAMETER InstallApps
+    Boolean indicating if apps were installed in VM
+
+    .PARAMETER CaptureISO
+    Path to WinPE capture ISO
+
+    .PARAMETER VMSwitchName
+    Name of Hyper-V virtual switch for VM network
+
+    .PARAMETER FFUCaptureLocation
+    Directory where FFU file will be saved
+
+    .PARAMETER AllowVHDXCaching
+    Boolean indicating if VHDX caching is enabled
+
+    .PARAMETER CustomFFUNameTemplate
+    Custom template for FFU filename
+
+    .PARAMETER ShortenedWindowsSKU
+    Shortened Windows SKU name for FFU filename
+
+    .PARAMETER VHDXPath
+    Path to VHDX file
+
+    .PARAMETER DandIEnv
+    Path to Deployment and Imaging Environment batch file
+
+    .PARAMETER VhdxDisk
+    VHDX disk object
+
+    .PARAMETER CachedVHDXInfo
+    Cached VHDX information object
+
+    .PARAMETER InstallationType
+    Installation type (Client or Server)
+
+    .PARAMETER InstallDrivers
+    Boolean indicating if drivers should be injected
+
+    .PARAMETER Optimize
+    Boolean indicating if FFU should be optimized
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER DriversFolder
+    Path to drivers folder
+
+    .EXAMPLE
+    New-FFU -VMName "_FFU-Build" -InstallApps $true -CaptureISO "C:\FFU\Capture.iso" `
+            -VMSwitchName "Default Switch" -FFUCaptureLocation "C:\FFU" `
+            -AllowVHDXCaching $false -CustomFFUNameTemplate "" `
+            -ShortenedWindowsSKU "Pro" -VHDXPath "C:\FFU\disk.vhdx" `
+            -DandIEnv "C:\ADK\DandISetEnv.bat" -VhdxDisk $disk `
+            -CachedVHDXInfo $null -InstallationType "Client" `
+            -InstallDrivers $true -Optimize $true `
+            -FFUDevelopmentPath "C:\FFU" -DriversFolder "C:\FFU\Drivers"
+    #>
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $false)]
-        [string]$VMName
+        [string]$VMName,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$InstallApps,
+
+        [Parameter(Mandatory = $false)]
+        [string]$CaptureISO,
+
+        [Parameter(Mandatory = $false)]
+        [string]$VMSwitchName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUCaptureLocation,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$AllowVHDXCaching,
+
+        [Parameter(Mandatory = $false)]
+        [string]$CustomFFUNameTemplate,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ShortenedWindowsSKU,
+
+        [Parameter(Mandatory = $false)]
+        [string]$VHDXPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DandIEnv,
+
+        [Parameter(Mandatory = $false)]
+        $VhdxDisk,
+
+        [Parameter(Mandatory = $false)]
+        $CachedVHDXInfo,
+
+        [Parameter(Mandatory = $false)]
+        [string]$InstallationType,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$InstallDrivers,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$Optimize,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$DriversFolder
     )
     #If $InstallApps = $true, configure the VM
     If ($InstallApps) {

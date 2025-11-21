@@ -18,9 +18,60 @@
 #Requires -RunAsAdministrator
 
 function New-FFUVM {
+    <#
+    .SYNOPSIS
+    Creates a new Generation 2 Hyper-V virtual machine for FFU build process
+
+    .DESCRIPTION
+    Creates and configures a new Hyper-V VM with TPM, mounts the Apps ISO,
+    configures boot settings, and starts the VM with vmconnect.
+
+    .PARAMETER VMName
+    Name of the virtual machine to create
+
+    .PARAMETER VMPath
+    Path where the VM configuration files will be stored
+
+    .PARAMETER Memory
+    Memory allocation for the VM in bytes (e.g., 8GB = 8589934592)
+
+    .PARAMETER VHDXPath
+    Path to the VHDX file to attach to the VM
+
+    .PARAMETER Processors
+    Number of virtual processors to assign to the VM
+
+    .PARAMETER AppsISO
+    Path to the Apps ISO file to mount to the VM
+
+    .EXAMPLE
+    New-FFUVM -VMName "_FFU-Build-Win11" -VMPath "C:\FFU\VM" -Memory 8GB `
+              -VHDXPath "C:\FFU\VM\disk.vhdx" -Processors 4 -AppsISO "C:\FFU\Apps.iso"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VMName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$VMPath,
+
+        [Parameter(Mandatory = $true)]
+        [uint64]$Memory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$VHDXPath,
+
+        [Parameter(Mandatory = $true)]
+        [int]$Processors,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppsISO
+    )
+
     #Create new Gen2 VM
-    $VM = New-VM -Name $VMName -Path $VMPath -MemoryStartupBytes $memory -VHDPath $VHDXPath -Generation 2
-    Set-VMProcessor -VMName $VMName -Count $processors
+    $VM = New-VM -Name $VMName -Path $VMPath -MemoryStartupBytes $Memory -VHDPath $VHDXPath -Generation 2
+    Set-VMProcessor -VMName $VMName -Count $Processors
 
     #Mount AppsISO
     Add-VMDvdDrive -VMName $VMName -Path $AppsISO
@@ -48,9 +99,50 @@ function New-FFUVM {
 }
 
 function Remove-FFUVM {
+    <#
+    .SYNOPSIS
+    Removes FFU build VM and associated resources
+
+    .DESCRIPTION
+    Removes the Hyper-V VM, HGS Guardian, certificates, VHDX files, and cleans up
+    orphaned mounted images. Can be called with or without VMName for different
+    cleanup scenarios.
+
+    .PARAMETER VMName
+    Optional name of the VM to remove. If not specified, only VHDX cleanup is performed.
+
+    .PARAMETER VMPath
+    Path to the VM configuration directory to remove
+
+    .PARAMETER InstallApps
+    Boolean indicating if apps were installed (affects cleanup behavior)
+
+    .PARAMETER VhdxDisk
+    VHDX disk object for cleanup validation
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for mount folder cleanup
+
+    .EXAMPLE
+    Remove-FFUVM -VMName "_FFU-Build-Win11" -VMPath "C:\FFU\VM\_FFU-Build-Win11" `
+                 -InstallApps $true -VhdxDisk $disk -FFUDevelopmentPath "C:\FFU"
+    #>
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $false)]
-        [string]$VMName
+        [string]$VMName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$VMPath,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$InstallApps,
+
+        [Parameter(Mandatory = $false)]
+        $VhdxDisk,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
     )
     #Get the VM object and remove the VM, the HGSGuardian, and the certs
     If ($VMName) {
@@ -77,7 +169,7 @@ function Remove-FFUVM {
         WriteLog 'Cert removal complete'
     }
     #If just building the FFU from vhdx, remove the vhdx path
-    If (-not $InstallApps -and $vhdxDisk) {
+    If (-not $InstallApps -and $VhdxDisk) {
         WriteLog 'Cleaning up VHDX'
         WriteLog "Removing $VMPath"
         Remove-Item -Path $VMPath -Force -Recurse | Out-Null
@@ -95,7 +187,7 @@ function Remove-FFUVM {
         }
     }
     #Remove Mount folder if it exists
-    If (Test-Path -Path $FFUDevelopmentPath\Mount) {
+    If (Test-Path -Path "$FFUDevelopmentPath\Mount") {
         WriteLog "Remove $FFUDevelopmentPath\Mount folder"
         Remove-Item -Path "$FFUDevelopmentPath\Mount" -Recurse -Force
         WriteLog 'Folder removed'
@@ -107,6 +199,78 @@ function Remove-FFUVM {
 }
 
 function Get-FFUEnvironment {
+    <#
+    .SYNOPSIS
+    Cleans up FFU build environment after failed or incomplete builds
+
+    .DESCRIPTION
+    Performs comprehensive environment cleanup including VMs, VHDXs, mounted images,
+    stale downloads, user accounts, and temporary files. Called when dirty.txt is detected
+    or when explicit cleanup is requested.
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER CleanupCurrentRunDownloads
+    Boolean indicating whether to clean up current run downloads
+
+    .PARAMETER VMLocation
+    Path to VM storage location (defaults to FFUDevelopmentPath\VM if not provided)
+
+    .PARAMETER UserName
+    FFU user account name to remove
+
+    .PARAMETER RemoveApps
+    Boolean indicating whether to remove Apps folder
+
+    .PARAMETER AppsPath
+    Path to Apps folder
+
+    .PARAMETER RemoveUpdates
+    Boolean indicating whether to remove Updates folder
+
+    .PARAMETER KBPath
+    Path to KB updates folder
+
+    .PARAMETER AppsISO
+    Path to Apps ISO file
+
+    .EXAMPLE
+    Get-FFUEnvironment -FFUDevelopmentPath "C:\FFU" -CleanupCurrentRunDownloads $true `
+                       -VMLocation "C:\FFU\VM" -UserName "ffu_user" -RemoveApps $false `
+                       -AppsPath "C:\FFU\Apps" -RemoveUpdates $false -KBPath "C:\FFU\KB" `
+                       -AppsISO "C:\FFU\Apps.iso"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$CleanupCurrentRunDownloads,
+
+        [Parameter(Mandatory = $false)]
+        [string]$VMLocation,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserName,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$RemoveApps,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppsPath,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$RemoveUpdates,
+
+        [Parameter(Mandatory = $true)]
+        [string]$KBPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppsISO
+    )
+
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
     try {
         Remove-InProgressItems -FFUDevelopmentPath $FFUDevelopmentPath
@@ -138,7 +302,10 @@ function Get-FFUEnvironment {
                 Stop-VM -Name $vm.Name -TurnOff -Force
             }
             # If conditions are met, delete the VM
-            Remove-FFUVM -VMName $vm.Name
+            # Note: For old VMs we may not have VMPath, so we derive it
+            $vmPath = Join-Path $FFUDevelopmentPath "VM\$($vm.Name)"
+            Remove-FFUVM -VMName $vm.Name -VMPath $vmPath -InstallApps $true `
+                         -VhdxDisk $null -FFUDevelopmentPath $FFUDevelopmentPath
         }
     }
     # Check for MSFT Virtual disks where location contains FFUDevelopment in the path

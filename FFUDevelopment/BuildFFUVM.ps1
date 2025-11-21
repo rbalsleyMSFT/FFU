@@ -697,7 +697,12 @@ if (-not $Cleanup) {
 if ($Cleanup) {
     WriteLog 'User cancelled, starting cleanup process'
     WriteLog 'Cleanup requested via -Cleanup. Running Get-FFUEnvironment...'
-    Get-FFUEnvironment
+    Get-FFUEnvironment -FFUDevelopmentPath $FFUDevelopmentPath `
+                       -CleanupCurrentRunDownloads $CleanupCurrentRunDownloads `
+                       -VMLocation $VMLocation -UserName $UserName `
+                       -RemoveApps $RemoveApps -AppsPath $AppsPath `
+                       -RemoveUpdates $RemoveUpdates -KBPath $KBPath `
+                       -AppsISO $AppsISO
     return
 }
 
@@ -965,7 +970,12 @@ LogVariableValues
 
 #Check if environment is dirty
 If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
-    Get-FFUEnvironment
+    Get-FFUEnvironment -FFUDevelopmentPath $FFUDevelopmentPath `
+                       -CleanupCurrentRunDownloads $CleanupCurrentRunDownloads `
+                       -VMLocation $VMLocation -UserName $UserName `
+                       -RemoveApps $RemoveApps -AppsPath $AppsPath `
+                       -RemoveUpdates $RemoveUpdates -KBPath $KBPath `
+                       -AppsISO $AppsISO
 }
 WriteLog 'Creating dirty.txt file'
 New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
@@ -1179,23 +1189,31 @@ elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
     try {
         if ($Make -eq 'HP') {
             WriteLog 'Getting HP drivers'
-            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion
+            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease `
+                          -WindowsVersion $WindowsVersion -DriversFolder $DriversFolder `
+                          -FFUDevelopmentPath $FFUDevelopmentPath
             WriteLog 'Getting HP drivers completed successfully'
         }
         if ($make -eq 'Microsoft') {
             WriteLog 'Getting Microsoft drivers'
-            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsRelease $WindowsRelease `
+                                -Headers $Headers -UserAgent $UserAgent -DriversFolder $DriversFolder `
+                                -FFUDevelopmentPath $FFUDevelopmentPath
             WriteLog 'Getting Microsoft drivers completed successfully'
         }
         if ($make -eq 'Lenovo') {
             WriteLog 'Getting Lenovo drivers'
-            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            Get-LenovoDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease `
+                              -Headers $Headers -UserAgent $UserAgent -DriversFolder $DriversFolder `
+                              -FFUDevelopmentPath $FFUDevelopmentPath
             WriteLog 'Getting Lenovo drivers completed successfully'
         }
         if ($make -eq 'Dell') {
             WriteLog 'Getting Dell drivers'
             #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
-            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            Get-DellDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease `
+                            -DriversFolder $DriversFolder -FFUDevelopmentPath $FFUDevelopmentPath `
+                            -isServer $isServer
             WriteLog 'Getting Dell drivers completed successfully'
         }
     }
@@ -1928,7 +1946,10 @@ try {
             $wimPath = Get-WimFromISO
         }
         else {
-            $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
+            $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch `
+                                      -WindowsLang $WindowsLang -MediaType $mediaType `
+                                      -TempPath $PSScriptRoot -Headers $Headers -UserAgent $UserAgent `
+                                      -WindowsVersion $WindowsVersion -FFUDevelopmentPath $FFUDevelopmentPath
         }
         #If index not specified by user, try and find based on WindowsSKU
         if (-not($index) -and ($WindowsSKU)) {
@@ -2153,15 +2174,17 @@ if ($InstallApps) {
     #Create VM and attach VHDX
     try {
         WriteLog 'Creating new FFU VM'
-        $FFUVM = New-FFUVM
+        $FFUVM = New-FFUVM -VMName $VMName -VMPath $VMPath -Memory $memory `
+                           -VHDXPath $VHDXPath -Processors $processors -AppsISO $AppsISO
         WriteLog 'FFU VM Created'
     }
     catch {
         Write-Host 'VM creation failed'
         Writelog "VM creation failed with error $_"
-        Remove-FFUVM -VMName $VMName
+        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
         throw $_
-        
+
     }
     #Create ffu user and share to capture FFU to
     try {
@@ -2170,9 +2193,10 @@ if ($InstallApps) {
     catch {
         Write-Host 'Set-CaptureFFU function failed'
         WriteLog "Set-CaptureFFU function failed with error $_"
-        Remove-FFUVM -VMName $VMName
+        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
         throw $_
-        
+
     }
     If ($CreateCaptureMedia) {
         #Create Capture Media
@@ -2184,9 +2208,10 @@ if ($InstallApps) {
         catch {
             Write-Host 'Creating capture media failed'
             WriteLog "Creating capture media failed with error $_"
-            Remove-FFUVM -VMName $VMName
+            Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                         -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
             throw $_
-        
+
         }
     }    
 }
@@ -2210,7 +2235,14 @@ try {
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
-        New-FFU $FFUVM.Name
+        New-FFU -VMName $FFUVM.Name -InstallApps $InstallApps -CaptureISO $CaptureISO `
+                -VMSwitchName $VMSwitchName -FFUCaptureLocation $FFUCaptureLocation `
+                -AllowVHDXCaching $AllowVHDXCaching -CustomFFUNameTemplate $CustomFFUNameTemplate `
+                -ShortenedWindowsSKU $shortenedWindowsSKU -VHDXPath $VHDXPath `
+                -DandIEnv $DandIEnv -VhdxDisk $vhdxDisk -CachedVHDXInfo $cachedVHDXInfo `
+                -InstallationType $installationType -InstallDrivers $InstallDrivers `
+                -Optimize $Optimize -FFUDevelopmentPath $FFUDevelopmentPath `
+                -DriversFolder $DriversFolder
     }
     else {
         Set-Progress -Percentage 81 -Message "Starting FFU capture from VHDX..."
@@ -2219,19 +2251,27 @@ try {
         $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
         WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
         #Create FFU file
-        New-FFU
+        New-FFU -InstallApps $InstallApps -FFUCaptureLocation $FFUCaptureLocation `
+                -AllowVHDXCaching $AllowVHDXCaching -CustomFFUNameTemplate $CustomFFUNameTemplate `
+                -ShortenedWindowsSKU $shortenedWindowsSKU -VHDXPath $VHDXPath `
+                -DandIEnv $DandIEnv -VhdxDisk $vhdxDisk -CachedVHDXInfo $cachedVHDXInfo `
+                -InstallationType $installationType -InstallDrivers $InstallDrivers `
+                -Optimize $Optimize -FFUDevelopmentPath $FFUDevelopmentPath `
+                -DriversFolder $DriversFolder
     }    
 }
 Catch {
     Write-Host 'Capturing FFU file failed'
     Writelog "Capturing FFU file failed with error $_"
     If ($InstallApps) {
-        Remove-FFUVM -VMName $VMName
+        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
     }
     else {
-        Remove-FFUVM
+        Remove-FFUVM -VMPath $VMPath -InstallApps $InstallApps `
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
     }
-    
+
     throw $_
     
 }
@@ -2243,7 +2283,8 @@ If ($InstallApps) {
     catch {
         Write-Host 'Cleaning up FFU User and/or share failed'
         WriteLog "Cleaning up FFU User and/or share failed with error $_"
-        Remove-FFUVM -VMName $VMName
+        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
         throw $_
     }
     #Clean up Apps
@@ -2273,7 +2314,8 @@ If ($InstallApps) {
 }
 #Clean up VM or VHDX
 try {
-    Remove-FFUVM
+    Remove-FFUVM -VMPath $VMPath -InstallApps $InstallApps `
+                 -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
     WriteLog 'FFU build complete!'
 }
 catch {

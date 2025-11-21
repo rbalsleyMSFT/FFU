@@ -12,7 +12,14 @@
       "Bash(Select-Object -ExpandProperty Path)",
       "Bash(New-Item -ItemType Directory -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.VM\" -Force)",
       "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.VM\")",
-      "Bash(cmd /c \"dir /b\")"
+      "Bash(cmd /c \"dir /b\")",
+      "Bash(Get-ChildItem -Path C:claudeFFUBuilder -Name)",
+      "Bash(Remove-Item \"C:\\claude\\FFUBuilder\\FFUDevelopment\\remove-functions.ps1\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item \"C:\\claude\\FFUBuilder\\FFUDevelopment\\test-syntax.ps1\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\FFU.Common\")",
+      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\FFUUI.Core\")",
+      "Bash(Select-Object -First 100)",
+      "Bash(Select-Object -First 50)"
     ],
     "deny": [],
     "ask": []

@@ -112,6 +112,48 @@ function Get-ProductsCab {
 }
 
 function Get-WindowsESD {
+    <#
+    .SYNOPSIS
+    Downloads Windows ESD (Electronic Software Distribution) file from Microsoft
+
+    .DESCRIPTION
+    Downloads the Windows 10 or 11 ESD file from Microsoft's official servers.
+    For Windows 11, downloads and parses products.cab. For Windows 10, uses direct download link.
+
+    .PARAMETER WindowsRelease
+    Windows release version (10 or 11)
+
+    .PARAMETER WindowsArch
+    Windows architecture (x86, x64, or ARM64)
+
+    .PARAMETER WindowsLang
+    Windows language code (e.g., en-us)
+
+    .PARAMETER MediaType
+    Media type: consumer or business
+
+    .PARAMETER TempPath
+    Temporary path for downloading cab/XML files
+
+    .PARAMETER Headers
+    HTTP headers hashtable for web requests
+
+    .PARAMETER UserAgent
+    User agent string for web requests
+
+    .PARAMETER WindowsVersion
+    Windows version (e.g., 22H2, 23H2, 24H2) for Windows 11
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for download progress tracking
+
+    .EXAMPLE
+    Get-WindowsESD -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'en-us' `
+                   -MediaType 'consumer' -TempPath 'C:\Temp' -Headers @{} `
+                   -UserAgent 'Mozilla/5.0' -WindowsVersion '24H2' `
+                   -FFUDevelopmentPath 'C:\FFU'
+    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
         [ValidateSet(10, 11)]
@@ -126,14 +168,29 @@ function Get-WindowsESD {
 
         [Parameter(Mandatory = $false)]
         [ValidateSet('consumer', 'business')]
-        [string]$MediaType
+        [string]$MediaType,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TempPath,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
     )
     WriteLog "Downloading Windows $WindowsRelease ESD file"
     WriteLog "Windows Architecture: $WindowsArch"
     WriteLog "Windows Language: $WindowsLang"
     WriteLog "Windows Media Type: $MediaType"
 
-    $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
+    $cabFilePath = Join-Path $TempPath "tempCabFile.cab"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
     try {
@@ -172,7 +229,7 @@ function Get-WindowsESD {
 
     # Extract XML from cab file
     WriteLog "Extracting Products XML from cab"
-    $xmlFilePath = Join-Path $PSScriptRoot "products.xml"
+    $xmlFilePath = Join-Path $TempPath "products.xml"
     Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" | Out-Null
     WriteLog "Products XML extracted"
 
@@ -185,7 +242,7 @@ function Get-WindowsESD {
     # Find FilePath values based on WindowsArch, WindowsLang, and MediaType
     foreach ($file in $xmlContent.MCT.Catalogs.Catalog.PublishedMedia.Files.File) {
         if ($file.Architecture -eq $WindowsArch -and $file.LanguageCode -eq $WindowsLang -and $file.FilePath -like "*$clientType*") {
-            $esdFilePath = Join-Path $PSScriptRoot (Split-Path $file.FilePath -Leaf)
+            $esdFilePath = Join-Path $TempPath (Split-Path $file.FilePath -Leaf)
             #Download if ESD file doesn't already exist
             If (-not (Test-Path $esdFilePath)) {
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"

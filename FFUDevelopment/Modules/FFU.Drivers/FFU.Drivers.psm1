@@ -16,10 +16,64 @@
 #Requires -Version 5.1
 
 function Get-MicrosoftDrivers {
+    <#
+    .SYNOPSIS
+    Downloads and extracts Microsoft Surface drivers for FFU builds
+
+    .DESCRIPTION
+    Downloads Microsoft Surface drivers from the official Microsoft support page,
+    parses available models, and extracts the appropriate driver package for the
+    specified Surface model and Windows version.
+
+    .PARAMETER Make
+    OEM manufacturer name (e.g., "Microsoft")
+
+    .PARAMETER Model
+    Surface model name (e.g., "Surface Pro 9")
+
+    .PARAMETER WindowsRelease
+    Windows release version (10 or 11)
+
+    .PARAMETER Headers
+    HTTP headers for web requests
+
+    .PARAMETER UserAgent
+    User agent string for web requests
+
+    .PARAMETER DriversFolder
+    Root path where drivers should be downloaded and extracted
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for download tracking
+
+    .EXAMPLE
+    Get-MicrosoftDrivers -Make "Microsoft" -Model "Surface Pro 9" -WindowsRelease 11 `
+                        -Headers $Headers -UserAgent $UserAgent -DriversFolder "C:\FFU\Drivers" `
+                        -FFUDevelopmentPath "C:\FFU"
+    #>
+    [CmdletBinding()]
     param (
+        [Parameter(Mandatory = $true)]
         [string]$Make,
+
+        [Parameter(Mandatory = $true)]
         [string]$Model,
-        [int]$WindowsRelease
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet(10, 11)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
     )
 
     $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
@@ -228,20 +282,65 @@ function Get-MicrosoftDrivers {
 }
 
 function Get-HPDrivers {
+    <#
+    .SYNOPSIS
+    Downloads and extracts HP drivers for FFU builds
+
+    .DESCRIPTION
+    Downloads HP driver catalog, parses available models, and extracts the
+    appropriate driver packages for the specified HP model and Windows version.
+    Uses HP Image Assistant (HPIA) cloud catalog for driver discovery.
+
+    .PARAMETER Make
+    OEM manufacturer name (e.g., "HP")
+
+    .PARAMETER Model
+    HP model name (e.g., "EliteBook 840 G8")
+
+    .PARAMETER WindowsArch
+    Windows architecture (x64, x86, or ARM64)
+
+    .PARAMETER WindowsRelease
+    Windows release version (10 or 11)
+
+    .PARAMETER WindowsVersion
+    Specific Windows version/build (e.g., "21H2", "22H2")
+
+    .PARAMETER DriversFolder
+    Root path where drivers should be downloaded and extracted
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for download tracking
+
+    .EXAMPLE
+    Get-HPDrivers -Make "HP" -Model "EliteBook 840 G8" -WindowsArch "x64" `
+                  -WindowsRelease 11 -WindowsVersion "22H2" -DriversFolder "C:\FFU\Drivers" `
+                  -FFUDevelopmentPath "C:\FFU"
+    #>
     [CmdletBinding()]
     param (
-        [Parameter()]
+        [Parameter(Mandatory = $true)]
         [string]$Make,
-        [Parameter()]
+
+        [Parameter(Mandatory = $true)]
         [string]$Model,
-        [Parameter()]
+
+        [Parameter(Mandatory = $true)]
         [ValidateSet("x64", "x86", "ARM64")]
         [string]$WindowsArch,
-        [Parameter()]
+
+        [Parameter(Mandatory = $true)]
         [ValidateSet(10, 11)]
         [int]$WindowsRelease,
-        [Parameter()]
-        [string]$WindowsVersion
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
     )
 
     # Download and extract the PlatformList.cab
@@ -457,15 +556,71 @@ function Get-HPDrivers {
 }
 
 function Get-LenovoDrivers {
+    <#
+    .SYNOPSIS
+    Downloads and extracts Lenovo drivers for FFU builds
+
+    .DESCRIPTION
+    Downloads Lenovo driver catalog, parses available models using PSREF API,
+    and extracts the appropriate driver packages for the specified Lenovo model
+    and Windows version.
+
+    .PARAMETER Make
+    OEM manufacturer name (e.g., "Lenovo")
+
+    .PARAMETER Model
+    Lenovo model name or machine type (e.g., "ThinkPad X1 Carbon Gen 9" or "20XW")
+
+    .PARAMETER WindowsArch
+    Windows architecture (x64, x86, or ARM64)
+
+    .PARAMETER WindowsRelease
+    Windows release version (10 or 11)
+
+    .PARAMETER Headers
+    HTTP headers for web requests (modified by function to add PSREF authentication)
+
+    .PARAMETER UserAgent
+    User agent string for web requests
+
+    .PARAMETER DriversFolder
+    Root path where drivers should be downloaded and extracted
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for download tracking
+
+    .EXAMPLE
+    Get-LenovoDrivers -Make "Lenovo" -Model "ThinkPad X1 Carbon Gen 9" -WindowsArch "x64" `
+                      -WindowsRelease 11 -Headers $Headers -UserAgent $UserAgent `
+                      -DriversFolder "C:\FFU\Drivers" -FFUDevelopmentPath "C:\FFU"
+    #>
+    [CmdletBinding()]
     param (
-        [Parameter()]
+        [Parameter(Mandatory = $true)]
+        [string]$Make,
+
+        [Parameter(Mandatory = $true)]
         [string]$Model,
-        [Parameter()]
+
+        [Parameter(Mandatory = $true)]
         [ValidateSet("x64", "x86", "ARM64")]
         [string]$WindowsArch,
-        [Parameter()]
+
+        [Parameter(Mandatory = $true)]
         [ValidateSet(10, 11)]
-        [int]$WindowsRelease
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $true)]
+        [string]$UserAgent,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
     )
 
     function Get-LenovoPSREF {
@@ -699,14 +854,64 @@ function Get-LenovoDrivers {
 }
 
 function Get-DellDrivers {
+    <#
+    .SYNOPSIS
+    Downloads and extracts Dell drivers for FFU builds
+
+    .DESCRIPTION
+    Downloads Dell driver catalog, parses available models, and extracts the
+    appropriate driver packages for the specified Dell model and Windows version.
+    Uses Dell's online catalog for driver discovery.
+
+    .PARAMETER Make
+    OEM manufacturer name (e.g., "Dell")
+
+    .PARAMETER Model
+    Dell model name (e.g., "Latitude 7490", "OptiPlex 7080")
+
+    .PARAMETER WindowsArch
+    Windows architecture (x64, x86, or ARM64)
+
+    .PARAMETER WindowsRelease
+    Windows release version (10, 11, 2016, 2019, 2022, 2025)
+
+    .PARAMETER DriversFolder
+    Root path where drivers should be downloaded and extracted
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for download tracking
+
+    .PARAMETER isServer
+    Boolean indicating if target OS is Windows Server (affects driver extraction behavior)
+
+    .EXAMPLE
+    Get-DellDrivers -Make "Dell" -Model "Latitude 7490" -WindowsArch "x64" `
+                    -WindowsRelease 11 -DriversFolder "C:\FFU\Drivers" `
+                    -FFUDevelopmentPath "C:\FFU" -isServer $false
+    #>
+    [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
+        [string]$Make,
+
+        [Parameter(Mandatory = $true)]
         [string]$Model,
+
         [Parameter(Mandatory = $true)]
         [ValidateSet("x64", "x86", "ARM64")]
         [string]$WindowsArch,
+
         [Parameter(Mandatory = $true)]
-        [int]$WindowsRelease
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$isServer
     )
 
     if (-not (Test-Path -Path $DriversFolder)) {
@@ -930,11 +1135,39 @@ function Get-DellDrivers {
 }
 
 function Copy-Drivers {
+    <#
+    .SYNOPSIS
+    Copies WinPE-compatible drivers from OEM driver repository to deployment media
+
+    .DESCRIPTION
+    Filters and copies essential drivers (system, storage, HID) from downloaded OEM
+    driver packages to WinPE media. Uses device class GUIDs to identify required
+    drivers and excludes unnecessary components (audio, camera, firmware) to minimize
+    media size.
+
+    .PARAMETER Path
+    Source path containing OEM driver packages to filter
+
+    .PARAMETER Output
+    Destination path where filtered drivers will be copied (typically WinPE media)
+
+    .PARAMETER WindowsArch
+    Windows architecture (x64, x86, or ARM64) - used to copy architecture-specific driver files
+
+    .EXAMPLE
+    Copy-Drivers -Path "C:\FFU\Drivers\Dell\Latitude 7490" -Output "C:\FFU\PEDrivers" -WindowsArch "x64"
+    #>
+    [CmdletBinding()]
     param (
-        [Parameter()]
+        [Parameter(Mandatory = $true)]
         [string]$Path,
-        [Parameter()]
-        [string]$Output
+
+        [Parameter(Mandatory = $true)]
+        [string]$Output,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("x64", "x86", "ARM64")]
+        [string]$WindowsArch
     )
     # Find more information about device classes here:
     # https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
