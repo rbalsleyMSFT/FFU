@@ -208,9 +208,6 @@ function Save-LenovoDriversTask {
             $packageXMLPath = Join-Path -Path $tempDownloadPath -ChildPath $packageName
             $baseURL = $packageUrl -replace [regex]::Escape($packageName), "" # Base URL for the driver file
 
-            $status = "($processedPackages/$totalPackages) Getting package info..."
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-
             # Download the package XML
             WriteLog "($processedPackages/$totalPackages) Downloading package XML: $packageUrl"
             try {
