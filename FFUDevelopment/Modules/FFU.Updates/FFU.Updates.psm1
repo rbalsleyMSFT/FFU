@@ -326,7 +326,8 @@ function Get-KBLink {
     User agent string to identify the client making catalog requests
 
     .PARAMETER Filter
-    Array of filter criteria to match against update descriptions (e.g., @('x64', 'Windows 11'))
+    Optional array of filter criteria to match against update descriptions (e.g., @('x64', 'Windows 11')).
+    If not provided or empty, returns the first matching update without filtering.
 
     .EXAMPLE
     $headers = @{ 'User-Agent' = 'Mozilla/5.0' }
@@ -346,8 +347,8 @@ function Get-KBLink {
         [Parameter(Mandatory = $true)]
         [string]$UserAgent,
 
-        [Parameter(Mandatory = $true)]
-        [string[]]$Filter
+        [Parameter(Mandatory = $false)]
+        [string[]]$Filter = @()
     )
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
@@ -377,12 +378,23 @@ function Get-KBLink {
         return
     }
 
-    $guids = $results.Links |
-    Where-Object ID -match '_link' |
-    Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
-    Select-Object -First 1 |
-    ForEach-Object { $_.id.replace('_link', '') } |
-    Where-Object { $_ -in $kbids }
+    # Apply Filter if provided, otherwise return all results
+    if ($Filter -and $Filter.Count -gt 0) {
+        $guids = $results.Links |
+        Where-Object ID -match '_link' |
+        Where-Object { $_.OuterHTML -match ( "(?=.*" + ( $Filter -join ")(?=.*" ) + ")" ) } |
+        Select-Object -First 1 |
+        ForEach-Object { $_.id.replace('_link', '') } |
+        Where-Object { $_ -in $kbids }
+    }
+    else {
+        # No filter - return first matching result
+        $guids = $results.Links |
+        Where-Object ID -match '_link' |
+        Select-Object -First 1 |
+        ForEach-Object { $_.id.replace('_link', '') } |
+        Where-Object { $_ -in $kbids }
+    }
 
     if (-not $guids) {
         Write-Warning -Message "No file found for $Name"
@@ -435,7 +447,8 @@ function Get-UpdateFileInfo {
     User agent string to identify the client making catalog requests
 
     .PARAMETER Filter
-    Array of filter criteria to match against update descriptions
+    Optional array of filter criteria to match against update descriptions.
+    If not provided or empty, downloads the first matching update without filtering.
 
     .EXAMPLE
     $updates = Get-UpdateFileInfo -Name @('KB5034441') -WindowsArch 'x64' `
@@ -459,8 +472,8 @@ function Get-UpdateFileInfo {
         [Parameter(Mandatory = $true)]
         [string]$UserAgent,
 
-        [Parameter(Mandatory = $true)]
-        [string[]]$Filter
+        [Parameter(Mandatory = $false)]
+        [string[]]$Filter = @()
     )
     $updateFileInfos = [System.Collections.Generic.List[pscustomobject]]::new()
 
@@ -525,11 +538,17 @@ function Save-KB {
     User agent string to identify the client making catalog requests
 
     .PARAMETER Filter
-    Array of filter criteria to match against update descriptions
+    Optional array of filter criteria to match against update descriptions.
+    If not provided or empty, downloads the first matching update without filtering.
 
     .EXAMPLE
+    # With filter
     Save-KB -Name @('KB5034441') -Path 'C:\Updates' -WindowsArch 'x64' `
             -Headers $headers -UserAgent $userAgent -Filter @('Windows 11', 'x64')
+
+    # Without filter (returns first match)
+    Save-KB -Name @('KB5034441') -Path 'C:\Updates' -WindowsArch 'x64' `
+            -Headers $headers -UserAgent $userAgent
 
     .OUTPUTS
     System.String - Filename of the downloaded update file
@@ -552,8 +571,8 @@ function Save-KB {
         [Parameter(Mandatory = $true)]
         [string]$UserAgent,
 
-        [Parameter(Mandatory = $true)]
-        [string[]]$Filter
+        [Parameter(Mandatory = $false)]
+        [string[]]$Filter = @()
     )
     foreach ($kb in $name) {
         $links = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
