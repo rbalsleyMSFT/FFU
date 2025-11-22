@@ -259,13 +259,54 @@ function New-MSRPartition {
 }
 
 function New-OSPartition {
+    <#
+    .SYNOPSIS
+    Creates and formats the OS partition on VHDX and applies Windows image
+
+    .DESCRIPTION
+    Creates a GPT OS partition on the mounted VHDX disk, formats it as NTFS,
+    and applies the Windows image from WIM/ESD file. Supports CompactOS for
+    reduced disk space usage on client SKUs.
+
+    .PARAMETER VhdxDisk
+    CIM instance of the mounted VHDX disk
+
+    .PARAMETER WimPath
+    Full path to the Windows image file (install.wim or install.esd)
+
+    .PARAMETER WimIndex
+    Image index to apply from the WIM file
+
+    .PARAMETER OSPartitionSize
+    Size of OS partition in bytes (0 = use maximum available space)
+
+    .PARAMETER CompactOS
+    If $true, applies Windows image with compression using -Compact switch
+    (reduces disk usage but not supported on Server SKUs)
+
+    .EXAMPLE
+    $osPartition = New-OSPartition -VhdxDisk $disk -WimPath "C:\install.wim" `
+                                   -WimIndex 1 -OSPartitionSize 0 -CompactOS $true
+
+    .OUTPUTS
+    CimInstance - The created OS partition object
+    #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         [ciminstance]$VhdxDisk,
+
         [Parameter(Mandatory = $true)]
         [string]$WimPath,
+
+        [Parameter(Mandatory = $false)]
         [uint32]$WimIndex,
-        [uint64]$OSPartitionSize = 0
+
+        [Parameter(Mandatory = $false)]
+        [uint64]$OSPartitionSize = 0,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$CompactOS = $false
     )
 
     WriteLog "Creating OS partition..."

@@ -710,10 +710,49 @@ function Uninstall-ADK {
 }
 
 function Confirm-ADKVersionIsLatest {
+    <#
+    .SYNOPSIS
+    Checks if installed ADK version matches the latest available version
+
+    .DESCRIPTION
+    Compares the installed Windows ADK or WinPE add-on version against the
+    latest version published on Microsoft documentation. Used to determine
+    if ADK updates are needed.
+
+    .PARAMETER ADKOption
+    Component to check: "Windows ADK" or "WinPE add-on"
+
+    .PARAMETER Headers
+    HTTP headers hashtable for web requests to Microsoft documentation
+
+    .PARAMETER UserAgent
+    User agent string for web requests
+
+    .EXAMPLE
+    $isLatest = Confirm-ADKVersionIsLatest -ADKOption "Windows ADK" `
+                                           -Headers $headers -UserAgent $userAgent
+
+    .OUTPUTS
+    System.Boolean - $true if installed version is latest, $false otherwise
+    #>
+    [CmdletBinding()]
     param (
+        [Parameter(Mandatory = $true)]
         [ValidateSet("Windows ADK", "WinPE add-on")]
-        [string]$ADKOption
+        [string]$ADKOption,
+
+        [Parameter(Mandatory = $false)]
+        [hashtable]$Headers,
+
+        [Parameter(Mandatory = $false)]
+        [string]$UserAgent
     )
+
+    # If Headers or UserAgent not provided, skip version check (non-critical)
+    if (-not $Headers -or -not $UserAgent) {
+        WriteLog "Headers or UserAgent not provided. Skipping ADK version check (non-critical)."
+        return $false
+    }
 
     $displayName = switch ($ADKOption) {
         "Windows ADK" { "Windows Assessment and Deployment Kit" }

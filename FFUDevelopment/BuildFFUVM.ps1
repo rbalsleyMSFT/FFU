@@ -707,7 +707,7 @@ if ($Cleanup) {
 }
 
 WriteLog 'Begin Logging'
-New-RunSession -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -OrchestrationPath $orchestrationPath
+New-RunSession -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -OrchestrationPath $orchestrationPath -OfficePath $OfficePath
 Set-Progress -Percentage 1 -Message "FFU build process started..."
 
 ####### Generate Config File #######
@@ -966,7 +966,7 @@ if ($ISOPath -eq '') {
 ###END PARAMETER VALIDATION
 
 #Get script variable values
-LogVariableValues
+LogVariableValues -version $version
 
 #Check if environment is dirty
 If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
@@ -1963,7 +1963,7 @@ try {
         New-MSRPartition -VhdxDisk $vhdxDisk
     
         Set-Progress -Percentage 16 -Message "Applying base Windows image to VHDX..."
-        $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index
+        $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index -CompactOS $CompactOS
         $osPartitionDriveLetter = $osPartition[1].DriveLetter
         $WindowsPartition = $osPartitionDriveLetter + ':\'
 

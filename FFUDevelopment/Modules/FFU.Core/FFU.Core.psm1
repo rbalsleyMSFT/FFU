@@ -29,6 +29,29 @@ function Get-Parameters {
 }
 
 function LogVariableValues {
+    <#
+    .SYNOPSIS
+    Logs all script-scope variable values for diagnostic purposes
+
+    .DESCRIPTION
+    Enumerates all script-scope variables (excluding system variables) and writes
+    their names and values to the log. Used for troubleshooting build issues by
+    capturing complete configuration state.
+
+    .PARAMETER version
+    Script version string to log
+
+    .EXAMPLE
+    LogVariableValues -version "2.0.1"
+
+    .OUTPUTS
+    None - Writes variable information to log via WriteLog
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$version
+    )
     $excludedVariables = @(
         'PSBoundParameters',
         'PSScriptRoot',
@@ -328,10 +351,47 @@ function Export-ConfigFile {
 }
 
 function New-RunSession {
+    <#
+    .SYNOPSIS
+    Creates a new FFU build session with backup manifests
+
+    .DESCRIPTION
+    Initializes per-run session directory structure and backs up JSON/XML configuration
+    files that may be modified during the build. Creates manifest tracking all backups
+    for restoration during cleanup.
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment directory path
+
+    .PARAMETER DriversFolder
+    Path to drivers folder (optional, for DriverMapping.json backup)
+
+    .PARAMETER OrchestrationPath
+    Path to orchestration folder (optional, for WinGetWin32Apps.json backup)
+
+    .PARAMETER OfficePath
+    Path to Office folder (optional, for Office XML configuration backup)
+
+    .EXAMPLE
+    New-RunSession -FFUDevelopmentPath "C:\FFU" -DriversFolder "C:\FFU\Drivers" `
+                   -OrchestrationPath "C:\FFU\Orchestration" -OfficePath "C:\FFU\Office"
+
+    .OUTPUTS
+    None - Creates .session directory structure and backup files
+    #>
+    [CmdletBinding()]
     param(
+        [Parameter(Mandatory = $true)]
         [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
         [string]$DriversFolder,
-        [string]$OrchestrationPath
+
+        [Parameter(Mandatory = $false)]
+        [string]$OrchestrationPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OfficePath
     )
     try {
         $sessionDir = Join-Path $FFUDevelopmentPath '.session'
