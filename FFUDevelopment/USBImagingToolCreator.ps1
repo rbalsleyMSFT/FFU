@@ -121,13 +121,6 @@ $Destination = $Drive + ":\"
     Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $ImagesPath, $Destination | Out-Null
     }
 }
-if(!($Images)){
-    foreach ($Drive in $DeployDrives) {
-        WriteLog "Create images directory"
-        $drivepath = $Drive + ":\"
-        New-Item -Path "$drivepath" -Name Images -ItemType Directory -Force -Confirm: $false | Out-Null
-        }
-}
 if($Drivers){
 writelog "Copying driver files to all drives labeled deploy concurrently"
 foreach ($Drive in $DeployDrives) {
