@@ -688,6 +688,141 @@ function Test-MountedImageDiskSpace {
     return $true
 }
 
+function Test-FileLocked {
+    <#
+    .SYNOPSIS
+    Tests if a file is locked by another process
+
+    .DESCRIPTION
+    Attempts to open the file with exclusive ReadWrite access to determine if it's locked.
+    Returns true if the file is locked, false if it's accessible.
+
+    .PARAMETER Path
+    The path to the file to test
+
+    .EXAMPLE
+    if (Test-FileLocked -Path "C:\KB\update.msu") {
+        Write-Host "File is locked by another process"
+    }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        WriteLog "WARNING: File does not exist for lock test: $Path"
+        return $false
+    }
+
+    try {
+        $file = [System.IO.File]::Open($Path, 'Open', 'ReadWrite', 'None')
+        $file.Close()
+        return $false
+    }
+    catch [System.IO.IOException] {
+        # File is locked
+        return $true
+    }
+    catch {
+        # Other errors (permissions, etc.) - treat as locked
+        WriteLog "WARNING: File lock test failed: $($_.Exception.Message)"
+        return $true
+    }
+}
+
+function Test-DISMServiceHealth {
+    <#
+    .SYNOPSIS
+    Validates DISM service (TrustedInstaller) health
+
+    .DESCRIPTION
+    Checks if the TrustedInstaller service is running and attempts to start it if stopped.
+    Returns true if the service is healthy, false otherwise.
+
+    .EXAMPLE
+    if (-not (Test-DISMServiceHealth)) {
+        Write-Error "DISM service is not available"
+    }
+    #>
+    [CmdletBinding()]
+    param()
+
+    try {
+        $service = Get-Service -Name 'TrustedInstaller' -ErrorAction Stop
+
+        if ($service.Status -ne 'Running') {
+            WriteLog "WARNING: TrustedInstaller service not running (Status: $($service.Status)). Attempting to start..."
+
+            try {
+                Start-Service -Name 'TrustedInstaller' -ErrorAction Stop
+                Start-Sleep -Seconds 5
+
+                $service = Get-Service -Name 'TrustedInstaller' -ErrorAction Stop
+                if ($service.Status -eq 'Running') {
+                    WriteLog "TrustedInstaller service started successfully"
+                    return $true
+                }
+                else {
+                    WriteLog "ERROR: TrustedInstaller service failed to start (Status: $($service.Status))"
+                    return $false
+                }
+            }
+            catch {
+                WriteLog "ERROR: Failed to start TrustedInstaller service: $($_.Exception.Message)"
+                return $false
+            }
+        }
+
+        return $true
+    }
+    catch {
+        WriteLog "ERROR: Failed to query TrustedInstaller service: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Test-MountState {
+    <#
+    .SYNOPSIS
+    Validates that a mounted Windows image is still accessible
+
+    .DESCRIPTION
+    Checks if the specified path exists and can be queried with DISM commands.
+    Returns true if the mount is healthy, false if the mount is lost or corrupted.
+
+    .PARAMETER Path
+    The path to the mounted Windows image
+
+    .EXAMPLE
+    if (-not (Test-MountState -Path "W:\")) {
+        Write-Error "Mounted image is no longer accessible"
+    }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    # First check if path exists
+    if (-not (Test-Path $Path)) {
+        WriteLog "ERROR: Mounted image path not found: $Path"
+        return $false
+    }
+
+    # Try to query the image with DISM
+    try {
+        $null = Get-WindowsEdition -Path $Path -ErrorAction Stop
+        return $true
+    }
+    catch {
+        WriteLog "ERROR: Mounted image is not accessible via DISM: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Add-WindowsPackageWithRetry {
     <#
     .SYNOPSIS
@@ -737,6 +872,25 @@ function Add-WindowsPackageWithRetry {
         try {
             if ($attempt -gt 1) {
                 WriteLog "Retry attempt $attempt of $MaxRetries for package: $packageName"
+
+                # Validate mount state before retry
+                WriteLog "Validating mounted image state..."
+                if (-not (Test-MountState -Path $Path)) {
+                    WriteLog "CRITICAL: Mounted image at $Path is no longer accessible"
+                    WriteLog "The VHDX may have been dismounted due to a previous DISM service crash"
+                    throw "Mounted image lost between retry attempts. Cannot continue."
+                }
+                WriteLog "Mount state validation passed. Image is accessible."
+
+                # Validate DISM service health before retry
+                WriteLog "Validating DISM service health..."
+                if (-not (Test-DISMServiceHealth)) {
+                    WriteLog "CRITICAL: DISM service (TrustedInstaller) is not healthy"
+                    WriteLog "The service may have crashed during the previous package application attempt"
+                    throw "DISM service is not available for retry. Cannot continue."
+                }
+                WriteLog "DISM service health check passed. TrustedInstaller is running."
+
                 WriteLog "Waiting $RetryDelaySeconds seconds before retry..."
                 Start-Sleep -Seconds $RetryDelaySeconds
 
@@ -826,10 +980,43 @@ function Add-WindowsPackageWithUnattend {
             throw "Insufficient disk space on mounted image for MSU extraction"
         }
 
-        $extractPath = Join-Path $env:TEMP "MSU_Extract_$(Get-Date -Format 'yyyyMMddHHmmss')"
+        # Use controlled temp directory instead of $env:TEMP for better reliability and shorter paths
+        $kbFolder = Split-Path $PackagePath -Parent
+        $extractBasePath = Join-Path $kbFolder "Temp"
+        if (-not (Test-Path $extractBasePath)) {
+            New-Item -Path $extractBasePath -ItemType Directory -Force | Out-Null
+            WriteLog "Created controlled temp directory: $extractBasePath"
+        }
+
+        $extractPath = Join-Path $extractBasePath "MSU_Extract_$(Get-Date -Format 'yyyyMMddHHmmss')"
         $unattendExtracted = $false
 
         try {
+            # Detect file locking before extraction (antivirus/Windows Defender interference)
+            WriteLog "Checking for file locks on MSU package..."
+            $lockRetries = 0
+            $maxLockRetries = 5
+            $lockRetryDelay = 10
+
+            while ((Test-FileLocked -Path $PackagePath) -and $lockRetries -lt $maxLockRetries) {
+                $lockRetries++
+                WriteLog "WARNING: MSU file is locked by another process (attempt $lockRetries/$maxLockRetries)"
+                WriteLog "This is typically caused by antivirus real-time scanning or Windows Defender"
+                WriteLog "Waiting $lockRetryDelay seconds for file to become available..."
+                Start-Sleep -Seconds $lockRetryDelay
+            }
+
+            if (Test-FileLocked -Path $PackagePath) {
+                WriteLog "ERROR: MSU file remains locked after $($lockRetries * $lockRetryDelay) seconds"
+                WriteLog "RESOLUTION: Add the following paths to your antivirus exclusions:"
+                WriteLog "  - $kbFolder"
+                WriteLog "  - $extractBasePath"
+                WriteLog "  - C:\FFUDevelopment\"
+                throw "MSU file is locked by another process (likely antivirus): $PackagePath"
+            }
+
+            WriteLog "File lock check passed. MSU file is accessible."
+
             # Create extraction directory
             New-Item -Path $extractPath -ItemType Directory -Force | Out-Null
             WriteLog "Extracting MSU package to check for unattend.xml: $extractPath"
@@ -999,6 +1186,9 @@ Export-ModuleMember -Function @(
     'Get-UpdateFileInfo',
     'Save-KB',
     'Test-MountedImageDiskSpace',
+    'Test-FileLocked',
+    'Test-DISMServiceHealth',
+    'Test-MountState',
     'Add-WindowsPackageWithRetry',
     'Add-WindowsPackageWithUnattend'
 )
