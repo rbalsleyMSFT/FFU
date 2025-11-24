@@ -253,7 +253,8 @@
 - ✅ **File lock detection**: Identifies antivirus interference early
 - ✅ **DISM health checks**: Prevents retry when service is crashed
 - ✅ **Mount validation**: Detects VHDX dismount before retry
-- ✅ **Actionable errors**: Tells user to add antivirus exclusions
+- ✅ **Actionable errors**: Tells user to add antivirus exclusions and reboot
+- ✅ **Reboot recommendations**: Provides clear recovery guidance when automated fixes fail
 - ✅ **Shorter paths**: Reduces path length issues
 - ✅ **Comprehensive diagnostics**: Identifies root cause precisely
 

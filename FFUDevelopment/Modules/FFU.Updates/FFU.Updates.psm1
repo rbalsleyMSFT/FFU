@@ -766,11 +766,13 @@ function Test-DISMServiceHealth {
                 }
                 else {
                     WriteLog "ERROR: TrustedInstaller service failed to start (Status: $($service.Status))"
+                    WriteLog "RESOLUTION: Reboot your computer and try again to reset the DISM service"
                     return $false
                 }
             }
             catch {
                 WriteLog "ERROR: Failed to start TrustedInstaller service: $($_.Exception.Message)"
+                WriteLog "RESOLUTION: Reboot your computer and try again to reset the DISM service"
                 return $false
             }
         }
@@ -878,6 +880,7 @@ function Add-WindowsPackageWithRetry {
                 if (-not (Test-MountState -Path $Path)) {
                     WriteLog "CRITICAL: Mounted image at $Path is no longer accessible"
                     WriteLog "The VHDX may have been dismounted due to a previous DISM service crash"
+                    WriteLog "RESOLUTION: Reboot your computer and restart the FFU build process"
                     throw "Mounted image lost between retry attempts. Cannot continue."
                 }
                 WriteLog "Mount state validation passed. Image is accessible."
@@ -887,6 +890,7 @@ function Add-WindowsPackageWithRetry {
                 if (-not (Test-DISMServiceHealth)) {
                     WriteLog "CRITICAL: DISM service (TrustedInstaller) is not healthy"
                     WriteLog "The service may have crashed during the previous package application attempt"
+                    WriteLog "RESOLUTION: Reboot your computer and restart the FFU build process"
                     throw "DISM service is not available for retry. Cannot continue."
                 }
                 WriteLog "DISM service health check passed. TrustedInstaller is running."
@@ -908,6 +912,8 @@ function Add-WindowsPackageWithRetry {
 
             if ($attempt -ge $MaxRetries) {
                 WriteLog "CRITICAL: All $MaxRetries attempts failed for package $packageName"
+                WriteLog "RESOLUTION: Reboot your computer and restart the FFU build process"
+                WriteLog "A reboot will clear file locks, reset services, and resolve most transient issues"
                 throw $_
             }
         }
@@ -1008,10 +1014,13 @@ function Add-WindowsPackageWithUnattend {
 
             if (Test-FileLocked -Path $PackagePath) {
                 WriteLog "ERROR: MSU file remains locked after $($lockRetries * $lockRetryDelay) seconds"
-                WriteLog "RESOLUTION: Add the following paths to your antivirus exclusions:"
-                WriteLog "  - $kbFolder"
-                WriteLog "  - $extractBasePath"
-                WriteLog "  - C:\FFUDevelopment\"
+                WriteLog "RESOLUTION: Try the following steps:"
+                WriteLog "  1. Add the following paths to your antivirus exclusions:"
+                WriteLog "     - $kbFolder"
+                WriteLog "     - $extractBasePath"
+                WriteLog "     - C:\FFUDevelopment\"
+                WriteLog "  2. Reboot your computer and try again"
+                WriteLog "     (This will clear any locked file handles and reset services)"
                 throw "MSU file is locked by another process (likely antivirus): $PackagePath"
             }
 

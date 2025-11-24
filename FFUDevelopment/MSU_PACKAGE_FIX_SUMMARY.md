@@ -76,12 +76,15 @@ Can't open input file: "c:\ffudevelopment\kb\windows11.0-kb5068861-x64_..."
   }
   ```
 
-- **Actionable error messages** - Tells users to add antivirus exclusions:
+- **Actionable error messages** - Tells users to add antivirus exclusions and reboot if needed:
   ```
-  RESOLUTION: Add the following paths to your antivirus exclusions:
-    - C:\FFUDevelopment\KB
-    - C:\FFUDevelopment\KB\Temp
-    - C:\FFUDevelopment\
+  RESOLUTION: Try the following steps:
+    1. Add the following paths to your antivirus exclusions:
+       - C:\FFUDevelopment\KB
+       - C:\FFUDevelopment\KB\Temp
+       - C:\FFUDevelopment\
+    2. Reboot your computer and try again
+       (This will clear any locked file handles and reset services)
   ```
 
 **3. Enhanced Add-WindowsPackageWithRetry (lines 873-900):**
@@ -155,7 +158,8 @@ Export-ModuleMember -Function @(
 ### Benefits
 
 - **Diagnostic clarity**: Identifies exact failure reason (file lock, service crash, mount lost)
-- **User-actionable errors**: Provides specific antivirus exclusion paths
+- **User-actionable errors**: Provides specific antivirus exclusion paths and reboot recommendations
+- **Clear recovery guidance**: Recommends reboot when automated recovery fails
 - **Defensive programming**: Validates preconditions before retry attempts
 - **Reliability**: Detects and reports unrecoverable states early
 - **Maintainability**: Reusable helper functions for future features
