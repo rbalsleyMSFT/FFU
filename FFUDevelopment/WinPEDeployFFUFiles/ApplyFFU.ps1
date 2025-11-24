@@ -1464,7 +1464,8 @@ If ($PPKGFileToInstall) {
         }
         WriteLog "Copying $PPKGFileToInstall to $USBDrive"
         Write-Host "Copying $PPKGFileToInstall to $USBDrive"
-        Invoke-process xcopy.exe "$PPKGFileToInstall $USBDrive"
+        # Quote paths to handle PPKG filenames with spaces
+        Invoke-process xcopy.exe """$PPKGFileToInstall"" ""$USBDrive"""
         WriteLog "Copying $PPKGFileToInstall to $USBDrive succeeded"
         Write-Host "Copying $PPKGFileToInstall to $USBDrive succeeded"
     }
