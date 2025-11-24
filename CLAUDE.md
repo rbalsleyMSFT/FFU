@@ -2,6 +2,59 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Specialized Agent Usage Policy
+
+**IMPORTANT:** This project has specialized agents that MUST be used for specific tasks:
+
+### powershell-architect Agent
+**When to use:**
+- Architecture evaluation and code quality analysis
+- Identifying design patterns and anti-patterns
+- PowerShell best practices and module design
+- Performance optimization recommendations
+- Refactoring and modularization guidance
+- Security vulnerability assessment
+- When user explicitly requests architecture review or evaluation
+
+**How to invoke:**
+```
+Use Task tool with subagent_type="powershell-architect"
+```
+
+### intune-troubleshooter Agent
+**When to use:**
+- Microsoft Intune device management issues
+- MDM enrollment failures or errors
+- Policy deployment and compliance problems
+- Application installation issues via Intune
+- Device configuration profile troubleshooting
+- Conditional access and authentication issues
+- Intune log analysis and diagnostics
+- When user mentions Intune, MDM, or mobile device management errors
+
+**How to invoke:**
+```
+Use Task tool with subagent_type="intune-troubleshooter"
+```
+
+### autopilot-deployment-expert Agent
+**When to use:**
+- Windows Autopilot deployment issues
+- Enrollment Status Page (ESP) failures
+- Autopilot device registration problems
+- Azure AD Join or Hybrid Azure AD Join issues
+- White Glove (pre-provisioning) scenarios
+- AutopilotDiagnostics.zip log analysis
+- Network/proxy issues during Autopilot
+- When user mentions Autopilot, ESP, or device provisioning errors
+
+**How to invoke:**
+```
+Use Task tool with subagent_type="autopilot-deployment-expert"
+```
+
+**General Rule:** When user describes a problem that falls within an agent's expertise area, invoke that agent proactively rather than attempting to solve it directly. These agents have specialized knowledge and diagnostic capabilities beyond general assistance.
+
 ## Project Overview
 
 **FFUBuilder** - Improvements and bug fixes for the FFU (Full Flash Update) project, a Windows deployment acceleration tool that creates pre-configured Windows 11 images deployable in under 2 minutes.
