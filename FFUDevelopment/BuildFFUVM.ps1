@@ -435,6 +435,14 @@ param(
     [bool]$CleanupCurrentRunDownloads = $false,
     [switch]$Cleanup
 )
+
+# Log PowerShell version information (compatible with PowerShell 5.1 and 7+)
+Write-Host "PowerShell Version: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition) Edition)" -ForegroundColor Green
+if ($PSVersionTable.CLRVersion) {
+    Write-Host "CLR Version: $($PSVersionTable.CLRVersion)" -ForegroundColor Green
+}
+Write-Host ""
+
 $ProgressPreference = 'SilentlyContinue'
 $version = '2509.1Preview'
 

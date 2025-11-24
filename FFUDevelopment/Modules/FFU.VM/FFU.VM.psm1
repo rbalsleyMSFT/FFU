@@ -17,6 +17,189 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
+#region Cross-Version Local User Management Helper Functions
+# These functions use .NET DirectoryServices APIs to work in both PowerShell 5.1 and 7+
+# Replaces Get-LocalUser, New-LocalUser, Remove-LocalUser cmdlets which have compatibility issues in PowerShell 7
+
+function Get-LocalUserAccount {
+    <#
+    .SYNOPSIS
+    Gets a local user account using .NET DirectoryServices API
+
+    .DESCRIPTION
+    Cross-version compatible replacement for Get-LocalUser cmdlet.
+    Works in both PowerShell 5.1 (Desktop) and PowerShell 7+ (Core).
+
+    .PARAMETER Username
+    Name of the local user account to retrieve
+
+    .EXAMPLE
+    $user = Get-LocalUserAccount -Username "ffu_user"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    try {
+        Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+
+        $context = [System.DirectoryServices.AccountManagement.PrincipalContext]::new(
+            [System.DirectoryServices.AccountManagement.ContextType]::Machine
+        )
+
+        $user = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity(
+            $context,
+            [System.DirectoryServices.AccountManagement.IdentityType]::SamAccountName,
+            $Username
+        )
+
+        $context.Dispose()
+
+        if ($user) {
+            # Return user object
+            return $user
+        }
+
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
+function New-LocalUserAccount {
+    <#
+    .SYNOPSIS
+    Creates a local user account using .NET DirectoryServices API
+
+    .DESCRIPTION
+    Cross-version compatible replacement for New-LocalUser cmdlet.
+    Works in both PowerShell 5.1 (Desktop) and PowerShell 7+ (Core).
+    Avoids TelemetryAPI errors in PowerShell 7.
+
+    .PARAMETER Username
+    Name of the local user account to create
+
+    .PARAMETER Password
+    SecureString password for the user account
+
+    .PARAMETER FullName
+    Full name/display name for the user
+
+    .PARAMETER Description
+    Description of the user account
+
+    .EXAMPLE
+    $password = ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force
+    New-LocalUserAccount -Username "ffu_user" -Password $password -FullName "FFU User" -Description "FFU Capture User"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [SecureString]$Password,
+
+        [Parameter(Mandatory = $false)]
+        [string]$FullName = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$Description = ""
+    )
+
+    try {
+        # Convert SecureString to plain text (required for PrincipalContext API)
+        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
+        $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+
+        try {
+            # Create user via DirectoryServices
+            Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+
+            $context = [System.DirectoryServices.AccountManagement.PrincipalContext]::new(
+                [System.DirectoryServices.AccountManagement.ContextType]::Machine
+            )
+
+            $user = [System.DirectoryServices.AccountManagement.UserPrincipal]::new($context)
+            $user.Name = $Username
+            $user.SetPassword($plainPassword)
+            $user.DisplayName = $FullName
+            $user.Description = $Description
+            $user.UserCannotChangePassword = $false
+            $user.PasswordNeverExpires = $true
+            $user.Save()
+
+            $context.Dispose()
+            $user.Dispose()
+
+            return $true
+        }
+        finally {
+            # Always clear password from memory
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+            if ($plainPassword) {
+                $plainPassword = $null
+            }
+        }
+    }
+    catch {
+        throw "Failed to create local user account: $($_.Exception.Message)"
+    }
+}
+
+function Remove-LocalUserAccount {
+    <#
+    .SYNOPSIS
+    Removes a local user account using .NET DirectoryServices API
+
+    .DESCRIPTION
+    Cross-version compatible replacement for Remove-LocalUser cmdlet.
+    Works in both PowerShell 5.1 (Desktop) and PowerShell 7+ (Core).
+
+    .PARAMETER Username
+    Name of the local user account to remove
+
+    .EXAMPLE
+    Remove-LocalUserAccount -Username "ffu_user"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    try {
+        Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+
+        $context = [System.DirectoryServices.AccountManagement.PrincipalContext]::new(
+            [System.DirectoryServices.AccountManagement.ContextType]::Machine
+        )
+
+        $user = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity(
+            $context,
+            [System.DirectoryServices.AccountManagement.IdentityType]::SamAccountName,
+            $Username
+        )
+
+        if ($user) {
+            $user.Delete()
+            $user.Dispose()
+        }
+
+        $context.Dispose()
+
+        return $true
+    }
+    catch {
+        throw "Failed to remove local user account: $($_.Exception.Message)"
+    }
+}
+
+#endregion Cross-Version Local User Management Helper Functions
+
 function New-FFUVM {
     <#
     .SYNOPSIS
@@ -411,10 +594,11 @@ function Get-FFUEnvironment {
         Invoke-Process reg "unload HKLM\FFU" | Out-Null
     }
 
-    #Remove FFU User and Share
-    $UserExists = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
+    #Remove FFU User and Share (using .NET API for PowerShell 7 compatibility)
+    $UserExists = Get-LocalUserAccount -Username $Username
     if ($UserExists) {
         WriteLog "Removing FFU User and Share"
+        $UserExists.Dispose()
         Remove-FFUUserShare -Username $Username -ShareName $ShareName
         WriteLog 'Removal complete'
     }
@@ -504,16 +688,18 @@ function Set-CaptureFFU {
             $Password = ConvertTo-SecureString -String $randomPassword -AsPlainText -Force
         }
 
-        # Check if user already exists
-        $existingUser = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
+        # Check if user already exists (using .NET API for PowerShell 7 compatibility)
+        $existingUser = Get-LocalUserAccount -Username $Username
 
         if ($existingUser) {
             WriteLog "User $Username already exists, skipping user creation"
+            $existingUser.Dispose()
         }
         else {
             WriteLog "Creating local user account: $Username"
-            New-LocalUser -Name $Username -Password $Password -FullName "FFU Capture User" `
-                         -Description "User account for FFU capture operations" -ErrorAction Stop | Out-Null
+            New-LocalUserAccount -Username $Username -Password $Password `
+                                -FullName "FFU Capture User" `
+                                -Description "User account for FFU capture operations" | Out-Null
             WriteLog "User account $Username created successfully"
         }
 
@@ -598,12 +784,13 @@ function Remove-FFUUserShare {
             WriteLog "SMB share $ShareName does not exist, skipping removal"
         }
 
-        # Remove local user if it exists
-        $existingUser = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
+        # Remove local user if it exists (using .NET API for PowerShell 7 compatibility)
+        $existingUser = Get-LocalUserAccount -Username $Username
 
         if ($existingUser) {
             WriteLog "Removing local user account: $Username"
-            Remove-LocalUser -Name $Username -ErrorAction Stop
+            $existingUser.Dispose()
+            Remove-LocalUserAccount -Username $Username
             WriteLog "User account removed successfully"
         }
         else {
@@ -620,6 +807,9 @@ function Remove-FFUUserShare {
 
 # Export module members
 Export-ModuleMember -Function @(
+    'Get-LocalUserAccount',
+    'New-LocalUserAccount',
+    'Remove-LocalUserAccount',
     'New-FFUVM',
     'Remove-FFUVM',
     'Get-FFUEnvironment',

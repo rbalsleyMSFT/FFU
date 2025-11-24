@@ -22,8 +22,12 @@
 param()
 
 # Check PowerShell Version
-if ($PSVersionTable.PSVersion.Major -lt 7) {
-    Write-Error "PowerShell 7 or later is required to run this script."
+# Note: FFUBuilder supports both PowerShell 5.1 and 7+ with cross-version compatibility
+# - Windows management cmdlets use .NET DirectoryServices APIs for compatibility
+# - UI works best in PowerShell 7+ for modern features and performance
+# - PowerShell 5.1 is minimum requirement (included with Windows 10/11)
+if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
+    Write-Error "PowerShell 5.1 or later is required to run this script."
     exit 1
 }
 
