@@ -539,32 +539,11 @@ Example: .\BuildFFUVM.ps1 -InstallDrivers `$true -Make 'Dell' -Model 'Latitude 7
 "@
     }
 
-    # Validate WindowsRelease and WindowsSKU compatibility
-    if ($WindowsRelease -in @(2016, 2019, 2022, 2024, 2025)) {
-        $serverSKUs = @('Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')
-        if ($WindowsSKU -notin $serverSKUs) {
-            throw @"
-WindowsSKU '$WindowsSKU' is not valid for Windows Server $WindowsRelease.
-
-Windows Server releases require one of the following SKUs:
-$($serverSKUs | ForEach-Object { "  - $_" } | Out-String)
-
-Example: .\BuildFFUVM.ps1 -WindowsRelease $WindowsRelease -WindowsSKU 'Datacenter (Desktop Experience)'
-"@
-        }
-    }
-    elseif ($WindowsRelease -in @(10, 11)) {
-        $clientSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N',
-                        'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations',
-                        'Enterprise', 'Enterprise N', 'Enterprise LTSC', 'Enterprise N LTSC',
-                        'IoT Enterprise LTSC', 'IoT Enterprise N LTSC')
-        if ($WindowsSKU -notin $clientSKUs) {
-            Write-Warning "WindowsSKU '$WindowsSKU' may not be valid for Windows $WindowsRelease. Expected one of: $($clientSKUs -join ', ')"
-        }
-    }
-
     Write-Verbose "Parameter validation complete - all required parameters present and valid"
 }
+
+# NOTE: WindowsRelease/WindowsSKU compatibility validation is performed AFTER config file loading
+# to ensure config file values are used instead of parameter defaults. See validation after line 633.
 
 # Log PowerShell version information (compatible with PowerShell 5.1 and 7+)
 Write-Host "PowerShell Version: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition) Edition)" -ForegroundColor Green
