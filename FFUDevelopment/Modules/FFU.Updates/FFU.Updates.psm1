@@ -21,6 +21,9 @@
 
 #Requires -Version 5.1
 
+# Import constants module
+using module ..\FFU.Constants\FFU.Constants.psm1
+
 function Get-ProductsCab {
     <#
     .SYNOPSIS
@@ -779,7 +782,7 @@ function Test-DISMServiceHealth {
 
             try {
                 Start-Service -Name 'TrustedInstaller' -ErrorAction Stop
-                Start-Sleep -Seconds 5
+                Start-Sleep -Seconds ([FFUConstants]::UPDATE_CATALOG_WAIT)
 
                 $service = Get-Service -Name 'TrustedInstaller' -ErrorAction Stop
                 if ($service.Status -eq 'Running') {
@@ -880,10 +883,10 @@ function Add-WindowsPackageWithRetry {
         [string]$PackagePath,
 
         [Parameter()]
-        [int]$MaxRetries = 2,
+        [int]$MaxRetries = [FFUConstants]::MAX_PACKAGE_RETRIES,
 
         [Parameter()]
-        [int]$RetryDelaySeconds = 30
+        [int]$RetryDelaySeconds = [FFUConstants]::RETRY_DELAY
     )
 
     $packageName = Split-Path $PackagePath -Leaf

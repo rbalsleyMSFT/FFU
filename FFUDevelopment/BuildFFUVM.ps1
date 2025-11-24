@@ -1,6 +1,9 @@
-﻿
+
 #Requires -Modules Hyper-V, Storage
 #Requires -RunAsAdministrator
+
+# Import FFU.Constants module for centralized configuration
+using module .\Modules\FFU.Constants\FFU.Constants.psm1
 
 <#
 .SYNOPSIS
@@ -308,13 +311,13 @@ param(
     [bool]$InstallDrivers,
     [Parameter(Mandatory = $false)]
     [ValidateRange(2GB, 128GB)]
-    [uint64]$Memory = 4GB,
+    [uint64]$Memory = [FFUConstants]::DEFAULT_VM_MEMORY,
     [Parameter(Mandatory = $false)]
     [ValidateRange(25GB, 2TB)]
-    [uint64]$Disksize = 50GB,
+    [uint64]$Disksize = [FFUConstants]::DEFAULT_VHDX_SIZE,
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 64)]
-    [int]$Processors = 4,
+    [int]$Processors = [FFUConstants]::DEFAULT_VM_PROCESSORS,
     [string]$VMSwitchName,
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
@@ -2422,7 +2425,7 @@ try {
         Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
         do {
             $FFUVM = Get-VM -Name $FFUVM.Name
-            Start-Sleep -Seconds 10
+            Start-Sleep -Seconds ([FFUConstants]::VM_STATE_POLL_INTERVAL)
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'

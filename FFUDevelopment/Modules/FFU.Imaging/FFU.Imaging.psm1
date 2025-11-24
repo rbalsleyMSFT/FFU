@@ -17,6 +17,9 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
+# Import constants module
+using module ..\FFU.Constants\FFU.Constants.psm1
+
 # Import dependencies
 Import-Module "$PSScriptRoot\..\FFU.Core" -Force
 
@@ -52,8 +55,8 @@ function Initialize-DISMService {
     }
     catch {
         WriteLog "WARNING: DISM service initialization check failed: $($_.Exception.Message)"
-        WriteLog "Waiting 10 seconds for DISM service to stabilize..."
-        Start-Sleep -Seconds 10
+        WriteLog "Waiting for DISM service to stabilize..."
+        Start-Sleep -Seconds ([FFUConstants]::DISM_SERVICE_WAIT)
 
         try {
             $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
@@ -638,7 +641,7 @@ function New-FFU {
         # Wait for the VM to turn off
         do {
             $FFUVM = Get-VM -Name $VMName
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds ([FFUConstants]::VM_STATE_POLL_INTERVAL)
         } while ($FFUVM.State -ne 'Off')
         WriteLog "VM Shutdown"
         # Check for .ffu files in the FFUDevelopment folder
@@ -902,7 +905,7 @@ function Start-RequiredServicesForDISM {
 
                 # Verify service is actually running and ready
                 $retryCount = 0
-                $maxRetries = 3
+                $maxRetries = [FFUConstants]::MAX_DISM_SERVICE_RETRIES
                 $serviceReady = $false
 
                 while ($retryCount -lt $maxRetries -and -not $serviceReady) {
@@ -913,8 +916,8 @@ function Start-RequiredServicesForDISM {
                     }
                     else {
                         $retryCount++
-                        WriteLog "Service status: $($service.Status), waiting 2 more seconds (retry $retryCount/$maxRetries)..."
-                        Start-Sleep -Seconds 2
+                        WriteLog "Service status: $($service.Status), waiting for mount validation (retry $retryCount/$maxRetries)..."
+                        Start-Sleep -Seconds ([FFUConstants]::MOUNT_VALIDATION_WAIT)
                     }
                 }
 
@@ -943,8 +946,8 @@ function Start-RequiredServicesForDISM {
 
     # Additional wait after all services started to ensure DISM subsystem is ready
     if ($allServicesOk) {
-        WriteLog 'Waiting additional 3 seconds for DISM subsystem initialization...'
-        Start-Sleep -Seconds 3
+        WriteLog 'Waiting for DISM subsystem initialization...'
+        Start-Sleep -Seconds ([FFUConstants]::DISM_CLEANUP_WAIT)
         WriteLog 'DISM subsystem should be ready'
     }
 

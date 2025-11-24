@@ -15,6 +15,9 @@
 
 #Requires -Version 5.1
 
+# Import constants module
+using module ..\FFU.Constants\FFU.Constants.psm1
+
 function Get-MicrosoftDrivers {
     <#
     .SYNOPSIS
@@ -1075,8 +1078,8 @@ function Get-DellDrivers {
                 if ($driver.Category -eq "Chipset") {
                     $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
 
-                    #Wait 5 seconds to allow for the extraction process to finish
-                    Start-Sleep -Seconds 5
+                    #Wait to allow for the extraction process to finish
+                    Start-Sleep -Seconds ([FFUConstants]::DRIVER_EXTRACTION_WAIT)
 
                     $childProcesses = Get-ChildProcesses $process.Id
 
@@ -1084,8 +1087,8 @@ function Get-DellDrivers {
                     if ($childProcesses) {
                         $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
                         Stop-Process -Id $latestProcess.ProcessId -Force
-                        # Sleep 1 second to let process finish exiting so its installer can be removed
-                        Start-Sleep -Seconds 1
+                        # Sleep to let process finish exiting so its installer can be removed
+                        Start-Sleep -Seconds ([FFUConstants]::SERVICE_STARTUP_WAIT)
                     }
                     #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
                 }
@@ -1093,8 +1096,8 @@ function Get-DellDrivers {
 
                     $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
 
-                    #Sometimes the network drivers will extract on client OS, wait 5 seconds and check if the process is still running
-                    Start-Sleep -Seconds 5
+                    #Sometimes the network drivers will extract on client OS, wait and check if the process is still running
+                    Start-Sleep -Seconds ([FFUConstants]::DRIVER_EXTRACTION_WAIT)
                     if ($process.HasExited -eq $false) {
                         $childProcesses = Get-ChildProcesses $process.Id
 

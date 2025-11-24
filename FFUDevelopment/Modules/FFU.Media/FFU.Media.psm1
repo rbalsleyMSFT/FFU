@@ -23,6 +23,9 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
+# Import constants module
+using module ..\FFU.Constants\FFU.Constants.psm1
+
 function Invoke-DISMPreFlightCleanup {
     <#
     .SYNOPSIS
@@ -190,8 +193,8 @@ function Invoke-DISMPreFlightCleanup {
     WriteLog "Cleaned $cleanedCount DISM temporary directories/files"
 
     # Step 6: Wait for system to stabilize
-    WriteLog "Step 6: Waiting for system to stabilize (3 seconds)..."
-    Start-Sleep -Seconds 3
+    WriteLog "Step 6: Waiting for system to stabilize..."
+    Start-Sleep -Seconds ([FFUConstants]::DISM_CLEANUP_WAIT)
 
     # Step 7: Report results
     if ($errors.Count -gt 0) {
@@ -244,7 +247,7 @@ function Invoke-CopyPEWithRetry {
         [string]$DandIEnvPath,
 
         [Parameter()]
-        [int]$MaxRetries = 1
+        [int]$MaxRetries = [FFUConstants]::MAX_COPYPE_RETRIES
     )
 
     $attempt = 0
@@ -265,8 +268,8 @@ function Invoke-CopyPEWithRetry {
             }
 
             # Additional wait for retry to allow system to fully release resources
-            WriteLog "Waiting additional 5 seconds for system to release resources..."
-            Start-Sleep -Seconds 5
+            WriteLog "Waiting for system to release resources..."
+            Start-Sleep -Seconds ([FFUConstants]::VM_STATE_POLL_INTERVAL)
         }
 
         WriteLog "Executing copype command (attempt $attempt of $($MaxRetries + 1))..."

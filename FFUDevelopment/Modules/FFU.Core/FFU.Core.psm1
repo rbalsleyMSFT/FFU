@@ -14,6 +14,9 @@
 
 #Requires -Version 5.1
 
+# Import constants module
+using module ..\FFU.Constants\FFU.Constants.psm1
+
 function Get-Parameters {
     [CmdletBinding()]
     param (
@@ -587,7 +590,7 @@ function Remove-InProgressItems {
                 return $true
             }
             catch {
-                Start-Sleep -Milliseconds 350
+                Start-Sleep -Milliseconds ([FFUConstants]::PROCESS_POLL_INTERVAL_MS)
             }
         }
         return -not (Test-Path -LiteralPath $path)
@@ -646,7 +649,7 @@ function Remove-InProgressItems {
                                     $basename = [System.IO.Path]::GetFileName($itemPath)
                                     if (-not $isDir -and $basename -in @('setup.exe', 'odtsetup.exe')) {
                                         Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $itemPath } | Stop-Process -Force -ErrorAction SilentlyContinue
-                                        Start-Sleep -Milliseconds 500
+                                        Start-Sleep -Milliseconds ([FFUConstants]::SERVICE_CHECK_INTERVAL_MS)
                                         $removed = Remove-PathWithRetry -path $itemPath -isDirectory:$false
                                     }
                                 }
