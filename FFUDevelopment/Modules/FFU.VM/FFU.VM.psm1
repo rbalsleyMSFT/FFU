@@ -123,9 +123,16 @@ function Remove-FFUVM {
     .PARAMETER FFUDevelopmentPath
     Root FFUDevelopment path for mount folder cleanup
 
+    .PARAMETER Username
+    Optional username for FFU capture user cleanup (default: ffu_user)
+
+    .PARAMETER ShareName
+    Optional share name for FFU capture share cleanup (default: FFUCaptureShare)
+
     .EXAMPLE
     Remove-FFUVM -VMName "_FFU-Build-Win11" -VMPath "C:\FFU\VM\_FFU-Build-Win11" `
-                 -InstallApps $true -VhdxDisk $disk -FFUDevelopmentPath "C:\FFU"
+                 -InstallApps $true -VhdxDisk $disk -FFUDevelopmentPath "C:\FFU" `
+                 -Username "ffu_user" -ShareName "FFUCaptureShare"
     #>
     [CmdletBinding()]
     param (
@@ -142,7 +149,13 @@ function Remove-FFUVM {
         $VhdxDisk,
 
         [Parameter(Mandatory = $true)]
-        [string]$FFUDevelopmentPath
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Username = "ffu_user",
+
+        [Parameter(Mandatory = $false)]
+        [string]$ShareName = "FFUCaptureShare"
     )
     #Get the VM object and remove the VM, the HGSGuardian, and the certs
     If ($VMName) {
@@ -399,10 +412,10 @@ function Get-FFUEnvironment {
     }
 
     #Remove FFU User and Share
-    $UserExists = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
+    $UserExists = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
     if ($UserExists) {
         WriteLog "Removing FFU User and Share"
-        Remove-FFUUserShare
+        Remove-FFUUserShare -Username $Username -ShareName $ShareName
         WriteLog 'Removal complete'
     }
     if ($RemoveApps) {
@@ -438,9 +451,178 @@ function Get-FFUEnvironment {
     WriteLog "Cleanup complete"
 }
 
+function Set-CaptureFFU {
+    <#
+    .SYNOPSIS
+    Creates FFU capture user account and network share
+
+    .DESCRIPTION
+    Creates a local user account and SMB share for FFU capture operations.
+    The share is created with full control permissions for the specified user,
+    allowing the FFU VM to write captured FFU files to the host machine.
+
+    .PARAMETER Username
+    Name of the local user account to create (default: ffu_user)
+
+    .PARAMETER ShareName
+    Name of the SMB share to create (default: FFUCaptureShare)
+
+    .PARAMETER FFUCaptureLocation
+    Local path on the host to share for FFU capture
+
+    .PARAMETER Password
+    Optional SecureString password for the user account.
+    If not provided, a random secure password will be generated.
+
+    .EXAMPLE
+    Set-CaptureFFU -Username "ffu_user" -ShareName "FFUCaptureShare" -FFUCaptureLocation "C:\FFU"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ShareName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUCaptureLocation,
+
+        [Parameter(Mandatory = $false)]
+        [SecureString]$Password
+    )
+
+    WriteLog "Setting up FFU capture user and share"
+
+    try {
+        # Generate random secure password if not provided
+        if (-not $Password) {
+            WriteLog "Generating secure password for user $Username"
+            $passwordLength = 20
+            $chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
+            $randomPassword = -join ((1..$passwordLength) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+            $Password = ConvertTo-SecureString -String $randomPassword -AsPlainText -Force
+        }
+
+        # Check if user already exists
+        $existingUser = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
+
+        if ($existingUser) {
+            WriteLog "User $Username already exists, skipping user creation"
+        }
+        else {
+            WriteLog "Creating local user account: $Username"
+            New-LocalUser -Name $Username -Password $Password -FullName "FFU Capture User" `
+                         -Description "User account for FFU capture operations" -ErrorAction Stop | Out-Null
+            WriteLog "User account $Username created successfully"
+        }
+
+        # Create FFU capture directory if it doesn't exist
+        if (-not (Test-Path $FFUCaptureLocation)) {
+            WriteLog "Creating FFU capture directory: $FFUCaptureLocation"
+            New-Item -Path $FFUCaptureLocation -ItemType Directory -Force | Out-Null
+            WriteLog "Directory created successfully"
+        }
+        else {
+            WriteLog "FFU capture directory already exists: $FFUCaptureLocation"
+        }
+
+        # Check if share already exists
+        $existingShare = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
+
+        if ($existingShare) {
+            WriteLog "Share $ShareName already exists, skipping share creation"
+        }
+        else {
+            WriteLog "Creating SMB share: $ShareName pointing to $FFUCaptureLocation"
+            New-SmbShare -Name $ShareName -Path $FFUCaptureLocation -FullAccess $Username `
+                        -Description "FFU Capture Share" -ErrorAction Stop | Out-Null
+            WriteLog "SMB share $ShareName created successfully"
+        }
+
+        # Grant user full control to the share (in case share already existed)
+        WriteLog "Granting $Username full control to share $ShareName"
+        Grant-SmbShareAccess -Name $ShareName -AccountName $Username -AccessRight Full -Force -ErrorAction Stop | Out-Null
+        WriteLog "Share permissions granted successfully"
+
+        WriteLog "FFU capture user and share setup complete"
+        WriteLog "  User: $Username"
+        WriteLog "  Share: \\$env:COMPUTERNAME\$ShareName"
+        WriteLog "  Path: $FFUCaptureLocation"
+    }
+    catch {
+        WriteLog "ERROR: Failed to set up FFU capture user and share: $($_.Exception.Message)"
+        throw $_
+    }
+}
+
+function Remove-FFUUserShare {
+    <#
+    .SYNOPSIS
+    Removes FFU capture user account and network share
+
+    .DESCRIPTION
+    Cleans up the local user account and SMB share created by Set-CaptureFFU.
+    This function is called during cleanup to remove temporary resources.
+
+    .PARAMETER Username
+    Name of the local user account to remove
+
+    .PARAMETER ShareName
+    Name of the SMB share to remove
+
+    .EXAMPLE
+    Remove-FFUUserShare -Username "ffu_user" -ShareName "FFUCaptureShare"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ShareName
+    )
+
+    WriteLog "Cleaning up FFU capture user and share"
+
+    try {
+        # Remove SMB share if it exists
+        $existingShare = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
+
+        if ($existingShare) {
+            WriteLog "Removing SMB share: $ShareName"
+            Remove-SmbShare -Name $ShareName -Force -ErrorAction Stop
+            WriteLog "SMB share removed successfully"
+        }
+        else {
+            WriteLog "SMB share $ShareName does not exist, skipping removal"
+        }
+
+        # Remove local user if it exists
+        $existingUser = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
+
+        if ($existingUser) {
+            WriteLog "Removing local user account: $Username"
+            Remove-LocalUser -Name $Username -ErrorAction Stop
+            WriteLog "User account removed successfully"
+        }
+        else {
+            WriteLog "User $Username does not exist, skipping removal"
+        }
+
+        WriteLog "FFU capture user and share cleanup complete"
+    }
+    catch {
+        WriteLog "WARNING: Failed to clean up FFU capture user and share: $($_.Exception.Message)"
+        # Don't throw - cleanup failures shouldn't break the build
+    }
+}
+
 # Export module members
 Export-ModuleMember -Function @(
     'New-FFUVM',
     'Remove-FFUVM',
-    'Get-FFUEnvironment'
+    'Get-FFUEnvironment',
+    'Set-CaptureFFU',
+    'Remove-FFUUserShare'
 )

@@ -2183,19 +2183,21 @@ if ($InstallApps) {
         Write-Host 'VM creation failed'
         Writelog "VM creation failed with error $_"
         Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                     -Username $Username -ShareName $ShareName
         throw $_
 
     }
     #Create ffu user and share to capture FFU to
     try {
-        Set-CaptureFFU
+        Set-CaptureFFU -Username $Username -ShareName $ShareName -FFUCaptureLocation $FFUCaptureLocation
     }
     catch {
         Write-Host 'Set-CaptureFFU function failed'
         WriteLog "Set-CaptureFFU function failed with error $_"
         Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                     -Username $Username -ShareName $ShareName
         throw $_
 
     }
@@ -2214,7 +2216,8 @@ if ($InstallApps) {
             Write-Host 'Creating capture media failed'
             WriteLog "Creating capture media failed with error $_"
             Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                         -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                         -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                         -Username $Username -ShareName $ShareName
             throw $_
 
         }
@@ -2270,26 +2273,29 @@ Catch {
     Writelog "Capturing FFU file failed with error $_"
     If ($InstallApps) {
         Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                     -Username $Username -ShareName $ShareName
     }
     else {
         Remove-FFUVM -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                     -Username $Username -ShareName $ShareName
     }
 
     throw $_
-    
+
 }
 #Clean up ffu_user and Share and clean up apps
 If ($InstallApps) {
     try {
-        Remove-FFUUserShare
+        Remove-FFUUserShare -Username $Username -ShareName $ShareName
     }
     catch {
         Write-Host 'Cleaning up FFU User and/or share failed'
         WriteLog "Cleaning up FFU User and/or share failed with error $_"
         Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                     -Username $Username -ShareName $ShareName
         throw $_
     }
     #Clean up Apps
@@ -2320,7 +2326,8 @@ If ($InstallApps) {
 #Clean up VM or VHDX
 try {
     Remove-FFUVM -VMPath $VMPath -InstallApps $InstallApps `
-                 -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+                 -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
+                 -Username $Username -ShareName $ShareName
     WriteLog 'FFU build complete!'
 }
 catch {
