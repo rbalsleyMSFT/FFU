@@ -334,7 +334,7 @@ function Get-KBLink {
     Get-KBLink -Name "2024-01 Cumulative Update" -Headers $headers -UserAgent $userAgent -Filter @('x64')
 
     .OUTPUTS
-    System.String[] - Array of download URLs for matching updates
+    PSCustomObject - Object with KBArticleID (string or null) and Links (array of download URLs)
     #>
     [CmdletBinding()]
     param(
@@ -355,17 +355,16 @@ function Get-KBLink {
     $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
 
-    # Extract the first KB article ID from the HTML content and store it globally
+    # Extract the first KB article ID from the HTML content
     # Edge and Defender do not have KB article IDs
+    $kbArticleID = $null
     if ($Name -notmatch 'Defender|Edge') {
         if ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)(?:\s*\([^)]+\))*\s*<') {
             $kbArticleID = "KB$($matches[2])"
-            $global:LastKBArticleID = $kbArticleID
             WriteLog "Found KB article ID: $kbArticleID"
         }
         else {
             WriteLog "No KB article ID found in search results."
-            $global:LastKBArticleID = $null
         }
     }
 
@@ -375,7 +374,11 @@ function Get-KBLink {
 
     if (-not $kbids) {
         Write-Warning -Message "No results found for $Name"
-        return
+        # Return empty result with KB article ID if available
+        return [PSCustomObject]@{
+            KBArticleID = $kbArticleID
+            Links = @()
+        }
     }
 
     # Apply Filter if provided, otherwise return all results
@@ -398,9 +401,15 @@ function Get-KBLink {
 
     if (-not $guids) {
         Write-Warning -Message "No file found for $Name"
-        return
+        # Return empty result with KB article ID if available
+        return [PSCustomObject]@{
+            KBArticleID = $kbArticleID
+            Links = @()
+        }
     }
 
+    # Collect all download links
+    $downloadLinks = @()
     foreach ($guid in $guids) {
         # Write-Verbose -Message "Downloading information for $guid"
         $post = @{ size = 0; updateID = $guid; uidInfo = $guid } | ConvertTo-Json -Compress
@@ -414,13 +423,19 @@ function Get-KBLink {
         $VerbosePreference = $OriginalVerbosePreference
 
         foreach ($link in $links) {
-            $link.matches.value
+            $downloadLinks += $link.matches.value
             #Filter out cab files
             # #if ($link -notmatch '\.cab') {
-            #     $link.matches.value
+            #     $downloadLinks += $link.matches.value
             # }
 
         }
+    }
+
+    # Return structured object with KB article ID and links
+    return [PSCustomObject]@{
+        KBArticleID = $kbArticleID
+        Links = $downloadLinks
     }
 }
 
@@ -455,7 +470,7 @@ function Get-UpdateFileInfo {
                                    -Headers $headers -UserAgent $userAgent -Filter @('Windows 11', 'x64')
 
     .OUTPUTS
-    System.Collections.Generic.List[PSCustomObject] - Array of objects with Name and Url properties
+    System.Collections.Generic.List[PSCustomObject] - Array of objects with Name, Url, and KBArticleID properties
     #>
     [CmdletBinding()]
     param(
@@ -478,7 +493,13 @@ function Get-UpdateFileInfo {
     $updateFileInfos = [System.Collections.Generic.List[pscustomobject]]::new()
 
     foreach ($kb in $Name) {
-        $links = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+        # Get-KBLink now returns a structured object with KBArticleID and Links
+        $kbResult = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+
+        # Extract KB article ID and links from the result object
+        $kbArticleID = $kbResult.KBArticleID
+        $links = $kbResult.Links
+
         foreach ($link in $links) {
             $fileName = ($link -split '/')[-1]
 
@@ -504,6 +525,7 @@ function Get-UpdateFileInfo {
                     $updateFileInfos.Add([pscustomobject]@{
                             Name = $fileName
                             Url  = $link
+                            KBArticleID = $kbArticleID
                         })
                 }
             }

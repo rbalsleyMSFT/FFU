@@ -1884,7 +1884,7 @@ try {
             }
             WriteLog "Searching for $Name from Microsoft Update Catalog"
             (Get-UpdateFileInfo -Name $Name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $cuUpdateInfos.Add($_) }
-            $cuKbArticleId = $global:LastKBArticleID
+            $cuKbArticleId = if ($cuUpdateInfos.Count -gt 0) { $cuUpdateInfos[0].KBArticleID } else { $null }
         }
 
         if ($UpdatePreviewCU -and $installationType -eq 'Client' -and $WindowsSKU -notlike "*LTSC") {
@@ -1892,7 +1892,7 @@ try {
             $Name = """Cumulative update Preview for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
             WriteLog "Searching for $Name from Microsoft Update Catalog"
             (Get-UpdateFileInfo -Name $Name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $cupUpdateInfos.Add($_) }
-            $cupKbArticleId = $global:LastKBArticleID
+            $cupKbArticleId = if ($cupUpdateInfos.Count -gt 0) { $cupUpdateInfos[0].KBArticleID } else { $null }
         }
 
         if ($UpdateLatestNet) {
@@ -1908,7 +1908,7 @@ try {
                 if ($WindowsRelease -eq 2021) { $name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1 for Windows 10 Version $WindowsVersion for $WindowsArch""" }
                 WriteLog "Searching for $name from Microsoft Update Catalog"
                 (Get-UpdateFileInfo -Name $name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $netUpdateInfos.Add($_) }
-                $netKbArticleId = $global:LastKBArticleID
+                $netKbArticleId = if ($netUpdateInfos.Count -gt 0) { $netUpdateInfos[0].KBArticleID } else { $null }
 
                 if ($WindowsRelease -eq 2021) { $NETFeatureName = """Microsoft .NET Framework 4.8.1 for Windows 10 Version 21H2 for x64""" }
                 if ($WindowsRelease -in 2016, 2019) { $NETFeatureName = """Microsoft .NET Framework 4.8 for Windows 10 Version $WindowsVersion and Windows Server $WindowsRelease for x64""" }
@@ -1924,7 +1924,7 @@ try {
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64""" }
                 WriteLog "Searching for $Name from Microsoft Update Catalog"
                 (Get-UpdateFileInfo -Name $Name -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $netUpdateInfos.Add($_) }
-                $netKbArticleId = $global:LastKBArticleID
+                $netKbArticleId = if ($netUpdateInfos.Count -gt 0) { $netUpdateInfos[0].KBArticleID } else { $null }
             }
         }
 
