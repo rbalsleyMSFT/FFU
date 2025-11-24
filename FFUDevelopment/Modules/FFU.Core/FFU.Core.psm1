@@ -161,9 +161,43 @@ function Get-PrivateProfileSection {
 }
 
 function Get-ShortenedWindowsSKU {
+    <#
+    .SYNOPSIS
+    Converts Windows SKU names to shortened versions for FFU file names
+
+    .DESCRIPTION
+    Maps full Windows edition names to shortened abbreviations for use in FFU file naming.
+    Handles 30+ known Windows SKU variations. For unknown SKUs, returns the original name
+    with a warning rather than failing the build.
+
+    .PARAMETER WindowsSKU
+    Full Windows SKU/edition name (e.g., "Pro", "Enterprise", "Education")
+
+    .EXAMPLE
+    Get-ShortenedWindowsSKU -WindowsSKU "Professional"
+    Returns: "Pro"
+
+    .EXAMPLE
+    Get-ShortenedWindowsSKU -WindowsSKU "Enterprise LTSC"
+    Returns: "Ent_LTSC"
+
+    .EXAMPLE
+    Get-ShortenedWindowsSKU -WindowsSKU "CustomEdition"
+    Returns: "CustomEdition" (with warning)
+
+    .NOTES
+    Enhanced with parameter validation and default case to prevent empty return values.
+    #>
+    [CmdletBinding()]
     param (
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$WindowsSKU
     )
+
+    # Trim whitespace for robust matching
+    $WindowsSKU = $WindowsSKU.Trim()
+
     $shortenedWindowsSKU = switch ($WindowsSKU) {
         'Core' { 'Home' }
         'Home' { 'Home' }
@@ -204,9 +238,17 @@ function Get-ShortenedWindowsSKU {
         'Datacenter' { 'Srv_Dtc' }
         'Standard (Desktop Experience)' { 'Srv_Std_DE' }
         'Datacenter (Desktop Experience)' { 'Srv_Dtc_DE' }
-    }
-    return $shortenedWindowsSKU
 
+        # DEFAULT CASE - Return original SKU if no match found
+        # This prevents empty string returns and allows builds to continue with unknown SKUs
+        default {
+            Write-Warning "Unknown Windows SKU '$WindowsSKU' - using original name in FFU filename"
+            Write-Verbose "If this SKU should have a shorter name, please add it to Get-ShortenedWindowsSKU function"
+            $WindowsSKU
+        }
+    }
+
+    return $shortenedWindowsSKU
 }
 
 function New-FFUFileName {

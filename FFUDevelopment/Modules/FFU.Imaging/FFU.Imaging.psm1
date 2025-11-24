@@ -588,6 +588,7 @@ function New-FFU {
         [string]$CustomFFUNameTemplate,
 
         [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
         [string]$ShortenedWindowsSKU,
 
         [Parameter(Mandatory = $false)]

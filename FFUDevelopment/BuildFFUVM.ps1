@@ -2313,10 +2313,17 @@ try {
     }
     else {
         Set-Progress -Percentage 81 -Message "Starting FFU capture from VHDX..."
+
+        # Validate WindowsSKU parameter before FFU capture
+        if ([string]::IsNullOrWhiteSpace($WindowsSKU)) {
+            WriteLog "ERROR: WindowsSKU parameter is empty or null"
+            throw "WindowsSKU parameter is required for FFU file naming. Please specify a valid Windows edition (Pro, Enterprise, Education, etc.)"
+        }
+
         #Shorten Windows SKU for use in FFU file name to remove spaces and long names
-        WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
+        WriteLog "Shortening Windows SKU: '$WindowsSKU' for FFU file name"
         $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
-        WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
+        WriteLog "Shortened Windows SKU: '$shortenedWindowsSKU'"
         #Create FFU file
         New-FFU -InstallApps $InstallApps -FFUCaptureLocation $FFUCaptureLocation `
                 -AllowVHDXCaching $AllowVHDXCaching -CustomFFUNameTemplate $CustomFFUNameTemplate `
