@@ -359,7 +359,7 @@
 
                                 <!-- Arguments -->
                                 <TextBlock Text="Arguments:" Margin="0,0,0,5"/>
-                                <TextBox x:Name="txtAppArguments" Margin="0,0,0,10" ToolTip="Enter the arguments for the command line. If the application is an msi, the command line should only contain msiexec and the rest of the command line arguments would go here (e.g. /i D:\Win32\Mozilla firefox\setup.msi /qn /norestart)."/>
+                                <TextBox x:Name="txtAppArguments" Margin="0,0,0,10" ToolTip="Enter the arguments for the command line. If the application is an msi, the command line should only contain msiexec and the rest of the command line arguments would go here (e.g. /i &quot;D:\Win32\Mozilla firefox\setup.msi&quot; /qn /norestart)."/>
 
                                 <!-- Source -->
                                 <TextBlock Text="Source:" Margin="0,0,0,5"/>
