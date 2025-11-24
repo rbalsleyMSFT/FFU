@@ -446,6 +446,65 @@ $script:uiState.Controls.btnRun.Add_Click({
                 return
             }
 
+            # PRE-FLIGHT VALIDATION: Verify FFUDevelopmentPath exists and is valid
+            $ffuDevPath = $config.FFUDevelopmentPath
+            if ([string]::IsNullOrWhiteSpace($ffuDevPath)) {
+                [System.Windows.MessageBox]::Show("FFU Development Path is not set. Please specify a valid path in the Build tab.", "Configuration Error", "OK", "Error") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: FFU Development Path not set."
+                return
+            }
+
+            # Check if path exists
+            if (-not (Test-Path -LiteralPath $ffuDevPath -PathType Container)) {
+                $msgResult = [System.Windows.MessageBox]::Show(
+                    "FFU Development Path does not exist:`n`n$ffuDevPath`n`nBuildFFUVM.ps1 will fail immediately with parameter validation error.`n`nDo you want to create this directory?",
+                    "Path Not Found",
+                    "YesNo",
+                    "Warning"
+                )
+                if ($msgResult -eq [System.Windows.MessageBoxResult]::Yes) {
+                    try {
+                        New-Item -ItemType Directory -Path $ffuDevPath -Force | Out-Null
+                        WriteLog "Created FFU Development Path: $ffuDevPath"
+                    }
+                    catch {
+                        [System.Windows.MessageBox]::Show("Failed to create directory:`n`n$($_.Exception.Message)", "Error", "OK", "Error") | Out-Null
+                        $btnRun.IsEnabled = $true
+                        $script:uiState.Controls.txtStatus.Text = "Build canceled: Could not create FFU Development Path."
+                        return
+                    }
+                }
+                else {
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: FFU Development Path does not exist."
+                    return
+                }
+            }
+
+            # Warn if FFUDevelopmentPath doesn't match where UI is running from
+            $expectedPath = $script:uiState.FFUDevelopmentPath
+            if ($ffuDevPath -ne $expectedPath) {
+                WriteLog "WARNING: FFU Development Path ($ffuDevPath) does not match UI script location ($expectedPath)"
+                WriteLog "This may indicate a configuration loaded from a different installation location."
+                $msgResult = [System.Windows.MessageBox]::Show(
+                    "WARNING: FFU Development Path mismatch detected.`n`n" +
+                    "Configured Path: $ffuDevPath`n" +
+                    "UI Location: $expectedPath`n`n" +
+                    "This usually means you loaded a configuration file from a different FFUBuilder installation.`n`n" +
+                    "Using a mismatched path may cause builds to fail or produce unexpected results.`n`n" +
+                    "Do you want to continue anyway?",
+                    "Path Mismatch Warning",
+                    "YesNo",
+                    "Warning"
+                )
+                if ($msgResult -eq [System.Windows.MessageBoxResult]::No) {
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: Path mismatch."
+                    return
+                }
+            }
+
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
             # Sort top-level keys alphabetically for consistent output
             $sortedConfig = [ordered]@{}
@@ -590,13 +649,21 @@ $script:uiState.Controls.btnRun.Add_Click({
                             $script:uiState.Data.logStreamReader = $null
                         }
 
-                        # Determine final status based on job result and whether cleanup was running (should be false here)
-                        $finalStatusText = "FFU build completed successfully."
-                        if ($currentJob.State -eq 'Failed') {
+                        # Determine final status based on job result and error output
+                        # Even "Completed" jobs can have errors (e.g., parameter validation failures)
+                        $jobOutput = Receive-Job -Job $currentJob -Keep -ErrorVariable jobErrors -ErrorAction SilentlyContinue
+                        $hasErrors = ($jobErrors.Count -gt 0) -or ($currentJob.State -eq 'Failed') -or ($currentJob.State -eq 'Stopped')
+
+                        # Additional check: if log file was never created, the job likely failed early
+                        $mainLogPath = Join-Path $config.FFUDevelopmentPath "FFUDevelopment.log"
+                        if (-not (Test-Path -LiteralPath $mainLogPath)) {
+                            $hasErrors = $true
+                        }
+
+                        if ($hasErrors) {
                             $reason = $null
-                            
-                            Receive-Job -Job $currentJob -Keep -ErrorVariable jobErrors -ErrorAction SilentlyContinue | Out-Null
-                            
+
+                            # Try to get error message from various sources
                             if ($null -ne $jobErrors -and $jobErrors.Count -gt 0) {
                                 $reason = ($jobErrors | Select-Object -Last 1).ToString()
                             }
@@ -605,17 +672,43 @@ $script:uiState.Controls.btnRun.Add_Click({
                                 $reason = $currentJob.JobStateInfo.Reason.Message
                             }
 
+                            if ([string]::IsNullOrWhiteSpace($reason) -and $jobOutput) {
+                                # Check job output for error messages
+                                $errorLines = $jobOutput | Where-Object { $_ -match '(error|exception|failed|fatal)' } | Select-Object -Last 5
+                                if ($errorLines) {
+                                    $reason = ($errorLines -join "`n")
+                                }
+                            }
+
                             if ([string]::IsNullOrWhiteSpace($reason)) {
-                                $reason = "An unknown error occurred. The job failed without a specific reason."
+                                if (-not (Test-Path -LiteralPath $mainLogPath)) {
+                                    $reason = "Build failed before creating log file. This usually indicates a parameter validation error or missing directory. Check that FFUDevelopmentPath exists and all parameters are valid."
+                                }
+                                else {
+                                    $reason = "An unknown error occurred. The job failed without a specific reason."
+                                }
                             }
 
                             $finalStatusText = "FFU build failed. Check FFUDevelopment.log for details."
-                            WriteLog "BuildFFUVM.ps1 job failed. Reason: $reason"
-                            [System.Windows.MessageBox]::Show("The build process failed. Please check the $FFUDevelopmentPath\FFUDevelopment.log file for details.`n`nError: $reason", "Build Error", "OK", "Error") | Out-Null
+                            WriteLog "BuildFFUVM.ps1 job failed. State: $($currentJob.State). Reason: $reason"
+
+                            # Show error details to user
+                            $errorMsg = "The build process failed.`n`n"
+                            if (Test-Path -LiteralPath $mainLogPath) {
+                                $errorMsg += "Please check the log file for details:`n$mainLogPath`n`n"
+                            }
+                            else {
+                                $errorMsg += "No log file was created (expected at $mainLogPath).`nThis usually indicates an early failure before logging started.`n`n"
+                            }
+                            $errorMsg += "Error: $reason"
+
+                            [System.Windows.MessageBox]::Show($errorMsg, "Build Error", "OK", "Error") | Out-Null
                             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                         }
                         else {
+                            # Job completed successfully with no errors
                             WriteLog "BuildFFUVM.ps1 job completed successfully."
+                            $finalStatusText = "FFU build completed successfully."
                             $script:uiState.Controls.pbOverallProgress.Value = 100
                         }
 

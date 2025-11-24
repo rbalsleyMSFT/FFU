@@ -170,6 +170,13 @@ function Set-UIValue {
     $valueFromConfig = $ConfigObject.$ConfigKey
     WriteLog "LoadConfig: Preparing to set '$ControlName.$PropertyName'. Config key: '$ConfigKey', Raw value: '$valueFromConfig'."
 
+    # Skip empty/null values for Text properties to preserve UI defaults
+    # This allows config files to use empty strings for paths that should use default values
+    if ($PropertyName -eq 'Text' -and [string]::IsNullOrWhiteSpace($valueFromConfig)) {
+        WriteLog "LoadConfig Info: Skipping '$ControlName.$PropertyName' because config value is empty (preserving UI default)."
+        return
+    }
+
     $finalValue = $valueFromConfig
     if ($null -ne $TransformValue) {
         try {

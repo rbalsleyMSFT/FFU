@@ -296,7 +296,7 @@ param(
         'Datacenter (Desktop Experience)'
     )]
     [string]$WindowsSKU = 'Pro',
-    [ValidateScript({ Test-Path $_ })]
+    [ValidateNotNullOrEmpty()]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
     [string]$AppListPath,
@@ -608,6 +608,23 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
             # Set the parameter's value to what's in the config file
             Set-Variable -Name $key -Value $value -Scope 0
         }
+    }
+}
+
+# Create FFUDevelopmentPath directory if it doesn't exist
+# This allows the script to work even if the directory was deleted or specified path doesn't exist yet
+if (-not (Test-Path -LiteralPath $FFUDevelopmentPath -PathType Container)) {
+    Write-Host "FFU Development Path does not exist: $FFUDevelopmentPath"
+    Write-Host "Creating directory..."
+    try {
+        New-Item -ItemType Directory -Path $FFUDevelopmentPath -Force | Out-Null
+        Write-Host "Successfully created FFU Development Path: $FFUDevelopmentPath" -ForegroundColor Green
+    }
+    catch {
+        Write-Error "FATAL: Failed to create FFU Development Path: $FFUDevelopmentPath"
+        Write-Error "Error: $($_.Exception.Message)"
+        Write-Error "Please verify you have write permissions to the parent directory."
+        throw
     }
 }
 

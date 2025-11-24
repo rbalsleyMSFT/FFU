@@ -1,25 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(Select-Object -First 10 FullName, Length)",
-      "Bash(sed:*)",
-      "Bash(Get-Location)",
-      "Bash(New-Item -ItemType Directory -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.ADK\" -Force)",
-      "Bash(Out-Null)",
-      "Bash(Remove-Item \"C:\\claude\\FFUBuilder\\verify-adk-module.ps1\" -Force)",
-      "Bash(New-Item -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.Media\" -ItemType Directory -Force)",
-      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.Media\")",
-      "Bash(Select-Object -ExpandProperty Path)",
-      "Bash(New-Item -ItemType Directory -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.VM\" -Force)",
-      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Modules\\FFU.VM\")",
-      "Bash(cmd /c \"dir /b\")",
-      "Bash(Get-ChildItem -Path C:claudeFFUBuilder -Name)",
-      "Bash(Remove-Item \"C:\\claude\\FFUBuilder\\FFUDevelopment\\remove-functions.ps1\" -Force -ErrorAction SilentlyContinue)",
-      "Bash(Remove-Item \"C:\\claude\\FFUBuilder\\FFUDevelopment\\test-syntax.ps1\" -Force -ErrorAction SilentlyContinue)",
-      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\FFU.Common\")",
-      "Bash(Test-Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\\FFUUI.Core\")",
-      "Bash(Select-Object -First 100)",
-      "Bash(Select-Object -First 50)"
+      "Bash(Get-ChildItem -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(Select-Object -First 20)"
     ],
     "deny": [],
     "ask": []
