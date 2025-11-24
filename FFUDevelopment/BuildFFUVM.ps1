@@ -306,8 +306,14 @@ param(
     [string]$Make,
     [string]$Model,
     [bool]$InstallDrivers,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(2GB, 128GB)]
     [uint64]$Memory = 4GB,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(25GB, 2TB)]
     [uint64]$Disksize = 50GB,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 64)]
     [int]$Processors = 4,
     [string]$VMSwitchName,
     [string]$VMLocation,
@@ -317,6 +323,7 @@ param(
     [string]$Username = "ffu_user",
     [string]$CustomFFUNameTemplate,
     [Parameter(Mandatory = $false)]
+    [ValidatePattern('^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$')]
     [string]$VMHostIPAddress,
     [bool]$CreateCaptureMedia = $true,
     [bool]$CreateDeploymentMedia,
@@ -435,6 +442,126 @@ param(
     [bool]$CleanupCurrentRunDownloads = $false,
     [switch]$Cleanup
 )
+
+BEGIN {
+    # ===================================================================
+    # PARAMETER VALIDATION - Cross-parameter dependencies
+    # ===================================================================
+    # This block validates combinations of parameters that have dependencies
+    # on each other. Individual parameter validation is handled by attributes.
+
+    # Validate InstallApps dependencies
+    if ($InstallApps) {
+        if ([string]::IsNullOrWhiteSpace($VMSwitchName)) {
+            throw @"
+VMSwitchName is required when InstallApps is enabled.
+
+Please specify a VM switch name using -VMSwitchName parameter.
+To see available switches, run: Get-VMSwitch | Select-Object Name
+
+Example: -VMSwitchName 'Default Switch'
+"@
+        }
+
+        if ([string]::IsNullOrWhiteSpace($VMHostIPAddress)) {
+            throw @"
+VMHostIPAddress is required when InstallApps is enabled.
+
+Please specify your host IP address using -VMHostIPAddress parameter.
+This is the IP address of the Hyper-V host that will be used for FFU capture.
+
+To find your IP address, run: Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike '127.*'}
+
+Example: -VMHostIPAddress '192.168.1.100'
+"@
+        }
+
+        # Validate VM switch exists
+        try {
+            $switch = Get-VMSwitch -Name $VMSwitchName -ErrorAction Stop
+            Write-Verbose "VM switch '$VMSwitchName' found and will be used for the build VM"
+        }
+        catch {
+            $availableSwitches = @(Get-VMSwitch | Select-Object -ExpandProperty Name)
+            if ($availableSwitches.Count -gt 0) {
+                throw @"
+VM switch '$VMSwitchName' not found.
+
+Available VM switches on this host:
+$($availableSwitches | ForEach-Object { "  - $_" } | Out-String)
+
+Please specify a valid VM switch using -VMSwitchName parameter.
+"@
+            }
+            else {
+                throw @"
+VM switch '$VMSwitchName' not found and no VM switches exist on this host.
+
+Please create a VM switch first:
+1. Open Hyper-V Manager
+2. Click 'Virtual Switch Manager' in the Actions pane
+3. Create an External, Internal, or Private switch
+4. Then specify it using -VMSwitchName parameter
+
+Or create via PowerShell: New-VMSwitch -Name 'Default Switch' -SwitchType External -NetAdapterName (Get-NetAdapter | Select-Object -First 1).Name
+"@
+            }
+        }
+    }
+
+    # Validate Make/Model dependency
+    if ($Make -and [string]::IsNullOrWhiteSpace($Model)) {
+        throw @"
+Model parameter is required when Make is specified.
+
+You specified -Make '$Make' but did not provide a -Model.
+Please specify the device model for driver download.
+
+Example: -Make 'Dell' -Model 'Latitude 7490'
+"@
+    }
+
+    # Validate InstallDrivers dependencies
+    if ($InstallDrivers -and -not $DriversFolder -and -not $Make) {
+        throw @"
+Either DriversFolder or Make must be specified when InstallDrivers is enabled.
+
+InstallDrivers is set to `$true but no driver source is specified.
+
+Options:
+1. Specify a local drivers folder: -DriversFolder 'C:\FFUDevelopment\Drivers'
+2. Specify Make/Model to auto-download: -Make 'Dell' -Model 'Latitude 7490'
+
+Example: .\BuildFFUVM.ps1 -InstallDrivers `$true -Make 'Dell' -Model 'Latitude 7490'
+"@
+    }
+
+    # Validate WindowsRelease and WindowsSKU compatibility
+    if ($WindowsRelease -in @(2016, 2019, 2022, 2024, 2025)) {
+        $serverSKUs = @('Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)')
+        if ($WindowsSKU -notin $serverSKUs) {
+            throw @"
+WindowsSKU '$WindowsSKU' is not valid for Windows Server $WindowsRelease.
+
+Windows Server releases require one of the following SKUs:
+$($serverSKUs | ForEach-Object { "  - $_" } | Out-String)
+
+Example: .\BuildFFUVM.ps1 -WindowsRelease $WindowsRelease -WindowsSKU 'Datacenter (Desktop Experience)'
+"@
+        }
+    }
+    elseif ($WindowsRelease -in @(10, 11)) {
+        $clientSKUs = @('Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N',
+                        'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations',
+                        'Enterprise', 'Enterprise N', 'Enterprise LTSC', 'Enterprise N LTSC',
+                        'IoT Enterprise LTSC', 'IoT Enterprise N LTSC')
+        if ($WindowsSKU -notin $clientSKUs) {
+            Write-Warning "WindowsSKU '$WindowsSKU' may not be valid for Windows $WindowsRelease. Expected one of: $($clientSKUs -join ', ')"
+        }
+    }
+
+    Write-Verbose "Parameter validation complete - all required parameters present and valid"
+}
 
 # Log PowerShell version information (compatible with PowerShell 5.1 and 7+)
 Write-Host "PowerShell Version: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition) Edition)" -ForegroundColor Green
