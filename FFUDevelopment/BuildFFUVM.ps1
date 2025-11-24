@@ -558,15 +558,15 @@ if ($env:PSModulePath -notlike "*$ModulePath*") {
     $env:PSModulePath = "$ModulePath;$env:PSModulePath"
 }
 
-# Import modules in dependency order
-Import-Module "FFU.Core" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.ADK" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.Drivers" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.Updates" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.VM" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.Imaging" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.Media" -Force -ErrorAction Stop -WarningAction SilentlyContinue
-Import-Module "FFU.Apps" -Force -ErrorAction Stop -WarningAction SilentlyContinue
+# Import modules in dependency order with -Global for cross-scope availability
+Import-Module "FFU.Core" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.ADK" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Drivers" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Updates" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.VM" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Imaging" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Media" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Apps" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 
 class VhdxCacheItem {
     [string]$VhdxFileName = ""
@@ -2190,6 +2190,57 @@ if ($InstallApps) {
     }
     #Create ffu user and share to capture FFU to
     try {
+        # DIAGNOSTIC: Verify Set-CaptureFFU is available before calling
+        WriteLog "Verifying Set-CaptureFFU function availability..."
+
+        $funcAvailable = Get-Command Set-CaptureFFU -ErrorAction SilentlyContinue
+
+        if (-not $funcAvailable) {
+            WriteLog "WARNING: Set-CaptureFFU not found in current session. Attempting module reload..."
+
+            # Force complete module unload and reload
+            Remove-Module FFU.VM -Force -ErrorAction SilentlyContinue
+
+            $modulePath = Join-Path $PSScriptRoot "Modules\FFU.VM\FFU.VM.psm1"
+            WriteLog "Importing FFU.VM module from: $modulePath"
+
+            if (-not (Test-Path $modulePath)) {
+                WriteLog "ERROR: Module file not found at: $modulePath"
+                throw "FFU.VM module file not found. Expected at: $modulePath"
+            }
+
+            Import-Module $modulePath -Force -Global -ErrorAction Stop
+
+            # Verify function is now available
+            $funcAvailable = Get-Command Set-CaptureFFU -ErrorAction SilentlyContinue
+
+            if (-not $funcAvailable) {
+                WriteLog "ERROR: Set-CaptureFFU still not available after module reload"
+                WriteLog "Module path: $modulePath"
+                WriteLog "Available FFU.VM module info:"
+                $moduleInfo = Get-Module FFU.VM
+                if ($moduleInfo) {
+                    WriteLog "  Module Name: $($moduleInfo.Name)"
+                    WriteLog "  Module Path: $($moduleInfo.Path)"
+                    WriteLog "  Exported Commands:"
+                    Get-Command -Module FFU.VM | Select-Object -ExpandProperty Name | ForEach-Object {
+                        WriteLog "    - $_"
+                    }
+                }
+                else {
+                    WriteLog "  ERROR: FFU.VM module not loaded"
+                }
+
+                throw "Set-CaptureFFU function not available after reload. Module import may have failed."
+            }
+
+            WriteLog "Set-CaptureFFU successfully loaded after module reload"
+        }
+        else {
+            WriteLog "Set-CaptureFFU verified available in current session"
+        }
+
+        # Call function with parameters
         Set-CaptureFFU -Username $Username -ShareName $ShareName -FFUCaptureLocation $FFUCaptureLocation
     }
     catch {
