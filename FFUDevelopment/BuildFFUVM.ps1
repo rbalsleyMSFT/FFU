@@ -3449,18 +3449,38 @@ Function Get-USBDrive {
         # Log the count of specified USB drives
         $USBDriveListCount = $USBDriveList.Count
         WriteLog "Looking for $USBDriveListCount USB drives from USB Drive List"
-        # Get only the specified USB drives based on both model and serial number
+        # Get only the specified USB drives based on model and UniqueId
         $USBDrives = @()
         foreach ($model in $USBDriveList.Keys) {
-            $serialNumber = $USBDriveList[$model]
-            Writelog "Looking for USB drive model $model with serial number $serialNumber"
-            $USBDrive = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Model LIKE '%$model%' AND SerialNumber LIKE '$serialNumber%' AND (MediaType='Removable Media' OR MediaType='External hard disk media')"
-            if ($USBDrive) {
-                WriteLog "Found USB drive model $($USBDrive.model) with serial number $($USBDrive.serialNumber)"
-                $USBDrives += $USBDrive
+            $configUniqueId = $USBDriveList[$model]
+            WriteLog "Looking for USB drive model $model with UniqueId $configUniqueId"
+            # First get candidate drives by model and media type
+            $candidateDrives = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Model LIKE '%$model%' AND (MediaType='Removable Media' OR MediaType='External hard disk media')"
+            $foundDrive = $null
+            foreach ($candidate in $candidateDrives) {
+                # Get the disk to retrieve UniqueId
+                $disk = Get-Disk -Number $candidate.Index -ErrorAction SilentlyContinue
+                if ($disk -and $disk.UniqueId) {
+                    # Trim the machine name suffix (everything after the colon) from UniqueId
+                    $diskUniqueId = if ($disk.UniqueId -match ':') {
+                        $disk.UniqueId.Split(':')[0]
+                    }
+                    else {
+                        $disk.UniqueId
+                    }
+                    # Match on the trimmed UniqueId
+                    if ($diskUniqueId -eq $configUniqueId) {
+                        $foundDrive = $candidate
+                        break
+                    }
+                }
+            }
+            if ($foundDrive) {
+                WriteLog "Found USB drive model $($foundDrive.Model) with UniqueId $configUniqueId"
+                $USBDrives += $foundDrive
             }
             else {
-                WriteLog "USB drive model $model with serial number $serialNumber not found"
+                WriteLog "USB drive model $model with UniqueId $configUniqueId not found"
             }
         }
         $USBDrivesCount = $USBDrives.Count

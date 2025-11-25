@@ -114,8 +114,9 @@ function Get-UIConfig {
         WindowsVersion                 = $State.Controls.cmbWindowsVersion.SelectedItem
     }
 
+    # Save selected USB drives using UniqueId for reliable identification
     $State.Controls.lstUSBDrives.Items | Where-Object { $_.IsSelected } | ForEach-Object {
-        $config.USBDriveList[$_.Model] = $_.SerialNumber
+        $config.USBDriveList[$_.Model] = $_.UniqueId
     }
 
     # Additional FFU file selections
@@ -669,8 +670,9 @@ function Update-UIFromConfig {
                 }
             }
 
-            if ($propertyExists -and ($propertyValue -eq $item.SerialNumber)) {
-                WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with Serial '$($item.SerialNumber)'."
+            # Match USB drives by UniqueId instead of SerialNumber
+            if ($propertyExists -and ($propertyValue -eq $item.UniqueId)) {
+                WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with UniqueId '$($item.UniqueId)'."
                 $item.IsSelected = $true
             }
             else {

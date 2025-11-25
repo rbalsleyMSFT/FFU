@@ -184,18 +184,34 @@ function Get-GeneralDefaults {
 }
 
 # Function to get USB Drives (Moved from BuildFFUVM_UI.ps1)
+# Uses Get-Disk to retrieve UniqueId which is more reliable than SerialNumber
+# UniqueId is trimmed to remove the machine name suffix (characters after colon)
 function Get-USBDrives {
     Get-WmiObject Win32_DiskDrive | Where-Object {
         ($_.MediaType -eq 'Removable Media' -or $_.MediaType -eq 'External hard disk media')
     } | ForEach-Object {
         $size = [math]::Round($_.Size / 1GB, 2)
-        $serialNumber = if ($_.SerialNumber) { $_.SerialNumber.Trim() } else { "N/A" }
+        # Get the disk using the index to retrieve UniqueId
+        $disk = Get-Disk -Number $_.Index -ErrorAction SilentlyContinue
+        # Trim the machine name suffix (everything after the colon) from UniqueId
+        $uniqueId = if ($disk -and $disk.UniqueId) {
+            $rawId = $disk.UniqueId
+            if ($rawId -match ':') {
+                $rawId.Split(':')[0]
+            }
+            else {
+                $rawId
+            }
+        }
+        else {
+            "N/A"
+        }
         @{
-            IsSelected   = $false
-            Model        = $_.Model.Trim()
-            SerialNumber = $serialNumber
-            Size         = $size
-            DriveIndex   = $_.Index
+            IsSelected = $false
+            Model      = $_.Model.Trim()
+            UniqueId   = $uniqueId
+            Size       = $size
+            DriveIndex = $_.Index
         }
     }
 }

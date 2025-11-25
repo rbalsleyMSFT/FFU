@@ -655,14 +655,14 @@ function Initialize-DynamicUIElements {
             $modelColumn.Header = $modelHeader
         }
     
-        # Serial Number Column (index 1 in XAML, now 2)
+        # Unique ID Column (index 1 in XAML, now 2)
         if ($usbDrivesGridView.Columns.Count -gt 2) {
-            $serialColumn = $usbDrivesGridView.Columns[2]
-            $serialHeader = New-Object System.Windows.Controls.GridViewColumnHeader
-            $serialHeader.Content = "Serial Number"
-            $serialHeader.Tag = "SerialNumber" # Property to sort by
-            $serialHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
-            $serialColumn.Header = $serialHeader
+            $uniqueIdColumn = $usbDrivesGridView.Columns[2]
+            $uniqueIdHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $uniqueIdHeader.Content = "Unique ID"
+            $uniqueIdHeader.Tag = "UniqueId" # Property to sort by
+            $uniqueIdHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $uniqueIdColumn.Header = $uniqueIdHeader
         }
     
         # Size Column (index 2 in XAML, now 3)

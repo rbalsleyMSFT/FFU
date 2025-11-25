@@ -818,7 +818,7 @@
                                             <GridView>
 
                                                 <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
-                                                <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
+                                                <GridViewColumn Header="Unique ID" DisplayMemberBinding="{Binding UniqueId}" Width="300"/>
                                                 <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
                                             </GridView>
                                         </ListView.View>
