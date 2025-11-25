@@ -3494,7 +3494,7 @@ Function Get-USBDrive {
     }
     
     # Check if any USB drives were found
-    if ($null -eq $USBDrives) {
+    if ($USBDrives.Count -eq 0) {
         WriteLog "No USB drive found. Exiting"
         Write-Error "No USB drive found. Exiting"
         exit 1
