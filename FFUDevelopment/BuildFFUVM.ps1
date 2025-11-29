@@ -202,6 +202,9 @@ Example: @{ "SanDisk Ultra" = "1234567890"; "Kingston DataTraveler" = "098765432
 .PARAMETER MaxUSBDrives
 Maximum number of USB drives to build in parallel. Default is 5. Set to 0 to process all discovered drives (or all selected drives when USBDriveList or selection is used). Actual throttle will never exceed the number of drives discovered.
 
+.PARAMETER Threads
+Controls the throttle applied to parallel tasks inside the script. Default is 5, matching the UI Threads field, and applies to driver downloads invoked through Invoke-ParallelProcessing.
+
 .PARAMETER UserAgent
 User agent string to use when downloading files.
 
@@ -354,6 +357,8 @@ param(
     [bool]$BuildUSBDrive,
     [hashtable]$USBDriveList,
     [int]$MaxUSBDrives = 5,
+    [ValidateRange(1, 64)]
+    [int]$Threads = 5,
     [ValidateSet('Foreground', 'High', 'Normal', 'Low')]
     [string]$BitsPriority = 'Normal',
     [Parameter(Mandatory = $false)]
@@ -5040,13 +5045,15 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         }
         
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
+        # Use the configured Threads value to control driver download concurrency
         $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $driversToProcess `
             -TaskType 'DownloadDriverByMake' `
             -TaskArguments $taskArguments `
             -IdentifierProperty 'Model' `
             -WindowObject $null `
             -ListViewControl $null `
-            -MainThreadLogPath $LogFile
+            -MainThreadLogPath $LogFile `
+            -ThrottleLimit $Threads
 
         # After processing, update the driver mapping file and detect failures
         $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
