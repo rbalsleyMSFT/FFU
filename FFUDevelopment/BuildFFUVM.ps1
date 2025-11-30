@@ -2023,7 +2023,7 @@ function Get-WindowsESD {
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
                 Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
-                Invoke-WebRequest -Uri $file.FilePath -OutFile $esdFilePath -Headers $Headers -UserAgent $UserAgent
+                Start-BitsTransferWithRetry -Source $file.FilePath -Destination $esdFilePath
                 Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Download succeeded"
@@ -2036,8 +2036,6 @@ function Get-WindowsESD {
         }
     }
 }
-
-
 
 function Get-ODTURL {
     try {
