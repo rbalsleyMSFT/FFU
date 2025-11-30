@@ -5262,7 +5262,7 @@ if ($InstallApps) {
                 # If there are no existing apps, use the original AppList.json directly
                 if (-not $hasExistingApps) {
                     WriteLog "No existing applications found. Using original AppList.json for all apps."
-                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
+                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
                 }
                 else {
                     # Compare apps in AppList.json with existing installations
@@ -5334,7 +5334,7 @@ if ($InstallApps) {
             
                         # Download missing apps
                         WriteLog "Downloading missing applications"
-                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
+                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
                         
                         # Cleanup modified app list
                         Remove-Item -Path $modifiedAppListPath -Force

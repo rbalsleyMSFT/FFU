@@ -156,7 +156,7 @@ function Invoke-ParallelProcessing {
                 # Execute the appropriate background task based on $localTaskType
                 switch ($localTaskType) {
                     'WingetDownload' {
-                        # Pass the progress queue to the task function
+                        # Pass the progress queue and SkipWin32Json to the task function
                         $wingetTaskArgs = @{
                             ApplicationItemData = $currentItem
                             AppListJsonPath     = $localJobArgs['AppListJsonPath']
@@ -164,6 +164,7 @@ function Invoke-ParallelProcessing {
                             OrchestrationPath   = $localJobArgs['OrchestrationPath']
                             ProgressQueue       = $localProgressQueue
                             WindowsArch         = $localJobArgs['WindowsArch']
+                            SkipWin32Json       = [bool]$localJobArgs['SkipWin32Json']
                         }
                         $taskResult = Start-WingetAppDownloadTask @wingetTaskArgs
                         if ($null -ne $taskResult) {

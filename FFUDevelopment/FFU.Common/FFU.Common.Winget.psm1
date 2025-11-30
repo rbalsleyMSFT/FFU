@@ -339,6 +339,324 @@ function Get-Application {
     
     return $overallResult
 }
+# Function to handle downloading a winget application in parallel
+# This function is called by Invoke-ParallelProcessing for each app
+function Start-WingetAppDownloadTask {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$ApplicationItemData,
+        [Parameter(Mandatory = $true)]
+        [string]$AppListJsonPath,
+        [Parameter(Mandatory = $true)]
+        [string]$AppsPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath,
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue,
+        [string]$WindowsArch,
+        [switch]$SkipWin32Json
+    )
+        
+    $appName = $ApplicationItemData.Name
+    $appId = $ApplicationItemData.Id
+    $source = $ApplicationItemData.Source
+    $status = "Checking..."
+    $resultCode = -1
+    $sanitizedAppName = ConvertTo-SafeName -Name $appName
+    
+    # Initial status update
+    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+    
+    WriteLog "Starting download task for $($appName) with ID $($appId) from source $($source)."
+
+    try {
+        # Define paths
+        $userAppListPath = Join-Path -Path $AppsPath -ChildPath "UserAppList.json"
+        $appFound = $false
+
+        # 1. Check UserAppList.json and content
+        if (Test-Path -Path $userAppListPath) {
+            try {
+                $userAppListContent = Get-Content -Path $userAppListPath -Raw | ConvertFrom-Json
+                $userAppEntry = $userAppListContent | Where-Object { $_.Name -eq $appName }
+
+                if ($userAppEntry) {
+                    $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $sanitizedAppName
+                    if (Test-Path -Path $appFolder -PathType Container) {
+                        $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                        if ($folderSize -gt 1MB) {
+                            $appFound = $true
+                            $status = "Not Downloaded: App in $userAppListPath and found in $appFolder"
+                            Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                            WriteLog "Found '$appName' in $userAppListPath and content exists in '$appFolder'."
+                            return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
+                        }
+                        else {
+                            $appFound = $true
+                            $status = "App in '$userAppListPath' but content missing/small in '$appFolder'. Copy content or remove from UserAppList.json."
+                            Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                            WriteLog $status
+                            return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
+                        }
+                    }
+                    else {
+                        $appFound = $true
+                        $status = "App in '$userAppListPath' but content folder '$appFolder' not found. Copy content or remove from UserAppList.json."
+                        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                        WriteLog $status
+                        return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
+                    }
+                }
+            }
+            catch {
+                WriteLog "Warning: Could not read or parse '$userAppListPath'. Error: $($_.Exception.Message)"
+            }
+        }
+
+        # 2. Check existing downloaded Win32 content (folder-based)
+        if (-not $appFound -and $source -eq 'winget') {
+            $appFolder = Join-Path -Path "$AppsPath\Win32" -ChildPath $sanitizedAppName
+            if (Test-Path -Path $appFolder -PathType Container) {
+                $contentFound = $false
+                if ($ApplicationItemData.Architecture -eq 'x86 x64') {
+                    $x86Folder = Join-Path -Path $appFolder -ChildPath "x86"
+                    $x64Folder = Join-Path -Path $appFolder -ChildPath "x64"
+                    if ((Test-Path -Path $x86Folder -PathType Container) -and (Test-Path -Path $x64Folder -PathType Container)) {
+                        $x86Size = (Get-ChildItem -Path $x86Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                        $x64Size = (Get-ChildItem -Path $x64Folder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                        if ($x86Size -gt 1MB -and $x64Size -gt 1MB) {
+                            $contentFound = $true
+                        }
+                    }
+                }
+                else {
+                    $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                    if ($folderSize -gt 1MB) {
+                        $contentFound = $true
+                    }
+                }
+                if ($contentFound) {
+                    $appFound = $true
+                    $status = "Not Downloaded: Existing content found in $appFolder"
+                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                    WriteLog "Found existing content for '$appName' in '$appFolder'. Skipping download to prevent duplicate entry."
+                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
+                }
+            }
+        }
+
+        # Check MSStore folder
+        if (-not $appFound -and (Test-Path -Path "$AppsPath\MSStore" -PathType Container)) {
+            $appFolder = Join-Path -Path "$AppsPath\MSStore" -ChildPath $sanitizedAppName
+            if (Test-Path -Path $appFolder -PathType Container) {
+                $folderSize = (Get-ChildItem -Path $appFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                if ($folderSize -gt 1MB) {
+                    $appFound = $true
+                    $status = "Already downloaded (MSStore)"
+                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                    WriteLog "Found '$appName' content in '$appFolder'."
+                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
+                }
+            }
+        }
+
+        # 3. If not found locally, add to AppList.json and download
+        if (-not $appFound) {
+            # Add to AppList.json with mutex lock for thread safety
+            $appListContent = $null
+            $appListDir = Split-Path -Path $AppListJsonPath -Parent
+            if (-not (Test-Path -Path $appListDir -PathType Container)) {
+                New-Item -Path $appListDir -ItemType Directory -Force | Out-Null
+            }
+            if (Test-Path -Path $AppListJsonPath) {
+                try {
+                    $appListContent = Get-Content -Path $AppListJsonPath -Raw | ConvertFrom-Json
+                    if (-not $appListContent.PSObject.Properties['apps']) {
+                        $appListContent = @{ apps = @() }
+                    }
+                }
+                catch {
+                    WriteLog "Warning: Could not read or parse '$AppListJsonPath'. Creating new structure. Error: $($_.Exception.Message)"
+                    $appListContent = @{ apps = @() }
+                }
+            }
+            else {
+                $appListContent = @{ apps = @() }
+            }
+
+            $appExistsInAppList = $false
+            if ($appListContent.apps) {
+                foreach ($app in $appListContent.apps) {
+                    if ($app.id -eq $appId) {
+                        $appExistsInAppList = $true
+                        break
+                    }
+                }
+            }
+
+            if (-not $appExistsInAppList) {
+                $newApp = @{ name = $sanitizedAppName; id = $appId; source = $source }
+                if (-not ($appListContent.apps -is [array])) { $appListContent.apps = @() }
+                $appListContent.apps += $newApp
+                try {
+                    # Use a mutex lock to prevent race conditions when writing to the same file
+                    $lockName = "AppListJsonLock"
+                    $lock = New-Object System.Threading.Mutex($false, $lockName)
+                    try {
+                        $lock.WaitOne() | Out-Null
+                        # Re-read content inside lock to ensure latest version
+                        if (Test-Path -Path $AppListJsonPath) {
+                            $currentAppListContent = Get-Content -Path $AppListJsonPath -Raw | ConvertFrom-Json
+                            if (-not ($currentAppListContent.apps | Where-Object { $_.id -eq $appId })) {
+                                $currentAppListContent.apps += $newApp
+                                $currentAppListContent | ConvertTo-Json -Depth 10 | Set-Content -Path $AppListJsonPath -Encoding UTF8
+                                WriteLog "Added '$appName' to '$AppListJsonPath'."
+                            }
+                            else {
+                                WriteLog "'$appName' already exists in '$AppListJsonPath' (checked inside lock)."
+                            }
+                        }
+                        else {
+                            # File doesn't exist, write the initial content
+                            $appListContent | ConvertTo-Json -Depth 10 | Set-Content -Path $AppListJsonPath -Encoding UTF8
+                            WriteLog "Created '$AppListJsonPath' and added '$appName'."
+                        }
+                    }
+                    finally {
+                        $lock.ReleaseMutex()
+                        $lock.Dispose()
+                    }
+                }
+                catch {
+                    WriteLog "Error saving '$AppListJsonPath'. Error: $($_.Exception.Message)"
+                    $status = "Failed to save AppList.json: $($_.Exception.Message)"
+                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 1 }
+                }
+            }
+            else {
+                WriteLog "'$appName' already exists in '$AppListJsonPath'."
+            }
+
+            # Proceed with download
+            $status = "Downloading..."
+            Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+
+            # Ensure necessary folders exist
+            WriteLog "Orchestration Path: $($OrchestrationPath)"
+            if (-not (Test-Path -Path $OrchestrationPath -PathType Container)) {
+                New-Item -Path $OrchestrationPath -ItemType Directory -Force | Out-Null
+            }
+            $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
+            if ($source -eq "winget" -and -not (Test-Path -Path $win32Folder -PathType Container)) {
+                New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
+            }
+            $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
+            if ($source -eq "msstore" -and -not (Test-Path -Path $storeAppsFolder -PathType Container)) {
+                New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
+            }
+
+            try {
+                # Call Get-Application to perform the actual download
+                # Pass SkipWin32Json based on caller context (UI mode skips, CLI mode creates)
+                $getAppParams = @{
+                    AppName          = $appName
+                    AppId            = $appId
+                    Source           = $source
+                    AppsPath         = $AppsPath
+                    ApplicationArch  = $ApplicationItemData.Architecture
+                    WindowsArch      = $WindowsArch
+                    OrchestrationPath = $OrchestrationPath
+                    ErrorAction      = 'Stop'
+                }
+                if ($SkipWin32Json) {
+                    $getAppParams['SkipWin32Json'] = $true
+                }
+                $resultCode = Get-Application @getAppParams
+
+                # Determine status based on result code
+                switch ($resultCode) {
+                    0 { $status = "Downloaded successfully" }
+                    1 { $status = "Error: No app installers were found" }
+                    2 { $status = "Silent install switch could not be found. Did not download." }
+                    3 { $status = "Error: Publisher does not support download" }
+                    4 { $status = "Skipped: Use 'msstore' source instead." }
+                    default { $status = "Downloaded with status: $resultCode" }
+                }
+
+                # Remove app from AppList.json if silent install switch could not be found (resultCode 2)
+                if ($resultCode -eq 2) {
+                    try {
+                        if (Test-Path -Path $AppListJsonPath) {
+                            $appListContent = Get-Content -Path $AppListJsonPath -Raw | ConvertFrom-Json
+                            if ($appListContent.apps) {
+                                $filteredApps = @($appListContent.apps | Where-Object { $_.id -ne $appId })
+                                $appListContent.apps = $filteredApps
+                                $appListContent | ConvertTo-Json -Depth 10 | Set-Content -Path $AppListJsonPath -Encoding UTF8
+                                WriteLog "Removed '$appName' ($appId) from '$AppListJsonPath' due to missing silent install switch."
+                            }
+                        }
+                    }
+                    catch {
+                        WriteLog "Failed to remove '$appName' from '$AppListJsonPath': $($_.Exception.Message)"
+                    }
+                }
+            }
+            catch {
+                $status = $_.Exception.Message
+                WriteLog "Download error for $($appName): $($_.Exception.Message)"
+                $resultCode = 1
+                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                
+                # Remove app from AppList.json if publisher does not support download
+                if ($_.Exception.Message -match "does not support downloads by the publisher") {
+                    try {
+                        if (Test-Path -Path $AppListJsonPath) {
+                            $appListContent = Get-Content -Path $AppListJsonPath -Raw | ConvertFrom-Json
+                            if ($appListContent.apps) {
+                                $filteredApps = @($appListContent.apps | Where-Object { $_.id -ne $appId })
+                                $appListContent.apps = $filteredApps
+                                $appListContent | ConvertTo-Json -Depth 10 | Set-Content -Path $AppListJsonPath -Encoding UTF8
+                                WriteLog "Removed '$appName' ($appId) from '$AppListJsonPath' due to publisher download restriction."
+                            }
+                        }
+                    }
+                    catch {
+                        WriteLog "Failed to remove '$appName' from '$AppListJsonPath': $($_.Exception.Message)"
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        $status = $_.Exception.Message
+        WriteLog "Unexpected error in Start-WingetAppDownloadTask for $($appName): $($_.Exception.Message)"
+        $resultCode = 1
+        Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+    }
+    finally {
+        # Ensure status is not empty before returning
+        if ([string]::IsNullOrEmpty($status)) {
+            $status = "Unknown failure"
+            WriteLog "Status was empty for $appName ($appId), setting to default error."
+            if ($resultCode -ne 0 -and $resultCode -ne 1 -and $resultCode -ne 2) {
+                $resultCode = -1
+            }
+            Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+        }
+        elseif ($resultCode -ne 0) {
+            Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+        }
+        else {
+            Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+        }
+    }
+            
+    # Return the final status and result code
+    return @{ Id = $appId; Status = $status; ResultCode = $resultCode }
+}
+
 function Get-Apps {
     [CmdletBinding()]
     param (
@@ -349,28 +667,31 @@ function Get-Apps {
         [Parameter(Mandatory = $true)]
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
-        [string]$OrchestrationPath
+        [string]$OrchestrationPath,
+        [Parameter(Mandatory = $false)]
+        [string]$LogFilePath,
+        [Parameter(Mandatory = $false)]
+        [int]$ThrottleLimit = 5
     )
     
     # Load and validate app list
     $apps = Get-Content -Path $AppList -Raw | ConvertFrom-Json
-    if (-not $apps) {
+    if (-not $apps -or -not $apps.apps -or $apps.apps.Count -eq 0) {
         WriteLog "No apps were specified in AppList.json file."
         return
     }
     
-    # Process WinGet apps
+    # Log app list summary
     $wingetApps = $apps.apps | Where-Object { $_.source -eq "winget" }
     if ($wingetApps) {
         WriteLog 'Winget apps to be installed:'
         $wingetApps | ForEach-Object { WriteLog $_.Name }
     }
     
-    # Process Store apps
-    $StoreApps = $apps.apps | Where-Object { $_.source -eq "msstore" }
-    if ($StoreApps) {
+    $storeApps = $apps.apps | Where-Object { $_.source -eq "msstore" }
+    if ($storeApps) {
         WriteLog 'Store apps to be installed:'
-        $StoreApps | ForEach-Object { WriteLog $_.Name }
+        $storeApps | ForEach-Object { WriteLog $_.Name }
     }
     
     # Ensure WinGet is available
@@ -379,44 +700,51 @@ function Get-Apps {
     # Create necessary folders
     $win32Folder = Join-Path -Path $AppsPath -ChildPath "Win32"
     $storeAppsFolder = Join-Path -Path $AppsPath -ChildPath "MSStore"
-
-    # Process WinGet apps
-    if ($wingetApps) {
-        if (-not (Test-Path -Path $win32Folder -PathType Container)) {
-            WriteLog "Creating folder for Winget Win32 apps: $win32Folder"
-            New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
-            WriteLog "Folder created successfully."
-        }
-        
-        foreach ($wingetApp in $wingetApps) {
-            try {
-                $appArch = if ($wingetApp.PSObject.Properties['architecture']) { $wingetApp.architecture } else { $WindowsArch }
-                Get-Application -AppName $wingetApp.Name -AppId $wingetApp.Id -Source 'winget' -AppsPath $AppsPath -ApplicationArch $appArch -OrchestrationPath $OrchestrationPath
-            }
-            catch {
-                WriteLog "Error occurred while processing $($wingetApp.Name): $_"
-                throw $_
-            }
+    
+    if (-not (Test-Path -Path $win32Folder -PathType Container)) {
+        WriteLog "Creating folder for Winget Win32 apps: $win32Folder"
+        New-Item -Path $win32Folder -ItemType Directory -Force | Out-Null
+    }
+    if (-not (Test-Path -Path $storeAppsFolder -PathType Container)) {
+        WriteLog "Creating folder for MSStore apps: $storeAppsFolder"
+        New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
+    }
+    
+    # Transform apps into the format expected by Invoke-ParallelProcessing
+    $itemsToProcess = $apps.apps | ForEach-Object {
+        $appArch = if ($_.PSObject.Properties['architecture']) { $_.architecture } else { $WindowsArch }
+        [PSCustomObject]@{
+            Name         = $_.name
+            Id           = $_.id
+            Source       = $_.source
+            Architecture = $appArch
         }
     }
     
-    # Process Store apps
-    if ($StoreApps) {
-        if (-not (Test-Path -Path $storeAppsFolder -PathType Container)) {
-            New-Item -Path $storeAppsFolder -ItemType Directory -Force | Out-Null
-        }
-            
-        foreach ($storeApp in $StoreApps) {
-            try {
-                $appArch = if ($storeApp.PSObject.Properties['architecture']) { $storeApp.architecture } else { $WindowsArch }
-                Get-Application -AppName $storeApp.Name -AppId $storeApp.Id -Source 'msstore' -AppsPath $AppsPath -ApplicationArch $appArch -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
-            }
-            catch {
-                WriteLog "Error occurred while processing $($storeApp.Name): $_"
-                throw $_
-            }
-        }
+    WriteLog "Starting parallel download of $($itemsToProcess.Count) applications with ThrottleLimit: $ThrottleLimit"
+    
+    # Build task arguments for Invoke-ParallelProcessing
+    # CLI builds should create WinGetWin32Apps.json, so SkipWin32Json is false
+    $taskArguments = @{
+        AppsPath          = $AppsPath
+        AppListJsonPath   = $AppList
+        OrchestrationPath = $OrchestrationPath
+        WindowsArch       = $WindowsArch
+        SkipWin32Json     = $false
     }
+    
+    # Invoke parallel processing in non-UI mode (no WindowObject or ListViewControl)
+    Invoke-ParallelProcessing -ItemsToProcess $itemsToProcess `
+        -IdentifierProperty 'Id' `
+        -StatusProperty 'DownloadStatus' `
+        -TaskType 'WingetDownload' `
+        -TaskArguments $taskArguments `
+        -CompletedStatusText "Completed" `
+        -ErrorStatusPrefix "Error: " `
+        -MainThreadLogPath $LogFilePath `
+        -ThrottleLimit $ThrottleLimit
+    
+    WriteLog "Parallel download of applications completed."
     
     # Post-processing: Override CommandLine / Arguments from AppList.json if provided
     # Users may supply custom silent install commands or arguments. These optional
@@ -749,4 +1077,4 @@ function Add-Win32SilentInstallCommand {
 # --------------------------------------------------------------------------
 
 # Export functions needed by both BuildFFUVM and the UI Core module
-Export-ModuleMember -Function Get-Application, Get-Apps, Confirm-WinGetInstallation, Add-Win32SilentInstallCommand, Install-Winget
+Export-ModuleMember -Function Get-Application, Get-Apps, Start-WingetAppDownloadTask, Confirm-WinGetInstallation, Add-Win32SilentInstallCommand, Install-Winget
