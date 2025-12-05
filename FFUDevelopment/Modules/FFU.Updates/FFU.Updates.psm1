@@ -300,8 +300,12 @@ function Get-WindowsESD {
                 Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 $VerbosePreference = $OriginalVerbosePreference
                 WriteLog "Cleanup cab and xml file"
-                Remove-Item -Path $cabFilePath -Force
-                Remove-Item -Path $xmlFilePath -Force
+                if (-not [string]::IsNullOrWhiteSpace($cabFilePath)) {
+                    Remove-Item -Path $cabFilePath -Force -ErrorAction SilentlyContinue
+                }
+                if (-not [string]::IsNullOrWhiteSpace($xmlFilePath)) {
+                    Remove-Item -Path $xmlFilePath -Force -ErrorAction SilentlyContinue
+                }
                 WriteLog "Cleanup done"
             }
             return $esdFilePath
@@ -355,7 +359,34 @@ function Get-KBLink {
     )
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
+
+    # Search catalog with retry logic for network resilience
+    $maxRetries = 3
+    $retryDelay = 10
+    $results = $null
+
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        try {
+            $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
+            break
+        }
+        catch {
+            $VerbosePreference = $OriginalVerbosePreference
+            if ($attempt -eq $maxRetries) {
+                WriteLog "ERROR: Failed to search Update Catalog after $maxRetries attempts: $($_.Exception.Message)"
+                return [PSCustomObject]@{
+                    KBArticleID = $null
+                    Links = @()
+                }
+            }
+            WriteLog "WARNING: Update Catalog search failed (attempt $attempt of $maxRetries): $($_.Exception.Message)"
+            WriteLog "Retrying in $retryDelay seconds..."
+            Start-Sleep -Seconds $retryDelay
+            $retryDelay = $retryDelay * 2  # Exponential backoff
+            $VerbosePreference = 'SilentlyContinue'
+        }
+    }
+
     $VerbosePreference = $OriginalVerbosePreference
 
     # Extract the first KB article ID from the HTML content
@@ -419,10 +450,21 @@ function Get-KBLink {
         $body = @{ updateIDs = "[$post]" }
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
-        $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body -Headers $Headers -UserAgent $UserAgent |
-        Select-Object -ExpandProperty Content |
-        Select-String -AllMatches -Pattern "http[s]?://[^']*\.microsoft\.com/[^']*|http[s]?://[^']*\.windowsupdate\.com/[^']*" |
-        Select-Object -Unique
+
+        # Get download links with error handling
+        $links = $null
+        try {
+            $links = Invoke-WebRequest -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method Post -Body $body -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop |
+            Select-Object -ExpandProperty Content |
+            Select-String -AllMatches -Pattern "http[s]?://[^']*\.microsoft\.com/[^']*|http[s]?://[^']*\.windowsupdate\.com/[^']*" |
+            Select-Object -Unique
+        }
+        catch {
+            $VerbosePreference = $OriginalVerbosePreference
+            WriteLog "WARNING: Failed to get download links for $guid : $($_.Exception.Message)"
+            continue
+        }
+
         $VerbosePreference = $OriginalVerbosePreference
 
         foreach ($link in $links) {
@@ -600,7 +642,27 @@ function Save-KB {
         [string[]]$Filter = @()
     )
     foreach ($kb in $name) {
-        $links = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+        # Architecture-agnostic updates: Defender, Edge, and Security Platform updates
+        # don't have architecture indicators (x64/x86/ARM64) in their Microsoft Update Catalog titles.
+        # Skip the filter for these updates and rely on post-download architecture detection.
+        $isArchAgnosticUpdate = $kb -match 'Defender|Edge|Security Platform'
+
+        if ($isArchAgnosticUpdate -and $Filter -and $Filter.Count -gt 0) {
+            WriteLog "Update '$kb' is architecture-agnostic in catalog listing. Skipping architecture filter."
+            $kbResult = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter @()
+        } else {
+            $kbResult = Get-KBLink -Name $kb -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+        }
+        $links = $kbResult.Links
+
+        # Check if Get-KBLink returned any links
+        if (-not $links -or $links.Count -eq 0) {
+            WriteLog "WARNING: No download links found for '$kb' with Filter: $($Filter -join ', '). This may indicate the update is not available for the specified architecture or search criteria."
+            continue  # Skip to next KB in the array
+        }
+
+        WriteLog "Found $($links.Count) download link(s) for '$kb'"
+
         foreach ($link in $links) {
             # if (!($link -match 'x64' -or $link -match 'amd64' -or $link -match 'x86' -or $link -match 'arm64')) {
             #     WriteLog "No architecture found in $link, skipping"
@@ -655,13 +717,20 @@ function Save-KB {
                 }
                 else {
                     Writelog "Deleting $fileName, architecture does not match"
-                    Remove-Item -Path $filePath -Force
+                    if (-not [string]::IsNullOrWhiteSpace($filePath)) {
+                        Remove-Item -Path $filePath -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
 
         }
     }
-    return $fileName
+
+    # If we reached here, no matching architecture file was found
+    WriteLog "ERROR: No file matching architecture '$WindowsArch' was found for update(s): $($Name -join ', ')"
+    WriteLog "ERROR: All download links were checked but none matched the target architecture."
+    WriteLog "ERROR: Filter used: $($Filter -join ', ')"
+    return $null
 }
 
 function Test-MountedImageDiskSpace {
@@ -1169,10 +1238,73 @@ function Add-WindowsPackageWithUnattend {
                 WriteLog "No unattend.xml files found in MSU package (this is normal for most updates)"
             }
 
-            # Now apply the package with DISM
-            WriteLog "Applying package with Add-WindowsPackage"
-            Add-WindowsPackage -Path $Path -PackagePath $PackagePath | Out-Null
-            WriteLog "Package $packageName applied successfully"
+            # Windows 11 24H2/25H2 Checkpoint Cumulative Update Fix (error 0x80070228)
+            # UUP (Unified Update Platform) packages like KB5043080 trigger Windows Update Agent
+            # to download additional content, which fails on offline images with "Failed getting
+            # the download request" (0x80070228).
+            #
+            # Solution: Apply the CAB file directly instead of the MSU. CAB files don't trigger
+            # the UpdateAgent mechanism, completely bypassing the UUP download requirement.
+            # See: https://learn.microsoft.com/en-us/answers/questions/3855149/
+
+            # Find the main CAB file in the extracted MSU contents
+            # Exclude WSUSSCAN.cab (metadata only) and look for the actual update CAB
+            $cabFiles = Get-ChildItem -Path $extractPath -Filter "*.cab" -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch 'WSUSSCAN' -and $_.Name -notmatch 'wsusscan' }
+
+            if ($cabFiles -and $cabFiles.Count -gt 0) {
+                WriteLog "Found $($cabFiles.Count) CAB file(s) in MSU package - applying directly to bypass UUP"
+
+                # Apply each CAB file (typically there's only one main CAB)
+                foreach ($cabFile in $cabFiles) {
+                    WriteLog "Applying CAB: $($cabFile.Name) (Size: $([Math]::Round($cabFile.Length / 1MB, 2)) MB)"
+
+                    try {
+                        Add-WindowsPackage -Path $Path -PackagePath $cabFile.FullName -ErrorAction Stop | Out-Null
+                        WriteLog "CAB $($cabFile.Name) applied successfully"
+                    }
+                    catch {
+                        # Check if error is "package already installed" (not an error for us)
+                        if ($_.Exception.Message -match 'is already installed' -or
+                            $_.Exception.Message -match '0x800f081e' -or
+                            $_.Exception.Message -match 'CBS_E_ALREADY_INSTALLED') {
+                            WriteLog "CAB $($cabFile.Name) is already installed (skipping)"
+                        }
+                        else {
+                            WriteLog "ERROR applying CAB $($cabFile.Name): $($_.Exception.Message)"
+                            throw $_
+                        }
+                    }
+                }
+
+                WriteLog "Package $packageName applied successfully via direct CAB method"
+            }
+            else {
+                # Fallback: No CAB files found, try MSU directly with isolated directory
+                WriteLog "WARNING: No CAB files found in extracted MSU, falling back to isolated MSU method"
+
+                $isolatedApplyPath = Join-Path $extractBasePath "MSU_Apply_$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+                try {
+                    # Create isolated directory and copy MSU there
+                    New-Item -Path $isolatedApplyPath -ItemType Directory -Force | Out-Null
+                    $isolatedPackagePath = Join-Path $isolatedApplyPath $packageName
+                    Copy-Item -Path $PackagePath -Destination $isolatedPackagePath -Force
+                    WriteLog "Isolated MSU to prevent checkpoint update conflict: $isolatedApplyPath"
+
+                    # Apply the package from isolated directory
+                    WriteLog "Applying package with Add-WindowsPackage (isolated mode)"
+                    Add-WindowsPackage -Path $Path -PackagePath $isolatedPackagePath | Out-Null
+                    WriteLog "Package $packageName applied successfully"
+                }
+                finally {
+                    # Clean up isolated directory
+                    if (Test-Path $isolatedApplyPath) {
+                        Remove-Item -Path $isolatedApplyPath -Recurse -Force -ErrorAction SilentlyContinue
+                        WriteLog "Cleaned up isolated MSU directory"
+                    }
+                }
+            }
 
         }
         catch {
@@ -1212,6 +1344,296 @@ function Add-WindowsPackageWithUnattend {
     }
 }
 
+function Resolve-KBFilePath {
+    <#
+    .SYNOPSIS
+    Resolves a KB file path using multiple fallback patterns
+
+    .DESCRIPTION
+    Attempts to locate a Windows Update package file in the KB folder using
+    multiple search strategies:
+    1. Direct filename match (if provided)
+    2. KB article ID pattern match (*KBxxxxxx*)
+    3. Update name pattern match
+
+    Returns the full path if found, or $null if not found.
+    This prevents the "empty PackagePath" error when files don't match expected patterns.
+
+    .PARAMETER KBPath
+    Base path to the KB downloads folder
+
+    .PARAMETER FileName
+    Optional specific filename to search for (from update info)
+
+    .PARAMETER KBArticleId
+    Optional KB article ID (e.g., "5046613") for pattern matching
+
+    .PARAMETER UpdateType
+    Type of update for logging (e.g., "CU", "NET", "SSU")
+
+    .EXAMPLE
+    Resolve-KBFilePath -KBPath "C:\FFU\KB" -KBArticleId "5046613" -UpdateType "CU"
+
+    .EXAMPLE
+    Resolve-KBFilePath -KBPath "C:\FFU\KB" -FileName "windows11.0-kb5046613-x64.msu" -UpdateType "CU"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$KBPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$FileName,
+
+        [Parameter(Mandatory = $false)]
+        [string]$KBArticleId,
+
+        [Parameter(Mandatory = $false)]
+        [string]$UpdateType = "Update"
+    )
+
+    # Helper function for safe logging (WriteLog may not be available in standalone tests)
+    $logMessage = {
+        param([string]$msg)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog $msg
+        } else {
+            Write-Verbose $msg
+        }
+    }
+
+    # Ensure KB path exists
+    if (-not (Test-Path -Path $KBPath)) {
+        & $logMessage "WARNING: KB path does not exist: $KBPath"
+        return $null
+    }
+
+    $resolvedPath = $null
+
+    # Strategy 1: Try direct filename match first (most reliable)
+    if ($FileName -and $FileName.Length -gt 0) {
+        $directMatch = Get-ChildItem -Path $KBPath -Filter $FileName -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($directMatch) {
+            $resolvedPath = $directMatch.FullName
+            & $logMessage "Resolved $UpdateType path via direct filename match: $resolvedPath"
+            return $resolvedPath
+        }
+    }
+
+    # Strategy 2: Try KB article ID pattern match
+    if ($KBArticleId -and $KBArticleId.Length -gt 0) {
+        # Try with KB prefix
+        $kbPattern = "*KB$KBArticleId*"
+        $kbMatch = Get-ChildItem -Path $KBPath -Filter $kbPattern -Recurse -File -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Extension -in '.msu', '.cab' } |
+                   Select-Object -First 1
+        if ($kbMatch) {
+            $resolvedPath = $kbMatch.FullName
+            & $logMessage "Resolved $UpdateType path via KB article ID pattern ($kbPattern): $resolvedPath"
+            return $resolvedPath
+        }
+
+        # Try without KB prefix (just the number)
+        $numPattern = "*$KBArticleId*"
+        $numMatch = Get-ChildItem -Path $KBPath -Filter $numPattern -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Extension -in '.msu', '.cab' } |
+                    Select-Object -First 1
+        if ($numMatch) {
+            $resolvedPath = $numMatch.FullName
+            & $logMessage "Resolved $UpdateType path via numeric pattern ($numPattern): $resolvedPath"
+            return $resolvedPath
+        }
+    }
+
+    # Strategy 3: Try to find any MSU/CAB file if we have no other info
+    # This is a last resort for single-file scenarios
+    if (-not $resolvedPath) {
+        $allUpdates = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Extension -in '.msu', '.cab' }
+
+        if ($allUpdates -and $allUpdates.Count -eq 1) {
+            $resolvedPath = $allUpdates[0].FullName
+            & $logMessage "WARNING: Resolved $UpdateType path via single-file fallback: $resolvedPath"
+            return $resolvedPath
+        } elseif ($allUpdates -and $allUpdates.Count -gt 1) {
+            & $logMessage "WARNING: Multiple update files found in $KBPath but could not match specific $UpdateType"
+            & $logMessage "  Available files: $($allUpdates.Name -join ', ')"
+        }
+    }
+
+    & $logMessage "ERROR: Could not resolve $UpdateType file path in $KBPath"
+    if ($FileName) { & $logMessage "  Searched for filename: $FileName" }
+    if ($KBArticleId) { & $logMessage "  Searched for KB article: $KBArticleId" }
+
+    return $null
+}
+
+function Test-KBPathsValid {
+    <#
+    .SYNOPSIS
+    Validates that all required KB update paths are valid before application
+
+    .DESCRIPTION
+    Pre-flight validation that checks all enabled update flags have corresponding
+    valid file paths. Returns a hashtable with validation results and any errors.
+
+    This prevents the "Cannot bind argument to parameter 'PackagePath' because it
+    is an empty string" error by catching missing paths early with clear messages.
+
+    .PARAMETER UpdateLatestCU
+    Flag indicating if CU update is requested
+
+    .PARAMETER CUPath
+    Path to the Cumulative Update file
+
+    .PARAMETER UpdatePreviewCU
+    Flag indicating if Preview CU update is requested
+
+    .PARAMETER CUPPath
+    Path to the Preview Cumulative Update file
+
+    .PARAMETER UpdateLatestNet
+    Flag indicating if .NET update is requested
+
+    .PARAMETER NETPath
+    Path to the .NET Framework update file or folder
+
+    .PARAMETER UpdateLatestMicrocode
+    Flag indicating if Microcode update is requested
+
+    .PARAMETER MicrocodePath
+    Path to the Microcode update folder
+
+    .PARAMETER SSURequired
+    Flag indicating if SSU is required (for older Windows versions)
+
+    .PARAMETER SSUFilePath
+    Path to the Servicing Stack Update file
+
+    .EXAMPLE
+    $validation = Test-KBPathsValid -UpdateLatestCU $true -CUPath "C:\KB\update.msu" -UpdateLatestNet $false
+    if (-not $validation.IsValid) { throw $validation.ErrorMessage }
+    #>
+    [CmdletBinding()]
+    param(
+        [bool]$UpdateLatestCU = $false,
+        [string]$CUPath,
+
+        [bool]$UpdatePreviewCU = $false,
+        [string]$CUPPath,
+
+        [bool]$UpdateLatestNet = $false,
+        [string]$NETPath,
+
+        [bool]$UpdateLatestMicrocode = $false,
+        [string]$MicrocodePath,
+
+        [bool]$SSURequired = $false,
+        [string]$SSUFilePath
+    )
+
+    # Helper function for safe logging (WriteLog may not be available in standalone tests)
+    $logMessage = {
+        param([string]$msg)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog $msg
+        } else {
+            Write-Verbose $msg
+        }
+    }
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+    $warnings = [System.Collections.Generic.List[string]]::new()
+
+    # Validate CU path
+    if ($UpdateLatestCU) {
+        if ([string]::IsNullOrWhiteSpace($CUPath)) {
+            $errors.Add("Cumulative Update (CU) is enabled but path is empty. The CU file may not have been downloaded or could not be located in the KB folder.")
+        }
+        elseif (-not (Test-Path -Path $CUPath -PathType Leaf)) {
+            $errors.Add("Cumulative Update file not found at: $CUPath")
+        }
+        else {
+            & $logMessage "Validated CU path: $CUPath"
+        }
+    }
+
+    # Validate Preview CU path
+    if ($UpdatePreviewCU) {
+        if ([string]::IsNullOrWhiteSpace($CUPPath)) {
+            $errors.Add("Preview Cumulative Update is enabled but path is empty. The Preview CU file may not have been downloaded or could not be located.")
+        }
+        elseif (-not (Test-Path -Path $CUPPath -PathType Leaf)) {
+            $errors.Add("Preview Cumulative Update file not found at: $CUPPath")
+        }
+        else {
+            & $logMessage "Validated Preview CU path: $CUPPath"
+        }
+    }
+
+    # Validate .NET path (can be file or folder for LTSC)
+    if ($UpdateLatestNet) {
+        if ([string]::IsNullOrWhiteSpace($NETPath)) {
+            $errors.Add(".NET Framework update is enabled but path is empty. The .NET update may not have been downloaded or could not be located.")
+        }
+        elseif (-not (Test-Path -Path $NETPath)) {
+            $errors.Add(".NET Framework update not found at: $NETPath")
+        }
+        else {
+            & $logMessage "Validated .NET path: $NETPath"
+        }
+    }
+
+    # Validate Microcode path (folder)
+    if ($UpdateLatestMicrocode) {
+        if ([string]::IsNullOrWhiteSpace($MicrocodePath)) {
+            $warnings.Add("Microcode update is enabled but path is empty. Microcode updates may be skipped.")
+        }
+        elseif (-not (Test-Path -Path $MicrocodePath)) {
+            $warnings.Add("Microcode update folder not found at: $MicrocodePath")
+        }
+        else {
+            & $logMessage "Validated Microcode path: $MicrocodePath"
+        }
+    }
+
+    # Validate SSU path (if required for older Windows versions)
+    if ($SSURequired) {
+        if ([string]::IsNullOrWhiteSpace($SSUFilePath)) {
+            $errors.Add("Servicing Stack Update (SSU) is required for this Windows version but path is empty.")
+        }
+        elseif (-not (Test-Path -Path $SSUFilePath -PathType Leaf)) {
+            $errors.Add("Servicing Stack Update file not found at: $SSUFilePath")
+        }
+        else {
+            & $logMessage "Validated SSU path: $SSUFilePath"
+        }
+    }
+
+    # Build result
+    $isValid = $errors.Count -eq 0
+    $errorMessage = if ($errors.Count -gt 0) {
+        "KB path validation failed with $($errors.Count) error(s):`n" + ($errors | ForEach-Object { "  - $_" }) -join "`n"
+    } else { $null }
+
+    # Log warnings
+    foreach ($warning in $warnings) {
+        & $logMessage "WARNING: $warning"
+    }
+
+    # Log errors
+    foreach ($err in $errors) {
+        & $logMessage "ERROR: $err"
+    }
+
+    return [PSCustomObject]@{
+        IsValid = $isValid
+        Errors = $errors
+        Warnings = $warnings
+        ErrorMessage = $errorMessage
+    }
+}
+
 # Export module members
 Export-ModuleMember -Function @(
     'Get-ProductsCab',
@@ -1224,5 +1646,7 @@ Export-ModuleMember -Function @(
     'Test-DISMServiceHealth',
     'Test-MountState',
     'Add-WindowsPackageWithRetry',
-    'Add-WindowsPackageWithUnattend'
+    'Add-WindowsPackageWithUnattend',
+    'Resolve-KBFilePath',
+    'Test-KBPathsValid'
 )

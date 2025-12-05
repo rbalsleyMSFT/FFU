@@ -3,6 +3,9 @@
 #Requires -RunAsAdministrator
 
 # Import FFU.Constants module for centralized configuration
+# IMPORTANT: using module (not Import-Module) is required here because FFUConstants class
+# is referenced in the Param block (lines 311, 314, 317) which is evaluated at PARSE time.
+# Import-Module loads at RUNTIME (too late for Param block).
 using module .\Modules\FFU.Constants\FFU.Constants.psm1
 
 <#
@@ -299,11 +302,21 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [bool]$InstallApps,
+    # NOTE: AppListPath/UserAppListPath validation uses parent directory check instead of file existence
+    # because these files may be specified in config before they exist (e.g., populated by winget operations)
+    # The script gracefully handles missing files at runtime (see lines 1885-1886)
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
     [string]$AppListPath,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
     [string]$UserAppListPath,
 
     [hashtable]$AppsScriptVariables,
     [bool]$InstallOffice,
+    # NOTE: OfficeConfigXMLFile uses parent directory check for same reason as above
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
     [string]$OfficeConfigXMLFile,
     [ValidateSet('Microsoft', 'Dell', 'HP', 'Lenovo')]
     [string]$Make,
@@ -319,10 +332,19 @@ param(
     [ValidateRange(1, 64)]
     [int]$Processors = [FFUConstants]::DEFAULT_VM_PROCESSORS,
     [string]$VMSwitchName,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
     [string]$VMLocation,
+    [ValidateNotNullOrEmpty()]
     [string]$FFUPrefix = '_FFU',
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) -or (Test-Path $_ -PathType Container) })]
     [string]$FFUCaptureLocation,
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[a-zA-Z0-9_\-$]+$')]
     [string]$ShareName = "FFUCaptureShare",
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[a-zA-Z0-9_\-]+$')]
     [string]$Username = "ffu_user",
     [string]$CustomFFUNameTemplate,
     [Parameter(Mandatory = $false)]
@@ -363,11 +385,15 @@ param(
     [string]$ProductKey,
     [bool]$BuildUSBDrive,
     [hashtable]$USBDriveList,
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 100)]
     [int]$MaxUSBDrives = 5,
     [Parameter(Mandatory = $false)]
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^(\d{4}|[12][0-9][hH][12]|LTSC|ltsc)$')]
     [string]$WindowsVersion = '25h2',
     [Parameter(Mandatory = $false)]
     [ValidateSet('x86', 'x64', 'arm64')]
@@ -387,6 +413,11 @@ param(
     [ValidateSet(512, 4096)]
     [uint32]$LogicalSectorSizeBytes = 512,
     [bool]$Optimize = $true,
+    # NOTE: DriversJsonPath uses parent directory check instead of file existence
+    # because the file may be specified in config before it exists
+    # The script gracefully handles missing files at runtime (see lines 1375, 1401)
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
     [string]$DriversJsonPath,
     [bool]$CompressDownloadedDriversToWim = $false,
     [bool]$CopyDrivers,
@@ -394,6 +425,16 @@ param(
     [bool]$UseDriversAsPEDrivers,
     [bool]$RemoveFFU,
     [bool]$CopyAdditionalFFUFiles,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({
+        if ($null -eq $_ -or $_.Count -eq 0) { return $true }
+        foreach ($file in $_) {
+            if (-not (Test-Path $file -PathType Leaf)) {
+                throw "AdditionalFFUFiles: File not found: $file"
+            }
+        }
+        return $true
+    })]
     [string[]]$AdditionalFFUFiles,
     [bool]$UpdateLatestCU,
     [bool]$UpdatePreviewCU,
@@ -411,11 +452,17 @@ param(
     [bool]$CleanupCaptureISO = $true,
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true,
-    [bool]$RemoveUpdates = $true,
-    [bool]$RemoveApps = $true,
+    # NOTE: Cleanup parameters below default to $false to match UI defaults
+    # Only the ISO cleanup options are checked by default in the UI
+    [bool]$RemoveUpdates = $false,
+    [bool]$RemoveApps = $false,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path $_ -PathType Container) })]
     [string]$DriversFolder,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path $_ -PathType Container) })]
     [string]$PEDriversFolder,
-    [bool]$CleanupDrivers = $true,
+    [bool]$CleanupDrivers = $false,
     [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
     #Microsoft sites will intermittently fail on downloads. These headers are to help with that.
     $Headers = @{
@@ -438,8 +485,11 @@ param(
     [ValidateScript({ $_ -eq $null -or (Test-Path $_) })]
     [string]$ConfigFile,
     [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
     [string]$ExportConfigFile,
     [bool]$InjectUnattend = $false,
+    [Parameter(Mandatory = $false)]
+    [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path $_ -PathType Container) })]
     [string]$orchestrationPath,
     [bool]$UpdateADK = $true,
     [bool]$CleanupCurrentRunDownloads = $false,
@@ -542,10 +592,15 @@ Example: .\BuildFFUVM.ps1 -InstallDrivers `$true -Make 'Dell' -Model 'Latitude 7
     Write-Verbose "Parameter validation complete - all required parameters present and valid"
 }
 
-# NOTE: WindowsRelease/WindowsSKU compatibility validation is performed AFTER config file loading
-# to ensure config file values are used instead of parameter defaults. See validation after line 633.
+END {
+    # ===================================================================
+    # MAIN SCRIPT BODY
+    # ===================================================================
 
-# Log PowerShell version information (compatible with PowerShell 5.1 and 7+)
+    # NOTE: WindowsRelease/WindowsSKU compatibility validation is performed AFTER config file loading
+    # to ensure config file values are used instead of parameter defaults. See validation after line 633.
+
+    # Log PowerShell version information (compatible with PowerShell 5.1 and 7+)
 Write-Host "PowerShell Version: $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition) Edition)" -ForegroundColor Green
 if ($PSVersionTable.CLRVersion) {
     Write-Host "CLR Version: $($PSVersionTable.CLRVersion)" -ForegroundColor Green
@@ -610,6 +665,13 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         }
     }
 }
+
+# Initialize $Filter for Microsoft Update Catalog searches
+# IMPORTANT: Filter is required for architecture-specific catalog queries to ensure
+# correct downloads. Without Filter, Get-KBLink returns the first matching result
+# which may not match the target architecture, causing Save-KB to return null.
+$Filter = @($WindowsArch)
+WriteLog "Initialized Update Catalog filter with architecture: $WindowsArch"
 
 # Create FFUDevelopmentPath directory if it doesn't exist
 # This allows the script to work even if the directory was deleted or specified path doesn't exist yet
@@ -702,6 +764,430 @@ Import-Module "FFU.Imaging" -Force -Global -ErrorAction Stop -WarningAction Sile
 Import-Module "FFU.Media" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Apps" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 
+# =============================================================================
+# Global Failure Cleanup Handler
+# Ensures cleanup of registered resources on terminating errors
+# =============================================================================
+trap {
+    # Only invoke cleanup if the registry has items (avoid unnecessary work)
+    $registry = Get-CleanupRegistry
+    if ($registry -and $registry.Count -gt 0) {
+        WriteLog "TRAP: Unhandled terminating error detected. Invoking failure cleanup for $($registry.Count) registered resource(s)..."
+        Invoke-FailureCleanup -Reason "Terminating error: $($_.Exception.Message)"
+    }
+    # CRITICAL: Use 'break' to propagate the error up the call stack
+    # Using 'continue' would swallow the error and resume execution, causing:
+    # - Script to continue after catch blocks that re-throw
+    # - Success marker to be output even after failures
+    # - UI to incorrectly report success
+    break
+}
+
+# =============================================================================
+# USB Drive Functions
+# These functions were intentionally kept in BuildFFUVM.ps1 (not modularized)
+# because New-DeploymentUSB uses ForEach-Object -Parallel with many $using:
+# script-scope variables, which doesn't work well with module encapsulation.
+# =============================================================================
+
+Function Get-USBDrive {
+    <#
+    .SYNOPSIS
+        Discovers and validates USB drives for deployment media creation.
+    .DESCRIPTION
+        Checks for removable and external hard disk media drives based on configuration.
+        Supports user prompts for external hard disk selection to prevent data loss.
+        Can filter drives by model and serial number using USBDriveList parameter.
+    .OUTPUTS
+        Returns array of USB drives and count: $USBDrives, $USBDrivesCount
+    #>
+    # Log the start of the USB drive check
+    WriteLog 'Checking for USB drives'
+
+    # Check if external hard disk media is allowed and user has not specified USB drives
+    If ($AllowExternalHardDiskMedia -and (-not($USBDriveList))) {
+        # Get all removable and external hard disk media drives
+        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
+        [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
+        $ExternalCount = $ExternalHardDiskDrives.Count
+        $USBDrivesCount = $USBDrives.Count
+
+        # Check if user should be prompted for external hard disk media
+        if ($PromptExternalHardDiskMedia) {
+            if ($ExternalHardDiskDrives) {
+                # Log and warn about found external hard disk media drives
+                if ($VerbosePreference -ne 'Continue') {
+                    Write-Warning 'Found external hard disk media drives'
+                    Write-Warning 'Will prompt for user input to select the drive to use to prevent accidental data loss'
+                    Write-Warning 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+                }
+                WriteLog 'Found external hard disk media drives'
+                WriteLog 'Will prompt for user input to select the drive to use to prevent accidental data loss'
+                WriteLog 'If you do not want to be prompted for this in the future, set -PromptExternalHardDiskMedia to $false'
+
+                # Prepare output for user selection
+                $Output = @()
+                for ($i = 0; $i -lt $ExternalHardDiskDrives.Count; $i++) {
+                    $ExternalDiskNumber = $ExternalHardDiskDrives[$i].Index
+                    $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
+                    $Index = $i + 1
+                    $Name = $ExternalDisk.FriendlyName
+                    $SerialNumber = $ExternalHardDiskDrives[$i].serialnumber
+                    $PartitionStyle = $ExternalDisk.PartitionStyle
+                    $Status = $ExternalDisk.OperationalStatus
+                    $Properties = [ordered]@{
+                        'Drive Number'    = $Index
+                        'Drive Name'      = $Name
+                        'Serial Number'   = $SerialNumber
+                        'Partition Style' = $PartitionStyle
+                        'Status'          = $Status
+                    }
+                    $Output += New-Object PSObject -Property $Properties
+                }
+
+                # Format and display the output
+                $FormattedOutput = $Output | Format-Table -AutoSize -Property 'Drive Number', 'Drive Name', 'Serial Number', 'Partition Style', 'Status' | Out-String
+                if ($VerbosePreference -ne 'Continue') {
+                    $FormattedOutput | Out-Host
+                }
+                WriteLog $FormattedOutput
+
+                # Prompt user to select a drive
+                do {
+                    $inputChoice = Read-Host "Enter the number corresponding to the external hard disk media drive you want to use"
+                    if ($inputChoice -match '^\d+$') {
+                        $inputChoice = [int]$inputChoice
+                        if ($inputChoice -ge 1 -and $inputChoice -le $ExternalCount) {
+                            $SelectedIndex = $inputChoice - 1
+                            $ExternalDiskNumber = $ExternalHardDiskDrives[$SelectedIndex].Index
+                            $ExternalDisk = Get-Disk -Number $ExternalDiskNumber
+                            $USBDrives = $ExternalHardDiskDrives[$SelectedIndex]
+                            $USBDrivesCount = $USBDrives.Count
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Drive $inputChoice was selected"
+                            }
+                            WriteLog "Drive $inputChoice was selected"
+                        }
+                        else {
+                            # Handle invalid selection
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Host "Invalid selection. Please try again."
+                            }
+                            WriteLog "Invalid selection. Please try again."
+                        }
+
+                        # Check if the selected drive is offline
+                        if ($ExternalDisk.OperationalStatus -eq 'Offline') {
+                            if ($VerbosePreference -ne 'Continue') {
+                                Write-Error "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                            }
+                            WriteLog "Selected Drive is in an Offline State. Please check the drive status in Disk Manager and try again."
+                            exit 1
+                        }
+                    }
+                    else {
+                        # Handle invalid input
+                        if ($VerbosePreference -ne 'Continue') {
+                            Write-Host "Invalid selection. Please try again."
+                        }
+                        WriteLog "Invalid selection. Please try again."
+                    }
+                } while ($null -eq $selectedIndex)
+            }
+        }
+        else {
+            # Log the count of found USB drives
+            if ($VerbosePreference -ne 'Continue') {
+                Write-Host "Found $USBDrivesCount total USB drives"
+                If ($ExternalCount -gt 0) {
+                    Write-Host "$ExternalCount external drives"
+                }
+            }
+            WriteLog "Found $USBDrivesCount total USB drives"
+            If ($ExternalCount -gt 0) {
+                WriteLog "$ExternalCount external drives"
+            }
+        }
+    }
+    elseif ($USBDriveList) {
+        # Log the count of specified USB drives
+        $USBDriveListCount = $USBDriveList.Count
+        WriteLog "Looking for $USBDriveListCount USB drives from USB Drive List"
+        # Get only the specified USB drives based on both model and serial number
+        $USBDrives = @()
+        foreach ($model in $USBDriveList.Keys) {
+            $serialNumber = $USBDriveList[$model]
+            Writelog "Looking for USB drive model $model with serial number $serialNumber"
+            $USBDrive = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Model LIKE '%$model%' AND SerialNumber LIKE '$serialNumber%' AND (MediaType='Removable Media' OR MediaType='External hard disk media')"
+            if ($USBDrive) {
+                WriteLog "Found USB drive model $($USBDrive.model) with serial number $($USBDrive.serialNumber)"
+                $USBDrives += $USBDrive
+            }
+            else {
+                WriteLog "USB drive model $model with serial number $serialNumber not found"
+            }
+        }
+        $USBDrivesCount = $USBDrives.Count
+        WriteLog "Found $USBDrivesCount of $USBDriveListCount USB drives from USB Drive List"
+    }
+    else {
+        # Get only removable media drives
+        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+        $USBDrivesCount = $USBDrives.Count
+        WriteLog "Found $USBDrivesCount Removable USB drives"
+    }
+
+    # Check if any USB drives were found
+    if ($null -eq $USBDrives) {
+        WriteLog "No USB drive found. Exiting"
+        Write-Error "No USB drive found. Exiting"
+        exit 1
+    }
+
+    # Return the found USB drives and their count
+    return $USBDrives, $USBDrivesCount
+}
+
+Function New-DeploymentUSB {
+    <#
+    .SYNOPSIS
+        Creates bootable USB deployment drives with FFU files and supporting content.
+    .DESCRIPTION
+        Partitions and formats USB drives, copies WinPE boot files from deployment ISO,
+        and optionally copies FFU files, drivers, PPKGs, unattend files, and Autopilot configs.
+        Supports parallel processing of multiple USB drives.
+    .PARAMETER CopyFFU
+        Switch to enable copying FFU files to the USB drive.
+    .PARAMETER FFUFilesToCopy
+        Array of FFU file paths to copy. If not provided and CopyFFU is set,
+        prompts user to select from available FFU files.
+    #>
+    param(
+        [switch]$CopyFFU,
+        [string[]]$FFUFilesToCopy
+    )
+    WriteLog "CopyFFU is set to $CopyFFU"
+    $BuildUSBPath = $PSScriptRoot
+    WriteLog "BuildUSBPath is $BuildUSBPath"
+
+    $SelectedFFUFile = $null
+
+    # 1. Get FFU File(s) - This happens once before parallel processing
+    if ($CopyFFU.IsPresent) {
+        if ($null -ne $FFUFilesToCopy -and $FFUFilesToCopy.Count -gt 0) {
+            $SelectedFFUFile = $FFUFilesToCopy
+            WriteLog "Using preselected FFU file list. Count: $($FFUFilesToCopy.Count)"
+            WriteLog "FFU files to copy:"
+            foreach ($f in $FFUFilesToCopy) {
+                WriteLog ("- {0}" -f (Split-Path $f -Leaf))
+            }
+        }
+        else {
+            $FFUFiles = Get-ChildItem -Path "$BuildUSBPath\FFU" -Filter "*.ffu"
+            $FFUCount = $FFUFiles.count
+
+            switch ($FFUCount) {
+                0 {
+                    Write-Error "No FFU files found in $BuildUSBPath\FFU. Cannot copy FFU to USB drive."
+                    return
+                }
+                1 {
+                    $SelectedFFUFile = $FFUFiles.FullName
+                    WriteLog "One FFU file found, will use: $SelectedFFUFile"
+                }
+                default {
+                    WriteLog "Found $FFUCount FFU files"
+                    if ($VerbosePreference -ne 'Continue') {
+                        Write-Host "Found $FFUCount FFU files"
+                    }
+                    $output = @()
+                    for ($i = 0; $i -lt $FFUCount; $i++) {
+                        $output += [PSCustomObject]@{
+                            'FFU Number'    = $i + 1
+                            'FFU Name'      = $FFUFiles[$i].Name
+                            'Last Modified' = $FFUFiles[$i].LastWriteTime
+                        }
+                    }
+                    $output | Format-Table -AutoSize | Out-String | Write-Host
+
+                    do {
+                        $inputChoice = Read-Host "Enter the number for the FFU to copy, or 'A' for all"
+                        if ($inputChoice -eq 'A') {
+                            $SelectedFFUFile = $FFUFiles.FullName
+                            WriteLog 'Will copy all FFU Files'
+                        }
+                        elseif ($inputChoice -match '^\d+$' -and [int]$inputChoice -ge 1 -and [int]$inputChoice -le $FFUCount) {
+                            $SelectedFFUFile = $FFUFiles[[int]$inputChoice - 1].FullName
+                            WriteLog "$SelectedFFUFile was selected"
+                        }
+                        else {
+                            Write-Host "Invalid selection. Please try again."
+                        }
+                    } while ($null -eq $SelectedFFUFile)
+                }
+            }
+        }
+    }
+
+    # Mount ISO once before the loop
+    WriteLog "Mounting deployment ISO: $DeployISO"
+    $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
+    WriteLog "ISO mounted at $ISOMountPoint"
+
+    # Register cleanup for ISO mount in case of failure
+    $isoCleanupId = Register-ISOCleanup -ISOPath $DeployISO
+    WriteLog "Registered ISO cleanup handler (ID: $isoCleanupId)"
+
+    # 2. Partition and format USB drives in parallel
+    WriteLog "Starting parallel creation for $USBDrivesCount USB drive(s)."
+
+    $resolvedUSBThrottle = if ($MaxUSBDrives -gt 0) { [math]::Min($MaxUSBDrives, $USBDrivesCount) } else { $USBDrivesCount }
+    WriteLog "Using USB drive throttle limit: $resolvedUSBThrottle (MaxUSBDrives param: $MaxUSBDrives; Drives to process: $USBDrivesCount)"
+
+    $USBDrives | ForEach-Object -Parallel {
+        $USBDrive = $_
+
+        # Import common module for logging in this thread
+        Import-Module "$($using:PSScriptRoot)\FFU.Common" -Force
+        Set-CommonCoreLogPath -Path $using:LogFile
+
+        $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
+        WriteLog "Thread $([System.Threading.Thread]::CurrentThread.ManagedThreadId) processing DiskNumber $DiskNumber ($($USBDrive.Model))"
+
+        # Partitioning with error handling
+        try {
+            $Disk = Get-Disk -Number $DiskNumber -ErrorAction Stop
+            if ($Disk.PartitionStyle -ne "RAW") {
+                $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false -ErrorAction Stop
+                $Disk = Get-Disk -Number $DiskNumber -ErrorAction Stop
+            }
+            if ($Disk.PartitionStyle -eq "RAW") {
+                $Disk | Initialize-Disk -PartitionStyle MBR -Confirm:$false -ErrorAction Stop
+            }
+            else {
+                $Disk | Get-Partition | Remove-Partition -Confirm:$false -ErrorAction Stop
+                $Disk | Set-Disk -PartitionStyle MBR -ErrorAction Stop
+            }
+
+            $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter -ErrorAction Stop
+            $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter -ErrorAction Stop
+            Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false -ErrorAction Stop
+            Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false -ErrorAction Stop
+        }
+        catch {
+            WriteLog "ERROR: Disk partitioning failed for disk $DiskNumber - $($_.Exception.Message)"
+            throw "Failed to partition disk $DiskNumber : $($_.Exception.Message)"
+        }
+
+        $BootPartitionDriveLetter = "$($BootPartition.DriveLetter):\"
+        $DeployPartitionDriveLetter = "$($DeployPartition.DriveLetter):\"
+        WriteLog "Disk $DiskNumber partitioned. Boot: $BootPartitionDriveLetter, Deploy: $DeployPartitionDriveLetter"
+
+        # Helper function for robocopy exit code validation (exit codes 0-7 are success)
+        function Test-RobocopySuccess {
+            param([string]$Operation)
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ge 8) {
+                WriteLog "ERROR: Robocopy failed for '$Operation' with exit code $exitCode"
+                throw "Robocopy failed for '$Operation' with exit code $exitCode"
+            }
+            elseif ($exitCode -gt 0) {
+                WriteLog "Robocopy '$Operation' completed with exit code $exitCode (files copied/extra detected)"
+            }
+        }
+
+        # Copy WinPE files
+        WriteLog "Copying WinPE files from $($using:ISOMountPoint) to $BootPartitionDriveLetter"
+        robocopy $using:ISOMountPoint $BootPartitionDriveLetter /E /COPYALL /R:5 /W:5 /J /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+        Test-RobocopySuccess -Operation "WinPE files to Boot partition"
+
+        # Copy other files
+        if ($using:CopyFFU.IsPresent -and $null -ne $using:SelectedFFUFile) {
+            if ($using:SelectedFFUFile -is [array]) {
+                WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter"
+                foreach ($FFUFile in $using:SelectedFFUFile) {
+                    robocopy (Split-Path $FFUFile -Parent) $DeployPartitionDriveLetter (Split-Path $FFUFile -Leaf) /J /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                    Test-RobocopySuccess -Operation "FFU file $FFUFile"
+                }
+            }
+            else {
+                WriteLog "Copying $($using:SelectedFFUFile) to $DeployPartitionDriveLetter"
+                robocopy (Split-Path $using:SelectedFFUFile -Parent) $DeployPartitionDriveLetter (Split-Path $using:SelectedFFUFile -Leaf) /J /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+                Test-RobocopySuccess -Operation "FFU file $($using:SelectedFFUFile)"
+            }
+        }
+
+        if ($using:CopyDrivers) {
+            $DriversPathOnUSB = Join-Path $DeployPartitionDriveLetter "Drivers"
+            WriteLog "Copying drivers to $DriversPathOnUSB"
+            robocopy $using:DriversFolder $DriversPathOnUSB /E /COPYALL /R:5 /W:5 /J /XF .gitkeep /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            Test-RobocopySuccess -Operation "Drivers to USB"
+        }
+
+        if ($using:CopyPPKG) {
+            $PPKGPathOnUSB = Join-Path $DeployPartitionDriveLetter "PPKG"
+            WriteLog "Copying PPKGs to $PPKGPathOnUSB"
+            robocopy $using:PPKGFolder $PPKGPathOnUSB /E /COPYALL /R:5 /W:5 /J /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            Test-RobocopySuccess -Operation "PPKG files to USB"
+        }
+
+        if ($using:CopyUnattend) {
+            $UnattendPathOnUSB = Join-Path $DeployPartitionDriveLetter "Unattend"
+            WriteLog "Copying unattend file to $UnattendPathOnUSB"
+            New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
+            try {
+                if ($using:WindowsArch -eq 'x64') {
+                    $unattendSource = Join-Path $using:UnattendFolder 'unattend_x64.xml'
+                    if (-not (Test-Path $unattendSource)) {
+                        throw "Unattend file not found: $unattendSource"
+                    }
+                    Copy-Item -Path $unattendSource -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force -ErrorAction Stop | Out-Null
+                }
+                elseif ($using:WindowsArch -eq 'arm64') {
+                    $unattendSource = Join-Path $using:UnattendFolder 'unattend_arm64.xml'
+                    if (-not (Test-Path $unattendSource)) {
+                        throw "Unattend file not found: $unattendSource"
+                    }
+                    Copy-Item -Path $unattendSource -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force -ErrorAction Stop | Out-Null
+                }
+                if (Test-Path (Join-Path $using:UnattendFolder 'prefixes.txt')) {
+                    WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
+                    Copy-Item -Path (Join-Path $using:UnattendFolder 'prefixes.txt') -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force -ErrorAction Stop | Out-Null
+                }
+                WriteLog 'Copy completed'
+            }
+            catch {
+                WriteLog "ERROR: Failed to copy unattend files - $($_.Exception.Message)"
+                throw
+            }
+        }
+
+        if ($using:CopyAutopilot) {
+            $AutopilotPathOnUSB = Join-Path $DeployPartitionDriveLetter "Autopilot"
+            WriteLog "Copying Autopilot files to $AutopilotPathOnUSB"
+            robocopy $using:AutopilotFolder $AutopilotPathOnUSB /E /COPYALL /R:5 /W:5 /J /NFL /NDL /NJH /NJS /nc /ns /np | Out-Null
+            Test-RobocopySuccess -Operation "Autopilot files to USB"
+        }
+
+        # Rename volumes
+        WriteLog "Renaming volumes for disk $DiskNumber"
+        Set-Volume -DriveLetter $BootPartition.DriveLetter -NewFileSystemLabel "Boot"
+        Set-Volume -DriveLetter $DeployPartition.DriveLetter -NewFileSystemLabel "Deploy"
+        WriteLog "Finished processing disk $DiskNumber"
+
+    } -ThrottleLimit $resolvedUSBThrottle
+
+    # Dismount ISO after all parallel jobs are complete
+    WriteLog "Dismounting deployment ISO."
+    Dismount-DiskImage -ImagePath $DeployISO | Out-Null
+
+    WriteLog "USB Drives completed"
+}
+
+# =============================================================================
+# End USB Drive Functions
+# =============================================================================
+
 class VhdxCacheItem {
     [string]$VhdxFileName = ""
     [uint32]$LogicalSectorSizeBytes = ""
@@ -733,7 +1219,7 @@ public static extern uint GetPrivateProfileSection(
 Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
 
 #Check if Hyper-V feature is installed (requires only checks the module)
-$osInfo = Get-WmiObject -Class Win32_OperatingSystem
+$osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
 $isServer = $osInfo.Caption -match 'server'
 
 if ($isServer) {
@@ -752,7 +1238,7 @@ else {
 }
 
 # Set default values for variables that depend on other parameters
-if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps.iso" }
+if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps\Apps.iso" }
 if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
 if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
 if (-not $UserAppListPath) { $UserAppListPath = "$AppsPath\UserAppList.json" }
@@ -895,16 +1381,76 @@ if ($InstallDrivers -or $CopyDrivers) {
         WriteLog "Drivers JSON path is set to $DriversJsonPath, will attempt to download drivers"
     }
     else {
-        if (!(Test-Path -Path $DriversFolder)) {
-            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
-            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is missing"
+        # No automatic download source configured - check for existing drivers in folder
+        $folderExists = Test-Path -Path $DriversFolder
+        $folderHasContent = $false
+        if ($folderExists) {
+            $folderHasContent = (Get-ChildItem -Path $DriversFolder -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum -ge 1MB
         }
-        if ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
-            WriteLog "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty, and no drivers are specified for download."
-            throw "-InstallDrivers or -CopyDrivers is set to `$true, but the $DriversFolder folder is empty, and no drivers are specified for download."
+
+        if (-not $folderExists) {
+            $errorMsg = @"
+DRIVER CONFIGURATION ERROR: InstallDrivers or CopyDrivers is enabled, but the Drivers folder is missing.
+
+Folder expected at: $DriversFolder
+
+To fix this issue, do ONE of the following:
+
+1. SELECT A DEVICE MODEL in the UI:
+   - Go to the Drivers tab
+   - Check 'Download Drivers'
+   - Select a Make (Dell, HP, Lenovo, Microsoft)
+   - Select a Model from the list
+   This will automatically download drivers during the build.
+
+2. PROVIDE A DRIVERS JSON FILE:
+   - Create a DriversJsonPath configuration with device models
+   - The JSON file should list Make/Model combinations to download
+
+3. ADD DRIVERS MANUALLY:
+   - Create the folder: $DriversFolder
+   - Copy your driver files (INF, CAT, SYS) into subfolders
+
+4. DISABLE DRIVER INSTALLATION:
+   - Uncheck 'Install Drivers' and 'Copy Drivers' in the UI
+   - This will build the FFU without custom drivers
+"@
+            WriteLog $errorMsg
+            throw $errorMsg
+        }
+
+        if (-not $folderHasContent) {
+            $errorMsg = @"
+DRIVER CONFIGURATION ERROR: InstallDrivers or CopyDrivers is enabled, but the Drivers folder is empty and no drivers are specified for download.
+
+Folder location: $DriversFolder
+
+To fix this issue, do ONE of the following:
+
+1. SELECT A DEVICE MODEL in the UI:
+   - Go to the Drivers tab
+   - Check 'Download Drivers'
+   - Select a Make (Dell, HP, Lenovo, Microsoft)
+   - Select a Model from the list
+   This will automatically download drivers during the build.
+
+2. PROVIDE A DRIVERS JSON FILE:
+   - Set DriversJsonPath to a JSON file with device models
+   - The JSON file should list Make/Model combinations to download
+
+3. ADD DRIVERS MANUALLY:
+   - Copy your driver files (INF, CAT, SYS) into: $DriversFolder
+   - Drivers should be in subfolders organized by device type
+
+4. DISABLE DRIVER INSTALLATION:
+   - Uncheck 'Install Drivers' and 'Copy Drivers' in the UI
+   - This will build the FFU without custom drivers
+"@
+            WriteLog $errorMsg
+            throw $errorMsg
         }
         WriteLog "Drivers folder found with content. Will use existing drivers."
-    }   
+    }
 }
 #Validate PEDrivers folder
 if ($CopyPEDrivers) {
@@ -1518,7 +2064,9 @@ if ($InstallApps) {
                         Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath
                         
                         # Cleanup modified app list
-                        Remove-Item -Path $modifiedAppListPath -Force
+                        if (-not [string]::IsNullOrWhiteSpace($modifiedAppListPath)) {
+                            Remove-Item -Path $modifiedAppListPath -Force -ErrorAction SilentlyContinue
+                        }
                     }
                     else {
                         WriteLog "All applications already downloaded, skipping downloads"
@@ -1575,11 +2123,18 @@ if ($InstallApps) {
                 # Check if Defender has already been downloaded, if so, skip download
                 WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Security updates"
                 if (Test-Path -Path $DefenderPath) {
-                    # Check the size of the $DefenderPath folder
-                    $DefenderSize = (Get-ChildItem -Path $DefenderPath -Recurse | Measure-Object -Property Length -Sum).Sum
-                    if ($DefenderSize -gt 1MB) {
-                        WriteLog "Found Defender download in $DefenderPath, skipping download"
-                        $DefenderDownloaded = $true
+                    # Check if folder has files (handles empty folder edge case)
+                    $defenderFiles = Get-ChildItem -Path $DefenderPath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($defenderFiles -and $defenderFiles.Count -gt 0) {
+                        $DefenderSize = ($defenderFiles | Measure-Object -Property Length -Sum).Sum
+                        if ($DefenderSize -gt 1MB) {
+                            WriteLog "Found Defender download in $DefenderPath ($($defenderFiles.Count) files, $([math]::Round($DefenderSize/1MB, 2)) MB), skipping download"
+                            $DefenderDownloaded = $true
+                        } else {
+                            WriteLog "Defender folder exists but files are too small ($([math]::Round($DefenderSize/1MB, 2)) MB < 1 MB), will re-download"
+                        }
+                    } else {
+                        WriteLog "Defender folder exists but is EMPTY (0 files), will download"
                     }
                 }
                 if (-not $DefenderDownloaded) {
@@ -1602,9 +2157,44 @@ if ($InstallApps) {
                     foreach ($update in $defenderUpdates) {
                         WriteLog "Searching for $($update.Name) from Microsoft Update Catalog and saving to $DefenderPath"
                         $KBFilePath = Save-KB -Name $update.Name -Path $DefenderPath -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+
+                        # Validate that Save-KB returned a valid filename
+                        if ([string]::IsNullOrWhiteSpace($KBFilePath)) {
+                            $errorMsg = "ERROR: Failed to download $($update.Name) for architecture $WindowsArch. No matching file found in Microsoft Update Catalog. This may indicate: (1) The update name is incorrect, (2) No updates available for $WindowsArch architecture, or (3) Microsoft Update Catalog is temporarily unavailable."
+                            WriteLog $errorMsg
+                            throw $errorMsg
+                        }
+
                         WriteLog "Latest $($update.Description) saved to $DefenderPath\$KBFilePath"
-                        # Add the KB file path to the installDefenderCommand
-                        $installDefenderCommand += "& d:\Defender\$KBFilePath`r`n"
+
+                        # Layer 1: Build-time validation - verify downloaded file exists before generating command
+                        $fullFilePath = Join-Path $DefenderPath $KBFilePath
+                        if (-not (Test-Path -Path $fullFilePath -PathType Leaf)) {
+                            $errorMsg = "ERROR: Downloaded file not found at expected location: $fullFilePath. Save-KB reported success but file is missing."
+                            WriteLog $errorMsg
+                            throw $errorMsg
+                        }
+                        $fileSize = (Get-Item -Path $fullFilePath).Length
+                        WriteLog "Verified file exists: $fullFilePath (Size: $([math]::Round($fileSize / 1MB, 2)) MB)"
+
+                        # Layer 2: Generate command with runtime file existence check
+                        $installDefenderCommand += @"
+if (Test-Path -Path 'd:\Defender\$KBFilePath') {
+    Write-Host "Installing $($update.Description): $KBFilePath..."
+    & d:\Defender\$KBFilePath
+    if (`$LASTEXITCODE -ne 0 -and `$LASTEXITCODE -ne 3010) {
+        Write-Error "Installation of $KBFilePath failed with exit code: `$LASTEXITCODE"
+    } else {
+        Write-Host "$KBFilePath installed successfully (Exit code: `$LASTEXITCODE)"
+    }
+} else {
+    Write-Error "CRITICAL: File not found at d:\Defender\$KBFilePath"
+    Write-Error "This indicates Apps.iso does not contain Defender folder or files were not included during ISO creation."
+    Write-Error "Possible causes: (1) Apps.iso created before Defender download, (2) Stale Apps.iso being reused, (3) ISO creation failed"
+    exit 1
+}
+
+"@
                     }
                 
                     # Download latest Defender Definitions
@@ -1620,7 +2210,34 @@ if ($InstallApps) {
                         WriteLog "Defender definitions URL is $DefenderDefURL"
                         Start-BitsTransferWithRetry -Source $DefenderDefURL -Destination "$DefenderPath\mpam-fe.exe"
                         WriteLog "Defender Definitions downloaded to $DefenderPath\mpam-fe.exe"
-                        $installDefenderCommand += "& d:\Defender\mpam-fe.exe"
+
+                        # Layer 1: Build-time validation - verify downloaded file exists before generating command
+                        $mpamFilePath = "$DefenderPath\mpam-fe.exe"
+                        if (-not (Test-Path -Path $mpamFilePath -PathType Leaf)) {
+                            $errorMsg = "ERROR: Defender definitions file not found at expected location: $mpamFilePath. Download reported success but file is missing."
+                            WriteLog $errorMsg
+                            throw $errorMsg
+                        }
+                        $fileSize = (Get-Item -Path $mpamFilePath).Length
+                        WriteLog "Verified Defender definitions file exists: $mpamFilePath (Size: $([math]::Round($fileSize / 1MB, 2)) MB)"
+
+                        # Layer 2: Generate command with runtime file existence check
+                        $installDefenderCommand += @"
+if (Test-Path -Path 'd:\Defender\mpam-fe.exe') {
+    Write-Host "Installing Defender Definitions: mpam-fe.exe..."
+    & d:\Defender\mpam-fe.exe
+    if (`$LASTEXITCODE -ne 0 -and `$LASTEXITCODE -ne 3010) {
+        Write-Error "Installation of mpam-fe.exe failed with exit code: `$LASTEXITCODE"
+    } else {
+        Write-Host "mpam-fe.exe installed successfully (Exit code: `$LASTEXITCODE)"
+    }
+} else {
+    Write-Error "CRITICAL: File not found at d:\Defender\mpam-fe.exe"
+    Write-Error "This indicates Apps.iso does not contain Defender definitions file."
+    Write-Error "Possible causes: (1) Apps.iso created before Defender download, (2) Stale Apps.iso being reused, (3) ISO creation failed"
+    exit 1
+}
+"@
                     }
                     catch {
                         Write-Host "Downloading Defender Definitions Failed"
@@ -1645,11 +2262,18 @@ if ($InstallApps) {
                 WriteLog "`$UpdateLatestMSRT is set to true, checking for latest Windows Malicious Software Removal Tool"
                 # Check if MSRT has already been downloaded, if so, skip download
                 if (Test-Path -Path $MSRTPath) {
-                    # Check the size of the $MSRTPath folder
-                    $MSRTSize = (Get-ChildItem -Path $MSRTPath -Recurse | Measure-Object -Property Length -Sum).Sum
-                    if ($MSRTSize -gt 1MB) {
-                        WriteLog "Found MSRT download in $MSRTPath, skipping download"
-                        $MSRTDownloaded = $true
+                    # Check if folder has files (handles empty folder edge case)
+                    $msrtFiles = Get-ChildItem -Path $MSRTPath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($msrtFiles -and $msrtFiles.Count -gt 0) {
+                        $MSRTSize = ($msrtFiles | Measure-Object -Property Length -Sum).Sum
+                        if ($MSRTSize -gt 1MB) {
+                            WriteLog "Found MSRT download in $MSRTPath ($($msrtFiles.Count) files, $([math]::Round($MSRTSize/1MB, 2)) MB), skipping download"
+                            $MSRTDownloaded = $true
+                        } else {
+                            WriteLog "MSRT folder exists but files are too small ($([math]::Round($MSRTSize/1MB, 2)) MB < 1 MB), will re-download"
+                        }
+                    } else {
+                        WriteLog "MSRT folder exists but is EMPTY (0 files), will download"
                     }
                 }
                 if (-Not $MSRTDownloaded) {
@@ -1681,6 +2305,14 @@ if ($InstallApps) {
                     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $MSRTPath"
                     WriteLog "Getting Windows Malicious Software Removal Tool URL"
                     $MSRTFileName = Save-KB -Name $Name -Path $MSRTPath -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+
+                    # Validate that Save-KB returned a valid filename
+                    if ([string]::IsNullOrWhiteSpace($MSRTFileName)) {
+                        $errorMsg = "ERROR: Failed to download Windows Malicious Software Removal Tool for architecture $WindowsArch. Search query was: $Name. This may indicate: (1) No updates available for $WindowsArch architecture, or (2) Microsoft Update Catalog is temporarily unavailable."
+                        WriteLog $errorMsg
+                        throw $errorMsg
+                    }
+
                     WriteLog "Latest Windows Malicious Software Removal Tool saved to $MSRTPath\$MSRTFileName"
                 
                     # Create Update-MSRT.ps1
@@ -1704,11 +2336,18 @@ if ($InstallApps) {
                 WriteLog "`$UpdateOneDrive is set to true, checking for latest OneDrive client"
                 # Check if OneDrive has already been downloaded, if so, skip download
                 if (Test-Path -Path $OneDrivePath) {
-                    # Check the size of the $OneDrivePath folder
-                    $OneDriveSize = (Get-ChildItem -Path $OneDrivePath -Recurse | Measure-Object -Property Length -Sum).Sum
-                    if ($OneDriveSize -gt 1MB) {
-                        WriteLog "Found OneDrive download in $OneDrivePath, skipping download"
-                        $OneDriveDownloaded = $true
+                    # Check if folder has files (handles empty folder edge case)
+                    $oneDriveFiles = Get-ChildItem -Path $OneDrivePath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($oneDriveFiles -and $oneDriveFiles.Count -gt 0) {
+                        $OneDriveSize = ($oneDriveFiles | Measure-Object -Property Length -Sum).Sum
+                        if ($OneDriveSize -gt 1MB) {
+                            WriteLog "Found OneDrive download in $OneDrivePath ($($oneDriveFiles.Count) files, $([math]::Round($OneDriveSize/1MB, 2)) MB), skipping download"
+                            $OneDriveDownloaded = $true
+                        } else {
+                            WriteLog "OneDrive folder exists but files are too small ($([math]::Round($OneDriveSize/1MB, 2)) MB < 1 MB), will re-download"
+                        }
+                    } else {
+                        WriteLog "OneDrive folder exists but is EMPTY (0 files), will download"
                     }
                 }
                 if (-not $OneDriveDownloaded) {
@@ -1756,11 +2395,18 @@ if ($InstallApps) {
                 WriteLog "`$UpdateEdge is set to true, checking for latest Edge Stable $WindowsArch release"
                 # Check if Edge has already been downloaded, if so, skip download
                 if (Test-Path -Path $EdgePath) {
-                    # Check the size of the $EdgePath folder
-                    $EdgeSize = (Get-ChildItem -Path $EdgePath -Recurse | Measure-Object -Property Length -Sum).Sum
-                    if ($EdgeSize -gt 1MB) {
-                        WriteLog "Found Edge download in $EdgePath, skipping download"
-                        $EdgeDownloaded = $true
+                    # Check if folder has files (handles empty folder edge case)
+                    $edgeFiles = Get-ChildItem -Path $EdgePath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($edgeFiles -and $edgeFiles.Count -gt 0) {
+                        $EdgeSize = ($edgeFiles | Measure-Object -Property Length -Sum).Sum
+                        if ($EdgeSize -gt 1MB) {
+                            WriteLog "Found Edge download in $EdgePath ($($edgeFiles.Count) files, $([math]::Round($EdgeSize/1MB, 2)) MB), skipping download"
+                            $EdgeDownloaded = $true
+                        } else {
+                            WriteLog "Edge folder exists but files are too small ($([math]::Round($EdgeSize/1MB, 2)) MB < 1 MB), will re-download"
+                        }
+                    } else {
+                        WriteLog "Edge folder exists but is EMPTY (0 files), will download"
                     }
                 }
                 if (-not $EdgeDownloaded) {
@@ -1773,6 +2419,14 @@ if ($InstallApps) {
                     }
                     WriteLog "Searching for $Name from Microsoft Update Catalog and saving to $EdgePath"
                     $KBFilePath = Save-KB -Name $Name -Path $EdgePath -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter
+
+                    # Validate that Save-KB returned a valid filename
+                    if ([string]::IsNullOrWhiteSpace($KBFilePath)) {
+                        $errorMsg = "ERROR: Failed to download Microsoft Edge Stable for architecture $WindowsArch. Search query was: $Name. This may indicate: (1) No Edge updates available for $WindowsArch architecture, or (2) Microsoft Update Catalog is temporarily unavailable."
+                        WriteLog $errorMsg
+                        throw $errorMsg
+                    }
+
                     $EdgeCABFilePath = "$EdgePath\$KBFilePath"
                     WriteLog "Latest Edge Stable $WindowsArch release saved to $EdgeCABFilePath"
                 
@@ -1785,7 +2439,9 @@ if ($InstallApps) {
 
                     #Remove Edge CAB file
                     WriteLog "Removing $EdgeCABFilePath"
-                    Remove-Item -Path $EdgeCABFilePath -Force
+                    if (-not [string]::IsNullOrWhiteSpace($EdgeCABFilePath)) {
+                        Remove-Item -Path $EdgeCABFilePath -Force -ErrorAction SilentlyContinue
+                    }
                     WriteLog "Removal complete"
 
                     # Create Update-Edge.ps1
@@ -1834,6 +2490,91 @@ if ($InstallApps) {
                     WriteLog "InjectUnattend is true but source file missing: $unattendSource. Skipping unattend injection."
                 }
             }
+
+            # Layer 3: Force Apps.iso recreation if downloaded files are newer than existing ISO
+            if (Test-Path $AppsISO) {
+                $isoLastWrite = (Get-Item $AppsISO).LastWriteTime
+                WriteLog "Existing Apps.iso found (Last modified: $isoLastWrite). Checking if update files are newer..."
+
+                $needsRebuild = $false
+                $newestFile = $null
+                $newestFileTime = $null
+
+                # Check Defender files if UpdateLatestDefender was enabled
+                if ($UpdateLatestDefender -and (Test-Path -Path $DefenderPath)) {
+                    $defenderFiles = Get-ChildItem -Path $DefenderPath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($defenderFiles) {
+                        $newestDefender = $defenderFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($newestDefender.LastWriteTime -gt $isoLastWrite) {
+                            $needsRebuild = $true
+                            $newestFile = $newestDefender.FullName
+                            $newestFileTime = $newestDefender.LastWriteTime
+                            WriteLog "Defender file is newer than Apps.iso: $($newestDefender.Name) (Modified: $($newestDefender.LastWriteTime))"
+                        }
+                    }
+                }
+
+                # Check MSRT files if UpdateLatestMSRT was enabled
+                if ($UpdateLatestMSRT -and (Test-Path -Path $MSRTPath)) {
+                    $msrtFiles = Get-ChildItem -Path $MSRTPath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($msrtFiles) {
+                        $newestMSRT = $msrtFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($newestMSRT.LastWriteTime -gt $isoLastWrite) {
+                            $needsRebuild = $true
+                            if (-not $newestFileTime -or $newestMSRT.LastWriteTime -gt $newestFileTime) {
+                                $newestFile = $newestMSRT.FullName
+                                $newestFileTime = $newestMSRT.LastWriteTime
+                            }
+                            WriteLog "MSRT file is newer than Apps.iso: $($newestMSRT.Name) (Modified: $($newestMSRT.LastWriteTime))"
+                        }
+                    }
+                }
+
+                # Check Edge files if UpdateEdge was enabled
+                if ($UpdateEdge -and (Test-Path -Path $EdgePath)) {
+                    $edgeFiles = Get-ChildItem -Path $EdgePath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($edgeFiles) {
+                        $newestEdge = $edgeFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($newestEdge.LastWriteTime -gt $isoLastWrite) {
+                            $needsRebuild = $true
+                            if (-not $newestFileTime -or $newestEdge.LastWriteTime -gt $newestFileTime) {
+                                $newestFile = $newestEdge.FullName
+                                $newestFileTime = $newestEdge.LastWriteTime
+                            }
+                            WriteLog "Edge file is newer than Apps.iso: $($newestEdge.Name) (Modified: $($newestEdge.LastWriteTime))"
+                        }
+                    }
+                }
+
+                # Check OneDrive files if UpdateOneDrive was enabled
+                if ($UpdateOneDrive -and (Test-Path -Path $OneDrivePath)) {
+                    $oneDriveFiles = Get-ChildItem -Path $OneDrivePath -Recurse -File -ErrorAction SilentlyContinue
+                    if ($oneDriveFiles) {
+                        $newestOneDrive = $oneDriveFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                        if ($newestOneDrive.LastWriteTime -gt $isoLastWrite) {
+                            $needsRebuild = $true
+                            if (-not $newestFileTime -or $newestOneDrive.LastWriteTime -gt $newestFileTime) {
+                                $newestFile = $newestOneDrive.FullName
+                                $newestFileTime = $newestOneDrive.LastWriteTime
+                            }
+                            WriteLog "OneDrive file is newer than Apps.iso: $($newestOneDrive.Name) (Modified: $($newestOneDrive.LastWriteTime))"
+                        }
+                    }
+                }
+
+                if ($needsRebuild) {
+                    WriteLog "STALE APPS.ISO DETECTED: Removing outdated Apps.iso to force rebuild with latest files"
+                    WriteLog "Newest file: $newestFile (Modified: $newestFileTime)"
+                    WriteLog "Apps.iso age: $isoLastWrite"
+                    if (-not [string]::IsNullOrWhiteSpace($AppsISO)) {
+                        Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+                    }
+                    WriteLog "Stale Apps.iso removed. New ISO will be created with all latest updates."
+                } else {
+                    WriteLog "Apps.iso is up-to-date. No rebuild required."
+                }
+            }
+
             Set-Progress -Percentage 10 -Message "Creating Apps ISO..."
             WriteLog "Creating $AppsISO file"
             New-AppsISO -ADKPath $adkPath -AppsPath $AppsPath -AppsISO $AppsISO
@@ -2002,11 +2743,47 @@ try {
         }
     }
 
+    # Check if KB updates already exist and can be reused (when RemoveUpdates=false)
+    $kbCacheValid = $false
+    if ((Test-Path -Path $KBPath) -and -not $RemoveUpdates -and $requiredUpdates.Count -gt 0) {
+        $existingKBFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue
+        if ($existingKBFiles -and $existingKBFiles.Count -gt 0) {
+            $kbSize = ($existingKBFiles | Measure-Object -Property Length -Sum).Sum
+            if ($kbSize -gt 10MB) {
+                WriteLog "Found existing KB downloads in $KBPath ($($existingKBFiles.Count) files, $([math]::Round($kbSize/1MB, 2)) MB)"
+
+                # Check if required updates match existing files
+                $existingFileNames = $existingKBFiles.Name
+                $missingUpdates = [System.Collections.Generic.List[pscustomobject]]::new()
+                foreach ($update in $requiredUpdates) {
+                    $updateFileName = ($update.Url -split '/')[-1]
+                    if ($updateFileName -notin $existingFileNames) {
+                        $missingUpdates.Add($update)
+                    }
+                }
+
+                if ($missingUpdates.Count -eq 0) {
+                    WriteLog "All $($requiredUpdates.Count) required updates found in KB cache, skipping download"
+                    $kbCacheValid = $true
+                } elseif ($missingUpdates.Count -lt $requiredUpdates.Count) {
+                    WriteLog "$($missingUpdates.Count) of $($requiredUpdates.Count) updates missing from cache, downloading missing updates only"
+                    $requiredUpdates = $missingUpdates
+                } else {
+                    WriteLog "No matching updates found in cache, will download all $($requiredUpdates.Count) updates"
+                }
+            } else {
+                WriteLog "KB folder exists but files are too small ($([math]::Round($kbSize/1MB, 2)) MB < 10 MB), will re-download"
+            }
+        } else {
+            WriteLog "KB folder exists but is EMPTY (0 files), will download"
+        }
+    }
+
     # If no cached VHDX is found, download the required updates now
-    if (-Not $cachedVHDXFileFound -and $requiredUpdates.Count -gt 0) {
+    if (-Not $cachedVHDXFileFound -and $requiredUpdates.Count -gt 0 -and -not $kbCacheValid) {
         Set-Progress -Percentage 12 -Message "Downloading Windows Updates..."
         WriteLog "No suitable VHDX cache found. Downloading $($requiredUpdates.Count) update(s)."
-        
+
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"; New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
@@ -2029,49 +2806,83 @@ try {
             WriteLog "Downloading $($update.Name) to $destinationPath"
             Start-BitsTransferWithRetry -Source $update.Url -Destination $destinationPath
         }
-    
+    }
 
-        # Set file path variables for the patching process
-        if ($ssuUpdateInfos.Count -gt 0) {
-            $SSUFile = $ssuUpdateInfos[0].Name
-            $SSUFilePath = "$KBPath\$SSUFile"
-            WriteLog "Latest SSU identified as $SSUFilePath"
-        }
-        if ($cuUpdateInfos.Count -gt 0) {
-            if (-not $CUPath) {
-                $CUPath = (Get-ChildItem -Path $KBPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).FullName
+    # Set file path variables for the patching process using robust resolution
+    # IMPORTANT: This section runs regardless of whether downloads occurred or were skipped (KB cache valid)
+    # This prevents "Cannot bind argument to parameter 'PackagePath' because it is an empty string" errors
+    if ($ssuUpdateInfos.Count -gt 0) {
+        $SSUFile = $ssuUpdateInfos[0].Name
+        if (-not $SSUFilePath) {
+            $SSUFilePath = Resolve-KBFilePath -KBPath $KBPath -FileName $SSUFile -KBArticleId $ssuUpdateInfos[0].KBArticleID -UpdateType "SSU"
+            if (-not $SSUFilePath) {
+                # Fallback to direct path construction
+                $SSUFilePath = "$KBPath\$SSUFile"
             }
+        }
+        WriteLog "Latest SSU identified as $SSUFilePath"
+    }
+    if ($cuUpdateInfos.Count -gt 0) {
+        if (-not $CUPath) {
+            $cuFileName = if ($cuUpdateInfos[0].Name) { $cuUpdateInfos[0].Name } else { $null }
+            $CUPath = Resolve-KBFilePath -KBPath $KBPath -FileName $cuFileName -KBArticleId $cuKbArticleId -UpdateType "CU"
+        }
+        if ($CUPath) {
             WriteLog "Latest CU identified as $CUPath"
+        } else {
+            WriteLog "WARNING: Could not resolve CU path - CU application will be skipped"
+            $UpdateLatestCU = $false
         }
-        if ($cupUpdateInfos.Count -gt 0) {
-            if (-not $CUPPath) {
-                $CUPPath = (Get-ChildItem -Path $KBPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).FullName
-            }
+    } elseif ($UpdateLatestCU) {
+        # User requested CU update but catalog search returned no results
+        WriteLog "WARNING: No Cumulative Update found in Microsoft Update Catalog for this Windows version - CU update will be skipped"
+        $UpdateLatestCU = $false
+    }
+    if ($cupUpdateInfos.Count -gt 0) {
+        if (-not $CUPPath) {
+            $cupFileName = if ($cupUpdateInfos[0].Name) { $cupUpdateInfos[0].Name } else { $null }
+            $CUPPath = Resolve-KBFilePath -KBPath $KBPath -FileName $cupFileName -KBArticleId $cupKbArticleId -UpdateType "Preview CU"
+        }
+        if ($CUPPath) {
             WriteLog "Latest Preview CU identified as $CUPPath"
+        } else {
+            WriteLog "WARNING: Could not resolve Preview CU path - Preview CU application will be skipped"
+            $UpdatePreviewCU = $false
         }
-        if ($netUpdateInfos.Count -gt 0 -or $netFeatureUpdateInfos.Count -gt 0) {
-            if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
-                $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
-                WriteLog ".NET updates for LTSC are in $NETPath"
+    } elseif ($UpdatePreviewCU) {
+        # User requested Preview CU update but catalog search returned no results
+        WriteLog "WARNING: No Preview Cumulative Update found in Microsoft Update Catalog for this Windows version - Preview CU update will be skipped"
+        $UpdatePreviewCU = $false
+    }
+    if ($netUpdateInfos.Count -gt 0 -or $netFeatureUpdateInfos.Count -gt 0) {
+        if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
+            $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+            WriteLog ".NET updates for LTSC are in $NETPath"
+        }
+        else {
+            if (-not $NETPath) {
+                $NETFileName = if ($netUpdateInfos.Count -gt 0 -and $netUpdateInfos[0].Name) { $netUpdateInfos[0].Name } else { $null }
+                $NETPath = Resolve-KBFilePath -KBPath $KBPath -FileName $NETFileName -KBArticleId $netKbArticleId -UpdateType ".NET"
             }
-            else {
-                # Use the actual downloaded file name from the update info
-                $NETFileName = $netUpdateInfos[0].Name
-                $NETPath = (Get-ChildItem -Path $KBPath -Filter $NETFileName -Recurse).FullName
-                if (-not $NETPath) {
-                    # If exact match fails, try to find by KB article ID
-                    $NETPath = (Get-ChildItem -Path $KBPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).FullName
-                    if ($NETPath) {
-                        $NETFileName = Split-Path $NETPath -Leaf
-                    }
-                }
+            if ($NETPath) {
                 WriteLog "Latest .NET Framework identified as $NETPath"
+            } else {
+                WriteLog "WARNING: Could not resolve .NET path - .NET update application will be skipped"
+                $UpdateLatestNet = $false
             }
         }
-        if ($microcodeUpdateInfos.Count -gt 0) {
-            $MicrocodePath = "$KBPath\Microcode"
-            WriteLog "Microcode updates are in $MicrocodePath"
-        }
+    } elseif ($UpdateLatestNet) {
+        # User requested .NET update but catalog search returned no results
+        WriteLog "WARNING: No .NET Framework update found in Microsoft Update Catalog for this Windows version - .NET update will be skipped"
+        $UpdateLatestNet = $false
+    }
+    if ($microcodeUpdateInfos.Count -gt 0) {
+        $MicrocodePath = "$KBPath\Microcode"
+        WriteLog "Microcode updates are in $MicrocodePath"
+    } elseif ($UpdateLatestMicrocode) {
+        # User requested Microcode update but catalog search returned no results
+        WriteLog "WARNING: No Microcode update found in Microsoft Update Catalog for this Windows version - Microcode update will be skipped"
+        $UpdateLatestMicrocode = $false
     }
     
     if (-Not $cachedVHDXFileFound) {
@@ -2097,7 +2908,8 @@ try {
         New-MSRPartition -VhdxDisk $vhdxDisk
     
         Set-Progress -Percentage 16 -Message "Applying base Windows image to VHDX..."
-        $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index -CompactOS $CompactOS
+        # Pass ISOPath to enable automatic ISO re-mount if WIM source becomes unavailable during expansion
+        $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index -CompactOS $CompactOS -ISOPath $ISOPath
         $osPartitionDriveLetter = $osPartition[1].DriveLetter
         $WindowsPartition = $osPartitionDriveLetter + ':\'
 
@@ -2114,6 +2926,25 @@ try {
                 Set-Progress -Percentage 25 -Message "Applying Windows Updates to VHDX..."
                 WriteLog "Adding KBs to $WindowsPartition"
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
+
+                # Pre-flight validation: Ensure all enabled update paths are valid before attempting application
+                # This prevents "Cannot bind argument to parameter 'PackagePath' because it is an empty string" errors
+                $ssuRequired = ($WindowsRelease -eq 2016 -and $installationType -eq "Server") -or ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC)
+                $pathValidation = Test-KBPathsValid -UpdateLatestCU $UpdateLatestCU -CUPath $CUPath `
+                                                    -UpdatePreviewCU $UpdatePreviewCU -CUPPath $CUPPath `
+                                                    -UpdateLatestNet $UpdateLatestNet -NETPath $NETPath `
+                                                    -UpdateLatestMicrocode $UpdateLatestMicrocode -MicrocodePath $MicrocodePath `
+                                                    -SSURequired $ssuRequired -SSUFilePath $SSUFilePath
+
+                if (-not $pathValidation.IsValid) {
+                    WriteLog "KB path validation failed:"
+                    foreach ($err in $pathValidation.Errors) {
+                        WriteLog "  ERROR: $err"
+                    }
+                    WriteLog "Tip: Ensure Windows Update downloads completed successfully and files exist in $KBPath"
+                    WriteLog "Tip: Check that KB article IDs match the downloaded file names"
+                    throw "KB path validation failed: $($pathValidation.ErrorMessage)"
+                }
 
                 # Initialize DISM service before applying packages
                 if (-not (Initialize-DISMService -MountPath $WindowsPartition)) {
@@ -2155,8 +2986,17 @@ try {
                         $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
                     }
                 }
-                WriteLog "Removing $KBPath"
-                Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+                # Only remove KB folder if RemoveUpdates is true; otherwise keep for future builds
+                if ($RemoveUpdates) {
+                    WriteLog "Removing $KBPath (RemoveUpdates=true)"
+                    if (-not [string]::IsNullOrWhiteSpace($KBPath) -and (Test-Path -Path $KBPath)) {
+                        Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+                    }
+                } else {
+                    $kbFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue
+                    $kbSize = if ($kbFiles) { ($kbFiles | Measure-Object -Property Length -Sum).Sum } else { 0 }
+                    WriteLog "Keeping $KBPath for future builds ($($kbFiles.Count) files, $([math]::Round($kbSize/1MB, 2)) MB) - RemoveUpdates=false"
+                }
                 WriteLog 'Clean Up the WinSxS Folder'
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
@@ -2191,7 +3031,9 @@ try {
         #If $wimPath is an esd file, remove it
         If ($wimPath -match '.esd') {
             WriteLog "Deleting $wimPath file"
-            Remove-Item -Path $wimPath -Force
+            if (-not [string]::IsNullOrWhiteSpace($wimPath)) {
+                Remove-Item -Path $wimPath -Force -ErrorAction SilentlyContinue
+            }
             WriteLog "$wimPath deleted"
         }
     
@@ -2202,9 +3044,17 @@ try {
         WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
 
         Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J
+        if (-not (Test-ExternalCommandSuccess -CommandName 'Robocopy (copy cached VHDX)')) {
+            throw "Failed to copy cached VHDX file from $VHDXCacheFolder to $VMPath"
+        }
         $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
 
         $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
+
+        # Register cleanup for mounted VHDX in case of failure
+        $vhdxCleanupId = Register-VHDXCleanup -VHDXPath $VHDXPath
+        WriteLog "Registered VHDX cleanup handler (ID: $vhdxCleanupId)"
+
         $osPartition = $vhdxDisk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
         $osPartitionDriveLetter = $osPartition.DriveLetter
         $WindowsPartition = $osPartitionDriveLetter + ':\'
@@ -2221,10 +3071,23 @@ try {
     if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
         WriteLog 'Caching VHDX file'
 
-        WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority 
-        WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority 
+        # Optimize volume for better caching - non-critical, continue on failure
+        try {
+            WriteLog 'Defragmenting Windows partition...'
+            Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority -ErrorAction Stop
+        }
+        catch {
+            WriteLog "WARNING: Defragmentation failed - $($_.Exception.Message). Continuing with caching."
+        }
+
+        try {
+            WriteLog 'Performing slab consolidation on Windows partition...'
+            Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority -ErrorAction Stop
+        }
+        catch {
+            WriteLog "WARNING: Slab consolidation failed - $($_.Exception.Message). Continuing with caching."
+        }
+
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
 
@@ -2232,6 +3095,10 @@ try {
 
         #Assuming there are now name collisons
         Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J
+        if (-not (Test-ExternalCommandSuccess -CommandName 'Robocopy (copy VHDX to cache)')) {
+            WriteLog "WARNING: Failed to copy VHDX to cache directory. Caching may be incomplete."
+            # Non-fatal - continue with build even if caching fails
+        }
 
         #Only create new instance if not created during patching
         if ($null -eq $cachedVHDXInfo) {
@@ -2259,7 +3126,9 @@ catch {
     WriteLog "Dismounting $VHDXPath"
     Dismount-ScratchVhdx -VhdxPath $VHDXPath
     WriteLog "Removing $VMPath"
-    Remove-Item -Path $VMPath -Force -Recurse | Out-Null
+    if (-not [string]::IsNullOrWhiteSpace($VMPath)) {
+        Remove-Item -Path $VMPath -Force -Recurse -ErrorAction SilentlyContinue | Out-Null
+    }
     WriteLog 'Removal complete'
     If ($ISOPath) {
         WriteLog 'Dismounting Windows ISO'
@@ -2269,7 +3138,9 @@ catch {
     else {
         #Remove ESD file
         WriteLog "Deleting ESD file"
-        Remove-Item -Path $wimPath -Force
+        if (-not [string]::IsNullOrWhiteSpace($wimPath)) {
+            Remove-Item -Path $wimPath -Force -ErrorAction SilentlyContinue
+        }
         WriteLog "ESD File deleted"
     }
     throw $_
@@ -2287,18 +3158,45 @@ if ($InstallApps) {
     else {
         WriteLog 'Mounting VHDX to inject unattend for audit-mode boot'
         $disk = Mount-VHD -Path $VHDXPath -Passthru | Get-Disk
+
+        # Register cleanup for mounted VHDX in case of failure (only if we did a fresh mount)
+        $vhdxUnattendCleanupId = Register-VHDXCleanup -VHDXPath $VHDXPath
+        WriteLog "Registered VHDX cleanup handler for unattend injection (ID: $vhdxUnattendCleanupId)"
     }
     $osPartition = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
     $osPartitionDriveLetter = $osPartition.DriveLetter
     WriteLog 'Copying unattend file to boot to audit mode'
-    New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force | Out-Null
-    if ($WindowsArch -eq 'x64') {
-        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+    try {
+        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force -ErrorAction Stop | Out-Null
+
+        # Determine source unattend file based on architecture
+        $unattendSource = if ($WindowsArch -eq 'x64') {
+            "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml"
+        } else {
+            "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml"
+        }
+        $unattendDest = "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml"
+
+        # Validate source exists before copying
+        if (-not (Test-Path $unattendSource -PathType Leaf)) {
+            throw "Unattend source file not found: $unattendSource"
+        }
+
+        Copy-Item -Path $unattendSource -Destination $unattendDest -Force -ErrorAction Stop | Out-Null
+
+        # Verify copy succeeded
+        if (-not (Test-Path $unattendDest -PathType Leaf)) {
+            throw "Unattend file copy verification failed - destination file not found: $unattendDest"
+        }
+
+        WriteLog 'Copy completed'
     }
-    else {
-        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+    catch {
+        WriteLog "ERROR: Failed to copy unattend file for audit mode boot - $($_.Exception.Message)"
+        # Ensure dismount happens even on error
+        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        throw "Critical failure: Cannot proceed without unattend file for audit mode boot. Error: $($_.Exception.Message)"
     }
-    WriteLog 'Copy completed'
     # Always dismount so downstream VM creation logic has a clean starting point
     Dismount-ScratchVhdx -VhdxPath $VHDXPath
 }
@@ -2312,6 +3210,10 @@ if ($InstallApps) {
         $FFUVM = New-FFUVM -VMName $VMName -VMPath $VMPath -Memory $memory `
                            -VHDXPath $VHDXPath -Processors $processors -AppsISO $AppsISO
         WriteLog 'FFU VM Created'
+
+        # Register cleanup for VM in case of failure during subsequent operations
+        $vmCleanupId = Register-VMCleanup -VMName $VMName
+        WriteLog "Registered VM cleanup handler (ID: $vmCleanupId)"
     }
     catch {
         Write-Host 'VM creation failed'
@@ -2374,12 +3276,21 @@ if ($InstallApps) {
             WriteLog "Set-CaptureFFU verified available in current session"
         }
 
-        # Call function with parameters
-        Set-CaptureFFU -Username $Username -ShareName $ShareName -FFUCaptureLocation $FFUCaptureLocation
+        # Generate secure random password for FFU capture user
+        # SECURITY: Password is generated directly to SecureString - never exists as plain text during generation
+        # This password will be used by both Set-CaptureFFU and Update-CaptureFFUScript
+        WriteLog "Generating cryptographically secure password for FFU capture user"
+        $capturePasswordSecure = New-SecureRandomPassword -Length 32 -IncludeSpecialChars $false
+        WriteLog "Password generated (length: 32 characters, using cryptographic RNG)"
+
+        # Call function with parameters (including generated password)
+        Set-CaptureFFU -Username $Username -ShareName $ShareName -FFUCaptureLocation $FFUCaptureLocation -Password $capturePasswordSecure
     }
     catch {
         Write-Host 'Set-CaptureFFU function failed'
         WriteLog "Set-CaptureFFU function failed with error $_"
+        # SECURITY: Dispose credentials on failure
+        Remove-SecureStringFromMemory -SecureStringVariable ([ref]$capturePasswordSecure)
         Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
                      -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
                      -Username $Username -ShareName $ShareName
@@ -2390,6 +3301,32 @@ if ($InstallApps) {
         #Create Capture Media
         try {
             Set-Progress -Percentage 45 -Message "Creating WinPE capture media..."
+
+            # Update CaptureFFU.ps1 script with runtime configuration before creating WinPE media
+            # SECURITY: Pass SecureString - Update-CaptureFFUScript handles conversion internally
+            WriteLog "Updating CaptureFFU.ps1 script with capture configuration"
+            try {
+                $updateParams = @{
+                    VMHostIPAddress       = $VMHostIPAddress
+                    ShareName             = $ShareName
+                    Username              = $Username
+                    Password              = $capturePasswordSecure  # SecureString - converted internally
+                    FFUDevelopmentPath    = $FFUDevelopmentPath
+                }
+
+                # Add CustomFFUNameTemplate if provided
+                if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
+                    $updateParams.CustomFFUNameTemplate = $CustomFFUNameTemplate
+                }
+
+                Update-CaptureFFUScript @updateParams
+                WriteLog "CaptureFFU.ps1 script updated successfully"
+            }
+            catch {
+                WriteLog "ERROR: Failed to update CaptureFFU.ps1 script: $_"
+                throw "Failed to update CaptureFFU.ps1 script. Capture media creation aborted. Error: $_"
+            }
+
             #This should happen while the FFUVM is building
             New-PEMedia -Capture $true -Deploy $false -adkPath $adkPath -FFUDevelopmentPath $FFUDevelopmentPath `
                         -WindowsArch $WindowsArch -CaptureISO $CaptureISO -DeployISO $null `
@@ -2406,7 +3343,34 @@ if ($InstallApps) {
             throw $_
 
         }
-    }    
+        finally {
+            # SECURITY: Dispose of credentials after capture media is created
+            # This minimizes the time sensitive data is in memory
+            if ($capturePasswordSecure) {
+                $capturePasswordSecure.Dispose()
+                $capturePasswordSecure = $null
+                WriteLog "SECURITY: SecureString credential disposed"
+            }
+            if ($capturePassword) {
+                # Clear plain text password from memory
+                $capturePassword = $null
+                [System.GC]::Collect()
+                WriteLog "SECURITY: Plain text credential cleared from memory"
+            }
+        }
+    }
+    else {
+        # SECURITY: Dispose credentials even when not creating capture media
+        if ($capturePasswordSecure) {
+            $capturePasswordSecure.Dispose()
+            $capturePasswordSecure = $null
+            WriteLog "SECURITY: SecureString credential disposed (no capture media)"
+        }
+        if ($capturePassword) {
+            $capturePassword = $null
+            WriteLog "SECURITY: Plain text credential cleared (no capture media)"
+        }
+    }
 }
 #Capture FFU file
 try {
@@ -2416,6 +3380,21 @@ try {
         New-Item -Path $FFUCaptureLocation -ItemType Directory -Force
         WriteLog "Successfully created FFU capture location at $FFUCaptureLocation"
     }
+
+    # Validate and shorten Windows SKU for FFU file naming
+    # IMPORTANT: This must happen BEFORE the InstallApps branch because both code paths
+    # require ShortenedWindowsSKU parameter for New-FFU function. Previously this was
+    # only done in the InstallApps = $false path, causing "Cannot validate argument on
+    # parameter 'ShortenedWindowsSKU'" error when InstallApps = $true.
+    if ([string]::IsNullOrWhiteSpace($WindowsSKU)) {
+        WriteLog "ERROR: WindowsSKU parameter is empty or null"
+        throw "WindowsSKU parameter is required for FFU file naming. Please specify a valid Windows edition (Pro, Enterprise, Education, etc.)"
+    }
+
+    WriteLog "Shortening Windows SKU: '$WindowsSKU' for FFU file name"
+    $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
+    WriteLog "Shortened Windows SKU: '$shortenedWindowsSKU'"
+
     #Check if VM is done provisioning
     If ($InstallApps) {
         Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
@@ -2440,16 +3419,11 @@ try {
     else {
         Set-Progress -Percentage 81 -Message "Starting FFU capture from VHDX..."
 
-        # Validate WindowsSKU parameter before FFU capture
-        if ([string]::IsNullOrWhiteSpace($WindowsSKU)) {
-            WriteLog "ERROR: WindowsSKU parameter is empty or null"
-            throw "WindowsSKU parameter is required for FFU file naming. Please specify a valid Windows edition (Pro, Enterprise, Education, etc.)"
-        }
+        # NOTE: WindowsSKU validation and shortening now happens BEFORE the InstallApps branch
+        # (lines 2464-2471) to eliminate code duplication and ensure both paths have valid
+        # $shortenedWindowsSKU variable. This prevents "Cannot validate argument on parameter
+        # 'ShortenedWindowsSKU'" errors.
 
-        #Shorten Windows SKU for use in FFU file name to remove spaces and long names
-        WriteLog "Shortening Windows SKU: '$WindowsSKU' for FFU file name"
-        $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
-        WriteLog "Shortened Windows SKU: '$shortenedWindowsSKU'"
         #Create FFU file
         New-FFU -InstallApps $InstallApps -FFUCaptureLocation $FFUCaptureLocation `
                 -AllowVHDXCaching $AllowVHDXCaching -CustomFFUNameTemplate $CustomFFUNameTemplate `
@@ -2502,18 +3476,8 @@ If ($InstallApps) {
             throw $_
         }
     }
-    #Clean up Updates
-    if ($RemoveUpdates) {
-        try {
-            WriteLog "Cleaning up downloaded update files"
-            Remove-Updates
-        }
-        catch {
-            Write-Host 'Cleaning up downloaded update files failed'
-            Writelog "Cleaning up downloaded update files failed with error $_"
-            throw $_
-        }
-    }
+    # Note: Update file cleanup is handled by Invoke-FFUPostBuildCleanup (line 2830)
+    # which properly respects the RemoveUpdates parameter
 }
 #Clean up VM or VHDX
 try {
@@ -2607,11 +3571,11 @@ Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 # Delegated post-build cleanup to common module
 Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $Driversfolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates
 
-# Remove KBPath for cached vhdx files
-if ($AllowVHDXCaching) {
+# Remove KBPath for cached vhdx files only if RemoveUpdates is true
+if ($AllowVHDXCaching -and $RemoveUpdates) {
     try {
         If (Test-Path -Path $KBPath) {
-            WriteLog "Removing $KBPath"
+            WriteLog "Removing $KBPath (RemoveUpdates=true, AllowVHDXCaching=true)"
             Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
             WriteLog 'Removal complete'
         }
@@ -2619,6 +3583,12 @@ if ($AllowVHDXCaching) {
     catch {
         Writelog "Removing $KBPath failed with error $_"
         throw $_
+    }
+} elseif ($AllowVHDXCaching -and (Test-Path -Path $KBPath)) {
+    $kbFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue
+    if ($kbFiles -and $kbFiles.Count -gt 0) {
+        $kbSize = ($kbFiles | Measure-Object -Property Length -Sum).Sum
+        WriteLog "Keeping $KBPath ($($kbFiles.Count) files, $([math]::Round($kbSize/1MB, 2)) MB) for future builds - RemoveUpdates=false"
     }
 }
 
@@ -2637,12 +3607,26 @@ else {
 }
 
 #Clean up dirty.txt file
-Remove-Item -Path .\dirty.txt -Force | out-null
+$dirtyFilePath = Join-Path $FFUDevelopmentPath "dirty.txt"
+if (Test-Path -Path $dirtyFilePath) {
+    Remove-Item -Path $dirtyFilePath -Force -ErrorAction SilentlyContinue | Out-Null
+}
 # Remove per-run session folder if present
 $sessionDir = Join-Path $FFUDevelopmentPath '.session'
-if (Test-Path -Path $sessionDir) { 
-    Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction SilentlyContinue 
+if (Test-Path -Path $sessionDir) {
+    Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# SECURITY: Sanitize sensitive credentials from capture media files
+# This removes/overwrites the plain text password in CaptureFFU.ps1 and backup files
+try {
+    Remove-SensitiveCaptureMedia -FFUDevelopmentPath $FFUDevelopmentPath -SanitizeScript $true -RemoveBackups $true
+}
+catch {
+    WriteLog "WARNING: Sensitive capture media cleanup failed (non-critical): $($_.Exception.Message)"
+    # Continue - this is a security enhancement, not a requirement
+}
+
 if ($VerbosePreference -ne 'Continue') {
     Write-Host 'Script complete'
 }
@@ -2667,3 +3651,18 @@ if ($VerbosePreference -ne 'Continue') {
 }
 WriteLog 'Script complete'
 WriteLog $runTimeFormatted
+
+# Clear cleanup registry since build completed successfully
+Clear-CleanupRegistry
+
+# Output explicit success marker for UI to detect
+# This allows the UI to distinguish successful completion from builds that
+# completed but had non-terminating errors in the error stream
+[PSCustomObject]@{
+    FFUBuildSuccess = $true
+    Message = "FFU build completed successfully"
+    Duration = $runTimeFormatted
+    Timestamp = Get-Date
+}
+
+} # END block
