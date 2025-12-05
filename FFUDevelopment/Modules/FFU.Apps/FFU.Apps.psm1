@@ -172,8 +172,8 @@ function Get-Office {
     Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
 
     WriteLog "Cleaning up ODT default config files"
-    # Clean up default configuration files
-    Remove-Item -Path "$OfficePath\configuration*" -Force
+    # Clean up default configuration files - use ErrorAction to prevent non-terminating errors
+    Remove-Item -Path "$OfficePath\configuration*" -Force -ErrorAction SilentlyContinue
 
     # Create Install-Office.ps1 in orchestration folder
     $installOfficePath = Join-Path -Path $OrchestrationPath -ChildPath "Install-Office.ps1"
@@ -186,7 +186,9 @@ function Get-Office {
 
     # Remove the ODT setup file
     WriteLog "Removing ODT setup file"
-    Remove-Item -Path $ODTInstallFile -Force
+    if (-not [string]::IsNullOrWhiteSpace($ODTInstallFile)) {
+        Remove-Item -Path $ODTInstallFile -Force -ErrorAction SilentlyContinue
+    }
     WriteLog "ODT setup file removed"
 }
 
@@ -210,7 +212,7 @@ function New-AppsISO {
     Output path for the ISO file
 
     .EXAMPLE
-    New-AppsISO -ADKPath $adkPath -AppsPath "C:\FFUDevelopment\Apps" -AppsISO "C:\FFUDevelopment\Apps.iso"
+    New-AppsISO -ADKPath $adkPath -AppsPath "C:\FFUDevelopment\Apps" -AppsISO "C:\FFUDevelopment\Apps\Apps.iso"
     #>
     [CmdletBinding()]
     param(
@@ -251,11 +253,11 @@ function Remove-Apps {
     # Clean up Win32 and MSStore folders
     if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
         WriteLog "Cleaning up Win32 folder"
-        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
+        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
         WriteLog "Cleaning up MSStore folder"
-        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
+        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     #Remove the Office Download and ODT
@@ -263,9 +265,11 @@ function Remove-Apps {
         $ODTPath = "$AppsPath\Office"
         $OfficeDownloadPath = "$ODTPath\Office"
         WriteLog 'Removing Office and ODT download'
-        Remove-Item -Path $OfficeDownloadPath -Recurse -Force
-        Remove-Item -Path "$ODTPath\setup.exe"
-        Remove-Item -Path "$orchestrationPath\Install-Office.ps1"
+        if (-not [string]::IsNullOrWhiteSpace($OfficeDownloadPath)) {
+            Remove-Item -Path $OfficeDownloadPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -Path "$ODTPath\setup.exe" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$orchestrationPath\Install-Office.ps1" -Force -ErrorAction SilentlyContinue
         WriteLog 'Removal complete'
     }
 

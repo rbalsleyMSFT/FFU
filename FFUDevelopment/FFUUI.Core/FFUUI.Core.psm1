@@ -184,7 +184,7 @@ function Get-GeneralDefaults {
 
 # Function to get USB Drives (Moved from BuildFFUVM_UI.ps1)
 function Get-USBDrives {
-    Get-WmiObject Win32_DiskDrive | Where-Object {
+    Get-CimInstance -ClassName Win32_DiskDrive | Where-Object {
         ($_.MediaType -eq 'Removable Media' -or $_.MediaType -eq 'External hard disk media')
     } | ForEach-Object {
         $size = [math]::Round($_.Size / 1GB, 2)

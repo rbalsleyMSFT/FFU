@@ -10,7 +10,9 @@ param (
     [bool]$Deploy = $true
 )
 
-function WriteLog($LogText) { 
+function WriteLog($LogText) {
+    # Handle null/empty LogText gracefully to prevent "Cannot bind argument to parameter 'LogText' because it is an empty string"
+    if ([string]::IsNullOrWhiteSpace($LogText)) { return }
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText" -Force -ErrorAction SilentlyContinue
     Write-Verbose $LogText
 }
@@ -64,7 +66,8 @@ function Invoke-Process {
     }
     catch {
         #$PSCmdlet.ThrowTerminatingError($_)
-        WriteLog $_
+        $errorMsg = if ($_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+        WriteLog "Invoke-Process failed: $errorMsg"
         Write-Host "Script failed - $Logfile for more info"
         throw $_
 
@@ -83,7 +86,7 @@ function New-PEMedia {
         [Parameter()]
         [bool]$Deploy
     )
-    #Need to use the Demployment and Imaging tools environment to create winPE media
+    #Need to use the Deployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
 
@@ -93,18 +96,34 @@ function New-PEMedia {
     }
 
     WriteLog "Copying WinPE files to $WinPEFFUPath"
+    # Use 'call' before batch file path to properly handle spaces in paths like "C:\Program Files (x86)\..."
     if($WindowsArch -eq 'x64') {
-        & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
+        $copypeOutput = & cmd /c "call `"$DandIEnv`" && copype amd64 `"$WinPEFFUPath`"" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            WriteLog "copype failed with exit code $LASTEXITCODE"
+            WriteLog "copype output: $copypeOutput"
+            throw "copype amd64 failed with exit code $LASTEXITCODE. Ensure Windows ADK and WinPE add-on are installed. Output: $copypeOutput"
+        }
     }
     elseif($WindowsArch -eq 'arm64') {
-        & cmd /c """$DandIEnv"" && copype arm64 $WinPEFFUPath" | Out-Null
+        $copypeOutput = & cmd /c "call `"$DandIEnv`" && copype arm64 `"$WinPEFFUPath`"" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            WriteLog "copype failed with exit code $LASTEXITCODE"
+            WriteLog "copype output: $copypeOutput"
+            throw "copype arm64 failed with exit code $LASTEXITCODE. Ensure Windows ADK and WinPE add-on are installed. Output: $copypeOutput"
+        }
     }
-    #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
     WriteLog 'Files copied successfully'
 
     WriteLog 'Mounting WinPE media to add WinPE optional components'
     Mount-WindowsImage -ImagePath "$WinPEFFUPath\media\sources\boot.wim" -Index 1 -Path "$WinPEFFUPath\mount" | Out-Null
     WriteLog 'Mounting complete'
+
+    # Register cleanup for DISM mount in case of failure
+    if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+        $null = Register-DISMMountCleanup -MountPath "$WinPEFFUPath\mount"
+        WriteLog "Registered DISM mount cleanup handler"
+    }
 
     $Packages = @(
         "WinPE-WMI.cab",

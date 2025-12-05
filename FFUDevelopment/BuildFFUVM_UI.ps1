@@ -31,6 +31,10 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
     exit 1
 }
 
+# FFU Builder Version
+$script:FFUBuilderVersion = "1.0.5"
+$script:FFUBuilderBuildDate = "December 2025"
+
 # Creating custom state object to hold UI state and data
 $FFUDevelopmentPath = $PSScriptRoot
 
@@ -38,13 +42,13 @@ $script:uiState = [PSCustomObject]@{
     FFUDevelopmentPath = $FFUDevelopmentPath;
     Window             = $null;
     Controls           = @{
-        featureCheckBoxes               = @{}; 
-        UpdateInstallAppsBasedOnUpdates = $null 
+        featureCheckBoxes               = @{};
+        UpdateInstallAppsBasedOnUpdates = $null
     };
     Data               = @{
         allDriverModels             = [System.Collections.Generic.List[PSCustomObject]]::new();
         appsScriptVariablesDataList = [System.Collections.Generic.List[PSCustomObject]]::new();
-        versionData                 = $null; 
+        versionData                 = $null;
         vmSwitchMap                 = @{};
         logData                     = $null;
         logStreamReader             = $null;
@@ -61,7 +65,11 @@ $script:uiState = [PSCustomObject]@{
         isCleanupRunning                  = $false
     };
     Defaults           = @{};
-    LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
+    LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log";
+    Version            = @{
+        Number    = $script:FFUBuilderVersion
+        BuildDate = $script:FFUBuilderBuildDate
+    }
 }
 
 # Remove any existing modules to avoid conflicts
@@ -151,10 +159,17 @@ $window.Add_Loaded({
         # Pass the state object to all initialization functions
         $script:uiState.Window = $window
         $window.Tag = $script:uiState
+
+        # Update window title with version
+        $window.Title = "FFU Builder UI v$($script:uiState.Version.Number)"
+
         Initialize-UIControls -State $script:uiState
         Initialize-UIDefaults -State $script:uiState
         Initialize-DynamicUIElements -State $script:uiState
         Register-EventHandlers -State $script:uiState
+
+        # Initialize About tab
+        Initialize-AboutTab -State $script:uiState
 
         # Attempt automatic load of previous environment (silent)
         try {
@@ -482,6 +497,21 @@ $script:uiState.Controls.btnRun.Add_Click({
                 }
             }
 
+            # Ensure config subdirectory exists (required for saving build configuration)
+            $configDir = Join-Path $ffuDevPath "config"
+            if (-not (Test-Path -LiteralPath $configDir -PathType Container)) {
+                try {
+                    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+                    WriteLog "Created config subdirectory: $configDir"
+                }
+                catch {
+                    [System.Windows.MessageBox]::Show("Failed to create config subdirectory:`n`n$($_.Exception.Message)`n`nThe build cannot proceed without this directory.", "Error", "OK", "Error") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: Could not create config subdirectory."
+                    return
+                }
+            }
+
             # Warn if FFUDevelopmentPath doesn't match where UI is running from
             $expectedPath = $script:uiState.FFUDevelopmentPath
             if ($ffuDevPath -ne $expectedPath) {
@@ -509,8 +539,21 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Sort top-level keys alphabetically for consistent output
             $sortedConfig = [ordered]@{}
             foreach ($k in ($config.Keys | Sort-Object)) { $sortedConfig[$k] = $config[$k] }
-            $sortedConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8
-            $script:uiState.Data.lastConfigFilePath = $configFilePath
+
+            # Save config file with error handling
+            try {
+                $sortedConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $configFilePath -Encoding UTF8 -ErrorAction Stop
+                $script:uiState.Data.lastConfigFilePath = $configFilePath
+                WriteLog "Build configuration saved to: $configFilePath"
+            }
+            catch {
+                $errorMsg = "Failed to save build configuration file:`n`n$($_.Exception.Message)`n`nPath: $configFilePath`n`nPlease verify write permissions and disk space."
+                WriteLog "ERROR: $errorMsg"
+                [System.Windows.MessageBox]::Show($errorMsg, "Configuration Save Error", "OK", "Error") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: Could not save configuration."
+                return
+            }
             
             if ($config.InstallOffice -and $config.OfficeConfigXMLFile) {
                 Copy-Item -Path $config.OfficeConfigXMLFile -Destination $config.OfficePath -Force
@@ -652,10 +695,31 @@ $script:uiState.Controls.btnRun.Add_Click({
                         # Determine final status based on job result and error output
                         # Even "Completed" jobs can have errors (e.g., parameter validation failures)
                         $jobOutput = Receive-Job -Job $currentJob -Keep -ErrorVariable jobErrors -ErrorAction SilentlyContinue
-                        $hasErrors = ($jobErrors.Count -gt 0) -or ($currentJob.State -eq 'Failed') -or ($currentJob.State -eq 'Stopped')
+
+                        # Check for explicit success marker FIRST
+                        # BuildFFUVM.ps1 outputs a PSCustomObject with FFUBuildSuccess=$true on successful completion
+                        # This takes priority over non-terminating errors in the error stream
+                        $successMarker = $null
+                        if ($jobOutput) {
+                            $successMarker = $jobOutput | Where-Object {
+                                $_ -is [PSCustomObject] -and $_.PSObject.Properties['FFUBuildSuccess'] -and $_.FFUBuildSuccess -eq $true
+                            } | Select-Object -Last 1
+                        }
+
+                        if ($successMarker) {
+                            # Explicit success marker found - build completed successfully
+                            # Ignore any non-terminating errors that may have been captured
+                            $hasErrors = $false
+                            WriteLog "Success marker detected: $($successMarker.Message)"
+                        }
+                        else {
+                            # No success marker - fall back to error stream check
+                            $hasErrors = ($jobErrors.Count -gt 0) -or ($currentJob.State -eq 'Failed') -or ($currentJob.State -eq 'Stopped')
+                        }
 
                         # Additional check: if log file was never created, the job likely failed early
-                        $mainLogPath = Join-Path $config.FFUDevelopmentPath "FFUDevelopment.log"
+                        # NOTE: Use script-scoped uiState.FFUDevelopmentPath (not $config which is out of scope in this timer handler)
+                        $mainLogPath = Join-Path $script:uiState.FFUDevelopmentPath "FFUDevelopment.log"
                         if (-not (Test-Path -LiteralPath $mainLogPath)) {
                             $hasErrors = $true
                         }

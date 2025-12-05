@@ -735,5 +735,69 @@ function Initialize-DynamicUIElements {
     }
 }
 
+<#
+.SYNOPSIS
+    Initializes the About tab with version information and hyperlink handlers.
+.DESCRIPTION
+    Sets up the About tab controls with dynamic version information and
+    registers click handlers for hyperlinks to open URLs in the default browser.
+.PARAMETER State
+    The UI state object containing window and control references.
+#>
+function Initialize-AboutTab {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State
+    )
+
+    $window = $State.Window
+    if (-not $window) {
+        WriteLog "Warning: Window not available for About tab initialization."
+        return
+    }
+
+    # Get version from State object (populated from BuildFFUVM_UI.ps1)
+    $version = if ($State.Version -and $State.Version.Number) { $State.Version.Number } else { "1.0.0" }
+    $buildDate = if ($State.Version -and $State.Version.BuildDate) { $State.Version.BuildDate } else { "December 2025" }
+
+    # Update version text
+    $txtAboutVersion = $window.FindName("txtAboutVersion")
+    if ($txtAboutVersion) {
+        $txtAboutVersion.Text = "Version $version"
+    }
+
+    # Update build date text
+    $txtAboutBuildDate = $window.FindName("txtAboutBuildDate")
+    if ($txtAboutBuildDate) {
+        $txtAboutBuildDate.Text = $buildDate
+    }
+
+    # Helper function to register hyperlink click handler
+    $registerHyperlinkHandler = {
+        param($linkName)
+        $link = $window.FindName($linkName)
+        if ($link) {
+            $link.Add_RequestNavigate({
+                param($sender, $e)
+                try {
+                    Start-Process $e.Uri.AbsoluteUri
+                    $e.Handled = $true
+                }
+                catch {
+                    WriteLog "Failed to open URL: $($e.Uri.AbsoluteUri). Error: $($_.Exception.Message)"
+                }
+            })
+        }
+    }
+
+    # Register hyperlink handlers
+    & $registerHyperlinkHandler "lnkGitHub"
+    & $registerHyperlinkHandler "lnkDocs"
+    & $registerHyperlinkHandler "lnkIssues"
+
+    WriteLog "About tab initialized with version $version"
+}
+
 
 Export-ModuleMember -Function *

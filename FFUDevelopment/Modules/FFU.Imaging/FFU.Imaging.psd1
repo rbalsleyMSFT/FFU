@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.1'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -34,6 +34,8 @@
     # Functions to export from this module
     FunctionsToExport = @(
         'Initialize-DISMService',
+        'Test-WimSourceAccessibility',
+        'Invoke-ExpandWindowsImageWithRetry',
         'Get-WimFromISO',
         'Get-Index',
         'New-ScratchVhdx',
@@ -45,9 +47,11 @@
         'Enable-WindowsFeaturesByName',
         'Dismount-ScratchVhdx',
         'Optimize-FFUCaptureDrive',
+        'Get-WindowsVersionInfo',
         'New-FFU',
         'Remove-FFU',
-        'Start-RequiredServicesForDISM'
+        'Start-RequiredServicesForDISM',
+        'Invoke-FFUOptimizeWithScratchDir'
     )
 
     # Cmdlets to export from this module
@@ -72,7 +76,15 @@
             ProjectUri = 'https://github.com/rbalsleyMSFT/FFU'
 
             # ReleaseNotes of this module
-            ReleaseNotes = 'Initial release of modularized FFU.Imaging module'
+            ReleaseNotes = @'
+v1.0.1 - Fix missing Get-WindowsVersionInfo function
+- Added Get-WindowsVersionInfo function that was lost during modularization
+- Function reads Windows version from mounted VHDX registry for FFU filename generation
+- Fixed "The term 'Get-WindowsVersionInfo' is not recognized" error during VHDX-direct FFU capture
+- Proper parameterization instead of relying on script-scope variables
+
+v1.0.0 - Initial release of modularized FFU.Imaging module
+'@
         }
     }
 }

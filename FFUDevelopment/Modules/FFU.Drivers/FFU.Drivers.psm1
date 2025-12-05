@@ -272,7 +272,7 @@ function Get-MicrosoftDrivers {
             }
             # Remove the downloaded file
             WriteLog "Removing $filePath"
-            Remove-Item -Path $filePath -Force
+            Remove-Item -Path $filePath -Force -ErrorAction SilentlyContinue
             WriteLog "Complete"
         }
         else {
@@ -550,12 +550,17 @@ function Get-HPDrivers {
         WriteLog "Driver extracted to: $extractFolder"
 
         # Delete the .exe driver file after extraction
-        Remove-Item -Path $DriverFilePath -Force
-        WriteLog "Driver installation file deleted: $DriverFilePath"
+        if (-not [string]::IsNullOrWhiteSpace($DriverFilePath)) {
+            Remove-Item -Path $DriverFilePath -Force -ErrorAction SilentlyContinue
+            WriteLog "Driver installation file deleted: $DriverFilePath"
+        }
     }
-    # Clean up the downloaded cab and xml files
-    Remove-Item -Path $DriverCabFile, $DriverXmlFile, $PlatformListCab, $PlatformListXml -Force
-    WriteLog "Driver cab and xml files deleted"
+    # Clean up the downloaded cab and xml files - filter out null/empty paths to prevent "Value cannot be null" error
+    $cleanupPaths = @($DriverCabFile, $DriverXmlFile, $PlatformListCab, $PlatformListXml) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    if ($cleanupPaths.Count -gt 0) {
+        Remove-Item -Path $cleanupPaths -Force -ErrorAction SilentlyContinue
+        WriteLog "Driver cab and xml files deleted"
+    }
 }
 
 function Get-LenovoDrivers {
@@ -785,7 +790,7 @@ function Get-LenovoDrivers {
         #Check if packagetype = 2. If packagetype is not 2, skip the package. $packageType is a System.Xml.XmlElement.
         #This filters out Firmware, BIOS, and other non-INF drivers
         if ($packageType -ne 2) {
-            Remove-Item -Path $packageXMLPath -Force
+            Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
             continue
         }
 
@@ -795,7 +800,7 @@ function Get-LenovoDrivers {
 
         #if extract command is empty/missing, skip the package
         if (!($extractCommand)) {
-            Remove-Item -Path $packageXMLPath -Force
+            Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
             continue
         }
 
@@ -841,18 +846,18 @@ function Get-LenovoDrivers {
 
         # Delete the .exe driver file after extraction
         WriteLog "Deleting driver installation file: $driverFilePath"
-        Remove-Item -Path $driverFilePath -Force
+        Remove-Item -Path $driverFilePath -Force -ErrorAction SilentlyContinue
         WriteLog "Driver installation file deleted: $driverFilePath"
 
         # Delete the package XML file after extraction
         WriteLog "Deleting package XML file: $packageXMLPath"
-        Remove-Item -Path $packageXMLPath -Force
+        Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
         WriteLog "Package XML file deleted"
     }
 
     #Delete the catalog XML file after processing
     WriteLog "Deleting catalog XML file: $LenovoCatalogXML"
-    Remove-Item -Path $LenovoCatalogXML -Force
+    Remove-Item -Path $LenovoCatalogXML -Force -ErrorAction SilentlyContinue
     WriteLog "Catalog XML file deleted"
 }
 
@@ -1131,7 +1136,7 @@ function Get-DellDrivers {
             WriteLog "Driver extracted"
 
             WriteLog "Deleting driver file: $driverFilePath"
-            Remove-Item -Path $driverFilePath -Force
+            Remove-Item -Path $driverFilePath -Force -ErrorAction SilentlyContinue
             WriteLog "Driver file deleted"
         }
     }

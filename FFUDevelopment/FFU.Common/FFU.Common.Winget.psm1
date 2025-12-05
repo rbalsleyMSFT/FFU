@@ -165,7 +165,9 @@ function Get-Application {
                 if ($Source -eq 'msstore' -and $wingetDownloadResult.ExtendedErrorCode -match '0x8A150084') {
                     $errorMessage = "The Microsoft Store app $AppName does not support downloads by the publisher. Please remove it from the AppList.json. If there's a winget source version of the application, try using that instead. Exiting."
                     WriteLog $errorMessage
-                    Remove-Item -Path $appFolderPath -Recurse -Force
+                    if (-not [string]::IsNullOrWhiteSpace($appFolderPath)) {
+                        Remove-Item -Path $appFolderPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                     Write-Error $errorMessage
                     return 3 # Return specific error code for publisher restriction
                 }
@@ -173,7 +175,9 @@ function Get-Application {
                 else {
                     $errormsg = "Download failed for $AppName with status: $($wingetDownloadResult.status) $($wingetDownloadResult.ExtendedErrorCode)"
                     WriteLog $errormsg
-                    Remove-Item -Path $appFolderPath -Recurse -Force
+                    if (-not [string]::IsNullOrWhiteSpace($appFolderPath)) {
+                        Remove-Item -Path $appFolderPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                     Write-Error $errormsg
                     return 1 # Return generic error code
                 }
@@ -191,7 +195,7 @@ function Get-Application {
             WriteLog "Found zip file: $($zipFile.FullName). Extracting..."
             Expand-Archive -Path $zipFile.FullName -DestinationPath $appFolderPath -Force
             WriteLog "Extraction complete. Removing zip file."
-            Remove-Item -Path $zipFile.FullName -Force
+            Remove-Item -Path $zipFile.FullName -Force -ErrorAction SilentlyContinue
             WriteLog "Zip file removed."
         }
         
@@ -217,7 +221,9 @@ function Get-Application {
             WriteLog "Moving $AppName to $NewAppPath"
             Move-Item -Path "$appFolderPath\*" -Destination "$AppsPath\MSStore\$AppName" -Force
             WriteLog "Removing $appFolderPath"
-            Remove-Item -Path $appFolderPath -Force -Recurse
+            if (-not [string]::IsNullOrWhiteSpace($appFolderPath)) {
+                Remove-Item -Path $appFolderPath -Force -Recurse -ErrorAction SilentlyContinue
+            }
             WriteLog "$AppName moved to $NewAppPath"
             $result = 0  # Success for UWP app
         }
@@ -249,7 +255,7 @@ function Get-Application {
                     foreach ($dependency in $dependencies) {
                         if ($dependency.Name -notmatch 'ARM64') {
                             WriteLog "Removing dependency file $($dependency.FullName)"
-                            Remove-Item -Path $dependency.FullName -Recurse -Force
+                            Remove-Item -Path $dependency.FullName -Recurse -Force -ErrorAction SilentlyContinue
                         }
                     }
                 }
@@ -305,7 +311,7 @@ function Get-Application {
                     if ($package.FullName -ne $latestPackage.FullName) {
                         try {
                             WriteLog "Removing $($package.FullName)"
-                            Remove-Item -Path $package.FullName -Force
+                            Remove-Item -Path $package.FullName -Force -ErrorAction SilentlyContinue
                         }
                         catch {
                             WriteLog "Failed to delete: $($package.FullName) - $_"
@@ -322,7 +328,7 @@ function Get-Application {
                     if ($package.FullName -ne $latestPackage.FullName) {
                         try {
                             WriteLog "Removing $($package.FullName)"
-                            Remove-Item -Path $package.FullName -Force
+                            Remove-Item -Path $package.FullName -Force -ErrorAction SilentlyContinue
                         }
                         catch {
                             WriteLog "Failed to delete: $($package.FullName) - $_"
@@ -575,7 +581,9 @@ function Add-Win32SilentInstallCommand {
     $installerCandidates = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction SilentlyContinue
     if (-not $installerCandidates) {
         WriteLog "No win32 app installers were found. Skipping the inclusion of $AppFolder"
-        Remove-Item -Path $AppFolderPath -Recurse -Force
+        if (-not [string]::IsNullOrWhiteSpace($AppFolderPath)) {
+            Remove-Item -Path $AppFolderPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
         return 1
     }
 
@@ -639,7 +647,9 @@ function Add-Win32SilentInstallCommand {
     }
     if (-not $silentInstallSwitch) {
         WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
-        Remove-Item -Path $appFolderPath -Recurse -Force
+        if (-not [string]::IsNullOrWhiteSpace($appFolderPath)) {
+            Remove-Item -Path $appFolderPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
         return 2
     }
 

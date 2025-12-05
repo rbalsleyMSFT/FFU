@@ -782,7 +782,7 @@ function Invoke-RestoreDefaults {
 
         $captureISOPath = Join-Path $rootPath 'WinPECaptureFFUFiles\WinPE-Capture.iso'
         $deployISOPath = Join-Path $rootPath 'WinPEDeployFFUFiles\WinPE-Deploy.iso'
-        $appsISOPath = Join-Path $rootPath 'Apps.iso'
+        $appsISOPath = Join-Path $rootPath 'Apps\Apps.iso'
         
         $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Capture, Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
         $result = [System.Windows.MessageBox]::Show($msg, "Confirm Restore Defaults", "YesNo", "Warning")

@@ -41,8 +41,13 @@
         'Get-UpdateFileInfo',
         'Save-KB',
         'Test-MountedImageDiskSpace',
+        'Test-FileLocked',
+        'Test-DISMServiceHealth',
+        'Test-MountState',
         'Add-WindowsPackageWithRetry',
-        'Add-WindowsPackageWithUnattend'
+        'Add-WindowsPackageWithUnattend',
+        'Resolve-KBFilePath',
+        'Test-KBPathsValid'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.

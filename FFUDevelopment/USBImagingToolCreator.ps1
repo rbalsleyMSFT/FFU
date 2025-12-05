@@ -9,9 +9,11 @@ $Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator'
 if($DeployISOPath){
 $DevelopmentPath = $DeployISOPath | Split-Path
 $ImagesPath = "$DevelopmentPath\FFU"
-function WriteLog($LogText) { 
-$LogFileName = '\Script.log'
-$LogFile = $DevelopmentPath + $LogFilename
+function WriteLog($LogText) {
+    # Handle null/empty LogText gracefully to prevent "Cannot bind argument to parameter 'LogText' because it is an empty string"
+    if ([string]::IsNullOrWhiteSpace($LogText)) { return }
+    $LogFileName = '\Script.log'
+    $LogFile = $DevelopmentPath + $LogFilename
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText" -Force -ErrorAction SilentlyContinue
     Write-Verbose $LogText
 }
@@ -28,7 +30,7 @@ function Write-ProgressLog {
     }
 Function Get-RemovableDrive {
 writelog "Get information for all removable drives"
-$USBDrives = Get-WmiObject Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media" -or $_.MediaType -eq "External hard disk media"} 
+$USBDrives = Get-CimInstance -ClassName Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media" -or $_.MediaType -eq "External hard disk media"} 
 If($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
     } else {

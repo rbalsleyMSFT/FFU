@@ -527,7 +527,7 @@ function Clear-DownloadInProgress {
     Get-ChildItem -Path $sessionInprog -Filter *.marker -ErrorAction SilentlyContinue | ForEach-Object {
         try {
             $data = Get-Content $_.FullName -Raw | ConvertFrom-Json
-            if ($data.TargetPath -eq $TargetPath) { Remove-Item -Path $_.FullName -Force }
+            if ($data.TargetPath -eq $TargetPath) { Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue }
         }
         catch {}
     }
@@ -670,7 +670,7 @@ function Remove-InProgressItems {
                 }
             }
 
-            Remove-Item -Path $_.FullName -Force
+            Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
         }
         catch {
             WriteLog "Failed Remove-InProgressItems marker '$($_.FullName)': $($_.Exception.Message)"
@@ -1063,8 +1063,909 @@ function Restore-RunJsonBackups {
     }
 }
 
+# ============================================================================
+# ERROR HANDLING HELPERS
+# ============================================================================
+
+function Invoke-WithErrorHandling {
+    <#
+    .SYNOPSIS
+    Executes a script block with standardized error handling, retry logic, and cleanup.
+
+    .DESCRIPTION
+    Wraps operations in try/catch with optional retry logic and cleanup actions.
+    Provides consistent error handling pattern across all FFU modules.
+
+    .PARAMETER Operation
+    The script block to execute.
+
+    .PARAMETER OperationName
+    Human-readable name for logging purposes.
+
+    .PARAMETER MaxRetries
+    Maximum number of retry attempts (default: 1 = no retry).
+
+    .PARAMETER RetryDelaySeconds
+    Delay between retry attempts in seconds (default: 5).
+
+    .PARAMETER CleanupAction
+    Optional script block to run on failure for resource cleanup.
+
+    .PARAMETER CriticalOperation
+    If $true, throws on final failure. If $false, returns $null (default: $true).
+
+    .PARAMETER SuppressErrorLog
+    If $true, doesn't log errors (useful for expected failures).
+
+    .EXAMPLE
+    Invoke-WithErrorHandling -OperationName "Mount VHD" -Operation {
+        Mount-VHD -Path $VHDXPath -ErrorAction Stop
+    } -CleanupAction {
+        Dismount-VHD -Path $VHDXPath -ErrorAction SilentlyContinue
+    }
+
+    .EXAMPLE
+    $result = Invoke-WithErrorHandling -OperationName "Download catalog" -MaxRetries 3 -Operation {
+        Invoke-WebRequest -Uri $catalogUrl -UseBasicParsing -ErrorAction Stop
+    }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Operation,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OperationName,
+
+        [Parameter(Mandatory = $false)]
+        [int]$MaxRetries = 1,
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryDelaySeconds = 5,
+
+        [Parameter(Mandatory = $false)]
+        [scriptblock]$CleanupAction,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$CriticalOperation = $true,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$SuppressErrorLog
+    )
+
+    # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
+    $log = {
+        param([string]$Message)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog $Message
+        } else {
+            Write-Verbose $Message
+        }
+    }
+
+    $attempt = 0
+    $lastError = $null
+
+    while ($attempt -lt $MaxRetries) {
+        $attempt++
+
+        try {
+            if ($attempt -gt 1) {
+                & $log "Retrying '$OperationName' (attempt $attempt of $MaxRetries)..."
+            }
+
+            $result = & $Operation
+
+            if ($attempt -gt 1) {
+                & $log "Operation '$OperationName' succeeded on attempt $attempt"
+            }
+
+            return $result
+        }
+        catch {
+            $lastError = $_
+            $errorMessage = if ($_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+
+            if (-not $SuppressErrorLog) {
+                & $log "ERROR in '$OperationName' (attempt $attempt): $errorMessage"
+            }
+
+            # Run cleanup action if provided
+            if ($CleanupAction) {
+                try {
+                    & $log "Running cleanup for '$OperationName'..."
+                    & $CleanupAction
+                }
+                catch {
+                    & $log "WARNING: Cleanup for '$OperationName' failed: $($_.Exception.Message)"
+                }
+            }
+
+            # If not last attempt, wait and retry
+            if ($attempt -lt $MaxRetries) {
+                & $log "Waiting $RetryDelaySeconds seconds before retry..."
+                Start-Sleep -Seconds $RetryDelaySeconds
+            }
+        }
+    }
+
+    # All retries exhausted
+    $finalMessage = "Operation '$OperationName' failed after $MaxRetries attempt(s): $($lastError.Exception.Message)"
+
+    if ($CriticalOperation) {
+        throw $finalMessage
+    }
+    else {
+        & $log "WARNING: $finalMessage"
+        return $null
+    }
+}
+
+function Test-ExternalCommandSuccess {
+    <#
+    .SYNOPSIS
+    Validates that an external command (robocopy, oscdimg, etc.) succeeded.
+
+    .DESCRIPTION
+    Checks $LASTEXITCODE after running external commands and returns true/false.
+    Handles special cases like robocopy which uses non-zero codes for success.
+    Robocopy exit codes 0-7 are considered success; 8+ indicate errors.
+
+    .PARAMETER CommandName
+    Name of the command for error messages and robocopy detection.
+
+    .PARAMETER SuccessCodes
+    Array of exit codes that indicate success (default: 0).
+    Ignored for robocopy (auto-detected based on CommandName).
+
+    .PARAMETER Output
+    Optional output from the command to include in error message.
+
+    .OUTPUTS
+    [bool] True if command succeeded, False otherwise.
+
+    .EXAMPLE
+    robocopy $source $dest /E /R:3
+    if (-not (Test-ExternalCommandSuccess -CommandName "Robocopy copy")) {
+        throw "Robocopy failed"
+    }
+
+    .EXAMPLE
+    & oscdimg.exe $args
+    Test-ExternalCommandSuccess -CommandName "oscdimg"
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CommandName,
+
+        [Parameter(Mandatory = $false)]
+        [int[]]$SuccessCodes = @(0),
+
+        [Parameter(Mandatory = $false)]
+        [string]$Output
+    )
+
+    # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
+    $logError = {
+        param([string]$Message)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog "ERROR: $Message"
+        } else {
+            Write-Verbose "ERROR: $Message"
+        }
+    }
+
+    # Special handling for robocopy - exit codes 0-7 are success
+    if ($CommandName -match 'robocopy') {
+        $robocopySuccessCodes = @(0, 1, 2, 3, 4, 5, 6, 7)
+        if ($robocopySuccessCodes -contains $LASTEXITCODE) {
+            return $true
+        } else {
+            $errorMsg = "$CommandName failed with exit code $LASTEXITCODE (robocopy: 8+ indicates error)"
+            if ($Output) { $errorMsg += "`nOutput: $Output" }
+            & $logError $errorMsg
+            return $false
+        }
+    }
+
+    # Standard command handling
+    if ($SuccessCodes -contains $LASTEXITCODE) {
+        return $true
+    } else {
+        $errorMsg = "$CommandName failed with exit code $LASTEXITCODE"
+        if ($Output) { $errorMsg += "`nOutput: $Output" }
+        & $logError $errorMsg
+        return $false
+    }
+}
+
+function Invoke-WithCleanup {
+    <#
+    .SYNOPSIS
+    Executes an operation with guaranteed cleanup in finally block.
+
+    .DESCRIPTION
+    Ensures cleanup actions run regardless of success or failure.
+    Useful for resource cleanup like dismounting images, removing temp files.
+
+    .PARAMETER Operation
+    The main script block to execute.
+
+    .PARAMETER Cleanup
+    Script block to run in finally (always executes).
+
+    .PARAMETER OperationName
+    Human-readable name for logging.
+
+    .EXAMPLE
+    Invoke-WithCleanup -OperationName "Apply drivers" -Operation {
+        Mount-WindowsImage -Path $mountPath -ImagePath $wimPath -Index 1
+        Add-WindowsDriver -Path $mountPath -Driver $driverPath -Recurse
+    } -Cleanup {
+        Dismount-WindowsImage -Path $mountPath -Save
+    }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Operation,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Cleanup,
+
+        [Parameter(Mandatory = $false)]
+        [string]$OperationName = "Operation"
+    )
+
+    # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
+    $logMessage = {
+        param([string]$Level, [string]$Message)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog "$Level $Message"
+        } else {
+            Write-Verbose "$Level $Message"
+        }
+    }
+
+    try {
+        $result = & $Operation
+        return $result
+    }
+    catch {
+        & $logMessage "ERROR:" "in '$OperationName': $($_.Exception.Message)"
+        throw
+    }
+    finally {
+        try {
+            & $Cleanup
+        }
+        catch {
+            & $logMessage "WARNING:" "Cleanup for '$OperationName' failed: $($_.Exception.Message)"
+        }
+    }
+}
+
+# =============================================================================
+# Secure Credential Management
+# Provides secure password generation and credential handling
+# =============================================================================
+
+function New-SecureRandomPassword {
+    <#
+    .SYNOPSIS
+    Generates a cryptographically secure random password as a SecureString.
+
+    .DESCRIPTION
+    Creates a random password directly as a SecureString without ever storing
+    the complete password in a plain text string variable. This prevents the
+    password from appearing in memory dumps or being accessible through
+    debugging tools.
+
+    Uses RNGCryptoServiceProvider for cryptographically secure random number
+    generation instead of Get-Random which uses a predictable PRNG.
+
+    .PARAMETER Length
+    Length of the password to generate. Default is 32 characters.
+    Minimum is 16, maximum is 128.
+
+    .PARAMETER IncludeSpecialChars
+    If specified, includes special characters (!@#$%^&*-_) in the password.
+    Default is $true.
+
+    .EXAMPLE
+    $securePassword = New-SecureRandomPassword -Length 32
+    # Creates a 32-character SecureString password
+
+    .EXAMPLE
+    $securePassword = New-SecureRandomPassword -Length 20 -IncludeSpecialChars $false
+    # Creates a 20-character alphanumeric-only SecureString password
+
+    .OUTPUTS
+    System.Security.SecureString - The generated secure password
+
+    .NOTES
+    SECURITY: This function never creates a plain text string containing the
+    complete password. Each character is added directly to the SecureString.
+
+    The password character set includes:
+    - Lowercase letters (a-z)
+    - Uppercase letters (A-Z)
+    - Digits (0-9)
+    - Special characters (!@#$%^&*-_) if IncludeSpecialChars is true
+    #>
+    [CmdletBinding()]
+    [OutputType([SecureString])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [ValidateRange(16, 128)]
+        [int]$Length = 32,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$IncludeSpecialChars = $true
+    )
+
+    # Build character set
+    $lowercase = 'abcdefghijklmnopqrstuvwxyz'
+    $uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    $digits = '0123456789'
+    $special = '!@#$%^&*-_'
+
+    $charSet = $lowercase + $uppercase + $digits
+    if ($IncludeSpecialChars) {
+        $charSet += $special
+    }
+    $charArray = $charSet.ToCharArray()
+    $charCount = $charArray.Length
+
+    # Create SecureString
+    $securePassword = New-Object System.Security.SecureString
+
+    # Use cryptographically secure random number generator
+    $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+    try {
+        $bytes = New-Object byte[] 4
+
+        for ($i = 0; $i -lt $Length; $i++) {
+            # Generate cryptographically random index
+            $rng.GetBytes($bytes)
+            $randomIndex = [Math]::Abs([BitConverter]::ToInt32($bytes, 0)) % $charCount
+
+            # Add character directly to SecureString (never in plain text variable)
+            $securePassword.AppendChar($charArray[$randomIndex])
+        }
+
+        # Make SecureString read-only for security
+        $securePassword.MakeReadOnly()
+
+        return $securePassword
+    }
+    finally {
+        # Dispose of RNG
+        $rng.Dispose()
+    }
+}
+
+function ConvertFrom-SecureStringToPlainText {
+    <#
+    .SYNOPSIS
+    Converts a SecureString to plain text with proper cleanup.
+
+    .DESCRIPTION
+    Safely converts a SecureString to plain text for scenarios where plain
+    text is unavoidable (e.g., writing credentials to a configuration file
+    for use in WinPE which cannot use SecureString).
+
+    IMPORTANT: Use this function sparingly. The plain text password will
+    exist in memory and should be cleared as soon as possible.
+
+    .PARAMETER SecureString
+    The SecureString to convert.
+
+    .EXAMPLE
+    $plainText = ConvertFrom-SecureStringToPlainText -SecureString $securePassword
+    try {
+        # Use $plainText...
+    }
+    finally {
+        Clear-PlainTextPassword -PasswordVariable ([ref]$plainText)
+    }
+
+    .OUTPUTS
+    System.String - The plain text password
+
+    .NOTES
+    SECURITY WARNING: The returned plain text password should be:
+    1. Used immediately
+    2. Cleared from memory using Clear-PlainTextPassword as soon as possible
+    3. Never logged or displayed
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [SecureString]$SecureString
+    )
+
+    $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
+    try {
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        # Zero out and free the BSTR
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+}
+
+function Clear-PlainTextPassword {
+    <#
+    .SYNOPSIS
+    Clears a plain text password variable from memory.
+
+    .DESCRIPTION
+    Attempts to clear a plain text password from memory by overwriting the
+    string variable with null. While .NET string immutability means the
+    original string may still exist in memory until garbage collected, this
+    removes the direct reference and signals intent.
+
+    For best security, call [GC]::Collect() after clearing sensitive data
+    in security-critical scenarios.
+
+    .PARAMETER PasswordVariable
+    A reference to the string variable to clear.
+
+    .EXAMPLE
+    $plainPassword = "sensitive"
+    # ... use password ...
+    Clear-PlainTextPassword -PasswordVariable ([ref]$plainPassword)
+
+    .NOTES
+    Due to .NET string immutability, the actual string data may persist in
+    memory until garbage collection. This function provides defense in depth
+    by removing the variable reference immediately.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ref]$PasswordVariable
+    )
+
+    if ($null -ne $PasswordVariable.Value) {
+        $PasswordVariable.Value = $null
+    }
+}
+
+function Remove-SecureStringFromMemory {
+    <#
+    .SYNOPSIS
+    Properly disposes of a SecureString and clears the variable.
+
+    .DESCRIPTION
+    Disposes of a SecureString to release its protected memory and sets
+    the variable to null.
+
+    .PARAMETER SecureStringVariable
+    A reference to the SecureString variable to dispose.
+
+    .EXAMPLE
+    $securePassword = New-SecureRandomPassword
+    # ... use password ...
+    Remove-SecureStringFromMemory -SecureStringVariable ([ref]$securePassword)
+
+    .NOTES
+    Always call this function in a finally block to ensure cleanup even
+    if an exception occurs.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ref]$SecureStringVariable
+    )
+
+    if ($null -ne $SecureStringVariable.Value -and $SecureStringVariable.Value -is [SecureString]) {
+        try {
+            $SecureStringVariable.Value.Dispose()
+        }
+        catch {
+            # Ignore disposal errors
+        }
+        $SecureStringVariable.Value = $null
+    }
+}
+
+# =============================================================================
+# Cleanup Registration System
+# Provides automatic resource cleanup on script failure or termination
+# =============================================================================
+
+# Script-scoped cleanup registry - stores cleanup actions in LIFO order
+$script:CleanupRegistry = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+function Register-CleanupAction {
+    <#
+    .SYNOPSIS
+    Registers a cleanup action to be executed on failure or script termination.
+
+    .DESCRIPTION
+    Adds a cleanup action to the registry. Actions are executed in reverse order
+    (LIFO - Last In First Out) when Invoke-FailureCleanup is called.
+
+    .PARAMETER Name
+    A descriptive name for the cleanup action (for logging).
+
+    .PARAMETER Action
+    ScriptBlock containing the cleanup code.
+
+    .PARAMETER ResourceType
+    Type of resource being tracked (VM, VHDX, DISM, ISO, TempFile, BITS, Share, User).
+
+    .PARAMETER ResourceId
+    Identifier for the resource (e.g., VM name, file path).
+
+    .EXAMPLE
+    Register-CleanupAction -Name "Remove Build VM" -ResourceType "VM" -ResourceId "FFU_Build" -Action {
+        Stop-VM -Name "FFU_Build" -Force -TurnOff -ErrorAction SilentlyContinue
+        Remove-VM -Name "FFU_Build" -Force -ErrorAction SilentlyContinue
+    }
+
+    .OUTPUTS
+    [string] Returns a unique ID for the cleanup action (can be used to unregister).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Action,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('VM', 'VHDX', 'DISM', 'ISO', 'TempFile', 'BITS', 'Share', 'User', 'Other')]
+        [string]$ResourceType = 'Other',
+
+        [Parameter(Mandatory = $false)]
+        [string]$ResourceId = ''
+    )
+
+    $cleanupId = [Guid]::NewGuid().ToString()
+
+    $entry = [PSCustomObject]@{
+        Id           = $cleanupId
+        Name         = $Name
+        ResourceType = $ResourceType
+        ResourceId   = $ResourceId
+        Action       = $Action
+        RegisteredAt = Get-Date
+    }
+
+    $script:CleanupRegistry.Add($entry)
+
+    # Safe logging
+    if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        WriteLog "Registered cleanup action: $Name (Type: $ResourceType, Id: $ResourceId)"
+    }
+
+    return $cleanupId
+}
+
+function Unregister-CleanupAction {
+    <#
+    .SYNOPSIS
+    Removes a cleanup action from the registry.
+
+    .DESCRIPTION
+    Call this after a resource has been successfully cleaned up normally,
+    to prevent duplicate cleanup attempts.
+
+    .PARAMETER CleanupId
+    The ID returned by Register-CleanupAction.
+
+    .OUTPUTS
+    System.Boolean - True if the entry was found and removed, False otherwise.
+
+    .EXAMPLE
+    $cleanupId = Register-CleanupAction -Name "Mount Point" -Action { ... }
+    # ... do work ...
+    Dismount-WindowsImage -Path $mountPath -Save
+    Unregister-CleanupAction -CleanupId $cleanupId
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CleanupId
+    )
+
+    $entry = $script:CleanupRegistry | Where-Object { $_.Id -eq $CleanupId }
+    if ($entry) {
+        $script:CleanupRegistry.Remove($entry) | Out-Null
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog "Unregistered cleanup action: $($entry.Name)"
+        }
+        return $true
+    }
+    return $false
+}
+
+function Invoke-FailureCleanup {
+    <#
+    .SYNOPSIS
+    Executes all registered cleanup actions in reverse order (LIFO).
+
+    .DESCRIPTION
+    Should be called from catch blocks or trap handlers when a failure occurs.
+    Runs all cleanup actions and logs results. Does not throw on cleanup errors.
+
+    .PARAMETER Reason
+    Description of why cleanup is being invoked.
+
+    .PARAMETER ResourceType
+    Optional - only cleanup resources of this type.
+
+    .EXAMPLE
+    catch {
+        Invoke-FailureCleanup -Reason "Build failed: $($_.Exception.Message)"
+        throw
+    }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Reason = "Unspecified failure",
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('VM', 'VHDX', 'DISM', 'ISO', 'TempFile', 'BITS', 'Share', 'User', 'Other', 'All')]
+        [string]$ResourceType = 'All'
+    )
+
+    # Safe logging helper
+    $log = {
+        param([string]$Message)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog $Message
+        } else {
+            Write-Host $Message
+        }
+    }
+
+    & $log "=========================================="
+    & $log "FAILURE CLEANUP INITIATED"
+    & $log "Reason: $Reason"
+    & $log "Registered actions: $($script:CleanupRegistry.Count)"
+    & $log "=========================================="
+
+    if ($script:CleanupRegistry.Count -eq 0) {
+        & $log "No cleanup actions registered."
+        return
+    }
+
+    # Filter by resource type if specified
+    $actionsToRun = if ($ResourceType -eq 'All') {
+        $script:CleanupRegistry
+    } else {
+        $script:CleanupRegistry | Where-Object { $_.ResourceType -eq $ResourceType }
+    }
+
+    # Run in reverse order (LIFO)
+    $reversedActions = @($actionsToRun)
+    [Array]::Reverse($reversedActions)
+
+    $successCount = 0
+    $failCount = 0
+
+    foreach ($entry in $reversedActions) {
+        & $log "Cleanup: $($entry.Name) (Type: $($entry.ResourceType))"
+        try {
+            & $entry.Action
+            $successCount++
+            & $log "  [SUCCESS] $($entry.Name)"
+
+            # Remove from registry after successful cleanup
+            $script:CleanupRegistry.Remove($entry) | Out-Null
+        }
+        catch {
+            $failCount++
+            & $log "  [FAILED] $($entry.Name): $($_.Exception.Message)"
+            # Don't remove failed cleanups - might need manual intervention
+        }
+    }
+
+    & $log "=========================================="
+    & $log "CLEANUP COMPLETE: $successCount succeeded, $failCount failed"
+    & $log "=========================================="
+}
+
+function Clear-CleanupRegistry {
+    <#
+    .SYNOPSIS
+    Clears all registered cleanup actions.
+
+    .DESCRIPTION
+    Call this at the end of a successful script run to clear the registry.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $count = $script:CleanupRegistry.Count
+    $script:CleanupRegistry.Clear()
+
+    if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        WriteLog "Cleared cleanup registry ($count actions removed)"
+    }
+}
+
+function Get-CleanupRegistry {
+    <#
+    .SYNOPSIS
+    Returns the current cleanup registry for inspection.
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject[]])]
+    param()
+
+    return @($script:CleanupRegistry)
+}
+
+# =============================================================================
+# Specialized Cleanup Registration Functions
+# Convenience functions for common resource types
+# =============================================================================
+
+function Register-VMCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for a Hyper-V VM.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VMName
+    )
+
+    Register-CleanupAction -Name "Stop and remove VM: $VMName" -ResourceType 'VM' -ResourceId $VMName -Action {
+        $vm = Get-VM -Name $using:VMName -ErrorAction SilentlyContinue
+        if ($vm) {
+            if ($vm.State -ne 'Off') {
+                Stop-VM -Name $using:VMName -Force -TurnOff -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
+            }
+            Remove-VM -Name $using:VMName -Force -ErrorAction SilentlyContinue
+        }
+        # Also try to remove HGS Guardian if it exists
+        Remove-HgsGuardian -Name $using:VMName -ErrorAction SilentlyContinue
+    }.GetNewClosure()
+}
+
+function Register-VHDXCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for a mounted VHDX file.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VHDXPath
+    )
+
+    Register-CleanupAction -Name "Dismount VHDX: $VHDXPath" -ResourceType 'VHDX' -ResourceId $VHDXPath -Action {
+        $vhd = Get-VHD -Path $using:VHDXPath -ErrorAction SilentlyContinue
+        if ($vhd -and $vhd.Attached) {
+            Dismount-VHD -Path $using:VHDXPath -ErrorAction SilentlyContinue
+        }
+    }.GetNewClosure()
+}
+
+function Register-DISMMountCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for a DISM mount point.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MountPath
+    )
+
+    Register-CleanupAction -Name "Dismount DISM image: $MountPath" -ResourceType 'DISM' -ResourceId $MountPath -Action {
+        # Try to dismount gracefully first
+        try {
+            Dismount-WindowsImage -Path $using:MountPath -Discard -ErrorAction Stop | Out-Null
+        }
+        catch {
+            # If that fails, run DISM cleanup
+            & dism.exe /Cleanup-Mountpoints 2>&1 | Out-Null
+        }
+    }.GetNewClosure()
+}
+
+function Register-ISOCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for a mounted ISO image.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ISOPath
+    )
+
+    Register-CleanupAction -Name "Dismount ISO: $ISOPath" -ResourceType 'ISO' -ResourceId $ISOPath -Action {
+        Dismount-DiskImage -ImagePath $using:ISOPath -ErrorAction SilentlyContinue | Out-Null
+    }.GetNewClosure()
+}
+
+function Register-TempFileCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for temporary files or directories.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Recurse
+    )
+
+    $desc = if ($Recurse) { "Remove temp directory: $Path" } else { "Remove temp file: $Path" }
+
+    Register-CleanupAction -Name $desc -ResourceType 'TempFile' -ResourceId $Path -Action {
+        if (Test-Path $using:Path) {
+            Remove-Item -Path $using:Path -Force -Recurse:$using:Recurse -ErrorAction SilentlyContinue
+        }
+    }.GetNewClosure()
+}
+
+function Register-NetworkShareCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for a network share.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ShareName
+    )
+
+    Register-CleanupAction -Name "Remove share: $ShareName" -ResourceType 'Share' -ResourceId $ShareName -Action {
+        Remove-SmbShare -Name $using:ShareName -Force -ErrorAction SilentlyContinue
+    }.GetNewClosure()
+}
+
+function Register-UserAccountCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for a local user account.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Username
+    )
+
+    Register-CleanupAction -Name "Remove user: $Username" -ResourceType 'User' -ResourceId $Username -Action {
+        # Use DirectoryServices API for cross-version compatibility
+        try {
+            $context = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Machine)
+            $user = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity($context, $using:Username)
+            if ($user) {
+                $user.Delete()
+                $user.Dispose()
+            }
+            $context.Dispose()
+        }
+        catch {
+            # Ignore errors - user may not exist
+        }
+    }.GetNewClosure()
+}
+
 # Export all module functions
 Export-ModuleMember -Function @(
+    # Configuration and utilities
     'Get-Parameters'
     'LogVariableValues'
     'Get-ChildProcesses'
@@ -1074,6 +1975,7 @@ Export-ModuleMember -Function @(
     'Get-ShortenedWindowsSKU'
     'New-FFUFileName'
     'Export-ConfigFile'
+    # Session management
     'New-RunSession'
     'Get-CurrentRunManifest'
     'Save-RunManifest'
@@ -1082,4 +1984,27 @@ Export-ModuleMember -Function @(
     'Remove-InProgressItems'
     'Cleanup-CurrentRunDownloads'
     'Restore-RunJsonBackups'
+    # Error handling (v1.0.5)
+    'Invoke-WithErrorHandling'
+    'Test-ExternalCommandSuccess'
+    'Invoke-WithCleanup'
+    # Cleanup registration system (v1.0.6)
+    'Register-CleanupAction'
+    'Unregister-CleanupAction'
+    'Invoke-FailureCleanup'
+    'Clear-CleanupRegistry'
+    'Get-CleanupRegistry'
+    # Specialized cleanup helpers
+    'Register-VMCleanup'
+    'Register-VHDXCleanup'
+    'Register-DISMMountCleanup'
+    'Register-ISOCleanup'
+    'Register-TempFileCleanup'
+    'Register-NetworkShareCleanup'
+    'Register-UserAccountCleanup'
+    # Secure credential management (v1.0.7)
+    'New-SecureRandomPassword'
+    'ConvertFrom-SecureStringToPlainText'
+    'Clear-PlainTextPassword'
+    'Remove-SecureStringFromMemory'
 )

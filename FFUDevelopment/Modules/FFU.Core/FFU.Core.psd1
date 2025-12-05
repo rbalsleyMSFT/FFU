@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.7'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -35,6 +35,7 @@
 
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
     FunctionsToExport = @(
+        # Configuration and utilities
         'Get-Parameters',
         'LogVariableValues',
         'Get-ChildProcesses',
@@ -44,6 +45,7 @@
         'Get-ShortenedWindowsSKU',
         'New-FFUFileName',
         'Export-ConfigFile',
+        # Session management
         'New-RunSession',
         'Get-CurrentRunManifest',
         'Save-RunManifest',
@@ -51,7 +53,30 @@
         'Clear-DownloadInProgress',
         'Remove-InProgressItems',
         'Cleanup-CurrentRunDownloads',
-        'Restore-RunJsonBackups'
+        'Restore-RunJsonBackups',
+        # Error handling (v1.0.5)
+        'Invoke-WithErrorHandling',
+        'Test-ExternalCommandSuccess',
+        'Invoke-WithCleanup',
+        # Cleanup registration system (v1.0.6)
+        'Register-CleanupAction',
+        'Unregister-CleanupAction',
+        'Invoke-FailureCleanup',
+        'Clear-CleanupRegistry',
+        'Get-CleanupRegistry',
+        # Specialized cleanup helpers
+        'Register-VMCleanup',
+        'Register-VHDXCleanup',
+        'Register-DISMMountCleanup',
+        'Register-ISOCleanup',
+        'Register-TempFileCleanup',
+        'Register-NetworkShareCleanup',
+        'Register-UserAccountCleanup',
+        # Secure credential management (v1.0.7)
+        'New-SecureRandomPassword',
+        'ConvertFrom-SecureStringToPlainText',
+        'Clear-PlainTextPassword',
+        'Remove-SecureStringFromMemory'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
@@ -77,9 +102,37 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.0
+# Release Notes - FFU.Core v1.0.7
 
-## Initial Release
+## v1.0.7 - Secure Credential Management
+- Added New-SecureRandomPassword: Cryptographically secure password generation directly to SecureString
+- Uses RNGCryptoServiceProvider instead of Get-Random for true randomness
+- Password never exists as complete plain text string during generation
+- Added ConvertFrom-SecureStringToPlainText: Safe conversion with BSTR cleanup
+- Added Clear-PlainTextPassword: Memory cleanup for plain text password variables
+- Added Remove-SecureStringFromMemory: Proper SecureString disposal
+- 36 total functions now exported
+
+## v1.0.6 - Cleanup Registration System
+- Added cleanup registration system for automatic resource cleanup on failures
+- Core functions: Register-CleanupAction, Unregister-CleanupAction, Invoke-FailureCleanup
+- Registry management: Clear-CleanupRegistry, Get-CleanupRegistry
+- Specialized helpers: Register-VMCleanup, Register-VHDXCleanup, Register-DISMMountCleanup
+- Additional helpers: Register-ISOCleanup, Register-TempFileCleanup
+- Network/user helpers: Register-NetworkShareCleanup, Register-UserAccountCleanup
+- LIFO (Last In First Out) cleanup ordering ensures newest resources cleaned first
+- Selective cleanup by ResourceType (VM, VHDX, DISM, ISO, TempFile, Share, User)
+- Error-resilient cleanup (continues even if individual cleanup actions fail)
+- 32 total functions now exported
+
+## v1.0.5 - Error Handling Implementation
+- Added Invoke-WithErrorHandling: Wrapper with retry logic, cleanup actions, and structured error handling
+- Added Test-ExternalCommandSuccess: Validates external command exit codes with robocopy special handling
+- Added Invoke-WithCleanup: Guaranteed cleanup in finally block for resource management
+- Safe logging helpers that work with or without WriteLog function available
+- 20 total functions now exported
+
+## v1.0.0 - Initial Release
 - Extracted core utility functions from monolithic BuildFFUVM.ps1
 - 17 functions providing configuration management, logging, and session tracking
 - Foundation module for FFU Builder modular architecture
@@ -91,6 +144,8 @@
 - Download Tracking: Mark-DownloadInProgress, Clear-DownloadInProgress, Remove-InProgressItems
 - Utilities: Test-Url, Get-ChildProcesses, Get-PrivateProfileString, Get-ShortenedWindowsSKU, New-FFUFileName
 - Cleanup: Cleanup-CurrentRunDownloads, Restore-RunJsonBackups
+- Error Handling: Invoke-WithErrorHandling, Test-ExternalCommandSuccess, Invoke-WithCleanup
+- Cleanup Registration: Register-CleanupAction, Unregister-CleanupAction, Invoke-FailureCleanup, etc.
 '@
         }
     }

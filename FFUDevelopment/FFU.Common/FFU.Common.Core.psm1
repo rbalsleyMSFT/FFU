@@ -35,9 +35,17 @@ function Set-CommonCoreLogPath {
 function WriteLog {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [AllowEmptyString()]
         [string]$LogText
     )
+
+    # Handle null/empty LogText gracefully - this prevents "Cannot bind argument to parameter 'LogText' because it is an empty string"
+    if ([string]::IsNullOrWhiteSpace($LogText)) {
+        # Don't log empty messages, but don't throw an error either
+        return
+    }
 
     # Check if the log file path has been set
     if ([string]::IsNullOrWhiteSpace($script:CommonCoreLogFilePath)) {
@@ -70,6 +78,49 @@ function WriteLog {
         }
         $script:commonCoreLogMutex.ReleaseMutex()
     }
+}
+
+# Helper function to extract error message from exception objects
+# This prevents the "Cannot bind argument to parameter 'LogText' because it is an empty string" error
+function Get-ErrorMessage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        $ErrorRecord
+    )
+
+    if ($null -eq $ErrorRecord) {
+        return "[No error details available]"
+    }
+
+    # Handle ErrorRecord objects (from catch blocks)
+    if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) {
+        $message = $ErrorRecord.Exception.Message
+        if ([string]::IsNullOrWhiteSpace($message)) {
+            $message = $ErrorRecord.ToString()
+        }
+        if ([string]::IsNullOrWhiteSpace($message)) {
+            $message = "[Error occurred but no message available. Type: $($ErrorRecord.Exception.GetType().FullName)]"
+        }
+        return $message
+    }
+
+    # Handle Exception objects directly
+    if ($ErrorRecord -is [System.Exception]) {
+        $message = $ErrorRecord.Message
+        if ([string]::IsNullOrWhiteSpace($message)) {
+            $message = "[Exception occurred but no message available. Type: $($ErrorRecord.GetType().FullName)]"
+        }
+        return $message
+    }
+
+    # Handle string or other objects
+    $message = $ErrorRecord.ToString()
+    if ([string]::IsNullOrWhiteSpace($message)) {
+        return "[Error object could not be converted to string. Type: $($ErrorRecord.GetType().FullName)]"
+    }
+    return $message
 }
 
 function Invoke-Process {
@@ -125,13 +176,17 @@ function Invoke-Process {
     }
     catch {
         #$PSCmdlet.ThrowTerminatingError($_)
-        WriteLog $_
+        WriteLog (Get-ErrorMessage $_)
         # Write-Host "Script failed - $Logfile for more info"
         throw $_
 
     }
     finally {
-        Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
+        # Validate paths before Remove-Item to prevent "Path argument was null or an empty collection" error
+        $pathsToRemove = @($stdOutTempFile, $stdErrTempFile) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        if ($pathsToRemove.Count -gt 0) {
+            Remove-Item -Path $pathsToRemove -Force -ErrorAction Ignore
+        }
     }
     return $cmd
 }

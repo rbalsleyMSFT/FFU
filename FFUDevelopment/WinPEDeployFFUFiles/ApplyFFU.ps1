@@ -46,7 +46,9 @@ function Get-HardDrive() {
     return $result
 }
 
-function WriteLog($LogText) { 
+function WriteLog($LogText) {
+    # Handle null/empty LogText gracefully to prevent "Cannot bind argument to parameter 'LogText' because it is an empty string"
+    if ([string]::IsNullOrWhiteSpace($LogText)) { return }
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText"
 }
 
@@ -122,7 +124,8 @@ function Invoke-Process {
     }
     catch {
         #$PSCmdlet.ThrowTerminatingError($_)
-        WriteLog $_
+        $errorMsg = if ($_.Exception.Message) { $_.Exception.Message } else { $_.ToString() }
+        WriteLog "Invoke-Process failed: $errorMsg"
         Write-Host 'Script failed - check scriptlog.txt on the USB drive for more info'
         throw $_
 

@@ -603,7 +603,7 @@ function Get-ADKURL {
         }
     }
     catch {
-        WriteLog $_
+        WriteLog "Error occurred while retrieving ADK download URL: $(Get-ErrorMessage $_)"
         Write-Error "Error occurred while retrieving ADK download URL"
         throw $_
     }
@@ -649,7 +649,7 @@ function Install-ADK {
         Remove-Item -Path $installerLocation -Force -ErrorAction SilentlyContinue
     }
     catch {
-        WriteLog $_
+        WriteLog "Error occurred while installing $ADKOption : $(Get-ErrorMessage $_)"
         Write-Error "Error occurred while installing $ADKOption. Please manually install it."
         throw $_
     }
@@ -671,7 +671,7 @@ function Get-InstalledProgramRegKey {
             }
         }
         catch {
-            WriteLog $_
+            WriteLog "Error retrieving installed program info for $DisplayName : $(Get-ErrorMessage $_)"
             throw "Error retrieving installed program info for $DisplayName : $_"
         }
     }
@@ -703,7 +703,7 @@ function Uninstall-ADK {
         WriteLog "$ADKOption uninstalled successfully."
     }
     catch {
-        WriteLog $_
+        WriteLog "Error occurred while uninstalling $ADKOption : $(Get-ErrorMessage $_)"
         Write-Error "Error occurred while uninstalling $ADKOption. Please manually uninstall it."
         throw $_
     }

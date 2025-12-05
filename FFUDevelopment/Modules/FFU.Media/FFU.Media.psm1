@@ -275,12 +275,13 @@ function Invoke-CopyPEWithRetry {
         WriteLog "Executing copype command (attempt $attempt of $($MaxRetries + 1))..."
 
         # Execute copype with proper architecture parameter
+        # Use 'call' before batch file path to properly handle spaces in paths like "C:\Program Files (x86)\..."
         if ($Architecture -eq 'x64') {
-            $copypeOutput = & cmd /c """$DandIEnvPath"" && copype amd64 $DestinationPath 2>&1"
+            $copypeOutput = & cmd /c "call `"$DandIEnvPath`" && copype amd64 `"$DestinationPath`"" 2>&1
             $copypeExitCode = $LASTEXITCODE
         }
         elseif ($Architecture -eq 'arm64') {
-            $copypeOutput = & cmd /c """$DandIEnvPath"" && copype arm64 $DestinationPath 2>&1"
+            $copypeOutput = & cmd /c "call `"$DandIEnvPath`" && copype arm64 `"$DestinationPath`"" 2>&1
             $copypeExitCode = $LASTEXITCODE
         }
 
@@ -506,6 +507,11 @@ function New-PEMedia {
     Mount-WindowsImage -ImagePath $bootWimPath -Index 1 -Path $mountPath -ErrorAction Stop | Out-Null
     WriteLog 'Mounting complete'
 
+    # Register cleanup for DISM mount in case of failure
+    if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+        $null = Register-DISMMountCleanup -MountPath $mountPath
+    }
+
     $Packages = @(
         "WinPE-WMI.cab",
         "en-us\WinPE-WMI_en-us.cab",
@@ -623,7 +629,7 @@ function New-PEMedia {
     Invoke-Process $OSCDIMG $OSCDIMGArgs | Out-Null
     WriteLog "ISO created successfully"
     WriteLog "Cleaning up $WinPEFFUPath"
-    Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
+    Remove-Item -Path "$WinPEFFUPath" -Recurse -Force -ErrorAction SilentlyContinue
     WriteLog 'Cleanup complete'
     # Deferred cleanup of preserved driver model folders (only after WinPE Deploy media is created)
     if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $Deploy -and $CopyPEDrivers) {

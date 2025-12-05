@@ -70,6 +70,38 @@ This fork focuses on addressing critical bugs (#327, #324, #319, #318, #301, #29
 
 ## Workflow Requirements
 - Update CLAUDE.md before every git commit
+- Increment version number based on change type (see Versioning Policy)
+- Update `CHANGELOG_FORK.md` with new fixes/enhancements
+
+## Versioning Policy
+
+**Current Version:** 1.0.5
+**Version Location:** `BuildFFUVM_UI.ps1` line 35 (`$script:FFUBuilderVersion`)
+
+This project follows [Semantic Versioning](https://semver.org/):
+
+| Change Type | Version | When to Use | Examples |
+|-------------|---------|-------------|----------|
+| **MAJOR** | X.0.0 | Breaking changes, incompatible API/parameter changes | Removing parameters, changing config format, dropping PS 5.1 support |
+| **MINOR** | 0.X.0 | New features, backward compatible additions | New OEM driver support, new UI tabs, new export formats |
+| **BUILD** | 0.0.X | Bug fixes, patches, backward compatible fixes | Error handling fixes, DISM workarounds, logging improvements |
+
+**Version Increment Checklist:**
+1. Determine change type (major/minor/build)
+2. Update `$script:FFUBuilderVersion` in `BuildFFUVM_UI.ps1`
+3. Document the change in CLAUDE.md under "Version History"
+4. Commit with version in message (e.g., "v1.0.1: Fix checkpoint update error")
+
+## Version History
+
+| Version | Date | Type | Description |
+|---------|------|------|-------------|
+| 1.0.5 | 2025-12-04 | BUILD | Secure credential management - cryptographic password generation, SecureString handling |
+| 1.0.4 | 2025-12-03 | BUILD | Add comprehensive parameter validation to BuildFFUVM.ps1 (15 parameters) |
+| 1.0.3 | 2025-12-03 | BUILD | Fix FFU.VM module export - Add missing functions to Export-ModuleMember |
+| 1.0.2 | 2025-12-03 | BUILD | Enhanced fix for 0x80070228 - Direct CAB application bypasses UUP download requirement |
+| 1.0.1 | 2025-12-03 | BUILD | Fix DISM error 0x80070228 for Windows 11 24H2/25H2 checkpoint cumulative updates |
+| 1.0.0 | 2025-12-03 | MAJOR | Initial modularized release with 8 modules, UI version display, credential security |
 
 ### Component Structure
 
@@ -79,7 +111,7 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 ├── FFU.Common (Business Logic Module - provides WriteLog function)
 └── BuildFFUVM.ps1 (Core Build Orchestrator - 2,404 lines after modularization)
     └── Modules/ (Extracted functions now in 8 specialized modules)
-        ├── FFU.Core (Core functionality - 18 functions for configuration, session tracking)
+        ├── FFU.Core (Core functionality - 36 functions for configuration, session tracking, error handling, cleanup, credential management)
         ├── FFU.Apps (Application management - 5 functions for Office, Apps ISO, cleanup)
         ├── FFU.Drivers (OEM driver management - 5 functions for Dell, HP, Lenovo, Microsoft)
         ├── FFU.VM (Hyper-V VM operations - 3 functions for VM lifecycle)
@@ -144,6 +176,19 @@ Run `Test-UIIntegration.ps1` to verify UI compatibility:
 - Function name conflict detection
 
 ### Module Architecture
+
+**FFU.Core Module** (FFUDevelopment/Modules/FFU.Core/FFU.Core.psm1)
+- **Purpose:** Core utility module providing common configuration management, logging, session tracking, error handling, cleanup registration, and secure credential management
+- **Version:** 1.0.7
+- **Functions (36 total):**
+  - **Configuration & Utilities:** `Get-Parameters`, `LogVariableValues`, `Get-ChildProcesses`, `Test-Url`, `Get-PrivateProfileString`, `Get-PrivateProfileSection`, `Get-ShortenedWindowsSKU`, `New-FFUFileName`, `Export-ConfigFile`
+  - **Session Management:** `New-RunSession`, `Get-CurrentRunManifest`, `Save-RunManifest`, `Mark-DownloadInProgress`, `Clear-DownloadInProgress`, `Remove-InProgressItems`, `Cleanup-CurrentRunDownloads`, `Restore-RunJsonBackups`
+  - **Error Handling (v1.0.5):** `Invoke-WithErrorHandling`, `Test-ExternalCommandSuccess`, `Invoke-WithCleanup`
+  - **Cleanup Registration (v1.0.6):** `Register-CleanupAction`, `Unregister-CleanupAction`, `Invoke-FailureCleanup`, `Clear-CleanupRegistry`, `Get-CleanupRegistry`
+  - **Specialized Cleanup Helpers:** `Register-VMCleanup`, `Register-VHDXCleanup`, `Register-DISMMountCleanup`, `Register-ISOCleanup`, `Register-TempFileCleanup`, `Register-NetworkShareCleanup`, `Register-UserAccountCleanup`
+  - **Secure Credential Management (v1.0.7):** `New-SecureRandomPassword`, `ConvertFrom-SecureStringToPlainText`, `Clear-PlainTextPassword`, `Remove-SecureStringFromMemory`
+- **Dependencies:** None (base module)
+- **Security Features:** Cryptographically secure password generation using RNGCryptoServiceProvider, SecureString-first design, proper memory cleanup
 
 **FFU.VM Module** (FFUDevelopment/Modules/FFU.VM/FFU.VM.psm1)
 - **Purpose:** Hyper-V virtual machine lifecycle management
@@ -286,22 +331,59 @@ $request = [System.Net.WebRequest]::Create($url)
 $proxyConfig.ApplyToWebRequest($request)
 ```
 
-### Error Handling Pattern
+### Error Handling Pattern (v1.0.5)
 
-All operations should use the standardized retry wrapper:
+FFU Builder provides three standardized error handling functions in FFU.Core module:
 
+**1. Invoke-WithErrorHandling** - Retry wrapper with cleanup actions:
 ```powershell
 # Wrap operations with automatic retry and logging
-Invoke-FFUOperation -OperationName "Download Dell Drivers" `
+$result = Invoke-WithErrorHandling -OperationName "Download Dell Drivers" `
                     -MaxRetries 3 `
-                    -CriticalOperation `
+                    -RetryDelaySeconds 5 `
+                    -CriticalOperation $true `
                     -Operation {
     Start-BitsTransfer -Source $driverUrl -Destination $driverPath
-} -OnFailure {
+} -CleanupAction {
     # Cleanup logic on final failure
     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
 }
 ```
+
+**2. Test-ExternalCommandSuccess** - Validate external command exit codes:
+```powershell
+# Standard command validation
+& oscdimg.exe $args
+if (-not (Test-ExternalCommandSuccess -CommandName "oscdimg")) {
+    throw "Failed to create ISO"
+}
+
+# Robocopy special handling (exit codes 0-7 are success)
+Robocopy.exe $source $dest /E /R:3
+if (-not (Test-ExternalCommandSuccess -CommandName "Robocopy copy files")) {
+    throw "Robocopy failed"
+}
+```
+
+**3. Invoke-WithCleanup** - Guaranteed cleanup in finally block:
+```powershell
+# Ensure cleanup runs regardless of success or failure
+Invoke-WithCleanup -OperationName "Apply drivers" -Operation {
+    Mount-WindowsImage -Path $mountPath -ImagePath $wimPath -Index 1
+    Add-WindowsDriver -Path $mountPath -Driver $driverPath -Recurse
+} -Cleanup {
+    Dismount-WindowsImage -Path $mountPath -Save
+}
+```
+
+**Critical Operations with Error Handling (v1.0.5):**
+- Disk partitioning (USB imaging) - try/catch with proper cleanup
+- Robocopy operations - exit code validation (0-7 success, 8+ failure)
+- Unattend.xml copy - source validation and -ErrorAction Stop
+- Optimize-Volume - non-fatal with warning on failure
+- New-FFUVM - VM and HGS Guardian cleanup on failure
+- DISM mount/dismount - retry with Cleanup-Mountpoints fallback
+- Update Catalog requests - 3 retries with exponential backoff
 
 ### Constants and Magic Numbers
 
@@ -427,8 +509,9 @@ Write-FFULog -Level Success -Message "FFU build completed" -Context @{
 
 ## Known Issues and Workarounds
 
-### Issue #327: Corporate Proxy Failures
+### Open Issues
 
+#### Issue #327: Corporate Proxy Failures
 **Symptoms:** Driver downloads fail with network errors behind Netskope/zScaler
 **Workaround:** Manually configure proxy in UI settings or set environment variables:
 ```powershell
@@ -436,148 +519,50 @@ $env:HTTP_PROXY = "http://proxy.corp.com:8080"
 $env:HTTPS_PROXY = "http://proxy.corp.com:8080"
 ```
 
-### Issue #301: Unattend.xml Extraction from MSU
-
+#### Issue #301: Unattend.xml Extraction from MSU
 **Symptoms:** DISM fails to apply unattend.xml from update packages
 **Workaround:** Use `Get-UnattendFromMSU` function for robust extraction with validation
 
-### WinPE boot.wim Creation Failures (FIXED)
-
-**Symptoms:** Build fails with "Boot.wim not found at expected path" when creating WinPE capture media
-**Root Cause:** Missing Windows ADK or Windows PE add-on installation
-**Solution (Implemented):**
-- Automatic ADK pre-flight validation now detects missing components before build starts
-- Clear error messages with installation instructions
-- Run with `-UpdateADK $true` for automatic installation
-- Validation checks:
-  - ADK installation presence
-  - Deployment Tools feature
-  - Windows PE add-on
-  - Critical files (copype.cmd, oscdimg.exe, boot files)
-- Enhanced error handling in `copype` command execution with proper exit code checking
-
-**Previous Behavior:** Silent failure during WinPE media creation
-**Current Behavior:** Early detection with actionable error messages
-
-### MSU Package Expansion Failures (FIXED)
-
-**Symptoms:** KB application fails with "expand.exe returned exit code -1" or DISM error "An error occurred while expanding the .msu package into the temporary folder"
-**Root Cause:** Insufficient disk space on mounted VHDX, corrupted MSU files, or DISM service timing issues
-**Solution (Implemented):**
-- Pre-flight disk space validation before MSU extraction (requires 3x package size + 5GB safety margin)
-- MSU file integrity validation (checks for 0-byte or corrupted files)
-- Enhanced expand.exe error handling with specific exit code diagnostics
-- Automatic retry logic (up to 2 retries with 30-second delays)
-- DISM service initialization checks before package application
-- Detailed error messages identifying specific failure causes (disk space, permissions, corruption)
-
-**New Functions Added:**
-- `Test-MountedImageDiskSpace`: Validates sufficient disk space for MSU extraction (BuildFFUVM.ps1:2917)
-- `Initialize-DISMService`: Ensures DISM service is ready before operations using Get-WindowsEdition cmdlet (BuildFFUVM.ps1:2966)
-- `Add-WindowsPackageWithRetry`: Automatic retry wrapper for transient failures (BuildFFUVM.ps1:3012)
-
-**Enhanced Error Diagnostics:**
-- Exit code -1: File system or permission error
-- Exit code 1: Invalid syntax or file not found
-- Exit code 2: Out of memory
-- Volume information logged on failure (size, free space)
-- MSU file readability verification before fallback to direct DISM
-
-**Previous Behavior:** Silent expand.exe failures with cryptic DISM temp folder errors
-**Current Behavior:** Clear diagnostic messages with specific root cause identification and automatic recovery
-
-### copype WIM Mount Failures (FIXED)
-
-**Symptoms:** copype fails with exit code 1 and error "Failed to mount the WinPE WIM file" during WinPE capture/deployment media creation
-**Root Cause:** Stale DISM mount points, insufficient disk space, locked WinPE directories, or DISM service conflicts from previous builds
-**Solution (Implemented):**
-- Comprehensive DISM pre-flight cleanup before every copype execution
-- Stale mount point detection and automatic cleanup (Dism.exe /Cleanup-Mountpoints)
-- Forced removal of locked WinPE directories using robocopy mirror technique
-- Disk space validation (minimum 10GB free required)
-- DISM service state verification (TrustedInstaller)
-- Temporary DISM scratch directory cleanup
-- Automatic retry logic (up to 2 attempts) with aggressive cleanup between retries
-- Enhanced error diagnostics with DISM log extraction
-
-**New Functions Added:**
-- `Invoke-DISMPreFlightCleanup`: Comprehensive cleanup and validation (BuildFFUVM.ps1:3898)
-- `Invoke-CopyPEWithRetry`: copype execution with automatic retry (BuildFFUVM.ps1:4080)
-
-**Cleanup Steps Performed:**
-1. Clean all stale DISM mount points
-2. Force remove old WinPE directory (even if locked)
-3. Validate minimum disk space requirements
-4. Check DISM-related services (TrustedInstaller)
-5. Clear DISM temporary/scratch directories
-6. Wait for system stabilization (3 seconds)
-
-**Enhanced Error Messages:**
-Provides actionable guidance for 6 common failure scenarios:
-- Stale DISM mount points → Run Dism.exe /Cleanup-Mountpoints
-- Insufficient disk space → Free up 10GB+ or move FFUDevelopment
-- Windows Update conflicts → Wait for updates to complete
-- Antivirus interference → Add DISM/WinPE exclusions
-- Corrupted ADK → Run with -UpdateADK $true
-- System file corruption → Run sfc /scannow
-
-**Testing:**
-- Comprehensive test suite: `Test-DISMCleanupAndCopype.ps1`
-- 19 test cases covering all scenarios
-- 100% pass rate validates all functionality
-
-**Previous Behavior:** copype fails with cryptic "Failed to mount" error, no retry, manual cleanup required
-**Current Behavior:** Automatic cleanup, retry on failure, detailed diagnostics, self-healing in 90% of cases
-
-### PowerShell Cross-Version Compatibility (FIXED)
-
-**Symptoms:** Build fails with `Could not load type 'Microsoft.PowerShell.Telemetry.Internal.TelemetryAPI'` error when running in PowerShell 7
-**Root Cause:** PowerShell Core (7.x) `New-LocalUser`, `Get-LocalUser`, `Remove-LocalUser` cmdlets have TelemetryAPI compatibility issues
-**Solution (Implemented):**
-- **Cross-version compatible .NET APIs** replace problematic cmdlets
-- Uses `System.DirectoryServices.AccountManagement` for local user management
-- Works natively in both PowerShell 5.1 (Desktop) and PowerShell 7+ (Core)
-- No version detection or relaunching required
-
-**Helper Functions (FFU.VM Module):**
-- `Get-LocalUserAccount`: Replaces `Get-LocalUser` using DirectoryServices API
-- `New-LocalUserAccount`: Replaces `New-LocalUser` using DirectoryServices API with secure password handling
-- `Remove-LocalUserAccount`: Replaces `Remove-LocalUser` using DirectoryServices API
-
-**Implementation Details:**
-- Helper functions in `FFU.VM.psm1` (lines 20-201)
-- Used by: `Set-CaptureFFU`, `Remove-FFUUserShare`, `Remove-FFUVM`
-- SecureString password conversion with proper memory cleanup
-- IDisposable pattern for PrincipalContext resources
-- Cross-platform compatible (Windows only, but works in both PS editions)
-
-**Testing:**
-- Test suite: `Test-PowerShell7Compatibility.ps1`
-- 19 test cases covering all scenarios
-- 100% pass rate in both PowerShell 5.1 and 7+
-- Validates helper function implementation and usage
-- Confirms no cmdlet dependencies remain
-
-**Previous Behavior:** Build fails with TelemetryAPI error when run in PowerShell 7
-**Current Behavior:** Works natively in both PowerShell 5.1 and 7+ without version switching
-
-### Issue #298: OS Partition Size Limitations
-
+#### Issue #298: OS Partition Size Limitations
 **Symptoms:** OS partition doesn't expand when injecting large driver sets
 **Workaround:** Call `Expand-FFUPartition` before driver injection to resize VHDX dynamically
 
-### Dell Chipset Driver Hang
-
+#### Dell Chipset Driver Hang
 **Known Issue:** Dell chipset driver installers may hang when run with `-Wait $true`
 **Solution:** Always use `-Wait $false` for Dell driver extraction:
 ```powershell
 Start-Process -FilePath $dellDriver -ArgumentList "/s /e=$destination" -Wait:$false
 ```
 
-### Lenovo PSREF API Authentication
-
+#### Lenovo PSREF API Authentication
 **Known Issue:** Hardcoded JWT token will expire
 **Solution:** Implement proper OAuth flow in `LenovoDriverProvider.RefreshAuthToken()`
+
+### Fixed Issues
+
+For detailed documentation on fixed issues, see the individual fix summaries in `docs/fixes/`:
+
+| Issue | Status | Documentation |
+|-------|--------|---------------|
+| DISM Error 0x80070228 (Checkpoint Updates) | FIXED v1.0.2 | [CHECKPOINT_UPDATE_0x80070228_FIX.md](docs/fixes/CHECKPOINT_UPDATE_0x80070228_FIX.md) |
+| WinPE boot.wim Creation Failures | FIXED | [WINPE_BOOTWIM_CREATION_FIX.md](docs/fixes/WINPE_BOOTWIM_CREATION_FIX.md) |
+| MSU Package Expansion Failures | FIXED | [MSU_PACKAGE_FIX_SUMMARY.md](docs/fixes/MSU_PACKAGE_FIX_SUMMARY.md) |
+| copype WIM Mount Failures | FIXED | [COPYPE_WIM_MOUNT_FIX.md](docs/fixes/COPYPE_WIM_MOUNT_FIX.md) |
+| PowerShell Cross-Version Compatibility | FIXED | [POWERSHELL_CROSSVERSION_FIX.md](docs/fixes/POWERSHELL_CROSSVERSION_FIX.md) |
+| FFU Optimization Error 1167 | FIXED | [FFU_OPTIMIZATION_ERROR_1167_FIX.md](docs/fixes/FFU_OPTIMIZATION_ERROR_1167_FIX.md) |
+| Expand-WindowsImage Error 0x8007048F | FIXED | [EXPAND_WINDOWSIMAGE_FIX.md](docs/fixes/EXPAND_WINDOWSIMAGE_FIX.md) |
+| cmd.exe Path Quoting Error | FIXED | [CMD_PATH_QUOTING_FIX.md](docs/fixes/CMD_PATH_QUOTING_FIX.md) |
+| WriteLog Empty String Errors | FIXED | [WRITELOG_PATH_VALIDATION_FIX.md](docs/fixes/WRITELOG_PATH_VALIDATION_FIX.md) |
+
+### Additional Fix Documentation
+
+See `docs/fixes/` for complete list of fix summaries including:
+- KB Path Resolution fixes
+- Filter Parameter fixes
+- Log Monitoring fixes
+- CaptureFFU Network fixes
+- Defender Update fixes
+- And more...
 
 ## Project Structure
 
@@ -706,6 +691,12 @@ Add WinGet package IDs to configuration JSON or use `Apps/` folder for MSI/EXE i
 - Driver downloads verify **HTTPS certificates** (no self-signed certs)
 - **No credentials stored** in configuration files (use Windows Credential Manager)
 - Audit logs written to `Logs/` directory for compliance tracking
+- **Secure Credential Generation (v1.0.7):**
+  - Passwords generated using `RNGCryptoServiceProvider` for cryptographic randomness
+  - Passwords created directly as `SecureString` - never exist as complete plain text during generation
+  - Plain text only created when absolutely necessary (e.g., writing to WinPE scripts)
+  - Memory cleanup functions ensure credentials are disposed properly
+  - Temporary `ffu_user` account has automatic 4-hour expiry as a security failsafe
 
 ## Module Extraction History
 
