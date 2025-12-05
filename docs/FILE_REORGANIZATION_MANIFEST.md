@@ -183,9 +183,59 @@ C:\claude\FFUBuilder\
 
 ---
 
+## Root Directory Cleanup (December 5, 2025)
+
+Additional cleanup to move legacy documentation and tests from project root.
+
+### Files Moved from Root to docs/
+
+| Source | Destination |
+|--------|-------------|
+| CRITICAL_BUG_FIX_EDGE.md | docs/fixes/CRITICAL_BUG_FIX_EDGE.md |
+| DISM_SERVICE_FIX.md | docs/fixes/DISM_SERVICE_FIX.md |
+| DISM_SERVICE_TIMING_ENHANCEMENT.md | docs/fixes/DISM_SERVICE_TIMING_ENHANCEMENT.md |
+| ESD_DOWNLOAD_FIX.md | docs/fixes/ESD_DOWNLOAD_FIX.md |
+| MSU_UNATTEND_FIX.md | docs/fixes/MSU_UNATTEND_FIX.md |
+| WINPE_MOUNT_FIX.md | docs/fixes/WINPE_MOUNT_FIX.md |
+| DOWNLOAD_METHODS_GUIDE.md | docs/guides/DOWNLOAD_METHODS_GUIDE.md |
+| QUICK_TEST_STEPS.md | docs/guides/QUICK_TEST_STEPS.md |
+| TESTING_GUIDE.md | docs/guides/TESTING_GUIDE.md |
+| FALLBACK_SYSTEM_SUMMARY.md | docs/summaries/FALLBACK_SYSTEM_SUMMARY.md |
+| FOUNDATIONAL_IMPROVEMENTS_SUMMARY.md | docs/summaries/FOUNDATIONAL_IMPROVEMENTS_SUMMARY.md |
+| SESSION_SUMMARY.md | docs/summaries/SESSION_SUMMARY.md |
+| TEST_RESULTS.md | docs/summaries/TEST_RESULTS.md |
+| TEST_RESULTS_SUMMARY.md | docs/summaries/TEST_RESULTS_SUMMARY.md |
+| ISSUE_BITS_AUTHENTICATION.md | docs/analysis/ISSUE_BITS_AUTHENTICATION.md |
+| DESIGN.md | docs/designs/DESIGN.md |
+
+### Files Moved from Root to Tests/
+
+| Source | Destination |
+|--------|-------------|
+| Test-BITSAuthenticationFix.ps1 | Tests/Fixes/Test-BITSAuthenticationFix.ps1 |
+| Test-BITSFix-Simple.ps1 | Tests/Fixes/Test-BITSFix-Simple.ps1 |
+| Test-DownloadMethods.ps1 | Tests/Integration/Test-DownloadMethods.ps1 |
+| Test-DownloadMethodsFallback.ps1 | Tests/Integration/Test-DownloadMethodsFallback.ps1 |
+| Test-DownloadMethods-Simple.ps1 | Tests/Integration/Test-DownloadMethods-Simple.ps1 |
+| Test-Integration.ps1 | Tests/Integration/Test-Integration.ps1 |
+| Test-FoundationalClasses.ps1 | Tests/Modules/Test-FoundationalClasses.ps1 |
+
+### Files Remaining in Root (Standard GitHub Files)
+
+- README.md - Project readme
+- LICENSE - MIT license
+- ChangeLog.md - Upstream changelog
+- CHANGELOG_FORK.md - Fork-specific changelog
+- CLAUDE.md - Claude Code configuration
+- image/ - README images
+
+---
+
 ## Notes
 
 1. **FFUDevelopment is now clean** - Contains only source code, modules, and runtime artifacts
-2. **Tests reference FFUDevelopment** - Test scripts may need path updates if they reference `$PSScriptRoot`
-3. **Documentation is categorized** - Easy to find fixes, analysis, plans, and summaries
-4. **Pre-existing docs preserved** - `docs/research/` folder was already present and untouched
+2. **Root directory is now clean** - Contains only standard GitHub project files
+3. **Tests reference FFUDevelopment** - Test scripts may need path updates if they reference `$PSScriptRoot`
+4. **Documentation is categorized** - Easy to find fixes, analysis, plans, guides, and summaries
+5. **Pre-existing docs preserved** - `docs/research/` folder was already present and untouched
+6. **New docs/guides/ created** - For user guides and testing documentation
