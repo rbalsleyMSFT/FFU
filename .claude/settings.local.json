@@ -4,7 +4,14 @@
       "Bash(Get-ChildItem -Path \"C:\\claude\\FFUBuilder\\FFUDevelopment\" -Directory)",
       "Bash(Select-Object Name)",
       "Bash(Format-Table -AutoSize)",
-      "Bash(Select-Object -First 20)"
+      "Bash(Select-Object -First 20)",
+      "Bash(Test-Path \"C:\\FFUDevelopment\\BuildFFUVM.ps1\")",
+      "WebSearch",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Test-CaptureFFUScriptUpdateFix.ps1\")",
+      "Bash(powershell.exe -Command \"$false -is [System.Int32]; $false -eq 0; [string]::IsNullOrEmpty([string]$false)\")",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File \"C:\\claude\\FFUBuilder\\FFUDevelopment\\Test-RemoveUpdatesConfigBug.ps1\")",
+      "Bash(powershell.exe:*)",
+      "Bash(Select-Object -First 30)"
     ],
     "deny": [],
     "ask": []
