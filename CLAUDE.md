@@ -53,6 +53,41 @@ Use Task tool with subagent_type="intune-troubleshooter"
 Use Task tool with subagent_type="autopilot-deployment-expert"
 ```
 
+### pester-test-developer Agent
+**When to use:**
+- Creating Pester 5.x unit tests for FFU Builder modules
+- Running test suites with code coverage analysis
+- Debugging failing tests
+- Adding mocking to tests for external dependencies
+- Improving test coverage for modules
+- Setting up CI/CD test integration
+- When user asks to create, run, or maintain Pester tests
+
+**How to invoke:**
+```
+Use Task tool with subagent_type="pester-test-developer"
+```
+
+**Test Structure:**
+```
+Tests/Unit/                    # Pester unit tests
+├── Invoke-PesterTests.ps1     # Test runner
+├── FFU.Core.Tests.ps1         # Module tests
+└── _Template.Tests.ps1        # Template for new tests
+```
+
+**Running Tests:**
+```powershell
+# All tests
+.\Tests\Unit\Invoke-PesterTests.ps1
+
+# Specific module
+.\Tests\Unit\Invoke-PesterTests.ps1 -Module 'FFU.Core'
+
+# With coverage
+.\Tests\Unit\Invoke-PesterTests.ps1 -EnableCodeCoverage
+```
+
 **General Rule:** When user describes a problem that falls within an agent's expertise area, invoke that agent proactively rather than attempting to solve it directly. These agents have specialized knowledge and diagnostic capabilities beyond general assistance.
 
 ## Project Overview
