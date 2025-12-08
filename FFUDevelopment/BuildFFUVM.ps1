@@ -3481,7 +3481,7 @@ If ($InstallApps) {
 }
 #Clean up VM or VHDX
 try {
-    Remove-FFUVM -VMPath $VMPath -InstallApps $InstallApps `
+    Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
                  -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
                  -Username $Username -ShareName $ShareName
     WriteLog 'FFU build complete!'
