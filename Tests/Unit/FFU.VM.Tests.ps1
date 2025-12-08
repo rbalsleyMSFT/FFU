@@ -309,6 +309,90 @@ Describe 'Remove-FFUVM' -Tag 'Unit', 'FFU.VM', 'Remove-FFUVM' {
 }
 
 # =============================================================================
+# Remove-FFUVM Regression Tests
+# =============================================================================
+
+Describe 'Remove-FFUVM VMName Parameter Bug Fix' -Tag 'Unit', 'FFU.VM', 'Remove-FFUVM', 'Regression' {
+    <#
+    .DESCRIPTION
+    Regression test for bug where VM was not deleted after successful build.
+
+    Root Cause: The final cleanup call in BuildFFUVM.ps1 was missing -VMName parameter.
+    Without VMName, Remove-FFUVM's internal logic never sets $FFUVM variable,
+    causing the VM deletion code block to be skipped entirely.
+
+    Fix: Added -VMName $VMName to the final cleanup call at line 3484.
+    #>
+
+    Context 'BuildFFUVM.ps1 Final Cleanup Call' {
+        BeforeAll {
+            $TestRoot = Split-Path $PSScriptRoot -Parent
+            $ProjectRoot = Split-Path $TestRoot -Parent
+            $BuildScriptPath = Join-Path $ProjectRoot 'FFUDevelopment\BuildFFUVM.ps1'
+            $BuildScriptContent = Get-Content $BuildScriptPath -Raw
+        }
+
+        It 'Should include -VMName parameter in final cleanup Remove-FFUVM call' {
+            # Find the final cleanup section (after "#Clean up VM or VHDX" comment)
+            # This regex looks for the Remove-FFUVM call that follows the cleanup comment
+            $pattern = '#Clean up VM or VHDX[\s\S]*?Remove-FFUVM\s+-VMName'
+            $BuildScriptContent | Should -Match $pattern
+        }
+
+        It 'Should have VMName as first parameter in final cleanup call' {
+            # The pattern ensures -VMName appears right after Remove-FFUVM in the final cleanup
+            # This catches the specific bug where VMName was omitted
+            $lines = $BuildScriptContent -split "`n"
+            $cleanupCommentIndex = -1
+
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($lines[$i] -match '#Clean up VM or VHDX') {
+                    $cleanupCommentIndex = $i
+                    break
+                }
+            }
+
+            $cleanupCommentIndex | Should -BeGreaterThan 0 -Because 'cleanup comment should exist'
+
+            # Find the Remove-FFUVM call after the comment
+            $foundRemoveFFUVM = $false
+            for ($i = $cleanupCommentIndex; $i -lt [Math]::Min($cleanupCommentIndex + 10, $lines.Count); $i++) {
+                if ($lines[$i] -match 'Remove-FFUVM') {
+                    $foundRemoveFFUVM = $true
+                    $lines[$i] | Should -Match 'Remove-FFUVM\s+-VMName\s+\$VMName' -Because 'VMName parameter must be passed to ensure VM deletion'
+                    break
+                }
+            }
+
+            $foundRemoveFFUVM | Should -BeTrue -Because 'Remove-FFUVM call should exist after cleanup comment'
+        }
+    }
+
+    Context 'All Remove-FFUVM Calls Consistency Check' {
+        BeforeAll {
+            $TestRoot = Split-Path $PSScriptRoot -Parent
+            $ProjectRoot = Split-Path $TestRoot -Parent
+            $BuildScriptPath = Join-Path $ProjectRoot 'FFUDevelopment\BuildFFUVM.ps1'
+            $BuildScriptContent = Get-Content $BuildScriptPath -Raw
+        }
+
+        It 'Should have at least 6 Remove-FFUVM calls in BuildFFUVM.ps1' {
+            $matches = [regex]::Matches($BuildScriptContent, 'Remove-FFUVM')
+            $matches.Count | Should -BeGreaterOrEqual 6
+        }
+
+        It 'Should have VMName parameter in most Remove-FFUVM calls' {
+            # Count calls with VMName vs total calls
+            $totalCalls = [regex]::Matches($BuildScriptContent, 'Remove-FFUVM').Count
+            $callsWithVMName = [regex]::Matches($BuildScriptContent, 'Remove-FFUVM\s+-VMName').Count
+
+            # At least 5 out of 7 calls should have VMName (allowing for intentional omission in non-VM scenarios)
+            $callsWithVMName | Should -BeGreaterOrEqual 5
+        }
+    }
+}
+
+# =============================================================================
 # Get-FFUEnvironment Tests
 # =============================================================================
 
