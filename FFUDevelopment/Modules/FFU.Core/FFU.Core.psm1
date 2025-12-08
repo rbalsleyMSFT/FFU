@@ -1963,6 +1963,66 @@ function Register-UserAccountCleanup {
     }.GetNewClosure()
 }
 
+function Register-SensitiveMediaCleanup {
+    <#
+    .SYNOPSIS
+    Registers cleanup for sensitive capture media files containing credentials.
+
+    .DESCRIPTION
+    When credentials are written to CaptureFFU.ps1, backup files may be created
+    that contain plain-text passwords. If the build fails before Remove-SensitiveCaptureMedia
+    runs, these files could persist. This cleanup action ensures they are removed.
+
+    .PARAMETER FFUDevelopmentPath
+    Path to the FFU development folder containing WinPECaptureFFUFiles.
+
+    .EXAMPLE
+    Register-SensitiveMediaCleanup -FFUDevelopmentPath "C:\FFUDevelopment"
+
+    .NOTES
+    SECURITY: Critical for preventing credential leakage on build failures.
+    Should be registered immediately after Update-CaptureFFUScript is called.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
+    )
+
+    Register-CleanupAction -Name "Remove sensitive capture media backups" -ResourceType 'TempFile' -ResourceId "CaptureFFU-Backups" -Action {
+        $captureFilesPath = Join-Path $using:FFUDevelopmentPath "WinPECaptureFFUFiles"
+
+        # Remove backup files that may contain credentials
+        $backupPattern = Join-Path $captureFilesPath "CaptureFFU.ps1.backup-*"
+        $backupFiles = Get-ChildItem -Path $backupPattern -ErrorAction SilentlyContinue
+
+        foreach ($backup in $backupFiles) {
+            try {
+                Remove-Item -Path $backup.FullName -Force -ErrorAction Stop
+            }
+            catch {
+                # Log but don't fail - best effort cleanup
+            }
+        }
+
+        # Also sanitize the main CaptureFFU.ps1 if it exists
+        $captureScript = Join-Path $captureFilesPath "CaptureFFU.ps1"
+        if (Test-Path $captureScript) {
+            try {
+                $content = Get-Content -Path $captureScript -Raw -ErrorAction SilentlyContinue
+                if ($content -and $content -match '\$Password\s*=\s*[''"](?!YOURPASSWORDHERE)[^''"]+[''"]') {
+                    # Password found - sanitize it
+                    $sanitized = $content -replace '(\$Password\s*=\s*[''"])[^''"]+([''"])', '$1YOURPASSWORDHERE$2'
+                    Set-Content -Path $captureScript -Value $sanitized -Force -ErrorAction SilentlyContinue
+                }
+            }
+            catch {
+                # Log but don't fail - best effort cleanup
+            }
+        }
+    }.GetNewClosure()
+}
+
 # Export all module functions
 Export-ModuleMember -Function @(
     # Configuration and utilities
@@ -2002,6 +2062,7 @@ Export-ModuleMember -Function @(
     'Register-TempFileCleanup'
     'Register-NetworkShareCleanup'
     'Register-UserAccountCleanup'
+    'Register-SensitiveMediaCleanup'
     # Secure credential management (v1.0.7)
     'New-SecureRandomPassword'
     'ConvertFrom-SecureStringToPlainText'

@@ -3321,6 +3321,11 @@ if ($InstallApps) {
 
                 Update-CaptureFFUScript @updateParams
                 WriteLog "CaptureFFU.ps1 script updated successfully"
+
+                # SECURITY: Register cleanup for sensitive capture media files
+                # If build fails, this ensures backup files with credentials are removed
+                Register-SensitiveMediaCleanup -FFUDevelopmentPath $FFUDevelopmentPath
+                WriteLog "SECURITY: Registered cleanup action for sensitive capture media files"
             }
             catch {
                 WriteLog "ERROR: Failed to update CaptureFFU.ps1 script: $_"

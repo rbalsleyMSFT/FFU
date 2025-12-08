@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.7'
+    ModuleVersion = '1.0.8'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -72,6 +72,7 @@
         'Register-TempFileCleanup',
         'Register-NetworkShareCleanup',
         'Register-UserAccountCleanup',
+        'Register-SensitiveMediaCleanup',
         # Secure credential management (v1.0.7)
         'New-SecureRandomPassword',
         'ConvertFrom-SecureStringToPlainText',
@@ -102,7 +103,13 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.7
+# Release Notes - FFU.Core v1.0.8
+
+## v1.0.8 - Sensitive Media Cleanup Enhancement
+- Added Register-SensitiveMediaCleanup: Registers cleanup for credential-containing capture media files
+- Ensures backup files with credentials are removed on build failures
+- Sanitizes CaptureFFU.ps1 password values on failure cleanup
+- 37 total functions now exported
 
 ## v1.0.7 - Secure Credential Management
 - Added New-SecureRandomPassword: Cryptographically secure password generation directly to SecureString

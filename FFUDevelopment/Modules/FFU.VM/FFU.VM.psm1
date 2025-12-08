@@ -1205,8 +1205,17 @@ function Update-CaptureFFUScript {
     Optional custom FFU naming template with placeholders
 
     .EXAMPLE
+    # Using SecureString for password (recommended)
+    $securePassword = New-SecureRandomPassword
     Update-CaptureFFUScript -VMHostIPAddress "192.168.1.100" -ShareName "FFUCaptureShare" `
-                            -Username "ffu_user" -Password "SecurePass123!" `
+                            -Username "ffu_user" -Password $securePassword `
+                            -FFUDevelopmentPath "C:\FFUDevelopment"
+
+    .EXAMPLE
+    # Using Read-Host for interactive password entry
+    $securePassword = Read-Host -Prompt "Enter password" -AsSecureString
+    Update-CaptureFFUScript -VMHostIPAddress "192.168.1.100" -ShareName "FFUCaptureShare" `
+                            -Username "ffu_user" -Password $securePassword `
                             -FFUDevelopmentPath "C:\FFUDevelopment"
     #>
     [CmdletBinding()]
