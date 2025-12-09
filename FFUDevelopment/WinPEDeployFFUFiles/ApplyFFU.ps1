@@ -22,28 +22,19 @@ function Get-HardDrive() {
     WriteLog 'Getting Hard Drive info'
     if ($manufacturer -eq 'Microsoft Corporation' -and $model -eq 'Virtual Machine') {
         WriteLog 'Running in a Hyper-V VM. Getting virtual disk on Index 0 and SCSILogicalUnit 0'
-        $diskDrive = Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' `
-                -and $_.Model -eq 'Microsoft Virtual Disk' `
+        $diskDriveCandidates = @(Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' `
+                -and $_.Model -eq 'Microsoft Virtual Disk'
                 -and $_.Index -eq 0 `
                 -and $_.SCSILogicalUnit -eq 0
-        }
+        })
     }
     else {
         WriteLog 'Not running in a VM. Getting physical disk drive'
-        $diskDrive = Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk' }
-    }
-    $deviceID = $diskDrive.DeviceID
-    $bytesPerSector = $diskDrive.BytesPerSector
-    $diskSize = $diskDrive.Size
-
-    # Create a custom object to return values
-    $result = [PSCustomObject]@{
-        DeviceID       = $deviceID
-        BytesPerSector = $bytesPerSector
-        DiskSize       = $diskSize
+        $diskDriveCandidates = @(Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk' })
     }
 
-    return $result
+    # Return the array of candidates for selection in main script
+    return $diskDriveCandidates
 }
 
 function WriteLog($LogText) { 
@@ -822,21 +813,80 @@ Write-Host $banner -ForegroundColor Cyan
 Write-Host "Version $version" -ForegroundColor Cyan
 
 #Find PhysicalDrive
-# $PhysicalDeviceID = Get-HardDrive
-$hardDrive = Get-HardDrive
-if ($null -eq $hardDrive) {
+Write-SectionHeader -Title 'Target Disk Selection'
+$diskDriveCandidates = @(Get-HardDrive)
+$diskCount = $diskDriveCandidates.Count
+if ($diskCount -eq 0) {
     $errorMessage = 'No hard drive found. You may need to add storage drivers to the WinPE image.'
     WriteLog ($errorMessage + ' Exiting.')
     WriteLog 'To add drivers, place them in the PEDrivers folder and re-run the creation script with -CopyPEDrivers $true, or add them manually via DISM.'
     Stop-Script -Message $errorMessage
 }
-$PhysicalDeviceID = $hardDrive.DeviceID
-$BytesPerSector = $hardDrive.BytesPerSector
-WriteLog "Physical DeviceID is $PhysicalDeviceID"
 
-#Parse DiskID Number
-$DiskID = $PhysicalDeviceID.substring($PhysicalDeviceID.length - 1, 1)
-WriteLog "DiskID is $DiskID"
+# Select target disk - prompt user if multiple disks found
+if ($diskCount -eq 1) {
+    $selectedDisk = $diskDriveCandidates[0]
+    WriteLog "Single fixed disk detected: DiskNumber=$($selectedDisk.Index), Model=$($selectedDisk.Model)"
+    Write-Host "Single fixed disk detected: $($selectedDisk.Model)"
+}
+else {
+    WriteLog "Found $diskCount fixed disks. Prompting for selection."
+    Write-Host "Found $diskCount fixed disks"
+    
+    # Build list of available disk indexes for validation
+    $validDiskIndexes = @($diskDriveCandidates | ForEach-Object { $_.Index })
+    
+    # Display disk list using actual disk index as the selection value
+    $displayList = @()
+    foreach ($currentDisk in $diskDriveCandidates) {
+        $sizeGB = [math]::Round(($currentDisk.Size / 1GB), 2)
+        $displayList += [PSCustomObject]@{
+            Disk         = $currentDisk.Index
+            'Size (GB)'  = $sizeGB
+            'Sector'     = $currentDisk.BytesPerSector
+            'Bus Type'   = $currentDisk.InterfaceType
+            Model        = $currentDisk.Model
+        }
+    }
+    $displayList | Format-Table -AutoSize -Property Disk, 'Size (GB)', Sector, 'Bus Type', Model
+
+    do {
+        try {
+            $var = $true
+            [int]$diskSelection = Read-Host 'Enter the disk number to apply the FFU to'
+        }
+        catch {
+            Write-Host 'Input was not in correct format. Please enter a valid disk number'
+            $var = $false
+        }
+        # Validate selected disk is in the list of available disks
+        if ($var -and $validDiskIndexes -notcontains $diskSelection) {
+            Write-Host "Invalid disk number. Please select from the available disks."
+            $var = $false
+        }
+    } until ($var)
+
+    $selectedDisk = $diskDriveCandidates | Where-Object { $_.Index -eq $diskSelection }
+    WriteLog "Disk selection: DiskNumber=$($selectedDisk.Index), Model=$($selectedDisk.Model), SizeGB=$([math]::Round(($selectedDisk.Size / 1GB), 2)), BusType=$($selectedDisk.InterfaceType)"
+    Write-Host "`nDisk $($selectedDisk.Index) selected: $($selectedDisk.Model)"
+}
+
+# Set variables from selected disk
+$PhysicalDeviceID = $selectedDisk.DeviceID
+$BytesPerSector = $selectedDisk.BytesPerSector
+$DiskID = $selectedDisk.Index
+$diskSizeGB = [math]::Round(($selectedDisk.Size / 1GB), 2)
+
+# Create hardDrive object for Get-SystemInformation compatibility
+$hardDrive = [PSCustomObject]@{
+    DeviceID       = $PhysicalDeviceID
+    BytesPerSector = $BytesPerSector
+    DiskSize       = $selectedDisk.Size
+    DiskNumber     = $DiskID
+}
+
+WriteLog "Physical DeviceID is $PhysicalDeviceID"
+WriteLog "DiskNumber is $DiskID with size $diskSizeGB GB"
 
 # Gather and write system information
 $sysInfoObject = Get-SystemInformation -HardDrive $hardDrive
@@ -857,7 +907,7 @@ If ($FFUCount -gt 1) {
         $Properties = [ordered]@{Number = $i + 1 ; FFUFile = $FFUFiles[$i].FullName }
         $array += New-Object PSObject -Property $Properties
     }
-    $array | Format-Table -AutoSize -Property Number, FFUFile
+    $array | Format-Table -AutoSize -Property Number, FFUFile | Out-Host
     do {
         try {
             $var = $true
