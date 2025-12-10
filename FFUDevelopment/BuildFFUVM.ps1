@@ -2,11 +2,19 @@
 #Requires -Modules Hyper-V, Storage
 #Requires -RunAsAdministrator
 
-# Import FFU.Constants module for centralized configuration
-# IMPORTANT: using module (not Import-Module) is required here because FFUConstants class
-# is referenced in the Param block (lines 311, 314, 317) which is evaluated at PARSE time.
-# Import-Module loads at RUNTIME (too late for Param block).
-using module .\Modules\FFU.Constants\FFU.Constants.psm1
+# NOTE: FFU.Constants module is imported at RUNTIME via Import-Module (see module import section).
+#
+# The param block defaults below use HARDCODED values that MUST match FFU.Constants:
+# - DEFAULT_VM_MEMORY = 4GB (4294967296 bytes)
+# - DEFAULT_VHDX_SIZE = 50GB (53687091200 bytes)
+# - DEFAULT_VM_PROCESSORS = 4
+#
+# IMPORTANT: If you change values in FFU.Constants.psm1, update these defaults too!
+#
+# WHY NOT 'using module'?
+# The 'using module' statement was removed because it uses relative paths that fail
+# when the script is run from a ThreadJob with a different working directory.
+# Even with Set-Location fix in the UI, hardcoded defaults provide defense-in-depth.
 
 <#
 .SYNOPSIS
@@ -324,13 +332,13 @@ param(
     [bool]$InstallDrivers,
     [Parameter(Mandatory = $false)]
     [ValidateRange(2GB, 128GB)]
-    [uint64]$Memory = [FFUConstants]::DEFAULT_VM_MEMORY,
+    [uint64]$Memory = 4GB,  # Must match [FFUConstants]::DEFAULT_VM_MEMORY
     [Parameter(Mandatory = $false)]
     [ValidateRange(25GB, 2TB)]
-    [uint64]$Disksize = [FFUConstants]::DEFAULT_VHDX_SIZE,
+    [uint64]$Disksize = 50GB,  # Must match [FFUConstants]::DEFAULT_VHDX_SIZE
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 64)]
-    [int]$Processors = [FFUConstants]::DEFAULT_VM_PROCESSORS,
+    [int]$Processors = 4,  # Must match [FFUConstants]::DEFAULT_VM_PROCESSORS
     [string]$VMSwitchName,
     [Parameter(Mandatory = $false)]
     [ValidateScript({ [string]::IsNullOrWhiteSpace($_) -or (Test-Path (Split-Path $_ -Parent) -PathType Container) })]
@@ -623,6 +631,19 @@ if (Get-Module -Name 'FFU.Common.Drivers' -ErrorAction SilentlyContinue) {
 # Import the required modules
 Import-Module "$PSScriptRoot\FFU.Common" -Force
 
+# =============================================================================
+# EARLY PSModulePath Configuration (Defense-in-Depth)
+# =============================================================================
+# Configure PSModulePath IMMEDIATELY after FFU.Common import, BEFORE any code
+# that could throw errors. This ensures that if the trap handler fires early
+# (before the main module imports), the RequiredModules in FFU.Core can resolve
+# FFU.Constants correctly. Without this, Get-CleanupRegistry fails with:
+# "The 'Get-CleanupRegistry' command was found in the module 'FFU.Core', but the module could not be loaded"
+$ModulePath = "$PSScriptRoot\Modules"
+if ($env:PSModulePath -notlike "*$ModulePath*") {
+    $env:PSModulePath = "$ModulePath;$env:PSModulePath"
+}
+
 # Set the module's verbose preference to match the script's - allows logging verbose output to console.
 $moduleInfo = Get-Module -Name 'FFU.Common'
 if ($moduleInfo) {
@@ -639,8 +660,8 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         $value = $configdata.$key
         
         # If $value is empty, skip
-        if ($null -eq $value -or 
-            ([string]::IsNullOrEmpty([string]$value)) -or 
+        if ($null -eq $value -or
+            ([string]::IsNullOrWhiteSpace([string]$value)) -or
             ($value -is [System.Collections.Hashtable] -and $value.Count -eq 0) -or 
             ($value -is [System.UInt32] -and $value -eq 0) -or 
             ($value -is [System.UInt64] -and $value -eq 0) -or 
@@ -745,16 +766,9 @@ class VhdxCacheUpdateItem {
     }
 }
 
-# Import FFU Builder modules
-$ModulePath = "$PSScriptRoot\Modules"
-
-# Add modules folder to PSModulePath so RequiredModules in manifests can be resolved
-# This is critical when running in background jobs (e.g., from BuildFFUVM_UI.ps1)
-if ($env:PSModulePath -notlike "*$ModulePath*") {
-    $env:PSModulePath = "$ModulePath;$env:PSModulePath"
-}
-
 # Import modules in dependency order with -Global for cross-scope availability
+# NOTE: PSModulePath was configured earlier in the script (after FFU.Common import)
+# to ensure RequiredModules can resolve before any trap handlers fire
 Import-Module "FFU.Core" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.ADK" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Drivers" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
@@ -769,11 +783,14 @@ Import-Module "FFU.Apps" -Force -Global -ErrorAction Stop -WarningAction Silentl
 # Ensures cleanup of registered resources on terminating errors
 # =============================================================================
 trap {
-    # Only invoke cleanup if the registry has items (avoid unnecessary work)
-    $registry = Get-CleanupRegistry
-    if ($registry -and $registry.Count -gt 0) {
-        WriteLog "TRAP: Unhandled terminating error detected. Invoking failure cleanup for $($registry.Count) registered resource(s)..."
-        Invoke-FailureCleanup -Reason "Terminating error: $($_.Exception.Message)"
+    # Defense-in-depth: Only invoke cleanup if module functions are available
+    # This handles the edge case where an error occurs before modules are loaded
+    if (Get-Command 'Get-CleanupRegistry' -ErrorAction SilentlyContinue) {
+        $registry = Get-CleanupRegistry
+        if ($registry -and $registry.Count -gt 0) {
+            WriteLog "TRAP: Unhandled terminating error detected. Invoking failure cleanup for $($registry.Count) registered resource(s)..."
+            Invoke-FailureCleanup -Reason "Terminating error: $($_.Exception.Message)"
+        }
     }
     # CRITICAL: Use 'break' to propagate the error up the call stack
     # Using 'continue' would swallow the error and resume execution, causing:
@@ -781,6 +798,22 @@ trap {
     # - Success marker to be output even after failures
     # - UI to incorrectly report success
     break
+}
+
+# =============================================================================
+# PowerShell Exit Event Handler
+# Ensures cleanup when the PowerShell session exits (Ctrl+C, window close, etc.)
+# =============================================================================
+$null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
+    # Defense-in-depth: Only invoke cleanup if module functions are available
+    if (Get-Command 'Get-CleanupRegistry' -ErrorAction SilentlyContinue) {
+        $registry = Get-CleanupRegistry
+        if ($registry -and $registry.Count -gt 0) {
+            # Use Write-Host directly since WriteLog may not be available during exit
+            Write-Host "`nPowerShell exiting - invoking cleanup for $($registry.Count) registered resource(s)..." -ForegroundColor Yellow
+            Invoke-FailureCleanup -Reason "PowerShell session exiting"
+        }
+    }
 }
 
 # =============================================================================
@@ -1218,6 +1251,20 @@ public static extern uint GetPrivateProfileSection(
 '@
 Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
 
+# Set LogFile default EARLY - needed before Hyper-V check for logging DISM errors
+# This must come before any operation that might fail and need logging
+if (-not $LogFile) { $LogFile = "$FFUDevelopmentPath\FFUDevelopment.log" }
+
+# Initialize logging EARLY - before Hyper-V check which calls DISM internally
+# This ensures any DISM initialization errors (0x80004005) can be logged
+if (-not $Cleanup) {
+    Set-CommonCoreLogPath -Path $LogFile -Initialize
+}
+else {
+    # For cleanup operations, append to existing log
+    Set-CommonCoreLogPath -Path $LogFile
+}
+
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
 $isServer = $osInfo.Caption -match 'server'
@@ -1230,7 +1277,50 @@ if ($isServer) {
     }
 }
 else {
-    $hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
+    # Clean stale DISM mount points that can cause DismInitialize to fail (0x80004005)
+    WriteLog "Cleaning stale DISM mount points before Hyper-V feature check..."
+    try {
+        $dismCleanup = & dism.exe /Cleanup-Mountpoints 2>&1
+        WriteLog "DISM cleanup completed: $($dismCleanup | Out-String)"
+    }
+    catch {
+        WriteLog "Warning: DISM cleanup failed: $($_.Exception.Message)"
+    }
+
+    # Retry logic for Get-WindowsOptionalFeature (DISM can have transient failures)
+    $maxRetries = 3
+    $retryDelay = 5
+    $hyperVFeature = $null
+
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        try {
+            WriteLog "Checking Hyper-V feature state (attempt $attempt of $maxRetries)..."
+            $hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction Stop
+            WriteLog "Hyper-V feature state: $($hyperVFeature.State)"
+            break
+        }
+        catch {
+            WriteLog "Warning: DISM initialization failed on attempt ${attempt}: $($_.Exception.Message)"
+            if ($attempt -eq $maxRetries) {
+                $errorMsg = @"
+Failed to query Hyper-V feature state after $maxRetries attempts.
+
+Common causes:
+1. Another DISM operation in progress (Windows Update, another build)
+2. Corrupted DISM state - run 'dism.exe /Cleanup-Mountpoints' as Administrator
+3. Antivirus blocking DISM - add exclusion for C:\FFUDevelopment and dism.exe
+4. Insufficient permissions - ensure running as Administrator
+
+Error: $($_.Exception.Message)
+"@
+                WriteLog "ERROR: $errorMsg"
+                throw $errorMsg
+            }
+            WriteLog "Waiting $retryDelay seconds before retry..."
+            Start-Sleep -Seconds $retryDelay
+        }
+    }
+
     if ($hyperVFeature.State -ne "Enabled") {
         Write-Host "Hyper-V feature is not enabled. Please enable it before running this script."
         exit
@@ -1261,7 +1351,7 @@ if (-not $VMName) { $VMName = "$FFUPrefix-$rand" }
 if (-not $VMPath) { $VMPath = "$VMLocation\$VMName" }
 if (-not $VHDXPath) { $VHDXPath = "$VMPath\$VMName.vhdx" }
 if (-not $FFUCaptureLocation) { $FFUCaptureLocation = "$FFUDevelopmentPath\FFU" }
-if (-not $LogFile) { $LogFile = "$FFUDevelopmentPath\FFUDevelopment.log" }
+# Note: $LogFile default is now set EARLY (before Hyper-V check) for DISM error logging
 if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $MicrocodePath) { $MicrocodePath = "$KBPath\Microcode" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
@@ -1296,17 +1386,9 @@ if ($WindowsSKU -like "*LTS*") {
     $isLTSC = $true
 }
 
-# Set the log path for the common logger
-Set-CommonCoreLogPath -Path $LogFile
-
-
+# Note: Set-CommonCoreLogPath is now called EARLY (before Hyper-V check) for DISM error logging
 
 if (-not $Cleanup) {
-    #Remove old log file if found
-    if (Test-Path -Path $Logfile) {
-        Remove-item -Path $LogFile -Force
-    }
-
     $startTime = Get-Date
     Write-Host "FFU build process started at" $startTime
     Write-Host "This process can take 20 minutes or more. Please do not close this window or any additional windows that pop up"
@@ -1646,7 +1728,7 @@ if ($ISOPath -eq '') {
 ###END PARAMETER VALIDATION
 
 #Get script variable values
-LogVariableValues -version $version
+Write-VariableValues -version $version
 
 #Check if environment is dirty
 If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
@@ -2782,30 +2864,82 @@ try {
     # If no cached VHDX is found, download the required updates now
     if (-Not $cachedVHDXFileFound -and $requiredUpdates.Count -gt 0 -and -not $kbCacheValid) {
         Set-Progress -Percentage 12 -Message "Downloading Windows Updates..."
-        WriteLog "No suitable VHDX cache found. Downloading $($requiredUpdates.Count) update(s)."
+        WriteLog "No suitable VHDX cache found. Downloading $($requiredUpdates.Count) update(s) using parallel downloads."
 
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"; New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
 
+        # Prepare download items with correct destination paths for parallel processing
+        $downloadItems = [System.Collections.Generic.List[object]]::new()
+
         foreach ($update in $requiredUpdates) {
             $destinationPath = $KBPath
+            $category = "WindowsUpdate"
+
+            # Determine special destination paths for .NET and Microcode updates
             if (($netUpdateInfos -and ($netUpdateInfos.Name -contains $update.Name)) -or `
                 ($netFeatureUpdateInfos -and ($netFeatureUpdateInfos.Name -contains $update.Name))) {
                 if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
                     $destinationPath = Join-Path -Path $KBPath -ChildPath "NET"
+                    $category = "DotNetUpdate"
                 }
             }
             if ($microcodeUpdateInfos -and ($microcodeUpdateInfos.Name -contains $update.Name)) {
                 $destinationPath = Join-Path -Path $KBPath -ChildPath "Microcode"
+                $category = "MicrocodeUpdate"
             }
 
+            # Ensure destination directory exists
             if (-not (Test-Path -Path $destinationPath)) {
                 New-Item -Path $destinationPath -ItemType Directory -Force | Out-Null
             }
-            WriteLog "Downloading $($update.Name) to $destinationPath"
-            Start-BitsTransferWithRetry -Source $update.Url -Destination $destinationPath
+
+            # Extract filename from URL and create full destination path
+            $fileName = ($update.Url -split '/')[-1]
+            $fullDestination = Join-Path -Path $destinationPath -ChildPath $fileName
+
+            # Create download item using factory function
+            $metadata = @{
+                UpdateType = $category
+                KBArticleId = if ($update.PSObject.Properties.Name -contains 'KBArticleID') { $update.KBArticleID } else { $null }
+            }
+            $item = New-DownloadItem -Id $update.Name -Source $update.Url -Destination $fullDestination `
+                                     -DisplayName $update.Name -Category $category -Metadata $metadata
+
+            $downloadItems.Add($item)
+            WriteLog "Queued: $($update.Name) -> $fullDestination"
         }
+
+        # Configure parallel downloads using factory function
+        $downloadConfig = New-ParallelDownloadConfig -MaxConcurrentDownloads 5 -RetryCount 3 `
+                                                     -LogPath $Logfile -ContinueOnError $false
+
+        WriteLog "Starting parallel download of $($downloadItems.Count) KB updates (max concurrent: $($downloadConfig.MaxConcurrentDownloads))"
+        $downloadStartTime = Get-Date
+
+        # Execute parallel downloads
+        $downloadResults = Start-ParallelDownloads -Downloads $downloadItems.ToArray() -Config $downloadConfig
+
+        $downloadEndTime = Get-Date
+        $downloadDuration = ($downloadEndTime - $downloadStartTime).TotalSeconds
+
+        # Generate and log summary
+        $summary = Get-ParallelDownloadSummary -Results $downloadResults
+        WriteLog "Parallel download completed in $([math]::Round($downloadDuration, 1)) seconds"
+        WriteLog "Results: $($summary.SuccessCount)/$($summary.TotalCount) successful ($($summary.SuccessRate)%)"
+        WriteLog "Total downloaded: $([math]::Round($summary.TotalBytesDownloaded / 1MB, 2)) MB"
+
+        # Check for failures
+        if ($summary.FailedCount -gt 0) {
+            WriteLog "ERROR: $($summary.FailedCount) download(s) failed:"
+            foreach ($failed in $summary.FailedDownloads) {
+                WriteLog "  - $($failed.Id): $($failed.ErrorMessage)"
+            }
+            throw "Failed to download $($summary.FailedCount) of $($summary.TotalCount) required Windows Updates"
+        }
+
+        WriteLog "All $($summary.SuccessCount) Windows Updates downloaded successfully"
     }
 
     # Set file path variables for the patching process using robust resolution
@@ -3405,7 +3539,7 @@ try {
         Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
         do {
             $FFUVM = Get-VM -Name $FFUVM.Name
-            Start-Sleep -Seconds ([FFUConstants]::VM_STATE_POLL_INTERVAL)
+            Start-Sleep -Seconds 5  # VM poll interval - must match [FFUConstants]::VM_STATE_POLL_INTERVAL
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'

@@ -1,0 +1,92 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
+
+    "version": "1.2.9",
+    "buildDate": "2025-12-10",
+
+    "versioningPolicy": {
+        "scheme": "SemVer",
+        "majorBump": "Breaking changes to configs/scripts OR major milestones",
+        "minorBump": "New user-facing features OR significant improvements",
+        "patchBump": "Bug fixes OR any subcomponent version change"
+    },
+
+    "modules": {
+        "FFU.Common": {
+            "version": "0.0.4",
+            "path": "FFU.Common/FFU.Common.psd1",
+            "description": "Core logging, process execution, and shared utilities"
+        },
+        "FFU.Common.Logging": {
+            "version": "1.0.0",
+            "path": "FFU.Common/FFU.Common.Logging.psd1",
+            "description": "Structured logging with levels, JSON output, session correlation"
+        },
+        "FFUUI.Core": {
+            "version": "0.0.2",
+            "path": "FFUUI.Core/FFUUI.Core.psd1",
+            "description": "WPF UI framework and handlers"
+        },
+        "FFU.Core": {
+            "version": "1.0.11",
+            "path": "Modules/FFU.Core/FFU.Core.psd1",
+            "description": "Core configuration, session tracking, credential security, schema validation, PowerShell best practices"
+        },
+        "FFU.Constants": {
+            "version": "1.1.0",
+            "path": "Modules/FFU.Constants/FFU.Constants.psd1",
+            "description": "Centralized configuration constants with dynamic path resolution"
+        },
+        "FFU.ADK": {
+            "version": "1.0.0",
+            "path": "Modules/FFU.ADK/FFU.ADK.psd1",
+            "description": "Windows ADK validation and installation"
+        },
+        "FFU.Apps": {
+            "version": "1.0.0",
+            "path": "Modules/FFU.Apps/FFU.Apps.psd1",
+            "description": "Application management and Office deployment"
+        },
+        "FFU.Drivers": {
+            "version": "1.0.2",
+            "path": "Modules/FFU.Drivers/FFU.Drivers.psd1",
+            "description": "OEM driver download and management"
+        },
+        "FFU.Imaging": {
+            "version": "1.0.1",
+            "path": "Modules/FFU.Imaging/FFU.Imaging.psd1",
+            "description": "DISM operations and FFU creation"
+        },
+        "FFU.Media": {
+            "version": "1.0.0",
+            "path": "Modules/FFU.Media/FFU.Media.psd1",
+            "description": "WinPE media creation"
+        },
+        "FFU.Updates": {
+            "version": "1.0.1",
+            "path": "Modules/FFU.Updates/FFU.Updates.psd1",
+            "description": "Windows Update catalog and MSU handling"
+        },
+        "FFU.VM": {
+            "version": "1.0.2",
+            "path": "Modules/FFU.VM/FFU.VM.psd1",
+            "description": "Hyper-V VM lifecycle management"
+        }
+    },
+
+    "scripts": {
+        "BuildFFUVM.ps1": {
+            "description": "Core build orchestrator"
+        },
+        "BuildFFUVM_UI.ps1": {
+            "description": "WPF UI host"
+        },
+        "Create-PEMedia.ps1": {
+            "description": "WinPE media creator"
+        },
+        "USBImagingToolCreator.ps1": {
+            "description": "USB deployment tool generator"
+        }
+    }
+}
