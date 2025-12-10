@@ -1,5 +1,70 @@
 # Change Log
 
+# 2511.1 UI Preview
+
+## What's Changed
+
+### Major changes to drivers
+
+A few weeks ago I wrote a [lengthy post](https://github.com/rbalsleyMSFT/FFU/discussions/350) asking for some help testing some changes that were added. 
+
+The summary of that post is that there have been significant changes for both Dell and HP driver downloads to leverage the SystemID for each model. This increases the total number of driver models that are exposed in the UI. This also requires the `DriverMapping.json` to be modified to require the SystemID and query the SystemID from WMI when doing automatic matching. 
+
+#### Driver folder structure changes on the USB drive - breaking change
+
+Driver folder structure on the USB drive has also changed. The new structure is `Drivers\Make\Model` (e.g. `D:\Drivers\Lenovo\Lenovo 300w`). This structure is consistent with how the UI and `BuildFFUVM.ps1` script download and store drivers and automatically copy them. So if you've been following that, then no changes are required.
+
+Please read [the post](https://github.com/rbalsleyMSFT/FFU/discussions/350) for more details on these changes to drivers. 
+
+
+### Windows 11 25H2 is now the default option for MCT/ESD downloads
+
+For MCT/ESD downloads: Adds dynamic products.cab download functionality for Windows 11 using Windows Update service API instead of static MCT links. This is due to a change in how the MCT pulls the products.cab file. In other words, the Windows 11 25H2 ESD media is now updated each month (usually shortly after patch Tuesday)
+
+### Added 8 new hardware manufactures for automatic driver matching during deployment
+
+Extends hardware detection and driver mapping capabilities to support Panasonic, Viglen, AZW, Fujitsu, Getac, ByteSpeed, and Intel devices when applying the FFU to a device. This does not mean FFU Builder supports downloading drivers from these manufacturers. You'll still need to download the drivers for them manually. You can now create your own `DriverMapping.json` file to include these manufacturers.
+
+Thanks to @arwidmark and the [Modern Driver Management](https://msendpointmgr.com/modern-driver-management/) team for the WMI queries.
+
+### Fixed an issue with long paths when applying drivers from USB
+
+Implemented SUBST drive mappings to shorten driver file paths within WinPE as some paths were causing dism to error when servicing drivers. You should see a Z:\ drive when applying drivers from the USB drive. 
+
+### Added an option to skip driver selection when multiple driver models are detected during deployment
+
+Allows users to bypass driver installation by entering 0 at the selection prompt, providing flexibility for deployments that don't require driver updates.
+
+### Add HTTP fallback for BITS transfer network authentication errors
+
+
+Fixes an issue with standard users elevating PowerShell as Admin and getting BITS errors when trying to download content. 
+
+### Add -BitsPriority script parameter
+
+Introduces a new parameter `-BitsPriority` with options `(Foreground, High, Normal, Low)` to control BITS download priority across the build system and UI, allowing users to optimize transfer speeds when needed.
+
+The feature adds a priority selector to the UI with four options (Foreground, High, Normal, Low) and propagates the selection through the build script and common modules. Priority can be set via UI or command-line parameter with Normal as the default.
+
+### BYO Apps: Add MSI path quoting to handle spaces in msiexec arguments
+
+
+When specifying Build Your Own Apps msiexec arguments, if there were spaces in the argument list that weren't quoted properly, you'd get an error. This should now automatically add missing spaces in case you forget to add them or there are spaces in your application name.
+
+### Misc Fixes
+
+* Fixed some reliability issues when trying to download Lenovo drivers
+* Fixed an issue with PPKG files with spaces
+* Replaced SerialNumber with UniqueID for USB drive identification when building USB drives. USB drive manufacturers may use the same serial number for different drives, potentially causing data loss if the wrong drive is chosen. 
+* `-Threads` parameter has been added to `BuildFFUVM.ps1` which defaults to 5, matching the UI behavior. This value can be 1-64.
+* ESD media downloads now use BITS by default
+* Fixed an issue with multi-disk devices. Prior, if multiple disks were detected, ApplyFFU.ps1 would fail. Now a menu pops up asking the end user to select the disk they want to deploy the FFU to
+
+## New Contributors
+* @arwidmark made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/325
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2509.1preview...v2511.1preview
+
 # 2509.1 UI Preview
 
 ## What's Changed
