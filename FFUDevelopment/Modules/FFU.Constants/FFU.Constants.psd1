@@ -1,6 +1,6 @@
 @{
     # Module metadata
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.1.0'
     GUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author = 'FFUBuilder Contributors'
     CompanyName = 'FFUBuilder'
@@ -26,6 +26,15 @@
             LicenseUri = 'https://github.com/rbalsleyMSFT/FFU/blob/UI_2510/LICENSE'
             ProjectUri = 'https://github.com/rbalsleyMSFT/FFU'
             ReleaseNotes = @'
+Version 1.1.0 (2025-12-10)
+- BREAKING: Added dynamic path resolution (no longer assumes C:\FFUDevelopment)
+- New GetBasePath() method resolves installation location from module path
+- New SetBasePath() and ResetBasePath() methods for testing and overrides
+- New Get*Dir() methods for all path types (Working, VM, Capture, Drivers, Apps, Updates)
+- Environment variable overrides: FFU_BASE_PATH, FFU_WORKING_DIR, FFU_VM_DIR, etc.
+- Deprecated static path properties (kept for backward compatibility)
+- Legacy methods (GetWorkingDirectory, etc.) now call new methods
+
 Version 1.0.0 (2025-11-24)
 - Initial release
 - Centralized all hardcoded paths and values

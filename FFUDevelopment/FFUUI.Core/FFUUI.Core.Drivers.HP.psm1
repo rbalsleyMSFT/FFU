@@ -53,7 +53,8 @@ function Get-HPDriversModelList {
         if (-not (Test-Path -Path $platformListXml)) {
             WriteLog "Expanding $platformListCab to $platformListXml"
             # Use the private helper function for process invocation
-            Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$platformListCab`"", "`"$platformListXml`"") -ErrorAction Stop | Out-Null
+            # Note: Do not embed quotes in argument array - PowerShell handles quoting automatically
+            Invoke-Process -FilePath "expand.exe" -ArgumentList @($platformListCab, $platformListXml) -ErrorAction Stop | Out-Null
             WriteLog "PlatformList.xml extraction complete."
         }
         else {
@@ -183,7 +184,8 @@ function Save-HPDriversTask {
             # Base folder already checked/created
             Start-BitsTransferWithRetry -Source $platformListUrl -Destination $platformListCab -ErrorAction Stop
             if (Test-Path -Path $platformListXml) { Remove-Item -Path $platformListXml -Force }
-            Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$platformListCab`"", "`"$platformListXml`"") -ErrorAction Stop | Out-Null
+            # Note: Do not embed quotes in argument array - PowerShell handles quoting automatically
+            Invoke-Process -FilePath "expand.exe" -ArgumentList @($platformListCab, $platformListXml) -ErrorAction Stop | Out-Null
             WriteLog "PlatformList.xml download/extract complete for HP task."
             if (-not (Test-Path -Path $platformListXml)) {
                 throw "Failed to obtain PlatformList.xml for HP driver task."
@@ -305,7 +307,8 @@ function Save-HPDriversTask {
         Start-BitsTransferWithRetry -Source $driverCabUrl -Destination $driverCabFile -ErrorAction Stop
         WriteLog "Expanding HP Driver cab $driverCabFile to $driverXmlFile"
         if (Test-Path -Path $driverXmlFile) { Remove-Item -Path $driverXmlFile -Force }
-        Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$driverCabFile`"", "`"$driverXmlFile`"") -ErrorAction Stop | Out-Null
+        # Note: Do not embed quotes in argument array - PowerShell handles quoting automatically
+        Invoke-Process -FilePath "expand.exe" -ArgumentList @($driverCabFile, $driverXmlFile) -ErrorAction Stop | Out-Null
 
         WriteLog "Parsing driver XML $driverXmlFile"
         [xml]$driverXmlContent = Get-Content -Path $driverXmlFile -Raw -Encoding UTF8 -ErrorAction Stop

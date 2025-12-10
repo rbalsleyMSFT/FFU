@@ -569,60 +569,155 @@ function Remove-FFUVM {
     )
     #Get the VM object and remove the VM, the HGSGuardian, and the certs
     If ($VMName) {
-        $FFUVM = get-vm $VMName | Where-Object { $_.state -ne 'running' }
+        try {
+            $FFUVM = Get-VM -Name $VMName -ErrorAction Stop | Where-Object { $_.state -ne 'running' }
+        }
+        catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
+            WriteLog "WARNING: Hyper-V error retrieving VM '$VMName': $($_.Exception.Message)"
+            $FFUVM = $null
+        }
+        catch [System.Management.Automation.ItemNotFoundException] {
+            WriteLog "VM '$VMName' not found - may have already been removed"
+            $FFUVM = $null
+        }
+        catch {
+            WriteLog "WARNING: Unexpected error retrieving VM '$VMName': $($_.Exception.Message)"
+            $FFUVM = $null
+        }
     }
     If ($null -ne $FFUVM) {
         WriteLog 'Cleaning up VM'
         $certPath = 'Cert:\LocalMachine\Shielded VM Local Certificates\'
         $VMName = $FFUVM.Name
+
+        # Remove the VM with error handling
         WriteLog "Removing VM: $VMName"
-        Remove-VM -Name $VMName -Force
-        WriteLog 'Removal complete'
+        try {
+            Remove-VM -Name $VMName -Force -ErrorAction Stop
+            WriteLog 'VM removal complete'
+        }
+        catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
+            WriteLog "WARNING: Hyper-V error removing VM '$VMName': $($_.Exception.Message)"
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove VM '$VMName': $($_.Exception.Message)"
+        }
+
+        # Remove VM path
         WriteLog "Removing $VMPath"
         if (-not [string]::IsNullOrWhiteSpace($VMPath)) {
-            Remove-Item -Path $VMPath -Force -Recurse -ErrorAction SilentlyContinue
+            try {
+                Remove-Item -Path $VMPath -Force -Recurse -ErrorAction Stop
+                WriteLog 'VM path removal complete'
+            }
+            catch [System.IO.IOException] {
+                WriteLog "WARNING: IO error removing VM path (files may be in use): $($_.Exception.Message)"
+            }
+            catch [System.UnauthorizedAccessException] {
+                WriteLog "WARNING: Access denied removing VM path: $($_.Exception.Message)"
+            }
+            catch {
+                WriteLog "WARNING: Failed to remove VM path: $($_.Exception.Message)"
+            }
         }
-        WriteLog 'Removal complete'
+
+        # Remove HGS Guardian with error handling
         WriteLog "Removing HGSGuardian for $VMName"
-        Remove-HgsGuardian -Name $VMName -WarningAction SilentlyContinue
-        WriteLog 'Removal complete'
-        WriteLog 'Cleaning up HGS Guardian certs'
-        $certs = Get-ChildItem -Path $certPath -Recurse | Where-Object { $_.Subject -like "*$VMName*" }
-        foreach ($cert in $Certs) {
-            Remove-item -Path $cert.PSPath -force | Out-Null
+        try {
+            Remove-HgsGuardian -Name $VMName -ErrorAction Stop -WarningAction SilentlyContinue
+            WriteLog 'HGS Guardian removal complete'
         }
-        WriteLog 'Cert removal complete'
+        catch {
+            WriteLog "WARNING: Failed to remove HGS Guardian (may not exist): $($_.Exception.Message)"
+        }
+
+        # Clean up HGS Guardian certificates
+        WriteLog 'Cleaning up HGS Guardian certs'
+        try {
+            if (Test-Path -Path $certPath) {
+                $certs = Get-ChildItem -Path $certPath -Recurse -ErrorAction Stop | Where-Object { $_.Subject -like "*$VMName*" }
+                foreach ($cert in $Certs) {
+                    try {
+                        Remove-Item -Path $cert.PSPath -Force -ErrorAction Stop | Out-Null
+                    }
+                    catch {
+                        WriteLog "WARNING: Failed to remove certificate $($cert.Subject): $($_.Exception.Message)"
+                    }
+                }
+                WriteLog 'Cert removal complete'
+            }
+            else {
+                WriteLog 'Certificate path does not exist - skipping cert cleanup'
+            }
+        }
+        catch {
+            WriteLog "WARNING: Error during certificate cleanup: $($_.Exception.Message)"
+        }
     }
+
     #If just building the FFU from vhdx, remove the vhdx path
     If (-not $InstallApps -and $VhdxDisk) {
         WriteLog 'Cleaning up VHDX'
         WriteLog "Removing $VMPath"
         if (-not [string]::IsNullOrWhiteSpace($VMPath)) {
-            Remove-Item -Path $VMPath -Force -Recurse -ErrorAction SilentlyContinue | Out-Null
+            try {
+                Remove-Item -Path $VMPath -Force -Recurse -ErrorAction Stop | Out-Null
+                WriteLog 'VHDX path removal complete'
+            }
+            catch [System.IO.IOException] {
+                WriteLog "WARNING: IO error removing VHDX path (files may be in use): $($_.Exception.Message)"
+            }
+            catch {
+                WriteLog "WARNING: Failed to remove VHDX path: $($_.Exception.Message)"
+            }
         }
-        WriteLog 'Removal complete'
     }
 
     #Remove orphaned mounted images
-    $mountedImages = Get-WindowsImage -Mounted
-    if ($mountedImages) {
-        foreach ($image in $mountedImages) {
-            $mountPath = $image.Path
-            WriteLog "Dismounting image at $mountPath"
-            Dismount-WindowsImage -Path $mountPath -discard
-            WriteLog "Successfully dismounted image at $mountPath"
+    try {
+        $mountedImages = Get-WindowsImage -Mounted -ErrorAction Stop
+        if ($mountedImages) {
+            foreach ($image in $mountedImages) {
+                $mountPath = $image.Path
+                WriteLog "Dismounting image at $mountPath"
+                try {
+                    Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop
+                    WriteLog "Successfully dismounted image at $mountPath"
+                }
+                catch [System.Runtime.InteropServices.COMException] {
+                    WriteLog "WARNING: COM error dismounting image at $mountPath (may already be dismounted): $($_.Exception.Message)"
+                }
+                catch {
+                    WriteLog "WARNING: Failed to dismount image at $mountPath : $($_.Exception.Message)"
+                }
+            }
         }
     }
+    catch {
+        WriteLog "WARNING: Error retrieving mounted images: $($_.Exception.Message)"
+    }
+
     #Remove Mount folder if it exists
     If (Test-Path -Path "$FFUDevelopmentPath\Mount") {
         WriteLog "Remove $FFUDevelopmentPath\Mount folder"
-        Remove-Item -Path "$FFUDevelopmentPath\Mount" -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Folder removed'
+        try {
+            Remove-Item -Path "$FFUDevelopmentPath\Mount" -Recurse -Force -ErrorAction Stop
+            WriteLog 'Mount folder removed'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove Mount folder: $($_.Exception.Message)"
+        }
     }
+
     #Remove unused mountpoints
     WriteLog 'Remove unused mountpoints'
-    Invoke-Process cmd "/c mountvol /r" | Out-Null
-    WriteLog 'Removal complete'
+    try {
+        Invoke-Process cmd "/c mountvol /r" | Out-Null
+        WriteLog 'Mountpoint cleanup complete'
+    }
+    catch {
+        WriteLog "WARNING: Failed to remove unused mountpoints: $($_.Exception.Message)"
+    }
 }
 
 function Get-FFUEnvironment {
@@ -709,16 +804,16 @@ function Get-FFUEnvironment {
     }
     if ($CleanupCurrentRunDownloads) {
         try {
-            Cleanup-CurrentRunDownloads -FFUDevelopmentPath $FFUDevelopmentPath `
-                                       -AppsPath $AppsPath -DefenderPath "$FFUDevelopmentPath\Defender" `
-                                       -MSRTPath "$FFUDevelopmentPath\MSRT" -OneDrivePath "$FFUDevelopmentPath\OneDrive" `
-                                       -EdgePath "$FFUDevelopmentPath\Edge" -KBPath $KBPath `
-                                       -DriversFolder "$FFUDevelopmentPath\Drivers" `
-                                       -orchestrationPath "$FFUDevelopmentPath\Orchestration" `
-                                       -OfficePath "$FFUDevelopmentPath\Office"
+            Clear-CurrentRunDownloads -FFUDevelopmentPath $FFUDevelopmentPath `
+                                      -AppsPath $AppsPath -DefenderPath "$FFUDevelopmentPath\Defender" `
+                                      -MSRTPath "$FFUDevelopmentPath\MSRT" -OneDrivePath "$FFUDevelopmentPath\OneDrive" `
+                                      -EdgePath "$FFUDevelopmentPath\Edge" -KBPath $KBPath `
+                                      -DriversFolder "$FFUDevelopmentPath\Drivers" `
+                                      -orchestrationPath "$FFUDevelopmentPath\Orchestration" `
+                                      -OfficePath "$FFUDevelopmentPath\Office"
         }
         catch {
-            WriteLog "Cleanup-CurrentRunDownloads failed: $($_.Exception.Message)"
+            WriteLog "Clear-CurrentRunDownloads failed: $($_.Exception.Message)"
         }
         try {
             Restore-RunJsonBackups -FFUDevelopmentPath $FFUDevelopmentPath `
@@ -729,51 +824,117 @@ function Get-FFUEnvironment {
             WriteLog "Restore-RunJsonBackups failed: $($_.Exception.Message)"
         }
     }
+
     # Check for running VMs that start with '_FFU-' and are in the 'Off' state
-    $vms = Get-VM
+    try {
+        $vms = Get-VM -ErrorAction Stop
+    }
+    catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
+        WriteLog "WARNING: Hyper-V error retrieving VMs: $($_.Exception.Message)"
+        $vms = @()
+    }
+    catch {
+        WriteLog "WARNING: Failed to retrieve VMs: $($_.Exception.Message)"
+        $vms = @()
+    }
 
     # Loop through each VM
     foreach ($vm in $vms) {
         if ($vm.Name.StartsWith("_FFU-")) {
             if ($vm.State -eq 'Running') {
-                Stop-VM -Name $vm.Name -TurnOff -Force
+                try {
+                    WriteLog "Stopping running VM: $($vm.Name)"
+                    Stop-VM -Name $vm.Name -TurnOff -Force -ErrorAction Stop
+                    WriteLog "VM $($vm.Name) stopped successfully"
+                }
+                catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
+                    WriteLog "WARNING: Hyper-V error stopping VM '$($vm.Name)': $($_.Exception.Message)"
+                }
+                catch {
+                    WriteLog "WARNING: Failed to stop VM '$($vm.Name)': $($_.Exception.Message)"
+                }
             }
             # If conditions are met, delete the VM
             # Note: For old VMs we may not have VMPath, so we derive it
             $vmPath = Join-Path $FFUDevelopmentPath "VM\$($vm.Name)"
-            Remove-FFUVM -VMName $vm.Name -VMPath $vmPath -InstallApps $true `
-                         -VhdxDisk $null -FFUDevelopmentPath $FFUDevelopmentPath
+            try {
+                Remove-FFUVM -VMName $vm.Name -VMPath $vmPath -InstallApps $true `
+                             -VhdxDisk $null -FFUDevelopmentPath $FFUDevelopmentPath
+            }
+            catch {
+                WriteLog "WARNING: Failed to remove VM '$($vm.Name)': $($_.Exception.Message)"
+            }
         }
     }
+
     # Check for MSFT Virtual disks where location contains FFUDevelopment in the path
-    $disks = Get-Disk -FriendlyName *virtual*
+    try {
+        $disks = Get-Disk -FriendlyName *virtual* -ErrorAction Stop
+    }
+    catch {
+        WriteLog "WARNING: Failed to retrieve virtual disks: $($_.Exception.Message)"
+        $disks = @()
+    }
+
     foreach ($disk in $disks) {
         $diskNumber = $disk.Number
         $vhdLocation = $disk.Location
         if ($vhdLocation -like "*FFUDevelopment*") {
             WriteLog "Dismounting Virtual Disk $diskNumber with Location $vhdLocation"
-            Dismount-ScratchVhdx -VhdxPath $vhdLocation
+            try {
+                Dismount-ScratchVhdx -VhdxPath $vhdLocation -ErrorAction Stop
+            }
+            catch {
+                WriteLog "WARNING: Failed to dismount virtual disk $diskNumber : $($_.Exception.Message)"
+            }
             $parentFolder = Split-Path -Parent $vhdLocation
             WriteLog "Removing folder $parentFolder"
             if (-not [string]::IsNullOrWhiteSpace($parentFolder)) {
-                Remove-Item -Path $parentFolder -Recurse -Force -ErrorAction SilentlyContinue
+                try {
+                    Remove-Item -Path $parentFolder -Recurse -Force -ErrorAction Stop
+                }
+                catch [System.IO.IOException] {
+                    WriteLog "WARNING: IO error removing folder (files may be in use): $($_.Exception.Message)"
+                }
+                catch {
+                    WriteLog "WARNING: Failed to remove folder: $($_.Exception.Message)"
+                }
             }
         }
     }
 
     # Check for mounted DiskImages
-    $volumes = Get-Volume | Where-Object { $_.DriveType -eq 'CD-ROM' }
+    try {
+        $volumes = Get-Volume -ErrorAction Stop | Where-Object { $_.DriveType -eq 'CD-ROM' }
+    }
+    catch {
+        WriteLog "WARNING: Failed to retrieve volumes: $($_.Exception.Message)"
+        $volumes = @()
+    }
+
     foreach ($volume in $volumes) {
         $letter = $volume.DriveLetter
-        WriteLog "Dismounting DiskImage for volume $letter"
-        Get-Volume $letter | Get-DiskImage | Dismount-DiskImage | Out-Null
-        WriteLog "Dismounting complete"
+        if ($letter) {
+            WriteLog "Dismounting DiskImage for volume $letter"
+            try {
+                Get-Volume $letter -ErrorAction Stop | Get-DiskImage -ErrorAction Stop | Dismount-DiskImage -ErrorAction Stop | Out-Null
+                WriteLog "Dismounting complete for volume $letter"
+            }
+            catch {
+                WriteLog "WARNING: Failed to dismount DiskImage for volume $letter : $($_.Exception.Message)"
+            }
+        }
     }
 
     # Remove unused mountpoints
     WriteLog 'Remove unused mountpoints'
-    Invoke-Process cmd "/c mountvol /r" | Out-Null
-    WriteLog 'Removal complete'
+    try {
+        Invoke-Process cmd "/c mountvol /r" | Out-Null
+        WriteLog 'Mountpoint cleanup complete'
+    }
+    catch {
+        WriteLog "WARNING: Failed to remove unused mountpoints: $($_.Exception.Message)"
+    }
 
     # Check for content in the VM folder and delete any folders that start with _FFU-
     if ([string]::IsNullOrWhiteSpace($VMLocation)) {
@@ -781,12 +942,26 @@ function Get-FFUEnvironment {
         WriteLog "VMLocation not set; defaulting to $VMLocation"
     }
     if (Test-Path -Path $VMLocation) {
-        $folders = Get-ChildItem -Path $VMLocation -Directory
-        foreach ($folder in $folders) {
-            if ($folder.Name -like '_FFU-*') {
-                WriteLog "Removing folder $($folder.FullName)"
-                Remove-Item -Path $folder.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            $folders = Get-ChildItem -Path $VMLocation -Directory -ErrorAction Stop
+            foreach ($folder in $folders) {
+                if ($folder.Name -like '_FFU-*') {
+                    WriteLog "Removing folder $($folder.FullName)"
+                    try {
+                        Remove-Item -Path $folder.FullName -Recurse -Force -ErrorAction Stop
+                        WriteLog "Folder removed: $($folder.FullName)"
+                    }
+                    catch [System.IO.IOException] {
+                        WriteLog "WARNING: IO error removing folder (files may be in use): $($_.Exception.Message)"
+                    }
+                    catch {
+                        WriteLog "WARNING: Failed to remove folder $($folder.FullName): $($_.Exception.Message)"
+                    }
+                }
             }
+        }
+        catch {
+            WriteLog "WARNING: Failed to enumerate VM location folders: $($_.Exception.Message)"
         }
     }
     else {
@@ -794,80 +969,152 @@ function Get-FFUEnvironment {
     }
 
     # Remove orphaned mounted images
-    $mountedImages = Get-WindowsImage -Mounted
-    if ($mountedImages) {
-        foreach ($image in $mountedImages) {
-            $mountPath = $image.Path
-            WriteLog "Dismounting image at $mountPath"
-            try {
-                Dismount-WindowsImage -Path $mountPath -discard | Out-null
-                WriteLog "Successfully dismounted image at $mountPath"
-            }
-            catch {
-                WriteLog "Failed to dismount image at $mountPath with error: $_"
+    try {
+        $mountedImages = Get-WindowsImage -Mounted -ErrorAction Stop
+        if ($mountedImages) {
+            foreach ($image in $mountedImages) {
+                $mountPath = $image.Path
+                WriteLog "Dismounting image at $mountPath"
+                try {
+                    Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop | Out-Null
+                    WriteLog "Successfully dismounted image at $mountPath"
+                }
+                catch [System.Runtime.InteropServices.COMException] {
+                    WriteLog "WARNING: COM error dismounting image (may already be dismounted): $($_.Exception.Message)"
+                }
+                catch {
+                    WriteLog "WARNING: Failed to dismount image at $mountPath : $($_.Exception.Message)"
+                }
             }
         }
+    }
+    catch {
+        WriteLog "WARNING: Error retrieving mounted images: $($_.Exception.Message)"
     }
 
     # Remove Mount folder if it exists
     if (Test-Path -Path "$FFUDevelopmentPath\Mount") {
         WriteLog "Remove $FFUDevelopmentPath\Mount folder"
-        Remove-Item -Path "$FFUDevelopmentPath\Mount" -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Folder removed'
+        try {
+            Remove-Item -Path "$FFUDevelopmentPath\Mount" -Recurse -Force -ErrorAction Stop
+            WriteLog 'Mount folder removed'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove Mount folder: $($_.Exception.Message)"
+        }
     }
 
     #Clear any corrupt Windows mount points
     WriteLog 'Clearing any corrupt Windows mount points'
-    Clear-WindowsCorruptMountPoint | Out-null
-    WriteLog 'Complete'
+    try {
+        Clear-WindowsCorruptMountPoint -ErrorAction Stop | Out-Null
+        WriteLog 'Corrupt mount point cleanup complete'
+    }
+    catch {
+        WriteLog "WARNING: Failed to clear corrupt mount points: $($_.Exception.Message)"
+    }
 
     #Clean up registry
     if (Test-Path -Path 'HKLM:\FFU') {
-        Writelog 'Found HKLM:\FFU, removing it'
-        Invoke-Process reg "unload HKLM\FFU" | Out-Null
+        WriteLog 'Found HKLM:\FFU, removing it'
+        try {
+            Invoke-Process reg "unload HKLM\FFU" | Out-Null
+            WriteLog 'Registry hive unloaded'
+        }
+        catch {
+            WriteLog "WARNING: Failed to unload registry hive HKLM:\FFU: $($_.Exception.Message)"
+        }
     }
 
     #Remove FFU User and Share (using .NET API for PowerShell 7 compatibility)
-    $UserExists = Get-LocalUserAccount -Username $Username
-    if ($UserExists) {
-        WriteLog "Removing FFU User and Share"
-        $UserExists.Dispose()
-        Remove-FFUUserShare -Username $Username -ShareName $ShareName
-        WriteLog 'Removal complete'
+    try {
+        $UserExists = Get-LocalUserAccount -Username $Username
+        if ($UserExists) {
+            WriteLog "Removing FFU User and Share"
+            $UserExists.Dispose()
+            try {
+                Remove-FFUUserShare -Username $Username -ShareName $ShareName
+                WriteLog 'FFU User and Share removal complete'
+            }
+            catch {
+                WriteLog "WARNING: Failed to remove FFU User and Share: $($_.Exception.Message)"
+            }
+        }
     }
+    catch {
+        WriteLog "WARNING: Error checking for FFU User: $($_.Exception.Message)"
+    }
+
     if ($RemoveApps) {
         WriteLog "Removing Apps in $AppsPath"
-        Remove-Apps
+        try {
+            Remove-Apps
+            WriteLog 'Apps removal complete'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove Apps: $($_.Exception.Message)"
+        }
     }
+
     # Clean up $KBPath only if RemoveUpdates is true (matches Apps folder behavior)
     If ($RemoveUpdates -and (Test-Path -Path $KBPath)) {
         WriteLog "Removing $KBPath (RemoveUpdates=true)"
-        Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
+        try {
+            Remove-Item -Path $KBPath -Recurse -Force -ErrorAction Stop
+            WriteLog 'KB path removal complete'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove KB path: $($_.Exception.Message)"
+        }
     } elseif (Test-Path -Path $KBPath) {
-        $kbFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue
-        if ($kbFiles -and $kbFiles.Count -gt 0) {
-            $kbSize = ($kbFiles | Measure-Object -Property Length -Sum).Sum
-            WriteLog "Keeping $KBPath ($($kbFiles.Count) files, $([math]::Round($kbSize/1MB, 2)) MB) for future builds - RemoveUpdates=false"
+        try {
+            $kbFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue
+            if ($kbFiles -and $kbFiles.Count -gt 0) {
+                $kbSize = ($kbFiles | Measure-Object -Property Length -Sum).Sum
+                WriteLog "Keeping $KBPath ($($kbFiles.Count) files, $([math]::Round($kbSize/1MB, 2)) MB) for future builds - RemoveUpdates=false"
+            }
+        }
+        catch {
+            WriteLog "WARNING: Error checking KB files: $($_.Exception.Message)"
         }
     }
+
     # Remove existing Apps.iso
     if (Test-Path -Path $AppsISO) {
         WriteLog "Removing $AppsISO"
-        Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
+        try {
+            Remove-Item -Path $AppsISO -Force -ErrorAction Stop
+            WriteLog 'Apps ISO removal complete'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove Apps ISO: $($_.Exception.Message)"
+        }
     }
+
     # Remove per-run session folder if present (Cancel/-Cleanup scenario)
     $sessionDir = Join-Path $FFUDevelopmentPath '.session'
     if (Test-Path -Path $sessionDir) {
         WriteLog 'Removing .session folder'
-        Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
+        try {
+            Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction Stop
+            WriteLog 'Session folder removal complete'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove session folder: $($_.Exception.Message)"
+        }
     }
+
+    # Remove dirty.txt file
     WriteLog 'Removing dirty.txt file'
     $dirtyPath = Join-Path $FFUDevelopmentPath "dirty.txt"
     if (Test-Path -Path $dirtyPath) {
-        Remove-Item -Path $dirtyPath -Force -ErrorAction SilentlyContinue
+        try {
+            Remove-Item -Path $dirtyPath -Force -ErrorAction Stop
+            WriteLog 'dirty.txt removed'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove dirty.txt: $($_.Exception.Message)"
+        }
     }
     WriteLog "Cleanup complete"
 }
@@ -903,8 +1150,8 @@ function Set-CaptureFFU {
         [Parameter(Mandatory = $true)]
         [string]$Username,
 
-        [Parameter(Mandatory = $true)]
-        [string]$ShareName,
+        [Parameter(Mandatory = $false)]
+        [string]$ShareName = "FFUCaptureShare",
 
         [Parameter(Mandatory = $true)]
         [string]$FFUCaptureLocation,
@@ -1029,8 +1276,8 @@ function Remove-FFUUserShare {
         [Parameter(Mandatory = $true)]
         [string]$Username,
 
-        [Parameter(Mandatory = $true)]
-        [string]$ShareName
+        [Parameter(Mandatory = $false)]
+        [string]$ShareName = "FFUCaptureShare"
     )
 
     WriteLog "Cleaning up FFU capture user and share"
@@ -1223,8 +1470,8 @@ function Update-CaptureFFUScript {
         [Parameter(Mandatory = $true)]
         [string]$VMHostIPAddress,
 
-        [Parameter(Mandatory = $true)]
-        [string]$ShareName,
+        [Parameter(Mandatory = $false)]
+        [string]$ShareName = "FFUCaptureShare",
 
         [Parameter(Mandatory = $true)]
         [string]$Username,

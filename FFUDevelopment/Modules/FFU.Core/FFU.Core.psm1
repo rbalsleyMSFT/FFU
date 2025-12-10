@@ -31,7 +31,7 @@ function Get-Parameters {
     return $filteredParamNames
 }
 
-function LogVariableValues {
+function Write-VariableValues {
     <#
     .SYNOPSIS
     Logs all script-scope variable values for diagnostic purposes
@@ -45,12 +45,18 @@ function LogVariableValues {
     Script version string to log
 
     .EXAMPLE
-    LogVariableValues -version "2.0.1"
+    Write-VariableValues -version "2.0.1"
 
     .OUTPUTS
     None - Writes variable information to log via WriteLog
+
+    .NOTES
+    Renamed from LogVariableValues to Write-VariableValues in v1.0.11 for
+    PowerShell approved verb compliance. Alias 'LogVariableValues' is available
+    for backward compatibility but is deprecated.
     #>
     [CmdletBinding()]
+    [OutputType([void])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$version
@@ -509,8 +515,42 @@ function Save-RunManifest {
     $Manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
 }
 
-function Mark-DownloadInProgress {
-    param([string]$FFUDevelopmentPath, [string]$TargetPath)
+function Set-DownloadInProgress {
+    <#
+    .SYNOPSIS
+    Marks a download target as in-progress for cleanup tracking
+
+    .DESCRIPTION
+    Creates a marker file in the session inprogress folder to track downloads
+    that are currently in progress. This enables cleanup of partially completed
+    downloads if the build fails.
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER TargetPath
+    Path to the download target being marked as in-progress
+
+    .EXAMPLE
+    Set-DownloadInProgress -FFUDevelopmentPath "C:\FFU" -TargetPath "C:\FFU\Drivers\Dell\driver.cab"
+
+    .OUTPUTS
+    None
+
+    .NOTES
+    Renamed from Mark-DownloadInProgress to Set-DownloadInProgress in v1.0.11 for
+    PowerShell approved verb compliance. Alias 'Mark-DownloadInProgress' is available
+    for backward compatibility but is deprecated.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$TargetPath
+    )
     if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath) -or [string]::IsNullOrWhiteSpace($TargetPath)) { return }
     $sessionInprog = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'inprogress'
     if (-not (Test-Path $sessionInprog)) { New-Item -ItemType Directory -Path $sessionInprog -Force | Out-Null }
@@ -725,7 +765,7 @@ function Remove-InProgressItems {
     }
 }
 
-function Cleanup-CurrentRunDownloads {
+function Clear-CurrentRunDownloads {
     <#
     .SYNOPSIS
     Removes downloaded files and folders created during the current FFU build run
@@ -768,13 +808,22 @@ function Cleanup-CurrentRunDownloads {
     Path to Office installer/configs folder (preserves XML configuration files)
 
     .EXAMPLE
-    Cleanup-CurrentRunDownloads -FFUDevelopmentPath "C:\FFU" -AppsPath "C:\FFU\Apps" `
-                                -DefenderPath "C:\FFU\Defender" -MSRTPath "C:\FFU\MSRT" `
-                                -OneDrivePath "C:\FFU\OneDrive" -EdgePath "C:\FFU\Edge" `
-                                -KBPath "C:\FFU\KB" -DriversFolder "C:\FFU\Drivers" `
-                                -orchestrationPath "C:\FFU\Orchestration" -OfficePath "C:\FFU\Office"
+    Clear-CurrentRunDownloads -FFUDevelopmentPath "C:\FFU" -AppsPath "C:\FFU\Apps" `
+                              -DefenderPath "C:\FFU\Defender" -MSRTPath "C:\FFU\MSRT" `
+                              -OneDrivePath "C:\FFU\OneDrive" -EdgePath "C:\FFU\Edge" `
+                              -KBPath "C:\FFU\KB" -DriversFolder "C:\FFU\Drivers" `
+                              -orchestrationPath "C:\FFU\Orchestration" -OfficePath "C:\FFU\Office"
+
+    .OUTPUTS
+    None
+
+    .NOTES
+    Renamed from Cleanup-CurrentRunDownloads to Clear-CurrentRunDownloads in v1.0.11 for
+    PowerShell approved verb compliance. Alias 'Cleanup-CurrentRunDownloads' is available
+    for backward compatibility but is deprecated.
     #>
     [CmdletBinding()]
+    [OutputType([void])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$FFUDevelopmentPath,
@@ -1575,6 +1624,353 @@ function Remove-SecureStringFromMemory {
 }
 
 # =============================================================================
+# Configuration Schema Validation
+# Provides JSON Schema validation for FFU Builder configuration files
+# =============================================================================
+
+function Test-FFUConfiguration {
+    <#
+    .SYNOPSIS
+    Validates an FFU Builder configuration file against the JSON schema.
+
+    .DESCRIPTION
+    Performs comprehensive validation of FFU Builder configuration files, checking:
+    - JSON syntax validity
+    - Property types (string, boolean, integer, object)
+    - Enum values (WindowsSKU, WindowsArch, Make, etc.)
+    - Numeric ranges (Memory, Disksize, Processors, etc.)
+    - String patterns (ShareName, Username, IP addresses, etc.)
+    - Unknown properties detection
+    - Required vs optional property handling
+
+    Returns a validation result object containing IsValid status, errors, warnings,
+    and the parsed configuration.
+
+    .PARAMETER ConfigPath
+    Path to the JSON configuration file to validate. File must exist.
+
+    .PARAMETER ConfigObject
+    Hashtable containing configuration properties to validate directly.
+
+    .PARAMETER SchemaPath
+    Optional path to a custom JSON schema file. If not specified, uses the default
+    schema at config/ffubuilder-config.schema.json relative to the module.
+
+    .PARAMETER ThrowOnError
+    If specified, throws an exception on validation failure instead of returning
+    the validation result object.
+
+    .EXAMPLE
+    $result = Test-FFUConfiguration -ConfigPath "C:\FFU\config\my-config.json"
+    if ($result.IsValid) {
+        Write-Host "Configuration is valid"
+    } else {
+        $result.Errors | ForEach-Object { Write-Error $_ }
+    }
+
+    .EXAMPLE
+    $config = @{
+        WindowsSKU = "Pro"
+        WindowsRelease = 11
+        Memory = 8GB
+    }
+    $result = Test-FFUConfiguration -ConfigObject $config
+
+    .EXAMPLE
+    # Throws exception on validation failure
+    Test-FFUConfiguration -ConfigPath "config.json" -ThrowOnError
+
+    .OUTPUTS
+    PSCustomObject with properties:
+    - IsValid: [bool] True if configuration passes all validation rules
+    - Errors: [string[]] Array of validation error messages
+    - Warnings: [string[]] Array of validation warning messages (deprecated properties, etc.)
+    - Config: [hashtable] Parsed configuration object (null if JSON parsing failed)
+
+    .NOTES
+    Version: 1.0.0
+    Introduced in FFU.Core v1.0.10
+
+    The validation is performed in PowerShell without external dependencies.
+    JSON Schema is parsed and validation rules are applied programmatically.
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'Path')]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory = $true, ParameterSetName = 'Path')]
+        [ValidateScript({ Test-Path $_ -PathType Leaf })]
+        [string]$ConfigPath,
+
+        [Parameter(Mandatory = $true, ParameterSetName = 'Object')]
+        [hashtable]$ConfigObject,
+
+        [Parameter(Mandatory = $false)]
+        [string]$SchemaPath,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$ThrowOnError
+    )
+
+    # Initialize result object
+    $result = [PSCustomObject]@{
+        IsValid  = $false
+        Errors   = [System.Collections.Generic.List[string]]::new()
+        Warnings = [System.Collections.Generic.List[string]]::new()
+        Config   = $null
+    }
+
+    # Helper function to add error
+    function Add-ValidationError {
+        param([string]$Message)
+        $result.Errors.Add($Message)
+    }
+
+    # Helper function to add warning
+    function Add-ValidationWarning {
+        param([string]$Message)
+        $result.Warnings.Add($Message)
+    }
+
+    # Load schema
+    $schema = $null
+    try {
+        if ([string]::IsNullOrWhiteSpace($SchemaPath)) {
+            # Default schema location relative to module
+            $moduleRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+            $SchemaPath = Join-Path $moduleRoot "config\ffubuilder-config.schema.json"
+        }
+
+        if (-not (Test-Path $SchemaPath -PathType Leaf)) {
+            Add-ValidationError "Schema file not found: $SchemaPath"
+            if ($ThrowOnError) {
+                throw "Configuration validation failed: Schema file not found at $SchemaPath"
+            }
+            return $result
+        }
+
+        $schemaContent = Get-Content -Path $SchemaPath -Raw -ErrorAction Stop
+        $schema = $schemaContent | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        Add-ValidationError "Failed to load schema: $($_.Exception.Message)"
+        if ($ThrowOnError) {
+            throw "Configuration validation failed: $($_.Exception.Message)"
+        }
+        return $result
+    }
+
+    # Load configuration
+    $config = $null
+    try {
+        if ($PSCmdlet.ParameterSetName -eq 'Path') {
+            $configContent = Get-Content -Path $ConfigPath -Raw -ErrorAction Stop
+            $configPSObject = $configContent | ConvertFrom-Json -ErrorAction Stop
+
+            # Convert PSCustomObject to hashtable for easier processing
+            $config = @{}
+            foreach ($prop in $configPSObject.PSObject.Properties) {
+                if ($prop.Value -is [System.Management.Automation.PSCustomObject]) {
+                    # Convert nested objects to hashtable
+                    $nested = @{}
+                    foreach ($nestedProp in $prop.Value.PSObject.Properties) {
+                        $nested[$nestedProp.Name] = $nestedProp.Value
+                    }
+                    $config[$prop.Name] = $nested
+                }
+                else {
+                    $config[$prop.Name] = $prop.Value
+                }
+            }
+        }
+        else {
+            $config = $ConfigObject
+        }
+        $result.Config = $config
+    }
+    catch {
+        Add-ValidationError "Failed to parse configuration JSON: $($_.Exception.Message)"
+        if ($ThrowOnError) {
+            throw "Configuration validation failed: Invalid JSON - $($_.Exception.Message)"
+        }
+        return $result
+    }
+
+    # Get schema properties
+    $schemaProperties = @{}
+    if ($schema.properties) {
+        foreach ($prop in $schema.properties.PSObject.Properties) {
+            $schemaProperties[$prop.Name] = $prop.Value
+        }
+    }
+
+    # Validate each property in config
+    foreach ($key in $config.Keys) {
+        # Skip metadata properties
+        if ($key -eq '$schema' -or $key -eq '_comment') {
+            continue
+        }
+
+        $value = $config[$key]
+        $schemaProp = $schemaProperties[$key]
+
+        # Check for unknown properties
+        if ($null -eq $schemaProp) {
+            if ($schema.additionalProperties -eq $false) {
+                Add-ValidationError "Unknown property '$key' is not allowed in configuration"
+            }
+            else {
+                Add-ValidationWarning "Unknown property '$key' - not defined in schema"
+            }
+            continue
+        }
+
+        # Skip null values (optional properties)
+        if ($null -eq $value) {
+            continue
+        }
+
+        # Validate type
+        $expectedType = $schemaProp.type
+        $actualType = $null
+
+        # Handle oneOf for nullable types
+        if ($null -eq $expectedType -and $schemaProp.oneOf) {
+            $oneOfTypes = @()
+            foreach ($oneOf in $schemaProp.oneOf) {
+                if ($oneOf.type) {
+                    $oneOfTypes += $oneOf.type
+                }
+            }
+            # Check if value matches any of the allowed types
+            $typeMatched = $false
+            foreach ($oneOfType in $oneOfTypes) {
+                if ($oneOfType -eq 'null' -and $null -eq $value) {
+                    $typeMatched = $true
+                    break
+                }
+                elseif ($oneOfType -eq 'object' -and ($value -is [hashtable] -or $value -is [System.Management.Automation.PSCustomObject])) {
+                    $typeMatched = $true
+                    break
+                }
+            }
+            if (-not $typeMatched -and $null -ne $value) {
+                # If not null, treat as object type for hashtable validation
+                if ($value -is [hashtable] -or $value -is [System.Management.Automation.PSCustomObject]) {
+                    $expectedType = 'object'
+                }
+            }
+            else {
+                continue  # Value matches oneOf, skip further validation
+            }
+        }
+
+        # Determine actual type
+        if ($value -is [bool]) {
+            $actualType = 'boolean'
+        }
+        elseif ($value -is [int] -or $value -is [int64] -or $value -is [uint32] -or $value -is [uint64] -or $value -is [double]) {
+            $actualType = 'integer'
+        }
+        elseif ($value -is [string]) {
+            $actualType = 'string'
+        }
+        elseif ($value -is [hashtable] -or $value -is [System.Management.Automation.PSCustomObject]) {
+            $actualType = 'object'
+        }
+        elseif ($value -is [array]) {
+            $actualType = 'array'
+        }
+
+        # Type validation
+        if ($expectedType -and $actualType -ne $expectedType) {
+            # Allow integer for numeric strings
+            if ($expectedType -eq 'integer' -and $actualType -eq 'string') {
+                $intValue = 0
+                if (-not [int64]::TryParse($value, [ref]$intValue)) {
+                    Add-ValidationError "Property '$key' has type '$actualType' but expected '$expectedType'"
+                }
+                else {
+                    # Update value to parsed integer for range validation
+                    $value = $intValue
+                }
+            }
+            # Allow string for numbers (for flexibility)
+            elseif ($expectedType -eq 'string' -and $actualType -eq 'integer') {
+                # Convert to string for pattern validation
+                $value = $value.ToString()
+            }
+            else {
+                Add-ValidationError "Property '$key' has type '$actualType' but expected '$expectedType'"
+                continue
+            }
+        }
+
+        # Enum validation
+        if ($schemaProp.enum) {
+            $enumValues = @($schemaProp.enum)
+            if ($enumValues -notcontains $value) {
+                $validValues = $enumValues -join ', '
+                Add-ValidationError "Property '$key' has invalid value '$value'. Valid values are: $validValues"
+            }
+        }
+
+        # Range validation for integers
+        if ($expectedType -eq 'integer') {
+            if ($null -ne $schemaProp.minimum -and $value -lt $schemaProp.minimum) {
+                Add-ValidationError "Property '$key' value $value is less than minimum $($schemaProp.minimum)"
+            }
+            if ($null -ne $schemaProp.maximum -and $value -gt $schemaProp.maximum) {
+                Add-ValidationError "Property '$key' value $value is greater than maximum $($schemaProp.maximum)"
+            }
+        }
+
+        # Pattern validation for strings
+        if ($expectedType -eq 'string' -and $schemaProp.pattern) {
+            $pattern = $schemaProp.pattern
+            if ($value -notmatch $pattern) {
+                Add-ValidationError "Property '$key' value '$value' does not match required pattern: $pattern"
+            }
+        }
+    }
+
+    # Set final validity
+    $result.IsValid = ($result.Errors.Count -eq 0)
+
+    # Throw if requested and validation failed
+    if ($ThrowOnError -and -not $result.IsValid) {
+        $errorSummary = $result.Errors -join "`n  - "
+        throw "Configuration validation failed with $($result.Errors.Count) error(s):`n  - $errorSummary"
+    }
+
+    return $result
+}
+
+function Get-FFUConfigurationSchema {
+    <#
+    .SYNOPSIS
+    Returns the path to the FFU Builder configuration schema file.
+
+    .DESCRIPTION
+    Returns the full path to the default FFU Builder JSON schema file.
+    Useful for referencing the schema in configuration files or for
+    programmatic schema access.
+
+    .EXAMPLE
+    $schemaPath = Get-FFUConfigurationSchema
+    Write-Host "Schema located at: $schemaPath"
+
+    .OUTPUTS
+    System.String - Full path to the schema file
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $moduleRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    return Join-Path $moduleRoot "config\ffubuilder-config.schema.json"
+}
+
+# =============================================================================
 # Cleanup Registration System
 # Provides automatic resource cleanup on script failure or termination
 # =============================================================================
@@ -2023,11 +2419,17 @@ function Register-SensitiveMediaCleanup {
     }.GetNewClosure()
 }
 
+# Create backward compatibility aliases for renamed functions (v1.0.11)
+# These aliases allow existing code to continue working while encouraging migration to approved verbs
+Set-Alias -Name 'LogVariableValues' -Value 'Write-VariableValues' -Scope Script
+Set-Alias -Name 'Mark-DownloadInProgress' -Value 'Set-DownloadInProgress' -Scope Script
+Set-Alias -Name 'Cleanup-CurrentRunDownloads' -Value 'Clear-CurrentRunDownloads' -Scope Script
+
 # Export all module functions
 Export-ModuleMember -Function @(
     # Configuration and utilities
     'Get-Parameters'
-    'LogVariableValues'
+    'Write-VariableValues'              # v1.0.11: Renamed from LogVariableValues (approved verb)
     'Get-ChildProcesses'
     'Test-Url'
     'Get-PrivateProfileString'
@@ -2039,10 +2441,10 @@ Export-ModuleMember -Function @(
     'New-RunSession'
     'Get-CurrentRunManifest'
     'Save-RunManifest'
-    'Mark-DownloadInProgress'
+    'Set-DownloadInProgress'            # v1.0.11: Renamed from Mark-DownloadInProgress (approved verb)
     'Clear-DownloadInProgress'
     'Remove-InProgressItems'
-    'Cleanup-CurrentRunDownloads'
+    'Clear-CurrentRunDownloads'         # v1.0.11: Renamed from Cleanup-CurrentRunDownloads (approved verb)
     'Restore-RunJsonBackups'
     # Error handling (v1.0.5)
     'Invoke-WithErrorHandling'
@@ -2068,4 +2470,14 @@ Export-ModuleMember -Function @(
     'ConvertFrom-SecureStringToPlainText'
     'Clear-PlainTextPassword'
     'Remove-SecureStringFromMemory'
+    # Configuration schema validation (v1.0.10)
+    'Test-FFUConfiguration'
+    'Get-FFUConfigurationSchema'
+)
+
+# Export backward compatibility aliases (deprecated - use new function names)
+Export-ModuleMember -Alias @(
+    'LogVariableValues'                 # Deprecated: Use Write-VariableValues
+    'Mark-DownloadInProgress'           # Deprecated: Use Set-DownloadInProgress
+    'Cleanup-CurrentRunDownloads'       # Deprecated: Use Clear-CurrentRunDownloads
 )

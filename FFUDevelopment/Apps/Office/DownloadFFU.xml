@@ -1,5 +1,7 @@
 <Configuration ID="efa6df21-a106-428e-8eaa-d89a5dda6030">
-  <Add SourcePath="C:\FFUDevelopment\Apps\Office" OfficeClientEdition="64" Channel="Current">
+  <!-- Note: SourcePath is dynamically set at runtime by Get-Office function -->
+  <!-- The placeholder value below is overwritten with the actual OfficePath -->
+  <Add SourcePath="{{OFFICE_PATH}}" OfficeClientEdition="64" Channel="Current">
     <Product ID="O365ProPlusRetail">
       <Language ID="MatchOS" />
     </Product>

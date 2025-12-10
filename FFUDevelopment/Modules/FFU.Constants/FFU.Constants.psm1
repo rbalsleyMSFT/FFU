@@ -8,38 +8,275 @@ and default paths used throughout the FFUBuilder project.
 
 All values are documented with their purpose and rationale.
 
+Path constants are now dynamically resolved based on the installation location,
+allowing FFUBuilder to be installed anywhere (not just C:\FFUDevelopment).
+
 .NOTES
 Module Name: FFU.Constants
 Author: FFUBuilder Contributors
-Version: 1.0.0
+Version: 1.1.0
 #>
 
 class FFUConstants {
-    #region Path Defaults
+    #region Dynamic Path Resolution
+
+    # Private cached base path - resolved once on first access
+    static hidden [string] $_resolvedBasePath = $null
+
+    <#
+    .SYNOPSIS
+    Get the base FFUDevelopment path dynamically
+
+    .DESCRIPTION
+    Resolves the installation path from the module location.
+    Path resolution: Modules/FFU.Constants -> Modules -> FFUDevelopment
+
+    Supports environment variable override via FFU_BASE_PATH.
+
+    .EXAMPLE
+    $basePath = [FFUConstants]::GetBasePath()
+    #>
+    static [string] GetBasePath() {
+        if ([string]::IsNullOrEmpty([FFUConstants]::_resolvedBasePath)) {
+            # Check for environment variable override first
+            $envOverride = $env:FFU_BASE_PATH
+            if ($envOverride -and (Test-Path $envOverride -PathType Container)) {
+                [FFUConstants]::_resolvedBasePath = $envOverride
+                return [FFUConstants]::_resolvedBasePath
+            }
+
+            # Resolve from module location: Modules/FFU.Constants/FFU.Constants.psm1
+            # Go up: FFU.Constants.psm1 -> FFU.Constants -> Modules -> FFUDevelopment
+            $scriptPath = $PSScriptRoot
+            if ($scriptPath) {
+                # $PSScriptRoot is the directory containing this psm1 file
+                # Go up two levels: FFU.Constants folder -> Modules folder -> FFUDevelopment
+                $modulesDir = Split-Path $scriptPath -Parent
+                $ffuDevPath = Split-Path $modulesDir -Parent
+
+                if (Test-Path $ffuDevPath -PathType Container) {
+                    [FFUConstants]::_resolvedBasePath = $ffuDevPath
+                } else {
+                    # Fallback if path doesn't exist (shouldn't happen in normal use)
+                    [FFUConstants]::_resolvedBasePath = "C:\FFUDevelopment"
+                }
+            } else {
+                # Fallback if $PSScriptRoot not available (e.g., in certain test scenarios)
+                [FFUConstants]::_resolvedBasePath = "C:\FFUDevelopment"
+            }
+        }
+        return [FFUConstants]::_resolvedBasePath
+    }
+
+    <#
+    .SYNOPSIS
+    Override the base path (useful for tests and non-standard installations)
+
+    .DESCRIPTION
+    Allows manual setting of the base path. This is primarily intended for:
+    - Unit testing with isolated paths
+    - Programmatic override when running from non-standard locations
+    - Multi-instance scenarios
+
+    .PARAMETER Path
+    The path to use as the base FFUDevelopment directory
+
+    .EXAMPLE
+    [FFUConstants]::SetBasePath("D:\MyFFUDevelopment")
+    #>
+    static [void] SetBasePath([string]$Path) {
+        [FFUConstants]::_resolvedBasePath = $Path
+    }
+
+    <#
+    .SYNOPSIS
+    Reset the cached base path to force re-resolution
+
+    .DESCRIPTION
+    Clears the cached path so the next call to GetBasePath() will
+    re-resolve from $PSScriptRoot or environment variable.
+    Useful for testing or after changing FFU_BASE_PATH.
+
+    .EXAMPLE
+    [FFUConstants]::ResetBasePath()
+    #>
+    static [void] ResetBasePath() {
+        [FFUConstants]::_resolvedBasePath = $null
+    }
+
+    #endregion
+
+    #region Dynamic Path Methods
+
+    <#
+    .SYNOPSIS
+    Get the default working directory path
+
+    .DESCRIPTION
+    Returns the base FFUDevelopment path. This is the root directory
+    for all FFU operations.
+
+    Supports environment variable override via FFU_WORKING_DIR.
+
+    .EXAMPLE
+    $workDir = [FFUConstants]::GetDefaultWorkingDir()
+    #>
+    static [string] GetDefaultWorkingDir() {
+        $envOverride = $env:FFU_WORKING_DIR
+        if ($envOverride -and (Test-Path $envOverride -PathType Container)) {
+            return $envOverride
+        }
+        return [FFUConstants]::GetBasePath()
+    }
+
+    <#
+    .SYNOPSIS
+    Get the default VM directory path
+
+    .DESCRIPTION
+    Returns the path where Hyper-V VMs are stored during builds.
+    Defaults to <BasePath>\VM.
+
+    Supports environment variable override via FFU_VM_DIR.
+
+    .EXAMPLE
+    $vmDir = [FFUConstants]::GetDefaultVMDir()
+    #>
+    static [string] GetDefaultVMDir() {
+        $envOverride = $env:FFU_VM_DIR
+        if ($envOverride -and (Test-Path (Split-Path $envOverride -Parent) -PathType Container)) {
+            return $envOverride
+        }
+        return Join-Path ([FFUConstants]::GetBasePath()) "VM"
+    }
+
+    <#
+    .SYNOPSIS
+    Get the default FFU capture output directory
+
+    .DESCRIPTION
+    Returns the path where captured FFU images are saved.
+    Defaults to <BasePath>\FFU.
+
+    Supports environment variable override via FFU_CAPTURE_DIR.
+
+    .EXAMPLE
+    $captureDir = [FFUConstants]::GetDefaultCaptureDir()
+    #>
+    static [string] GetDefaultCaptureDir() {
+        $envOverride = $env:FFU_CAPTURE_DIR
+        if ($envOverride -and (Test-Path (Split-Path $envOverride -Parent) -PathType Container)) {
+            return $envOverride
+        }
+        return Join-Path ([FFUConstants]::GetBasePath()) "FFU"
+    }
+
+    <#
+    .SYNOPSIS
+    Get the default drivers directory path
+
+    .DESCRIPTION
+    Returns the path where downloaded OEM drivers are cached.
+    Defaults to <BasePath>\Drivers.
+
+    Supports environment variable override via FFU_DRIVERS_DIR.
+
+    .EXAMPLE
+    $driversDir = [FFUConstants]::GetDefaultDriversDir()
+    #>
+    static [string] GetDefaultDriversDir() {
+        $envOverride = $env:FFU_DRIVERS_DIR
+        if ($envOverride) {
+            # Allow creating new directories, just check parent exists
+            $parent = Split-Path $envOverride -Parent
+            if (-not $parent -or (Test-Path $parent -PathType Container)) {
+                return $envOverride
+            }
+        }
+        return Join-Path ([FFUConstants]::GetBasePath()) "Drivers"
+    }
+
+    <#
+    .SYNOPSIS
+    Get the default applications directory path
+
+    .DESCRIPTION
+    Returns the path where application installers are stored.
+    Defaults to <BasePath>\Apps.
+
+    Supports environment variable override via FFU_APPS_DIR.
+
+    .EXAMPLE
+    $appsDir = [FFUConstants]::GetDefaultAppsDir()
+    #>
+    static [string] GetDefaultAppsDir() {
+        $envOverride = $env:FFU_APPS_DIR
+        if ($envOverride) {
+            $parent = Split-Path $envOverride -Parent
+            if (-not $parent -or (Test-Path $parent -PathType Container)) {
+                return $envOverride
+            }
+        }
+        return Join-Path ([FFUConstants]::GetBasePath()) "Apps"
+    }
+
+    <#
+    .SYNOPSIS
+    Get the default Windows updates directory path
+
+    .DESCRIPTION
+    Returns the path where downloaded MSU updates are cached.
+    Defaults to <BasePath>\Updates.
+
+    Supports environment variable override via FFU_UPDATES_DIR.
+
+    .EXAMPLE
+    $updatesDir = [FFUConstants]::GetDefaultUpdatesDir()
+    #>
+    static [string] GetDefaultUpdatesDir() {
+        $envOverride = $env:FFU_UPDATES_DIR
+        if ($envOverride) {
+            $parent = Split-Path $envOverride -Parent
+            if (-not $parent -or (Test-Path $parent -PathType Container)) {
+                return $envOverride
+            }
+        }
+        return Join-Path ([FFUConstants]::GetBasePath()) "Updates"
+    }
+
+    #endregion
+
+    #region Static Path Properties (for backward compatibility)
+    # These are initialized by the static constructor and reference hardcoded values
+    # Code should prefer the Get* methods for dynamic resolution
 
     # Base working directory for all FFU operations
-    # Default installation location for FFUBuilder
+    # DEPRECATED: Use [FFUConstants]::GetDefaultWorkingDir() instead
     static [string] $DEFAULT_WORKING_DIR = "C:\FFUDevelopment"
 
     # VM storage location
-    # Hyper-V virtual machines are created here during builds
+    # DEPRECATED: Use [FFUConstants]::GetDefaultVMDir() instead
     static [string] $DEFAULT_VM_DIR = "C:\FFUDevelopment\VM"
 
     # FFU capture output location
-    # Final FFU images are saved here
+    # DEPRECATED: Use [FFUConstants]::GetDefaultCaptureDir() instead
     static [string] $DEFAULT_CAPTURE_DIR = "C:\FFUDevelopment\FFU"
 
     # Driver storage location
-    # Downloaded OEM drivers are cached here
+    # DEPRECATED: Use [FFUConstants]::GetDefaultDriversDir() instead
     static [string] $DEFAULT_DRIVERS_DIR = "C:\FFUDevelopment\Drivers"
 
     # Application installers location
-    # WinGet packages and custom installers
+    # DEPRECATED: Use [FFUConstants]::GetDefaultAppsDir() instead
     static [string] $DEFAULT_APPS_DIR = "C:\FFUDevelopment\Apps"
 
     # Windows Update cache location
-    # Downloaded MSU packages are cached here
+    # DEPRECATED: Use [FFUConstants]::GetDefaultUpdatesDir() instead
     static [string] $DEFAULT_UPDATES_DIR = "C:\FFUDevelopment\Updates"
+
+    #endregion
+
+    #region ADK Paths (system-dependent, not project-relative)
 
     # Windows ADK Deployment Tools path
     # Required for DISM and image manipulation
@@ -288,7 +525,7 @@ class FFUConstants {
 
     #endregion
 
-    #region Helper Methods
+    #region Legacy Helper Methods (backward compatibility)
 
     <#
     .SYNOPSIS
@@ -298,45 +535,39 @@ class FFUConstants {
     Returns the working directory, checking environment variable first
     Allows users to override default path without code changes
 
+    DEPRECATED: Use GetDefaultWorkingDir() instead
+
     .EXAMPLE
     $workDir = [FFUConstants]::GetWorkingDirectory()
     #>
     static [string] GetWorkingDirectory() {
-        $envOverride = $env:FFU_WORKING_DIR
-        if ($envOverride -and (Test-Path $envOverride)) {
-            return $envOverride
-        }
-        return [FFUConstants]::DEFAULT_WORKING_DIR
+        return [FFUConstants]::GetDefaultWorkingDir()
     }
 
     <#
     .SYNOPSIS
     Get VM directory with environment variable override support
 
+    DEPRECATED: Use GetDefaultVMDir() instead
+
     .EXAMPLE
     $vmDir = [FFUConstants]::GetVMDirectory()
     #>
     static [string] GetVMDirectory() {
-        $envOverride = $env:FFU_VM_DIR
-        if ($envOverride -and (Test-Path (Split-Path $envOverride -Parent))) {
-            return $envOverride
-        }
-        return [FFUConstants]::DEFAULT_VM_DIR
+        return [FFUConstants]::GetDefaultVMDir()
     }
 
     <#
     .SYNOPSIS
     Get capture directory with environment variable override support
 
+    DEPRECATED: Use GetDefaultCaptureDir() instead
+
     .EXAMPLE
     $captureDir = [FFUConstants]::GetCaptureDirectory()
     #>
     static [string] GetCaptureDirectory() {
-        $envOverride = $env:FFU_CAPTURE_DIR
-        if ($envOverride -and (Test-Path (Split-Path $envOverride -Parent))) {
-            return $envOverride
-        }
-        return [FFUConstants]::DEFAULT_CAPTURE_DIR
+        return [FFUConstants]::GetDefaultCaptureDir()
     }
 
     #endregion

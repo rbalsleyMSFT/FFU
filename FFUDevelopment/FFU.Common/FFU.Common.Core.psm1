@@ -15,19 +15,74 @@ $script:commonCoreLogMutex = New-Object System.Threading.Mutex($false, $script:c
 
 # Function to set the log file path for this module
 function Set-CommonCoreLogPath {
+    <#
+    .SYNOPSIS
+        Sets the log file path for the FFU.Common.Core logging system.
+    .DESCRIPTION
+        Configures the log file path used by WriteLog function. Optionally deletes
+        any existing log file to start a fresh logging session.
+    .PARAMETER Path
+        The full path to the log file.
+    .PARAMETER Initialize
+        When specified, deletes any existing log file at the path before setting it.
+        This ensures a clean log file for the new session.
+    .EXAMPLE
+        Set-CommonCoreLogPath -Path "C:\FFUDevelopment\FFUDevelopment.log"
+        Sets the log path without clearing existing content.
+    .EXAMPLE
+        Set-CommonCoreLogPath -Path "C:\FFUDevelopment\FFUDevelopment.log" -Initialize
+        Clears any existing log file and starts a fresh logging session.
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Initialize
     )
+
+    # Validate the path is not empty
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        Write-Warning "Set-CommonCoreLogPath called with an empty or null path."
+        return
+    }
+
+    # If -Initialize is specified, delete any existing log file first
+    if ($Initialize) {
+        if (Test-Path -Path $Path -PathType Leaf) {
+            try {
+                Remove-Item -Path $Path -Force -ErrorAction Stop
+                Write-Verbose "Removed existing log file: $Path"
+            }
+            catch {
+                Write-Warning "Failed to remove existing log file '$Path': $($_.Exception.Message)"
+            }
+        }
+    }
+
+    # Set the script-scoped log file path
     $script:CommonCoreLogFilePath = $Path
-    if (-not [string]::IsNullOrWhiteSpace($script:CommonCoreLogFilePath)) {
-        # This initial WriteLog confirms the path is set and the logger is working.
+
+    # Ensure the log directory exists
+    $logDir = Split-Path -Path $Path -Parent
+    if (-not [string]::IsNullOrWhiteSpace($logDir) -and -not (Test-Path -Path $logDir -PathType Container)) {
+        try {
+            New-Item -Path $logDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            Write-Verbose "Created log directory: $logDir"
+        }
+        catch {
+            Write-Warning "Failed to create log directory '$logDir': $($_.Exception.Message)"
+        }
+    }
+
+    # Log the initialization message
+    if ($Initialize) {
+        WriteLog "=== Fresh log session started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
         WriteLog "CommonCoreLogPath set to: $script:CommonCoreLogFilePath"
     }
     else {
-        # This Write-Warning will appear on console if path is bad, but won't go to log file yet.
-        Write-Warning "Set-CommonCoreLogPath called with an empty or null path."
+        WriteLog "CommonCoreLogPath set to: $script:CommonCoreLogFilePath"
     }
 }
 
@@ -160,12 +215,17 @@ function Invoke-Process {
             $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
             $cmdError = Get-Content -Path $stdErrTempFile -Raw
             if ($cmd.ExitCode -ne 0 -and $wait -eq $true) {
+                $errorMessage = "Process '$FilePath' exited with code $($cmd.ExitCode)."
                 if ($cmdError) {
-                    throw $cmdError.Trim()
+                    $errorMessage += " Error: $($cmdError.Trim())"
                 }
-                if ($cmdOutput) {
-                    throw $cmdOutput.Trim()
+                elseif ($cmdOutput) {
+                    $errorMessage += " Output: $($cmdOutput.Trim())"
                 }
+                else {
+                    $errorMessage += " No error output captured."
+                }
+                throw $errorMessage
             }
             else {
                 if ([string]::IsNullOrEmpty($cmdOutput) -eq $false) {
@@ -418,6 +478,186 @@ function ConvertTo-SafeName {
         $sanitized = 'Unnamed'
     }
     return $sanitized
+}
+
+function Get-FFUBuilderVersion {
+    <#
+    .SYNOPSIS
+        Retrieves FFU Builder version information from version.json.
+    .DESCRIPTION
+        Reads the central version.json file and returns version information
+        for FFU Builder and all its modules. This is the single source of truth
+        for all versioning in the project.
+    .PARAMETER FFUDevelopmentPath
+        Path to the FFUDevelopment folder. If not specified, attempts to find
+        version.json relative to this module's location.
+    .PARAMETER ModuleName
+        Optional. If specified, returns only the version for that specific module.
+    .EXAMPLE
+        Get-FFUBuilderVersion
+        Returns the full version object with main version and all module versions.
+    .EXAMPLE
+        Get-FFUBuilderVersion -ModuleName "FFU.Common"
+        Returns just the version string for FFU.Common module.
+    .OUTPUTS
+        PSCustomObject with version information, or string if -ModuleName specified.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ModuleName
+    )
+
+    # Determine version.json path
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        # Try to find version.json relative to this module
+        $modulePath = $PSScriptRoot
+        if ($modulePath) {
+            $FFUDevelopmentPath = Split-Path -Parent $modulePath
+        }
+    }
+
+    $versionFile = Join-Path $FFUDevelopmentPath "version.json"
+
+    if (-not (Test-Path -Path $versionFile -PathType Leaf)) {
+        Write-Warning "version.json not found at: $versionFile"
+        return $null
+    }
+
+    try {
+        $versionData = Get-Content -Path $versionFile -Raw | ConvertFrom-Json
+
+        # If a specific module was requested, return just that version
+        if (-not [string]::IsNullOrWhiteSpace($ModuleName)) {
+            if ($versionData.modules.PSObject.Properties.Name -contains $ModuleName) {
+                return $versionData.modules.$ModuleName.version
+            }
+            else {
+                Write-Warning "Module '$ModuleName' not found in version.json"
+                return $null
+            }
+        }
+
+        # Return the full version object
+        return [PSCustomObject]@{
+            Version     = $versionData.version
+            BuildDate   = $versionData.buildDate
+            Modules     = $versionData.modules
+            Policy      = $versionData.versioningPolicy
+            VersionFile = $versionFile
+        }
+    }
+    catch {
+        Write-Warning "Failed to parse version.json: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Update-FFUBuilderVersion {
+    <#
+    .SYNOPSIS
+        Updates the FFU Builder version in version.json.
+    .DESCRIPTION
+        Increments the version number according to SemVer rules and updates
+        the build date. Use this after making changes to any module.
+    .PARAMETER FFUDevelopmentPath
+        Path to the FFUDevelopment folder.
+    .PARAMETER BumpType
+        Type of version bump: Major, Minor, or Patch.
+    .PARAMETER ModuleName
+        Optional. If specified, also updates that module's version in version.json.
+    .PARAMETER ModuleVersion
+        Required if ModuleName is specified. The new version for the module.
+    .EXAMPLE
+        Update-FFUBuilderVersion -FFUDevelopmentPath "C:\FFUDevelopment" -BumpType Patch
+        Increments the patch version (e.g., 1.2.0 -> 1.2.1).
+    .EXAMPLE
+        Update-FFUBuilderVersion -FFUDevelopmentPath "C:\FFUDevelopment" -BumpType Patch -ModuleName "FFU.Common" -ModuleVersion "0.0.5"
+        Increments main patch version and updates FFU.Common module version.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Major', 'Minor', 'Patch')]
+        [string]$BumpType,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ModuleName,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ModuleVersion
+    )
+
+    $versionFile = Join-Path $FFUDevelopmentPath "version.json"
+
+    if (-not (Test-Path -Path $versionFile -PathType Leaf)) {
+        throw "version.json not found at: $versionFile"
+    }
+
+    try {
+        $versionData = Get-Content -Path $versionFile -Raw | ConvertFrom-Json
+
+        # Parse current version
+        $versionParts = $versionData.version -split '\.'
+        $major = [int]$versionParts[0]
+        $minor = [int]$versionParts[1]
+        $patch = [int]$versionParts[2]
+
+        # Apply bump
+        switch ($BumpType) {
+            'Major' {
+                $major++
+                $minor = 0
+                $patch = 0
+            }
+            'Minor' {
+                $minor++
+                $patch = 0
+            }
+            'Patch' {
+                $patch++
+            }
+        }
+
+        $newVersion = "$major.$minor.$patch"
+        $newBuildDate = (Get-Date).ToString('yyyy-MM-dd')
+
+        if ($PSCmdlet.ShouldProcess("version.json", "Update version from $($versionData.version) to $newVersion")) {
+            $versionData.version = $newVersion
+            $versionData.buildDate = $newBuildDate
+
+            # Update module version if specified
+            if (-not [string]::IsNullOrWhiteSpace($ModuleName) -and -not [string]::IsNullOrWhiteSpace($ModuleVersion)) {
+                if ($versionData.modules.PSObject.Properties.Name -contains $ModuleName) {
+                    $versionData.modules.$ModuleName.version = $ModuleVersion
+                    WriteLog "Updated $ModuleName version to $ModuleVersion in version.json"
+                }
+                else {
+                    Write-Warning "Module '$ModuleName' not found in version.json"
+                }
+            }
+
+            # Write back to file with proper formatting
+            $versionData | ConvertTo-Json -Depth 10 | Set-Content -Path $versionFile -Encoding UTF8
+            WriteLog "Updated FFU Builder version to $newVersion (build $newBuildDate)"
+
+            return [PSCustomObject]@{
+                OldVersion = $versionData.version
+                NewVersion = $newVersion
+                BuildDate  = $newBuildDate
+                BumpType   = $BumpType
+            }
+        }
+    }
+    catch {
+        throw "Failed to update version.json: $($_.Exception.Message)"
+    }
 }
 
 Export-ModuleMember -Function *

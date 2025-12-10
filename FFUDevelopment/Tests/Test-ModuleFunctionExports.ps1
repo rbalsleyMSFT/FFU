@@ -70,7 +70,7 @@ Write-Host ""
 $ExpectedExports = @{
     'FFU.Core' = @(
         'Get-Parameters',
-        'LogVariableValues',
+        'Write-VariableValues',          # v1.0.11: Renamed from LogVariableValues
         'Get-ChildProcesses',
         'Test-Url',
         'Get-PrivateProfileString',
@@ -81,10 +81,10 @@ $ExpectedExports = @{
         'New-RunSession',
         'Get-CurrentRunManifest',
         'Save-RunManifest',
-        'Mark-DownloadInProgress',
+        'Set-DownloadInProgress',        # v1.0.11: Renamed from Mark-DownloadInProgress
         'Clear-DownloadInProgress',
         'Remove-InProgressItems',
-        'Cleanup-CurrentRunDownloads',
+        'Clear-CurrentRunDownloads',     # v1.0.11: Renamed from Cleanup-CurrentRunDownloads
         'Restore-RunJsonBackups',
         'Invoke-WithErrorHandling',
         'Test-ExternalCommandSuccess',

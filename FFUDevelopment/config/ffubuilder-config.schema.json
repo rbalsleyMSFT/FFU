@@ -1,0 +1,469 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://github.com/rbalsleyMSFT/FFU/config-schema",
+    "title": "FFU Builder Configuration",
+    "description": "Configuration schema for FFU Builder - a Windows deployment acceleration tool that creates pre-configured Windows 11 images deployable in under 2 minutes.",
+    "type": "object",
+    "properties": {
+        "$schema": {
+            "type": "string",
+            "description": "JSON Schema reference for IDE validation and autocomplete"
+        },
+        "_comment": {
+            "type": "string",
+            "description": "Optional comment field for documentation purposes"
+        },
+        "AllowExternalHardDiskMedia": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, allows the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive."
+        },
+        "AllowVHDXCaching": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, caches the VHDX file to the FFUDevelopmentPath\\VHDXCache folder and creates a config json file that tracks Windows build information, installed updates, and logical sector byte size."
+        },
+        "AppListPath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to a JSON file containing a list of applications to install using WinGet. Default is FFUDevelopmentPath\\Apps\\AppList.json."
+        },
+        "AppsScriptVariables": {
+            "oneOf": [
+                { "type": "object" },
+                { "type": "null" }
+            ],
+            "default": null,
+            "description": "Hashtable containing key-value pairs to pass variables to the Apps script. Creates an AppsScriptVariables.json file in the OrchestrationPath."
+        },
+        "BuildUSBDrive": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, partitions and formats a USB drive and copies the captured FFU to the drive."
+        },
+        "CleanupAppsISO": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, removes the Apps ISO after the FFU has been captured."
+        },
+        "CleanupCaptureISO": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, removes the WinPE capture ISO after the FFU has been captured."
+        },
+        "CleanupCurrentRunDownloads": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, removes downloads from the current build run on completion or failure."
+        },
+        "CleanupDeployISO": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, removes the WinPE deployment ISO after the FFU has been captured."
+        },
+        "CleanupDrivers": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, removes the drivers folder after the FFU has been captured."
+        },
+        "CompactOS": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, compacts the OS when building the FFU to reduce image size."
+        },
+        "CompressDownloadedDriversToWim": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, compresses downloaded drivers into a WIM file for more efficient storage."
+        },
+        "ConfigFile": {
+            "type": "string",
+            "default": "",
+            "description": "Path to a JSON file containing parameters to use for the script. Used for loading saved configurations."
+        },
+        "CopyAdditionalFFUFiles": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, copies additional FFU files specified in AdditionalFFUFiles to the USB drive."
+        },
+        "CopyAutopilot": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, copies the FFUDevelopmentPath\\Autopilot folder to the Deployment partition of the USB drive."
+        },
+        "CopyDrivers": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, copies the drivers from the FFUDevelopmentPath\\Drivers folder to the Drivers folder on the deploy partition of the USB drive."
+        },
+        "CopyPEDrivers": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, enables adding WinPE drivers. By default copies drivers from FFUDevelopmentPath\\PEDrivers to the WinPE deployment media."
+        },
+        "CopyPPKG": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, copies the provisioning package from the FFUDevelopmentPath\\PPKG folder to the Deployment partition of the USB drive."
+        },
+        "CopyUnattend": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, copies the FFUDevelopmentPath\\Unattend folder to the Deployment partition of the USB drive."
+        },
+        "CreateCaptureMedia": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, creates WinPE capture media for use when InstallApps is set to true. This capture media will be automatically attached to the VM."
+        },
+        "CreateDeploymentMedia": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, creates WinPE deployment media for use when deploying to a physical device."
+        },
+        "CustomFFUNameTemplate": {
+            "type": "string",
+            "default": "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}",
+            "description": "Sets a custom FFU output name with placeholders. Allowed placeholders: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.",
+            "examples": [
+                "{WindowsRelease}_{WindowsVersion}_{SKU}_{BuildDate}",
+                "Win{WindowsRelease}_{SKU}_{yyyy}-{MM}-{dd}"
+            ]
+        },
+        "Disksize": {
+            "type": "integer",
+            "minimum": 26843545600,
+            "maximum": 2199023255552,
+            "default": 32212254720,
+            "description": "Size of the virtual hard disk for the virtual machine in bytes. Range: 25GB (26843545600) to 2TB (2199023255552). Default is 30GB."
+        },
+        "DriversFolder": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the drivers folder. Default is FFUDevelopmentPath\\Drivers."
+        },
+        "DriversJsonPath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to a JSON file that specifies which drivers to download for OEM deployments."
+        },
+        "ExportConfigFile": {
+            "type": "string",
+            "default": "",
+            "description": "Path to a JSON file to export the parameters used for the script for future reuse."
+        },
+        "FFUCaptureLocation": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the folder where the captured FFU will be stored. Default is FFUDevelopmentPath\\FFU."
+        },
+        "FFUDevelopmentPath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the FFU development folder. Leave empty to use the UI's script location automatically."
+        },
+        "FFUPrefix": {
+            "type": "string",
+            "default": "_FFU",
+            "pattern": "^[a-zA-Z0-9_\\-]+$",
+            "description": "Prefix for the generated FFU file. Must contain only alphanumeric characters, underscores, and hyphens."
+        },
+        "Headers": {
+            "type": "object",
+            "default": {},
+            "description": "HTTP headers to use when downloading files. Contains browser-like headers to avoid download failures on Microsoft sites.",
+            "properties": {
+                "Accept": { "type": "string" },
+                "Accept-Encoding": { "type": "string" },
+                "Accept-Language": { "type": "string" },
+                "Priority": { "type": "string" },
+                "Sec-Ch-Ua": { "type": "string" },
+                "Sec-Ch-Ua-Mobile": { "type": "string" },
+                "Sec-Ch-Ua-Platform": { "type": "string" },
+                "Sec-Fetch-Dest": { "type": "string" },
+                "Sec-Fetch-Mode": { "type": "string" },
+                "Sec-Fetch-Site": { "type": "string" },
+                "Sec-Fetch-User": { "type": "string" },
+                "Upgrade-Insecure-Requests": { "type": "string" }
+            },
+            "additionalProperties": true
+        },
+        "InjectUnattend": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true and InstallApps is also true, copies unattend_[arch].xml from FFUDevelopmentPath\\unattend to FFUDevelopmentPath\\Apps\\Unattend\\Unattend.xml for sysprep inside the VM."
+        },
+        "InstallApps": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, creates an Apps.iso file from the FFUDevelopmentPath\\Apps folder, creates a VM, mounts the Apps.iso, installs the apps, runs sysprep, and captures the VM."
+        },
+        "InstallDrivers": {
+            "type": "boolean",
+            "default": true,
+            "description": "Install device drivers from the specified FFUDevelopmentPath\\Drivers folder if set to true. The script will recurse the drivers folder and add the drivers to the FFU."
+        },
+        "InstallOffice": {
+            "type": "boolean",
+            "default": true,
+            "description": "Install Microsoft Office if set to true. The script will download the latest ODT and Office files and install Office in the FFU via VM."
+        },
+        "ISOPath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the Windows 10/11 ISO file. Required if downloading is not supported for the selected Windows release."
+        },
+        "LogicalSectorSizeBytes": {
+            "type": "integer",
+            "enum": [512, 4096],
+            "default": 512,
+            "description": "Logical sector size in bytes. Use 4096 for 4Kn drives or devices shipping with UFS drives."
+        },
+        "Make": {
+            "type": "string",
+            "enum": ["", "Microsoft", "Dell", "HP", "Lenovo"],
+            "default": "",
+            "description": "Make of the device to download drivers. Required if automatic driver download is desired."
+        },
+        "MaxUSBDrives": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "default": 5,
+            "description": "Maximum number of USB drives to build in parallel. Set to 0 to process all discovered drives."
+        },
+        "MediaType": {
+            "type": "string",
+            "enum": ["consumer", "business"],
+            "default": "consumer",
+            "description": "Media type to download. 'consumer' for retail media, 'business' for volume license media."
+        },
+        "Memory": {
+            "type": "integer",
+            "minimum": 2147483648,
+            "maximum": 137438953472,
+            "default": 4294967296,
+            "description": "Amount of memory to allocate for the virtual machine in bytes. Range: 2GB (2147483648) to 128GB (137438953472). Recommended: 8GB for Windows 11."
+        },
+        "Model": {
+            "type": "string",
+            "default": "",
+            "description": "Model of the device to download drivers. Required if Make is set."
+        },
+        "OfficeConfigXMLFile": {
+            "type": "string",
+            "default": "",
+            "description": "Path to a custom Office configuration XML file to use for installation instead of the default."
+        },
+        "Optimize": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, optimizes the FFU file for smaller size and faster deployment."
+        },
+        "OptionalFeatures": {
+            "type": "string",
+            "default": "",
+            "description": "Semicolon-separated list of Windows optional features to include in the FFU (e.g., 'netfx3;TFTP')."
+        },
+        "OrchestrationPath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the orchestration folder containing scripts that run inside the VM. Default is FFUDevelopmentPath\\Apps\\Orchestration."
+        },
+        "PEDriversFolder": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the folder containing drivers to be injected into the WinPE deployment media. Default is FFUDevelopmentPath\\PEDrivers."
+        },
+        "Processors": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 4,
+            "description": "Number of virtual processors for the virtual machine. Recommended: at least 4 for reasonable build times."
+        },
+        "ProductKey": {
+            "type": "string",
+            "default": "",
+            "description": "Product key for the Windows edition specified in WindowsSKU. Recommended for MAK or KMS keys to activate Enterprise or Education."
+        },
+        "PromptExternalHardDiskMedia": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, prompts the user to confirm the use of media identified as External Hard Disk media."
+        },
+        "RemoveApps": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, removes the application content in the Apps folder after the FFU has been captured."
+        },
+        "RemoveFFU": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, removes the FFU file from the FFUDevelopmentPath\\FFU folder after it has been copied to the USB drive."
+        },
+        "RemoveUpdates": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, removes the downloaded CU, MSRT, Defender, Edge, OneDrive, and .NET files."
+        },
+        "ShareName": {
+            "type": "string",
+            "default": "FFUCaptureShare",
+            "pattern": "^[a-zA-Z0-9_\\-$]+$",
+            "description": "Name of the shared folder for FFU capture. Must contain only alphanumeric characters, underscores, hyphens, and dollar signs."
+        },
+        "UpdateADK": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, checks for and installs the latest Windows ADK and WinPE add-on if they are not already installed or up-to-date."
+        },
+        "UpdateEdge": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest Microsoft Edge."
+        },
+        "UpdateLatestCU": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest cumulative update."
+        },
+        "UpdateLatestDefender": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest Windows Defender definitions and Defender platform update."
+        },
+        "UpdateLatestMicrocode": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, downloads and installs the latest microcode updates for applicable Windows releases (e.g., Windows Server 2016/2019, Windows 10 LTSC 2016/2019)."
+        },
+        "UpdateLatestMSRT": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest Windows Malicious Software Removal Tool."
+        },
+        "UpdateLatestNet": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest .NET Framework."
+        },
+        "UpdateOneDrive": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest OneDrive as a per-machine installation instead of per-user."
+        },
+        "UpdatePreviewCU": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, downloads and installs the latest Preview cumulative update instead of the stable release."
+        },
+        "UseDriversAsPEDrivers": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true (and CopyPEDrivers is also true), bypasses PEDrivers folder and builds the WinPE driver set dynamically from the DriversFolder path."
+        },
+        "UserAgent": {
+            "type": "string",
+            "default": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+            "description": "User agent string to use when downloading files to avoid download failures on Microsoft sites."
+        },
+        "UserAppListPath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to a JSON file containing a list of user-defined applications to install. Default is FFUDevelopmentPath\\Apps\\UserAppList.json."
+        },
+        "Username": {
+            "type": "string",
+            "default": "ffu_user",
+            "pattern": "^[a-zA-Z0-9_\\-]+$",
+            "description": "Username for accessing the shared folder. The script will auto-create the account and password, and remove the account when finished."
+        },
+        "USBDriveList": {
+            "oneOf": [
+                { "type": "object" },
+                { "type": "null" }
+            ],
+            "default": null,
+            "description": "Hashtable containing USB drives from win32_diskdrive. Key: USB drive model name (partial match). Value: USB drive serial number (trailing partial match)."
+        },
+        "VMHostIPAddress": {
+            "type": "string",
+            "default": "",
+            "pattern": "^$|^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
+            "description": "IP address of the Hyper-V host for FFU capture. Required if InstallApps is set to true."
+        },
+        "VMLocation": {
+            "type": "string",
+            "default": "",
+            "description": "Location of the VHDX that gets created where Windows will be installed. Default is FFUDevelopmentPath\\VM."
+        },
+        "VMSwitchName": {
+            "type": "string",
+            "default": "",
+            "description": "Name of the Hyper-V virtual switch. Required if InstallApps is set to true for FFU capture from the VM."
+        },
+        "WindowsArch": {
+            "type": "string",
+            "enum": ["x86", "x64", "arm64"],
+            "default": "x64",
+            "description": "Architecture of Windows to download and deploy."
+        },
+        "WindowsLang": {
+            "type": "string",
+            "default": "en-us",
+            "pattern": "^[a-z]{2}-[a-z]{2}$",
+            "description": "Language of Windows media to download in language-region format (e.g., 'en-us', 'fr-ca').",
+            "enum": [
+                "ar-sa", "bg-bg", "cs-cz", "da-dk", "de-de", "el-gr", "en-gb", "en-us",
+                "es-es", "es-mx", "et-ee", "fi-fi", "fr-ca", "fr-fr", "he-il", "hr-hr",
+                "hu-hu", "it-it", "ja-jp", "ko-kr", "lt-lt", "lv-lv", "nb-no", "nl-nl",
+                "pl-pl", "pt-br", "pt-pt", "ro-ro", "ru-ru", "sk-sk", "sl-si", "sr-latn-rs",
+                "sv-se", "th-th", "tr-tr", "uk-ua", "zh-cn", "zh-tw"
+            ]
+        },
+        "WindowsRelease": {
+            "type": "integer",
+            "enum": [10, 11, 2016, 2019, 2021, 2022, 2024, 2025],
+            "default": 11,
+            "description": "Windows release version. 10 or 11 for client OS; 2016, 2019, 2021, 2022, 2024, 2025 for server OS."
+        },
+        "WindowsSKU": {
+            "type": "string",
+            "enum": [
+                "Home",
+                "Home N",
+                "Home Single Language",
+                "Education",
+                "Education N",
+                "Pro",
+                "Pro N",
+                "Pro Education",
+                "Pro Education N",
+                "Pro for Workstations",
+                "Pro N for Workstations",
+                "Enterprise",
+                "Enterprise N",
+                "Enterprise 2016 LTSB",
+                "Enterprise N 2016 LTSB",
+                "Enterprise LTSC",
+                "Enterprise N LTSC",
+                "IoT Enterprise LTSC",
+                "IoT Enterprise N LTSC",
+                "Standard",
+                "Standard (Desktop Experience)",
+                "Datacenter",
+                "Datacenter (Desktop Experience)"
+            ],
+            "default": "Pro",
+            "description": "Edition of Windows to install. Client SKUs (Home, Pro, Education, Enterprise) for Windows 10/11; Server SKUs and LTSC for server releases."
+        },
+        "WindowsVersion": {
+            "type": "string",
+            "default": "24h2",
+            "pattern": "^(\\d{4}|[12][0-9][hH][12]|LTSC|ltsc)$",
+            "description": "Windows version to download (e.g., '21H2', '22H2', '23H2', '24H2', '25H2', 'LTSC')."
+        }
+    },
+    "additionalProperties": false
+}

@@ -7,7 +7,7 @@
     RootModule = 'FFU.Updates.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.1'
 
     # ID used to uniquely identify this module
     GUID = 'e3b9c4a1-5f7d-4e2b-8c9a-1d6f3e8b2a5c'
@@ -28,7 +28,9 @@
     PowerShellVersion = '5.1'
 
     # Modules that must be imported into the global environment prior to importing this module
-    RequiredModules = @('FFU.Core')
+    RequiredModules = @(
+        @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
+    )
 
     # Assemblies that must be loaded prior to importing this module
     RequiredAssemblies = @()
@@ -73,9 +75,15 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Updates v1.0.0
+# Release Notes - FFU.Updates v1.0.1
 
-## Initial Release
+## v1.0.1 Bug Fix
+- **Fixed expand.exe argument quoting bug** - Removed embedded quotes from argument arrays
+- PowerShell handles quoting automatically for external commands
+- Prevents "Can't open input file" errors when MSU paths contain spaces
+- Added WebException handling for download operations
+
+## v1.0.0 Initial Release
 - Extracted Windows Update and servicing functions from monolithic BuildFFUVM.ps1
 - 9 functions for complete Windows Update lifecycle management
 - MSU disk space validation prevents expand.exe failures

@@ -28,7 +28,10 @@
     PowerShellVersion = '5.1'
 
     # Modules that must be imported into the global environment prior to importing this module
-    RequiredModules = @('FFU.Core', 'FFU.ADK')
+    RequiredModules = @(
+        @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
+        @{ModuleName = 'FFU.ADK'; ModuleVersion = '1.0.0'}
+    )
 
     # Assemblies that must be loaded prior to importing this module
     RequiredAssemblies = @()

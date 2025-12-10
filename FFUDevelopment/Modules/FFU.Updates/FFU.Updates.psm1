@@ -123,7 +123,17 @@ function Get-ProductsCab {
 
     WriteLog "Downloading products.cab to $OutFile ..."
     $downloadHeaders = @{ Accept = '*/*' }
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $OutFile -Headers $downloadHeaders -UserAgent $UserAgent
+    try {
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $OutFile -Headers $downloadHeaders -UserAgent $UserAgent -ErrorAction Stop
+    }
+    catch [System.Net.WebException] {
+        WriteLog "ERROR: Network error downloading products.cab: $($_.Exception.Message)"
+        throw "Failed to download Windows products catalog: $($_.Exception.Message)"
+    }
+    catch {
+        WriteLog "ERROR: Failed to download products.cab: $($_.Exception.Message)"
+        throw
+    }
 
     $actualSize = (Get-Item $OutFile).Length
     if ($actualSize -ne $serverSize) {
@@ -267,11 +277,23 @@ function Get-WindowsESD {
     # Extract XML from cab file
     WriteLog "Extracting Products XML from cab"
     $xmlFilePath = Join-Path $TempPath "products.xml"
-    Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" | Out-Null
-    WriteLog "Products XML extracted"
+    try {
+        Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" -ErrorAction Stop | Out-Null
+        WriteLog "Products XML extracted"
+    }
+    catch {
+        WriteLog "ERROR: Failed to extract Products XML from cab: $($_.Exception.Message)"
+        throw "Failed to extract Windows products catalog: $($_.Exception.Message)"
+    }
 
     # Load XML content
-    [xml]$xmlContent = Get-Content -Path $xmlFilePath
+    try {
+        [xml]$xmlContent = Get-Content -Path $xmlFilePath -ErrorAction Stop
+    }
+    catch {
+        WriteLog "ERROR: Failed to parse Products XML: $($_.Exception.Message)"
+        throw "Failed to parse Windows products catalog: $($_.Exception.Message)"
+    }
 
     # Define the client type to look for in the FilePath
     $clientType = if ($MediaType -eq 'consumer') { 'CLIENTCONSUMER' } else { 'CLIENTBUSINESS' }
@@ -285,7 +307,7 @@ function Get-WindowsESD {
                 WriteLog "Downloading $($file.filePath) to $esdFIlePath"
                 $OriginalVerbosePreference = $VerbosePreference
                 $VerbosePreference = 'SilentlyContinue'
-                Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
+                Set-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
                 try {
                     # Use resilient download with BITS fallback for large ESD files
                     Start-BitsTransferWithRetry -Source $file.FilePath -Destination $esdFilePath -Retries 3 -ErrorAction Stop | Out-Null
@@ -671,54 +693,104 @@ function Save-KB {
 
             if ($link -match 'x64' -or $link -match 'amd64') {
                 if ($WindowsArch -eq 'x64') {
-                    Writelog "Downloading $link for $WindowsArch to $Path"
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
-                    $fileName = ($link -split '/')[-1]
-                    Writelog "Returning $fileName"
-                    return $fileName
+                    WriteLog "Downloading $link for $WindowsArch to $Path"
+                    try {
+                        Start-BitsTransferWithRetry -Source $link -Destination $Path -ErrorAction Stop | Out-Null
+                        $fileName = ($link -split '/')[-1]
+                        WriteLog "Download complete: $fileName"
+                        return $fileName
+                    }
+                    catch [System.Net.WebException] {
+                        WriteLog "ERROR: Network error downloading update from $link : $($_.Exception.Message)"
+                        continue
+                    }
+                    catch {
+                        WriteLog "ERROR: Failed to download update from $link : $($_.Exception.Message)"
+                        continue
+                    }
                 }
-
             }
             elseif ($link -match 'arm64') {
                 if ($WindowsArch -eq 'arm64') {
-                    Writelog "Downloading $Link for $WindowsArch to $Path"
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
-                    $fileName = ($link -split '/')[-1]
-                    Writelog "Returning $fileName"
-                    return $fileName
+                    WriteLog "Downloading $link for $WindowsArch to $Path"
+                    try {
+                        Start-BitsTransferWithRetry -Source $link -Destination $Path -ErrorAction Stop | Out-Null
+                        $fileName = ($link -split '/')[-1]
+                        WriteLog "Download complete: $fileName"
+                        return $fileName
+                    }
+                    catch [System.Net.WebException] {
+                        WriteLog "ERROR: Network error downloading update from $link : $($_.Exception.Message)"
+                        continue
+                    }
+                    catch {
+                        WriteLog "ERROR: Failed to download update from $link : $($_.Exception.Message)"
+                        continue
+                    }
                 }
             }
             elseif ($link -match 'x86') {
                 if ($WindowsArch -eq 'x86') {
-                    Writelog "Downloading $link for $WindowsArch to $Path"
-                    Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
-                    $fileName = ($link -split '/')[-1]
-                    Writelog "Returning $fileName"
-                    return $fileName
+                    WriteLog "Downloading $link for $WindowsArch to $Path"
+                    try {
+                        Start-BitsTransferWithRetry -Source $link -Destination $Path -ErrorAction Stop | Out-Null
+                        $fileName = ($link -split '/')[-1]
+                        WriteLog "Download complete: $fileName"
+                        return $fileName
+                    }
+                    catch [System.Net.WebException] {
+                        WriteLog "ERROR: Network error downloading update from $link : $($_.Exception.Message)"
+                        continue
+                    }
+                    catch {
+                        WriteLog "ERROR: Failed to download update from $link : $($_.Exception.Message)"
+                        continue
+                    }
                 }
-
             }
             else {
                 WriteLog "No architecture found in $link"
 
                 #If no architecture is found, download the file and run it through Get-PEArchitecture to determine the architecture
-                Writelog "Downloading $link to $Path and analyzing file for architecture"
-                Start-BitsTransferWithRetry -Source $link -Destination $Path | Out-Null
+                WriteLog "Downloading $link to $Path and analyzing file for architecture"
+                try {
+                    Start-BitsTransferWithRetry -Source $link -Destination $Path -ErrorAction Stop | Out-Null
+                }
+                catch [System.Net.WebException] {
+                    WriteLog "ERROR: Network error downloading update from $link : $($_.Exception.Message)"
+                    continue
+                }
+                catch {
+                    WriteLog "ERROR: Failed to download update from $link : $($_.Exception.Message)"
+                    continue
+                }
 
                 #Take the file and run it through Get-PEArchitecture to determine the architecture
                 $fileName = ($link -split '/')[-1]
                 $filePath = Join-Path -Path $Path -ChildPath $fileName
-                $arch = Get-PEArchitecture -FilePath $filePath
-                Writelog "$fileName is $arch"
+                try {
+                    $arch = Get-PEArchitecture -FilePath $filePath -ErrorAction Stop
+                    WriteLog "$fileName is $arch"
+                }
+                catch {
+                    WriteLog "WARNING: Failed to determine architecture of $fileName : $($_.Exception.Message)"
+                    $arch = $null
+                }
+
                 #If the architecture matches $WindowsArch, keep the file, otherwise delete it
                 if ($arch -eq $WindowsArch) {
-                    Writelog "Architecture for $fileName matches $WindowsArch, keeping file"
+                    WriteLog "Architecture for $fileName matches $WindowsArch, keeping file"
                     return $fileName
                 }
                 else {
-                    Writelog "Deleting $fileName, architecture does not match"
+                    WriteLog "Deleting $fileName, architecture does not match"
                     if (-not [string]::IsNullOrWhiteSpace($filePath)) {
-                        Remove-Item -Path $filePath -Force -ErrorAction SilentlyContinue
+                        try {
+                            Remove-Item -Path $filePath -Force -ErrorAction Stop
+                        }
+                        catch {
+                            WriteLog "WARNING: Failed to delete $fileName : $($_.Exception.Message)"
+                        }
                     }
                 }
             }
@@ -1125,10 +1197,11 @@ function Add-WindowsPackageWithUnattend {
             WriteLog "Extracting MSU package to check for unattend.xml: $extractPath"
 
             # Extract MSU package using expand.exe with enhanced error handling
+            # Note: Do not embed quotes in argument array - PowerShell handles quoting automatically
             $expandArgs = @(
                 '-F:*',
-                "`"$PackagePath`"",
-                "`"$extractPath`""
+                $PackagePath,
+                $extractPath
             )
 
             WriteLog "Running expand.exe with arguments: expand.exe $($expandArgs -join ' ')"

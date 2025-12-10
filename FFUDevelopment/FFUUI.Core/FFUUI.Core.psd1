@@ -12,7 +12,7 @@
 RootModule = 'FFUUI.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.1'
+ModuleVersion = '0.0.2'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -118,7 +118,14 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        # ReleaseNotes = ''
+        ReleaseNotes = @'
+v0.0.2: Bug fix
+- Fixed expand.exe argument quoting in FFUUI.Core.Drivers.HP.psm1
+- Removed embedded quotes from argument arrays (3 instances)
+- Prevents "Can't open input file" errors when HP driver paths contain spaces
+
+v0.0.1: Initial release
+'@
 
         # Prerelease string of this module
         # Prerelease = ''

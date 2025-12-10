@@ -147,15 +147,36 @@ function Get-Office {
         WriteLog "A custom Office configuration file was specified. Using '$OfficeInstallXML' for installation."
     }
 
-    # Download ODT
+    # Ensure Office directory exists
+    if (-not (Test-Path $OfficePath)) {
+        WriteLog "Creating Office directory: $OfficePath"
+        New-Item -Path $OfficePath -ItemType Directory -Force | Out-Null
+    }
+
+    # Download ODT with proper error handling
     $ODTUrl = Get-ODTURL -Headers $Headers -UserAgent $UserAgent
     $ODTInstallFile = Join-Path $OfficePath "odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
 
-    $OriginalVerbosePreference = $VerbosePreference
-    $VerbosePreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers $Headers -UserAgent $UserAgent
-    $VerbosePreference = $OriginalVerbosePreference
+    try {
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
+        $VerbosePreference = $OriginalVerbosePreference
+
+        # Validate download succeeded
+        if (-not (Test-Path $ODTInstallFile)) {
+            throw "ODT download appeared to succeed but file not found at: $ODTInstallFile"
+        }
+        $odtFileInfo = Get-Item $ODTInstallFile
+        if ($odtFileInfo.Length -eq 0) {
+            throw "ODT download resulted in empty file: $ODTInstallFile"
+        }
+        WriteLog "ODT downloaded successfully ($($odtFileInfo.Length) bytes)"
+    }
+    catch {
+        throw "Failed to download Office Deployment Toolkit from $ODTUrl : $($_.Exception.Message)"
+    }
 
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
@@ -165,7 +186,7 @@ function Get-Office {
     $xmlContent = [xml](Get-Content $OfficeDownloadXML)
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
     $xmlContent.Save($OfficeDownloadXML)
-    Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
+    Set-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
     $setupExe = Join-Path $OfficePath "setup.exe"
     Invoke-Process $setupExe "/download $OfficeDownloadXML" | Out-Null

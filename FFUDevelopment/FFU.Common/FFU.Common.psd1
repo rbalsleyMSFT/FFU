@@ -12,7 +12,7 @@
 RootModule = 'FFU.Common.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.1'
+ModuleVersion = '0.0.4'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -71,7 +71,9 @@ NestedModules = @('FFU.Common.Classes.psm1',
                'FFU.Common.Winget.psm1',
                'FFU.Common.Parallel.psm1',
                'FFU.Common.Cleanup.psm1',
-               'FFU.Common.Download.psm1')
+               'FFU.Common.Download.psm1',
+               'FFU.Common.ParallelDownload.psm1',
+               'FFU.Common.Logging.psm1')
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
 FunctionsToExport = '*'
@@ -112,7 +114,27 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        # ReleaseNotes = ''
+        ReleaseNotes = @'
+v0.0.4: Invoke-Process error handling improvements
+- Enhanced Invoke-Process to provide structured error messages with process path, exit code, and stderr/stdout
+- Error messages now follow format: "Process '{path}' exited with code {code}. Error/Output: {message}"
+- Helps diagnose failures like oscdimg.exe errors by showing actual exit codes instead of just stdout
+- Prevents confusing error messages where progress output was shown as the error
+
+v0.0.3: Log file initialization fix
+- Enhanced Set-CommonCoreLogPath with -Initialize switch parameter for proper log file lifecycle management
+- When -Initialize is specified, deletes existing log file before initializing new session
+- Fixes bug where log file was deleted AFTER path was set, causing WriteLog to fail
+- Centralized log file deletion logic (removed redundant deletion from BuildFFUVM.ps1 and UI)
+
+v0.0.2: Phase 2 Reliability improvements
+- Added FFU.Common.Logging module for structured logging with log levels, JSON output, and session correlation
+- Enhanced WriteLog to accept null/empty strings gracefully (fixes parameter binding errors)
+- Added Get-ErrorMessage helper function for safe error message extraction
+- Added path validation before Remove-Item in Invoke-Process
+
+v0.0.1: Initial release
+'@
 
         # Prerelease string of this module
         # Prerelease = ''

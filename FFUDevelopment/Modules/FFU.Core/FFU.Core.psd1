@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.8'
+    ModuleVersion = '1.0.11'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -28,7 +28,9 @@
     PowerShellVersion = '5.1'
 
     # Modules that must be imported into the global environment prior to importing this module
-    RequiredModules = @()
+    RequiredModules = @(
+        @{ModuleName = 'FFU.Constants'; ModuleVersion = '1.0.0'}
+    )
 
     # Assemblies that must be loaded prior to importing this module
     RequiredAssemblies = @()
@@ -37,7 +39,7 @@
     FunctionsToExport = @(
         # Configuration and utilities
         'Get-Parameters',
-        'LogVariableValues',
+        'Write-VariableValues',         # v1.0.11: Renamed from LogVariableValues (approved verb)
         'Get-ChildProcesses',
         'Test-Url',
         'Get-PrivateProfileString',
@@ -49,10 +51,10 @@
         'New-RunSession',
         'Get-CurrentRunManifest',
         'Save-RunManifest',
-        'Mark-DownloadInProgress',
+        'Set-DownloadInProgress',       # v1.0.11: Renamed from Mark-DownloadInProgress (approved verb)
         'Clear-DownloadInProgress',
         'Remove-InProgressItems',
-        'Cleanup-CurrentRunDownloads',
+        'Clear-CurrentRunDownloads',    # v1.0.11: Renamed from Cleanup-CurrentRunDownloads (approved verb)
         'Restore-RunJsonBackups',
         # Error handling (v1.0.5)
         'Invoke-WithErrorHandling',
@@ -77,7 +79,10 @@
         'New-SecureRandomPassword',
         'ConvertFrom-SecureStringToPlainText',
         'Clear-PlainTextPassword',
-        'Remove-SecureStringFromMemory'
+        'Remove-SecureStringFromMemory',
+        # Configuration schema validation (v1.0.10)
+        'Test-FFUConfiguration',
+        'Get-FFUConfigurationSchema'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
@@ -87,7 +92,12 @@
     VariablesToExport = @()
 
     # Aliases to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no aliases to export.
-    AliasesToExport = @()
+    # v1.0.11: Added backward compatibility aliases for renamed functions (deprecated)
+    AliasesToExport = @(
+        'LogVariableValues',            # Deprecated: Use Write-VariableValues
+        'Mark-DownloadInProgress',      # Deprecated: Use Set-DownloadInProgress
+        'Cleanup-CurrentRunDownloads'   # Deprecated: Use Clear-CurrentRunDownloads
+    )
 
     # Private data to pass to the module specified in RootModule/ModuleToProcess. This may also contain a PSData hashtable with additional module metadata used by PowerShell.
     PrivateData = @{
@@ -103,7 +113,36 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.8
+# Release Notes - FFU.Core v1.0.11
+
+## v1.0.11 - PowerShell Best Practices Compliance
+- **BREAKING CHANGE (with backward compatibility)**: Renamed 3 functions to use approved verbs
+  - LogVariableValues -> Write-VariableValues (alias preserved)
+  - Mark-DownloadInProgress -> Set-DownloadInProgress (alias preserved)
+  - Cleanup-CurrentRunDownloads -> Clear-CurrentRunDownloads (alias preserved)
+- Added [OutputType([void])] attribute to renamed functions
+- Enhanced comment-based help with .NOTES documenting renames
+- Backward compatibility aliases exported for existing code
+- Old function names continue to work via aliases but are deprecated
+- Module imports cleanly without verb warnings when using -DisableNameChecking
+- 39 total functions + 3 aliases now exported
+
+## v1.0.10 - Configuration Schema Validation
+- Added Test-FFUConfiguration: Validates config files against JSON schema
+- Added Get-FFUConfigurationSchema: Returns path to schema file
+- JSON Schema validation for all configuration properties
+- Type checking (string, boolean, integer, object)
+- Enum validation for WindowsSKU, WindowsArch, Make, MediaType, etc.
+- Range validation for Memory, Disksize, Processors, etc.
+- Pattern validation for ShareName, Username, IP addresses
+- Unknown property detection with errors or warnings
+- ThrowOnError switch for strict validation mode
+- 39 total functions now exported
+
+## v1.0.9 - Module Dependency Declaration
+- Added FFU.Constants as RequiredModule dependency
+- Ensures proper module load order (FFU.Constants loads before FFU.Core)
+- Uses standardized hashtable format for RequiredModules
 
 ## v1.0.8 - Sensitive Media Cleanup Enhancement
 - Added Register-SensitiveMediaCleanup: Registers cleanup for credential-containing capture media files
@@ -146,13 +185,18 @@
 - No external dependencies (base module)
 
 ## Functions Included
-- Configuration: Get-Parameters, LogVariableValues, Export-ConfigFile
+- Configuration: Get-Parameters, Write-VariableValues, Export-ConfigFile
 - Session Management: New-RunSession, Get-CurrentRunManifest, Save-RunManifest
-- Download Tracking: Mark-DownloadInProgress, Clear-DownloadInProgress, Remove-InProgressItems
+- Download Tracking: Set-DownloadInProgress, Clear-DownloadInProgress, Remove-InProgressItems
 - Utilities: Test-Url, Get-ChildProcesses, Get-PrivateProfileString, Get-ShortenedWindowsSKU, New-FFUFileName
-- Cleanup: Cleanup-CurrentRunDownloads, Restore-RunJsonBackups
+- Cleanup: Clear-CurrentRunDownloads, Restore-RunJsonBackups
 - Error Handling: Invoke-WithErrorHandling, Test-ExternalCommandSuccess, Invoke-WithCleanup
 - Cleanup Registration: Register-CleanupAction, Unregister-CleanupAction, Invoke-FailureCleanup, etc.
+
+## Deprecated Aliases (for backward compatibility)
+- LogVariableValues -> Write-VariableValues
+- Mark-DownloadInProgress -> Set-DownloadInProgress
+- Cleanup-CurrentRunDownloads -> Clear-CurrentRunDownloads
 '@
         }
     }

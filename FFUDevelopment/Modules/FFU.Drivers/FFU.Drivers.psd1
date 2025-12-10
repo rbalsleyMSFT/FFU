@@ -3,7 +3,7 @@
     RootModule = 'FFU.Drivers.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.2'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -42,7 +42,9 @@
     # ProcessorArchitecture = ''
 
     # Modules that must be imported into the global environment prior to importing this module
-    RequiredModules = @()
+    RequiredModules = @(
+        @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
+    )
 
     # Assemblies that must be loaded prior to importing this module
     # RequiredAssemblies = @()
@@ -102,7 +104,21 @@
             # IconUri = ''
 
             # ReleaseNotes of this module
-            ReleaseNotes = 'Initial release of FFU.Drivers module extracted from BuildFFUVM.ps1 for improved modularity.'
+            ReleaseNotes = @'
+v1.0.2: Module Dependency Declaration
+- Added FFU.Core as RequiredModule dependency
+- Ensures WriteLog and other shared functions are available
+- Uses standardized hashtable format for RequiredModules
+
+v1.0.1: Phase 2 Reliability improvements
+- Added comprehensive error handling with WebException catches for all web requests
+- Added try/catch blocks in Get-MicrosoftDrivers, Get-HPDrivers, Get-LenovoDrivers, Get-DellDrivers
+- Implemented graceful degradation (continue on individual driver failures instead of aborting)
+- Added download-in-progress marker cleanup on failures
+- Enhanced error logging with context
+
+v1.0.0: Initial release of FFU.Drivers module extracted from BuildFFUVM.ps1 for improved modularity.
+'@
 
             # Prerelease string of this module
             # Prerelease = ''

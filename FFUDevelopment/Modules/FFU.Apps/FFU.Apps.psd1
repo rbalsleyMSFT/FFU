@@ -29,7 +29,9 @@
     PowerShellVersion = '5.1'
 
     # Modules that must be imported into the global environment prior to importing this module
-    RequiredModules = @('FFU.Core')
+    RequiredModules = @(
+        @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
+    )
 
     # Functions to export from this module
     FunctionsToExport = @(

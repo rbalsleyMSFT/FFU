@@ -85,7 +85,19 @@ function Get-MicrosoftDrivers {
     WriteLog "Getting Surface driver information from $url"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+    try {
+        $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
+    }
+    catch [System.Net.WebException] {
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "ERROR: Network error accessing Microsoft Surface drivers page: $($_.Exception.Message)"
+        throw "Failed to access Microsoft Surface drivers page: $($_.Exception.Message)"
+    }
+    catch {
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "ERROR: Failed to retrieve Surface driver information: $($_.Exception.Message)"
+        throw
+    }
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
 
@@ -194,7 +206,19 @@ function Get-MicrosoftDrivers {
     WriteLog "Getting download page content"
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
-    $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+    try {
+        $downloadPageContent = Invoke-WebRequest -Uri $selectedModel.Link -UseBasicParsing -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
+    }
+    catch [System.Net.WebException] {
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "ERROR: Network error accessing download page for $Model : $($_.Exception.Message)"
+        throw "Failed to access download page for '$Model': $($_.Exception.Message)"
+    }
+    catch {
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "ERROR: Failed to retrieve download page for $Model : $($_.Exception.Message)"
+        throw
+    }
     $VerbosePreference = $OriginalVerbosePreference
     WriteLog "Complete"
     WriteLog "Parsing download page for file"
@@ -243,10 +267,22 @@ function Get-MicrosoftDrivers {
             ### DOWNLOAD THE FILE
             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
             WriteLog "Downloading $Model driver file to $filePath"
-            Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
-            Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
+            Set-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
+            try {
+                Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath -ErrorAction Stop
+                WriteLog "Download complete"
+            }
+            catch [System.Net.WebException] {
+                Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
+                WriteLog "ERROR: Network error downloading $Model drivers: $($_.Exception.Message)"
+                throw "Failed to download drivers for '$Model': $($_.Exception.Message)"
+            }
+            catch {
+                Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
+                WriteLog "ERROR: Failed to download $Model drivers: $($_.Exception.Message)"
+                throw
+            }
             Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $filePath
-            WriteLog "Download complete"
 
             # Determine file extension
             $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
@@ -256,24 +292,43 @@ function Get-MicrosoftDrivers {
                 # Extract the MSI file using an administrative install
                 WriteLog "Extracting MSI file to $modelPath"
                 $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
-                Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments | Out-Null
-                WriteLog "Extraction complete"
+                try {
+                    Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments -ErrorAction Stop | Out-Null
+                    WriteLog "MSI extraction complete"
+                }
+                catch {
+                    WriteLog "ERROR: Failed to extract MSI file: $($_.Exception.Message)"
+                    throw "Failed to extract MSI driver package for '$Model': $($_.Exception.Message)"
+                }
             }
             elseif ($fileExtension -eq ".zip") {
                 # Extract the ZIP file
                 WriteLog "Extracting ZIP file to $modelPath"
-                # $ProgressPreference = 'SilentlyContinue'
-                Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
-                # $ProgressPreference = 'Continue'
-                WriteLog "Extraction complete"
+                try {
+                    Expand-Archive -Path $filePath -DestinationPath $modelPath -Force -ErrorAction Stop
+                    WriteLog "ZIP extraction complete"
+                }
+                catch [System.IO.IOException] {
+                    WriteLog "ERROR: IO error extracting ZIP file: $($_.Exception.Message)"
+                    throw "Failed to extract ZIP driver package for '$Model': $($_.Exception.Message)"
+                }
+                catch {
+                    WriteLog "ERROR: Failed to extract ZIP file: $($_.Exception.Message)"
+                    throw
+                }
             }
             else {
-                WriteLog "Unsupported file type: $fileExtension"
+                WriteLog "WARNING: Unsupported file type: $fileExtension"
             }
             # Remove the downloaded file
             WriteLog "Removing $filePath"
-            Remove-Item -Path $filePath -Force -ErrorAction SilentlyContinue
-            WriteLog "Complete"
+            try {
+                Remove-Item -Path $filePath -Force -ErrorAction Stop
+                WriteLog "Driver installer file removed"
+            }
+            catch {
+                WriteLog "WARNING: Failed to remove driver installer file: $($_.Exception.Message)"
+            }
         }
         else {
             WriteLog "No download link found for Windows $WindowsRelease."
@@ -358,14 +413,37 @@ function Get-HPDrivers {
         WriteLog "Drivers folder created"
     }
     WriteLog "Downloading $PlatformListUrl to $PlatformListCab"
-    Start-BitsTransferWithRetry -Source $PlatformListUrl -Destination $PlatformListCab
-    WriteLog "Download complete"
+    try {
+        Start-BitsTransferWithRetry -Source $PlatformListUrl -Destination $PlatformListCab -ErrorAction Stop
+        WriteLog "Download complete"
+    }
+    catch [System.Net.WebException] {
+        WriteLog "ERROR: Network error downloading HP platform list: $($_.Exception.Message)"
+        throw "Failed to download HP platform catalog: $($_.Exception.Message)"
+    }
+    catch {
+        WriteLog "ERROR: Failed to download HP platform list: $($_.Exception.Message)"
+        throw
+    }
+
     WriteLog "Expanding $PlatformListCab to $PlatformListXml"
-    Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml" | Out-Null
-    WriteLog "Expansion complete"
+    try {
+        Invoke-Process -FilePath expand.exe -ArgumentList "$PlatformListCab $PlatformListXml" -ErrorAction Stop | Out-Null
+        WriteLog "Expansion complete"
+    }
+    catch {
+        WriteLog "ERROR: Failed to expand HP platform cab file: $($_.Exception.Message)"
+        throw "Failed to expand HP platform catalog: $($_.Exception.Message)"
+    }
 
     # Parse the PlatformList.xml to find the SystemID based on the ProductName
-    [xml]$PlatformListContent = Get-Content -Path $PlatformListXml
+    try {
+        [xml]$PlatformListContent = Get-Content -Path $PlatformListXml -ErrorAction Stop
+    }
+    catch {
+        WriteLog "ERROR: Failed to parse HP platform list XML: $($_.Exception.Message)"
+        throw "Failed to parse HP platform catalog: $($_.Exception.Message)"
+    }
     $ProductNodes = $PlatformListContent.ImagePal.Platform | Where-Object { $_.ProductName.'#text' -match $Model }
 
     # Create a list of unique ProductName entries
@@ -490,13 +568,36 @@ function Get-HPDrivers {
     }
 
     # Download and extract the driver XML cab
-    Writelog "Downloading HP Driver cab from $DriverCabUrl to $DriverCabFile"
-    Start-BitsTransferWithRetry -Source $DriverCabUrl -Destination $DriverCabFile
+    WriteLog "Downloading HP Driver cab from $DriverCabUrl to $DriverCabFile"
+    try {
+        Start-BitsTransferWithRetry -Source $DriverCabUrl -Destination $DriverCabFile -ErrorAction Stop
+    }
+    catch [System.Net.WebException] {
+        WriteLog "ERROR: Network error downloading HP driver catalog: $($_.Exception.Message)"
+        throw "Failed to download HP driver catalog for $ProductName : $($_.Exception.Message)"
+    }
+    catch {
+        WriteLog "ERROR: Failed to download HP driver catalog: $($_.Exception.Message)"
+        throw
+    }
+
     WriteLog "Expanding HP Driver cab to $DriverXmlFile"
-    Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile" | Out-Null
+    try {
+        Invoke-Process -FilePath expand.exe -ArgumentList "$DriverCabFile $DriverXmlFile" -ErrorAction Stop | Out-Null
+    }
+    catch {
+        WriteLog "ERROR: Failed to expand HP driver cab file: $($_.Exception.Message)"
+        throw "Failed to expand HP driver catalog: $($_.Exception.Message)"
+    }
 
     # Parse the extracted XML file to download individual drivers
-    [xml]$DriverXmlContent = Get-Content -Path $DriverXmlFile
+    try {
+        [xml]$DriverXmlContent = Get-Content -Path $DriverXmlFile -ErrorAction Stop
+    }
+    catch {
+        WriteLog "ERROR: Failed to parse HP driver XML: $($_.Exception.Message)"
+        throw "Failed to parse HP driver catalog: $($_.Exception.Message)"
+    }
     $baseUrl = "https://ftp.hp.com/pub/softpaq/sp"
 
     WriteLog "Downloading drivers for $ProductName"
@@ -532,27 +633,55 @@ function Get-HPDrivers {
 
         # Download the driver with retry
         WriteLog "Downloading driver to: $DriverFilePath"
-        Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
-        Start-BitsTransferWithRetry -Source $DriverUrl -Destination $DriverFilePath
-        Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
-        WriteLog 'Driver downloaded'
+        Set-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
+        try {
+            Start-BitsTransferWithRetry -Source $DriverUrl -Destination $DriverFilePath -ErrorAction Stop
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
+            WriteLog 'Driver downloaded'
+        }
+        catch [System.Net.WebException] {
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
+            WriteLog "WARNING: Network error downloading HP driver '$Name': $($_.Exception.Message)"
+            continue
+        }
+        catch {
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $DriverFilePath
+            WriteLog "WARNING: Failed to download HP driver '$Name': $($_.Exception.Message)"
+            continue
+        }
 
         # Make folder for extraction
         $extractFolder = "$downloadFolder\$Name\$Version\" + $DriverFileName.TrimEnd('.exe')
-        Writelog "Creating extraction folder: $extractFolder"
-        New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-        WriteLog 'Extraction folder created'
+        WriteLog "Creating extraction folder: $extractFolder"
+        try {
+            New-Item -Path $extractFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            WriteLog 'Extraction folder created'
+        }
+        catch {
+            WriteLog "WARNING: Failed to create extraction folder: $($_.Exception.Message)"
+            continue
+        }
 
         # Extract the driver
         $arguments = "/s /e /f `"$extractFolder`""
         WriteLog "Extracting driver"
-        Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments | Out-Null
-        WriteLog "Driver extracted to: $extractFolder"
+        try {
+            Invoke-Process -FilePath $DriverFilePath -ArgumentList $arguments -ErrorAction Stop | Out-Null
+            WriteLog "Driver extracted to: $extractFolder"
+        }
+        catch {
+            WriteLog "WARNING: Failed to extract HP driver '$Name': $($_.Exception.Message)"
+        }
 
         # Delete the .exe driver file after extraction
         if (-not [string]::IsNullOrWhiteSpace($DriverFilePath)) {
-            Remove-Item -Path $DriverFilePath -Force -ErrorAction SilentlyContinue
-            WriteLog "Driver installation file deleted: $DriverFilePath"
+            try {
+                Remove-Item -Path $DriverFilePath -Force -ErrorAction Stop
+                WriteLog "Driver installation file deleted: $DriverFilePath"
+            }
+            catch {
+                WriteLog "WARNING: Failed to delete driver installer: $($_.Exception.Message)"
+            }
         }
     }
     # Clean up the downloaded cab and xml files - filter out null/empty paths to prevent "Value cannot be null" error
@@ -654,11 +783,29 @@ function Get-LenovoDrivers {
         WriteLog "Querying Lenovo PSREF API for model: $ModelName"
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+        try {
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent -ErrorAction Stop
+        }
+        catch [System.Net.WebException] {
+            $VerbosePreference = $OriginalVerbosePreference
+            WriteLog "ERROR: Network error querying Lenovo PSREF API: $($_.Exception.Message)"
+            throw "Failed to query Lenovo PSREF API for model '$ModelName': $($_.Exception.Message)"
+        }
+        catch {
+            $VerbosePreference = $OriginalVerbosePreference
+            WriteLog "ERROR: Failed to query Lenovo PSREF API: $($_.Exception.Message)"
+            throw
+        }
         $VerbosePreference = $OriginalVerbosePreference
         WriteLog "Complete"
 
-        $jsonResponse = $response.Content | ConvertFrom-Json
+        try {
+            $jsonResponse = $response.Content | ConvertFrom-Json
+        }
+        catch {
+            WriteLog "ERROR: Failed to parse Lenovo PSREF response: $($_.Exception.Message)"
+            throw "Failed to parse Lenovo PSREF API response: $($_.Exception.Message)"
+        }
 
         $products = @()
         foreach ($item in $jsonResponse.data) {
@@ -740,9 +887,26 @@ function Get-LenovoDrivers {
     # Download and parse the Lenovo catalog XML
     $LenovoCatalogXML = "$DriversFolder\$ModelRelease.xml"
     WriteLog "Downloading $catalogUrl to $LenovoCatalogXML"
-    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $LenovoCatalogXML
-    WriteLog "Download Complete"
-    $xmlContent = [xml](Get-Content -Path $LenovoCatalogXML)
+    try {
+        Start-BitsTransferWithRetry -Source $catalogUrl -Destination $LenovoCatalogXML -ErrorAction Stop
+        WriteLog "Download Complete"
+    }
+    catch [System.Net.WebException] {
+        WriteLog "ERROR: Network error downloading Lenovo driver catalog: $($_.Exception.Message)"
+        throw "Failed to download Lenovo driver catalog for $model : $($_.Exception.Message)"
+    }
+    catch {
+        WriteLog "ERROR: Failed to download Lenovo driver catalog: $($_.Exception.Message)"
+        throw
+    }
+
+    try {
+        $xmlContent = [xml](Get-Content -Path $LenovoCatalogXML -ErrorAction Stop)
+    }
+    catch {
+        WriteLog "ERROR: Failed to parse Lenovo driver catalog XML: $($_.Exception.Message)"
+        throw "Failed to parse Lenovo driver catalog: $($_.Exception.Message)"
+    }
 
     WriteLog "Parsing Lenovo catalog XML"
     # Process each package in the catalog
@@ -824,35 +988,70 @@ function Get-LenovoDrivers {
 
         # Download the driver with retry
         WriteLog "Downloading driver: $driverUrl to $driverFilePath"
-        Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
-        Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath
-        Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
-        WriteLog "Driver downloaded"
+        Set-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
+        try {
+            Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath -ErrorAction Stop
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
+            WriteLog "Driver downloaded"
+        }
+        catch [System.Net.WebException] {
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
+            WriteLog "WARNING: Network error downloading Lenovo driver '$packageTitle': $($_.Exception.Message)"
+            Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        catch {
+            Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
+            WriteLog "WARNING: Failed to download Lenovo driver '$packageTitle': $($_.Exception.Message)"
+            Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+            continue
+        }
 
         # Make folder for extraction
         $extractFolder = $downloadFolder + "\" + $driverFileName.TrimEnd($driverFileName[-4..-1])
         WriteLog "Creating extract folder: $extractFolder"
-        New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-        WriteLog "Extract folder created"
+        try {
+            New-Item -Path $extractFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            WriteLog "Extract folder created"
+        }
+        catch {
+            WriteLog "WARNING: Failed to create extract folder: $($_.Exception.Message)"
+            Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+            continue
+        }
 
         # Modify the extract command
         $modifiedExtractCommand = $extractCommand -replace '%PACKAGEPATH%', "`"$extractFolder`""
 
         # Extract the driver
-        # Start-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait -NoNewWindow
         WriteLog "Extracting driver: $driverFilePath to $extractFolder"
-        Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand | Out-Null
-        WriteLog "Driver extracted"
+        try {
+            Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -ErrorAction Stop | Out-Null
+            WriteLog "Driver extracted"
+        }
+        catch {
+            WriteLog "WARNING: Failed to extract Lenovo driver '$packageTitle': $($_.Exception.Message)"
+        }
 
         # Delete the .exe driver file after extraction
         WriteLog "Deleting driver installation file: $driverFilePath"
-        Remove-Item -Path $driverFilePath -Force -ErrorAction SilentlyContinue
-        WriteLog "Driver installation file deleted: $driverFilePath"
+        try {
+            Remove-Item -Path $driverFilePath -Force -ErrorAction Stop
+            WriteLog "Driver installation file deleted: $driverFilePath"
+        }
+        catch {
+            WriteLog "WARNING: Failed to delete driver installer: $($_.Exception.Message)"
+        }
 
         # Delete the package XML file after extraction
         WriteLog "Deleting package XML file: $packageXMLPath"
-        Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
-        WriteLog "Package XML file deleted"
+        try {
+            Remove-Item -Path $packageXMLPath -Force -ErrorAction Stop
+            WriteLog "Package XML file deleted"
+        }
+        catch {
+            WriteLog "WARNING: Failed to delete package XML: $($_.Exception.Message)"
+        }
     }
 
     #Delete the catalog XML file after processing
@@ -954,14 +1153,36 @@ function Get-DellDrivers {
     }
 
     WriteLog "Downloading Dell Catalog cab file: $catalogUrl to $DellCabFile"
-    Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile
-    WriteLog "Dell Catalog cab file downloaded"
+    try {
+        Start-BitsTransferWithRetry -Source $catalogUrl -Destination $DellCabFile -ErrorAction Stop
+        WriteLog "Dell Catalog cab file downloaded"
+    }
+    catch [System.Net.WebException] {
+        WriteLog "ERROR: Network error downloading Dell catalog: $($_.Exception.Message)"
+        throw "Failed to download Dell driver catalog: $($_.Exception.Message)"
+    }
+    catch {
+        WriteLog "ERROR: Failed to download Dell catalog: $($_.Exception.Message)"
+        throw
+    }
 
     WriteLog "Extracting Dell Catalog cab file to $DellCatalogXML"
-    Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML" | Out-Null
-    WriteLog "Dell Catalog cab file extracted"
+    try {
+        Invoke-Process -FilePath Expand.exe -ArgumentList "$DellCabFile $DellCatalogXML" -ErrorAction Stop | Out-Null
+        WriteLog "Dell Catalog cab file extracted"
+    }
+    catch {
+        WriteLog "ERROR: Failed to extract Dell catalog cab file: $($_.Exception.Message)"
+        throw "Failed to extract Dell driver catalog: $($_.Exception.Message)"
+    }
 
-    $xmlContent = [xml](Get-Content -Path $DellCatalogXML)
+    try {
+        $xmlContent = [xml](Get-Content -Path $DellCatalogXML -ErrorAction Stop)
+    }
+    catch {
+        WriteLog "ERROR: Failed to parse Dell catalog XML: $($_.Exception.Message)"
+        throw "Failed to parse Dell driver catalog: $($_.Exception.Message)"
+    }
     $baseLocation = "https://" + $xmlContent.manifest.baseLocation + "/"
     $latestDrivers = @{}
 
@@ -1059,7 +1280,7 @@ function Get-DellDrivers {
 
             WriteLog "Downloading driver: $($driver.DownloadUrl) to $driverFilePath"
             try {
-                Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
+                Set-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
                 Start-BitsTransferWithRetry -Source $driver.DownloadUrl -Destination $driverFilePath
                 Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $driverFilePath
                 WriteLog "Driver downloaded"

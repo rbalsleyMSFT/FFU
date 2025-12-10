@@ -796,6 +796,72 @@ function Initialize-AboutTab {
     & $registerHyperlinkHandler "lnkDocs"
     & $registerHyperlinkHandler "lnkIssues"
 
+    # Populate module versions panel
+    $pnlModuleVersions = $window.FindName("pnlModuleVersions")
+    if ($pnlModuleVersions -and $State.Version -and $State.Version.Modules) {
+        # Clear the placeholder text
+        $pnlModuleVersions.Children.Clear()
+
+        # Create a grid for module versions (two columns: name and version)
+        $moduleGrid = New-Object System.Windows.Controls.Grid
+        $col1 = New-Object System.Windows.Controls.ColumnDefinition
+        $col1.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+        $col2 = New-Object System.Windows.Controls.ColumnDefinition
+        $col2.Width = [System.Windows.GridLength]::Auto
+        $moduleGrid.ColumnDefinitions.Add($col1)
+        $moduleGrid.ColumnDefinitions.Add($col2)
+
+        # Get module names and sort them
+        $moduleNames = $State.Version.Modules.PSObject.Properties.Name | Sort-Object
+        $row = 0
+
+        foreach ($moduleName in $moduleNames) {
+            $moduleInfo = $State.Version.Modules.$moduleName
+
+            # Add row definition
+            $rowDef = New-Object System.Windows.Controls.RowDefinition
+            $rowDef.Height = [System.Windows.GridLength]::Auto
+            $moduleGrid.RowDefinitions.Add($rowDef)
+
+            # Module name (with tooltip showing description)
+            $nameBlock = New-Object System.Windows.Controls.TextBlock
+            $nameBlock.Text = $moduleName
+            $nameBlock.FontSize = 11
+            $nameBlock.Margin = [System.Windows.Thickness]::new(0, 2, 10, 2)
+            if ($moduleInfo.description) {
+                $nameBlock.ToolTip = $moduleInfo.description
+            }
+            [System.Windows.Controls.Grid]::SetRow($nameBlock, $row)
+            [System.Windows.Controls.Grid]::SetColumn($nameBlock, 0)
+            $moduleGrid.Children.Add($nameBlock) | Out-Null
+
+            # Module version
+            $versionBlock = New-Object System.Windows.Controls.TextBlock
+            $versionBlock.Text = "v$($moduleInfo.version)"
+            $versionBlock.FontSize = 11
+            $versionBlock.Foreground = [System.Windows.Media.Brushes]::Gray
+            $versionBlock.Margin = [System.Windows.Thickness]::new(0, 2, 0, 2)
+            [System.Windows.Controls.Grid]::SetRow($versionBlock, $row)
+            [System.Windows.Controls.Grid]::SetColumn($versionBlock, 1)
+            $moduleGrid.Children.Add($versionBlock) | Out-Null
+
+            $row++
+        }
+
+        $pnlModuleVersions.Children.Add($moduleGrid) | Out-Null
+        WriteLog "Populated About tab with $($moduleNames.Count) module versions"
+    }
+    elseif ($pnlModuleVersions) {
+        # No module data available - show message
+        $pnlModuleVersions.Children.Clear()
+        $noDataBlock = New-Object System.Windows.Controls.TextBlock
+        $noDataBlock.Text = "Module version information not available"
+        $noDataBlock.FontSize = 11
+        $noDataBlock.Foreground = [System.Windows.Media.Brushes]::Gray
+        $noDataBlock.FontStyle = [System.Windows.FontStyles]::Italic
+        $pnlModuleVersions.Children.Add($noDataBlock) | Out-Null
+    }
+
     WriteLog "About tab initialized with version $version"
 }
 

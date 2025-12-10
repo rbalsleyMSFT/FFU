@@ -31,12 +31,24 @@ if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -
     exit 1
 }
 
-# FFU Builder Version
-$script:FFUBuilderVersion = "1.0.5"
-$script:FFUBuilderBuildDate = "December 2025"
+# FFU Builder Version - loaded from version.json (single source of truth)
+$FFUDevelopmentPath = $PSScriptRoot
+$script:versionJsonPath = Join-Path $FFUDevelopmentPath "version.json"
+if (Test-Path $script:versionJsonPath) {
+    $script:versionInfo = Get-Content $script:versionJsonPath -Raw | ConvertFrom-Json
+    $script:FFUBuilderVersion = $script:versionInfo.version
+    $script:FFUBuilderBuildDate = $script:versionInfo.buildDate
+    $script:FFUBuilderModules = $script:versionInfo.modules
+}
+else {
+    # Fallback if version.json not found
+    $script:FFUBuilderVersion = "1.2.0"
+    $script:FFUBuilderBuildDate = "2025-12-09"
+    $script:FFUBuilderModules = $null
+    Write-Warning "version.json not found at $script:versionJsonPath - using fallback version"
+}
 
 # Creating custom state object to hold UI state and data
-$FFUDevelopmentPath = $PSScriptRoot
 
 $script:uiState = [PSCustomObject]@{
     FFUDevelopmentPath = $FFUDevelopmentPath;
@@ -69,6 +81,7 @@ $script:uiState = [PSCustomObject]@{
     Version            = @{
         Number    = $script:FFUBuilderVersion
         BuildDate = $script:FFUBuilderBuildDate
+        Modules   = $script:FFUBuilderModules
     }
 }
 
@@ -445,6 +458,18 @@ $script:uiState.Controls.btnRun.Add_Click({
                 $script:uiState.Flags.autoScrollLog = $true
             }
 
+            # Close any existing StreamReader from previous builds to release file handle
+            if ($null -ne $script:uiState.Data.logStreamReader) {
+                try {
+                    $script:uiState.Data.logStreamReader.Close()
+                    $script:uiState.Data.logStreamReader.Dispose()
+                }
+                catch {
+                    # Ignore errors when closing stale reader
+                }
+                $script:uiState.Data.logStreamReader = $null
+            }
+
             $progressBar = $script:uiState.Controls.pbOverallProgress
             $txtStatus = $script:uiState.Controls.txtStatus
             $progressBar.Visibility = 'Visible'
@@ -563,6 +588,9 @@ $script:uiState.Controls.btnRun.Add_Click({
             $txtStatus.Text = "Executing BuildFFUVM.ps1 in the background..."
             WriteLog "Executing BuildFFUVM.ps1 in the background..."
 
+            # Define main log path for monitoring (matches cleanup flow definition)
+            $mainLogPath = Join-Path $ffuDevPath "FFUDevelopment.log"
+
             # Prepare parameters for splatting
             $buildParams = @{
                 ConfigFile = $configFilePath
@@ -573,17 +601,32 @@ $script:uiState.Controls.btnRun.Add_Click({
 
             # Define the script block to run in the background job
             $scriptBlock = {
-                param($buildParams, $PSScriptRoot)
-                
+                param($buildParams, $ScriptRoot)
+
+                # Set working directory to the script's location
+                # This ensures BuildFFUVM.ps1 runs with the correct working directory context.
+                # ThreadJobs start in the user's Documents folder, not the script's directory.
+                # Setting location here provides defense-in-depth for any relative path operations.
+                Set-Location $ScriptRoot
+
                 # This script runs in a new process. BuildFFUVM.ps1 is expected to handle its own module imports.
-                & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
+                & "$ScriptRoot\BuildFFUVM.ps1" @buildParams
             }
 
-            # Delete the old log file before starting the build job to ensure we don't read stale content.
-            $mainLogPath = Join-Path $config.FFUDevelopmentPath "FFUDevelopment.log"
+            # FIX: Delete old log file BEFORE starting the background job to prevent race condition
+            # where the UI's StreamReader opens the old log file before the background job deletes it.
+            # This prevents stale log entries from appearing in the Monitor tab.
             if (Test-Path $mainLogPath) {
-                WriteLog "Removing old FFUDevelopment.log file."
-                Remove-Item -Path $mainLogPath -Force
+                try {
+                    Remove-Item -Path $mainLogPath -Force -ErrorAction Stop
+                    WriteLog "Removed previous log file to prevent race condition."
+                    # Small delay to ensure file system operation completes
+                    Start-Sleep -Milliseconds 100
+                }
+                catch {
+                    # Log warning but don't fail the build - the background job will handle it
+                    WriteLog "Warning: Could not remove old log file: $($_.Exception.Message)"
+                }
             }
 
             # Start the job and store it in the shared state object

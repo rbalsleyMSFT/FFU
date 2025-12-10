@@ -1,4 +1,5 @@
 {
+    "$schema": "./ffubuilder-config.schema.json",
     "_comment": "Sample FFUBuilder Configuration - All paths are relative to FFUDevelopmentPath. Leave FFUDevelopmentPath empty to use the UI's script location automatically.",
     "AllowExternalHardDiskMedia": true,
     "AllowVHDXCaching": true,
