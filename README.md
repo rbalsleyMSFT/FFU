@@ -1,4 +1,4 @@
-**Update 2025-10-1:** [2509.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases) - click the link to get the build and check out the [Youtube walk-through](https://www.youtube.com/watch?v=oozG1aVcg9M).
+**Update 2025-12-09:** [2511.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases) - click the link to get the build and check out the [Youtube walk-through](https://www.youtube.com/watch?v=oozG1aVcg9M).
 
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
@@ -22,9 +22,9 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Getting Started
 
-- Download the latest [release](https://github.com/rbalsleyMSFT/FFU/releases) (2505.2 is the latest release based on the doc below; 2508.1Preview is based on the UI - updated docs are coming for the UI build)
+- Download the latest [release](https://github.com/rbalsleyMSFT/FFU/releases) (2505.2 is the latest release based on the doc below; 2511.1Preview is based on the UI - updated docs are coming for the UI build). Recommend to download the UI build and watch the Youtube video and read the docx below to understand how the build script works.
 - Extract the FFUDevelopment folder from the ZIP file (recommend to C:\FFUDevelopment)
-- Follow the doc: C:\FFUDevelopment\Docs\BuildDeployFFU.docx
+- Follow the doc: C:\FFUDevelopment\Docs\BuildDeployFFU.docx (doc is for 2505.2; UI docs are in development)
 
 ## YouTube Detailed Walkthrough
 
