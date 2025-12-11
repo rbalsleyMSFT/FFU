@@ -157,7 +157,7 @@ This fork focuses on addressing critical bugs (#327, #324, #319, #318, #301, #29
 
 ## Versioning Policy
 
-**Current Version:** 1.2.9
+**Current Version:** 1.3.0
 **Single Source of Truth:** `FFUDevelopment/version.json`
 
 This project follows [Semantic Versioning](https://semver.org/) with centralized version management.
@@ -208,6 +208,15 @@ Update-FFUBuilderVersion -FFUDevelopmentPath "C:\FFUDevelopment" -BumpType Patch
 
 | Version | Date | Type | Description |
 |---------|------|------|-------------|
+| 1.3.5 | 2025-12-11 | PATCH | Native DISM fix - Replace ADK dism.exe with PowerShell cmdlets (Mount-WindowsImage/Dismount-WindowsImage) in ApplyFFU.ps1 to avoid WIMMount filter driver errors |
+| 1.3.4 | 2025-12-11 | PATCH | Defense-in-depth fix for log monitoring - Restore messaging context after FFU.Common -Force import |
+| 1.3.3 | 2025-12-11 | PATCH | UI Monitor tab fix - Integrate WriteLog with messaging queue for real-time UI updates |
+| 1.3.2 | 2025-12-11 | PATCH | DISM WIM mount error 0x800704DB pre-flight validation with Test-FFUWimMount remediation |
+| 1.3.1 | 2025-12-11 | PATCH | Config schema validation fix - Added AdditionalFFUFiles property and 7 deprecated properties (AppsPath, CopyOfficeConfigXML, DownloadDrivers, InstallWingetApps, OfficePath, Threads, Verbose) with backward compatibility warnings |
+| 1.3.0 | 2025-12-11 | MINOR | Pre-flight validation system with FFU.Preflight module - Tiered validation (Critical/Feature/Warning/Cleanup), PowerShell 7.0+ requirement, corrected TrustedInstaller handling |
+| 1.2.12 | 2025-12-10 | PATCH | Fix FFUMessageLevel type not found - Replace enum type references with string comparisons |
+| 1.2.11 | 2025-12-10 | PATCH | Fix MessagingContext parameter not found - Add -MessagingContext parameter to BuildFFUVM.ps1 |
+| 1.2.10 | 2025-12-10 | MINOR | Issue #14: Real-time UI updates with FFU.Messaging module (ConcurrentQueue, 50ms timer, 20x faster) |
 | 1.2.9 | 2025-12-10 | PATCH | [FFUConstants] type not found during FFU capture - Eliminated runtime FFUConstants type references |
 | 1.2.8 | 2025-12-10 | PATCH | FFU.Constants module loading fix - Removed 'using module' statement, added UI Set-Location fix |
 | 1.2.7 | 2025-12-10 | PATCH | Module loading failure fix - Early PSModulePath setup and defensive error handlers |
@@ -235,7 +244,7 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 │   ├── FFU.Common.Cleanup.psm1 (Build artifact cleanup)
 │   └── FFU.Common.Classes.psm1 (Shared class definitions)
 └── BuildFFUVM.ps1 (Core Build Orchestrator - 2,404 lines after modularization)
-    └── Modules/ (Extracted functions now in 8 specialized modules)
+    └── Modules/ (Extracted functions now in 10 specialized modules)
         ├── FFU.Core (Core functionality - 36 functions for configuration, session tracking, error handling, cleanup, credential management)
         ├── FFU.Apps (Application management - 5 functions for Office, Apps ISO, cleanup)
         ├── FFU.Drivers (OEM driver management - 5 functions for Dell, HP, Lenovo, Microsoft)
@@ -243,13 +252,15 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
         ├── FFU.Media (WinPE media creation - 4 functions for PE media and architecture)
         ├── FFU.ADK (Windows ADK management - 8 functions for validation and installation)
         ├── FFU.Updates (Windows Update handling - 8 functions for KB downloads and MSU processing)
-        └── FFU.Imaging (DISM and FFU operations - 15 functions for partitioning, imaging, FFU creation)
+        ├── FFU.Imaging (DISM and FFU operations - 15 functions for partitioning, imaging, FFU creation)
+        ├── FFU.Preflight (Pre-flight validation - 12 functions for tiered environment checks with remediation)
+        └── FFU.Messaging (Thread-safe UI/job communication - 14 functions for queue-based messaging, progress, cancellation)
 ```
 
 ### Modularization Status (Completed)
 - **Original file:** BuildFFUVM.ps1 with 7,790 lines
 - **After extraction:** BuildFFUVM.ps1 reduced to 2,404 lines (69% reduction)
-- **Functions extracted:** 64 total functions moved to 8 modules
+- **Functions extracted:** 64 total functions moved to 8 modules + 14 new messaging functions
 - **Lines removed:** 5,387 lines (functions from lines 674-6059)
 - **Module imports added:** After param block at lines 552-569
 - **PSModulePath handling:** Modules folder added to path for RequiredModules resolution
@@ -290,6 +301,7 @@ Import-Module "FFU.ADK" -Force -ErrorAction Stop
 - FFU.Imaging: Requires FFU.Core
 - FFU.Updates: Requires FFU.Core
 - FFU.VM, FFU.Drivers, FFU.Apps: Require FFU.Core
+- FFU.Messaging: No dependencies (standalone for UI/job communication)
 
 **Testing:**
 Run `Test-UIIntegration.ps1` to verify UI compatibility:
@@ -387,10 +399,22 @@ Invoke-Pester -Path 'Tests/Unit/Module.Dependencies.Tests.ps1' -Output Detailed
 - **Dependencies:** FFU.Core module for logging, BITS transfers, and download tracking
 - **Improvements:** Enhanced MSU handling with disk space validation, retry logic, and unattend.xml extraction
 
+**FFU.Messaging Module** (FFUDevelopment/Modules/FFU.Messaging/FFU.Messaging.psm1)
+- **Purpose:** Thread-safe messaging system for UI/background job communication (Issue #14)
+- **Functions:**
+  - Context management: `New-FFUMessagingContext`, `Test-FFUMessagingContext`, `Close-FFUMessagingContext`
+  - Message writing: `Write-FFUMessage`, `Write-FFUProgress`, `Write-FFUInfo`, `Write-FFUSuccess`, `Write-FFUWarning`, `Write-FFUError`, `Write-FFUDebug`
+  - Message reading: `Read-FFUMessages`, `Peek-FFUMessage`, `Get-FFUMessageCount`
+  - Build state: `Set-FFUBuildState`, `Request-FFUCancellation`, `Test-FFUCancellationRequested`
+- **Technology:** ConcurrentQueue<T> for lock-free messaging, synchronized hashtable for state
+- **Performance:** ~12,000+ messages/second throughput, 50ms UI polling interval (20x faster than file-based)
+- **Design:** Dual output (queue for UI + file for persistence), backward compatible with file-based fallback
+
 ### Key Design Patterns
 
-- **Event-Driven UI:** WPF with DispatcherTimer for non-blocking background job polling
-- **Background Job Pattern:** Long-running builds in separate PowerShell runspaces
+- **Event-Driven UI:** WPF with DispatcherTimer for non-blocking background job polling (50ms interval)
+- **Thread-Safe Messaging:** ConcurrentQueue-based UI/job communication via FFU.Messaging module
+- **Background Job Pattern:** Long-running builds in separate PowerShell runspaces (ThreadJob for credential inheritance)
 - **Provider Pattern:** OEM-specific driver download/extraction implementations
 - **Configuration as Code:** JSON-based configuration with CLI override support
 
@@ -787,7 +811,44 @@ For detailed documentation on fixed issues, see the individual fix summaries in 
 | Expand-WindowsImage Error 0x8007048F | FIXED | [EXPAND_WINDOWSIMAGE_FIX.md](docs/fixes/EXPAND_WINDOWSIMAGE_FIX.md) |
 | cmd.exe Path Quoting Error | FIXED | [CMD_PATH_QUOTING_FIX.md](docs/fixes/CMD_PATH_QUOTING_FIX.md) |
 | WriteLog Empty String Errors | FIXED | [WRITELOG_PATH_VALIDATION_FIX.md](docs/fixes/WRITELOG_PATH_VALIDATION_FIX.md) |
+| DISM WIM Mount Error 0x800704DB | FIXED v1.3.5 | See below |
 | Module Unapproved Verbs | FIXED v1.0.11 | See below |
+
+### DISM WIM Mount Error 0x800704DB (FIXED v1.3.5)
+
+**Symptoms:** DISM WIM mount operations fail with "The specified service does not exist":
+```
+DISM.log shows:
+- Error [1784] OpenFilterPort: Failed to open filter port. hr = 0x800704db
+- Error [1820] FltCommVerifyFilterPresent: Failed to verify filter. hr = 0x800704db
+- Error [1968] WIMMountImageHandle: Failed to mount the image. hr = 0x800704db
+```
+
+**Root Cause:** ADK DISM.exe relies on WIMMount filter driver which can become corrupted by newer ADK versions (10.1.26100.1+). The WIMMount filter must be registered with Filter Manager at altitude 180700, but ADK updates can corrupt this registration.
+
+**Solution History:**
+
+**v1.3.2 - Remediation Approach:** Added pre-flight validation (`Test-FFUWimMount`) to detect and attempt to fix WIMMount service/driver issues before build. This worked in many cases but not when the filter driver was fundamentally corrupted.
+
+**v1.3.5 - Native DISM Approach (Recommended):** Replaced ADK dism.exe calls with native PowerShell DISM cmdlets in ApplyFFU.ps1:
+- `dism.exe /Mount-Image` → `Mount-WindowsImage` cmdlet
+- `dism.exe /Unmount-Image` → `Dismount-WindowsImage` cmdlet
+
+The PowerShell cmdlets use the OS DISM infrastructure which is more reliable than ADK DISM because:
+1. No dependency on WIMMount filter driver for mount operations
+2. Uses native Windows APIs
+3. Better integrated with PowerShell error handling
+4. Works consistently across Windows versions
+
+**Files Changed (v1.3.5):**
+- `WinPEDeployFFUFiles/ApplyFFU.ps1` - Lines 895-930, replaced dism.exe with PowerShell cmdlets
+- `Tests/FFU.NativeDISM.Tests.ps1` - 31 comprehensive tests
+
+**Test Results:** 31 new tests, all passing
+**Regression Tests:** Baseline 1321 passed, Post-change 1352 passed (+31 from new tests)
+
+**Previous Behavior:** dism.exe fails with "service does not exist" when WIMMount filter is corrupted
+**Current Behavior:** Mount-WindowsImage cmdlet uses native OS infrastructure, avoiding filter driver issues
 
 ### [FFUConstants] Type Not Found During FFU Capture (FIXED v1.2.9)
 

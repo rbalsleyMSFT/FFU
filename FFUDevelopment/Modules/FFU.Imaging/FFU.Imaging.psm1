@@ -14,7 +14,7 @@
     Requires: Administrator privileges for DISM and disk operations
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 #Requires -RunAsAdministrator
 
 # Import constants module
@@ -1471,16 +1471,19 @@ function Remove-FFU {
 function Start-RequiredServicesForDISM {
     <#
     .SYNOPSIS
-    Ensures required Windows services are running for DISM operations
+    Validates that required Windows services are available for DISM operations
 
     .DESCRIPTION
-    DISM operations require certain Windows services to be running, primarily
-    the Windows Modules Installer (TrustedInstaller) service. This function
-    checks if required services are running and starts them if needed, with
-    robust waiting and validation to ensure services are fully initialized.
+    Verifies that required Windows services are not disabled. This function checks:
+    - TrustedInstaller (Windows Modules Installer): Demand-start service that Windows
+      automatically starts when DISM operations are invoked. We do NOT try to start it.
+    - wuauserv (Windows Update): May be needed for some update operations.
 
-    Addresses "The specified service does not exist" error during Mount-WindowsImage
-    and other DISM cmdlets.
+    NOTE: TrustedInstaller is a demand-start (Manual) service. Windows manages its
+    lifecycle automatically - it starts when DISM runs and stops when complete.
+    Trying to start it manually is unnecessary and can cause issues.
+
+    Returns true if all services are available (not disabled), false otherwise.
 
     .EXAMPLE
     Start-RequiredServicesForDISM
@@ -1488,10 +1491,10 @@ function Start-RequiredServicesForDISM {
     [CmdletBinding()]
     param()
 
-    WriteLog 'Checking required Windows services for DISM operations'
+    WriteLog 'Validating Windows services availability for DISM operations'
     $requiredServices = @(
-        @{Name = 'TrustedInstaller'; DisplayName = 'Windows Modules Installer'; InitDelay = 5},
-        @{Name = 'wuauserv'; DisplayName = 'Windows Update'; InitDelay = 3}
+        @{Name = 'TrustedInstaller'; DisplayName = 'Windows Modules Installer'; DemandStart = $true},
+        @{Name = 'wuauserv'; DisplayName = 'Windows Update'; DemandStart = $false}
     )
 
     $allServicesOk = $true
@@ -1499,63 +1502,38 @@ function Start-RequiredServicesForDISM {
     foreach ($svc in $requiredServices) {
         try {
             $service = Get-Service -Name $svc.Name -ErrorAction Stop
-            WriteLog "Service '$($svc.DisplayName)' current status: $($service.Status)"
+            WriteLog "Service '$($svc.DisplayName)': StartType=$($service.StartType), Status=$($service.Status)"
 
-            if ($service.Status -ne 'Running') {
-                WriteLog "Starting service '$($svc.DisplayName)'..."
-                Start-Service -Name $svc.Name -ErrorAction Stop
-
-                # Wait for service to fully initialize with retry logic
-                $initDelay = $svc.InitDelay
-                WriteLog "Waiting $initDelay seconds for service to fully initialize..."
-                Start-Sleep -Seconds $initDelay
-
-                # Verify service is actually running and ready
-                $retryCount = 0
-                $maxRetries = [FFUConstants]::MAX_DISM_SERVICE_RETRIES
-                $serviceReady = $false
-
-                while ($retryCount -lt $maxRetries -and -not $serviceReady) {
-                    $service = Get-Service -Name $svc.Name
-                    if ($service.Status -eq 'Running') {
-                        WriteLog "Service '$($svc.DisplayName)' started successfully"
-                        $serviceReady = $true
-                    }
-                    else {
-                        $retryCount++
-                        WriteLog "Service status: $($service.Status), waiting for mount validation (retry $retryCount/$maxRetries)..."
-                        Start-Sleep -Seconds ([FFUConstants]::MOUNT_VALIDATION_WAIT)
-                    }
-                }
-
-                if (-not $serviceReady) {
-                    WriteLog "WARNING: Service '$($svc.DisplayName)' did not fully start after $maxRetries retries. Status: $($service.Status)"
-                    $allServicesOk = $false
-                }
+            # Check if service is disabled - this is a real problem
+            if ($service.StartType -eq 'Disabled') {
+                WriteLog "ERROR: Service '$($svc.DisplayName)' is disabled. DISM operations may fail."
+                WriteLog "RESOLUTION: Enable the service with: Set-Service -Name $($svc.Name) -StartupType Manual"
+                $allServicesOk = $false
+            }
+            elseif ($svc.DemandStart) {
+                # Demand-start services (like TrustedInstaller) - Windows handles them
+                WriteLog "Service '$($svc.DisplayName)' is available (demand-start service, Windows manages lifecycle)"
+            }
+            elseif ($service.Status -ne 'Running') {
+                # Non-demand-start services that should be running
+                WriteLog "Service '$($svc.DisplayName)' is not running but available (StartType: $($service.StartType))"
             }
             else {
-                WriteLog "Service '$($svc.DisplayName)' is already running"
+                WriteLog "Service '$($svc.DisplayName)' is running"
             }
         }
         catch {
-            WriteLog "WARNING: Could not check/start service '$($svc.DisplayName)' - $($_.Exception.Message)"
+            WriteLog "WARNING: Could not query service '$($svc.DisplayName)' - $($_.Exception.Message)"
             WriteLog "DISM operations may fail if this service is required"
             $allServicesOk = $false
         }
     }
 
     if ($allServicesOk) {
-        WriteLog 'All required services for DISM are running and ready'
+        WriteLog 'All required services for DISM are available'
     }
     else {
-        WriteLog 'WARNING: Some required services could not be started. DISM operations may fail.'
-    }
-
-    # Additional wait after all services started to ensure DISM subsystem is ready
-    if ($allServicesOk) {
-        WriteLog 'Waiting for DISM subsystem initialization...'
-        Start-Sleep -Seconds ([FFUConstants]::DISM_CLEANUP_WAIT)
-        WriteLog 'DISM subsystem should be ready'
+        WriteLog 'WARNING: Some required services are unavailable. DISM operations may fail.'
     }
 
     return $allServicesOk

@@ -33,7 +33,7 @@ Copyright = '(c) Richard Balsley. All rights reserved.'
 Description = 'Core UI logic for the FFU Builder application.'
 
 # Minimum version of the PowerShell engine required by this module
-# PowerShellVersion = ''
+PowerShellVersion = '7.0'
 
 # Name of the PowerShell host required by this module
 # PowerShellHostName = ''

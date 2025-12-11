@@ -12,7 +12,7 @@
 RootModule = 'FFU.Common.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.4'
+ModuleVersion = '0.0.6'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -33,7 +33,7 @@ Copyright = '(c) Richard Balsley. All rights reserved.'
 Description = 'Common functions shared between FFU Builder UI and the BuildFFUVM.ps1 build script.'
 
 # Minimum version of the PowerShell engine required by this module
-# PowerShellVersion = ''
+PowerShellVersion = '7.0'
 
 # Name of the PowerShell host required by this module
 # PowerShellHostName = ''
@@ -115,6 +115,22 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.6: Defense-in-depth fix for log monitoring after module -Force import
+- Fixed: Monitor tab STILL showing only "Build started" after v0.0.5 fix
+- Root cause: BuildFFUVM.ps1 imports FFU.Common with -Force, which resets the script-scoped
+  $CommonCoreMessagingContext variable to $null, breaking real-time UI updates
+- Solution: BuildFFUVM.ps1 now restores messaging context immediately after -Force import
+- 3 new regression tests to prevent this issue from recurring
+- Comprehensive documentation of the defense-in-depth pattern
+
+v0.0.5: Log monitoring UI fix - Real-time WriteLog integration with messaging queue
+- Added Set-CommonCoreMessagingContext function for setting FFU.Messaging queue context
+- Modified WriteLog to write to both log file AND messaging queue when context is set
+- Fixes Monitor tab only showing "Build started" - now shows all log entries in real-time
+- Queue writes work even when log file path isn't set (for UI-only scenarios)
+- Defense-in-depth: Warns only when neither file nor queue destinations are available
+- 20 new Pester tests for log monitoring functionality
+
 v0.0.4: Invoke-Process error handling improvements
 - Enhanced Invoke-Process to provide structured error messages with process path, exit code, and stderr/stdout
 - Error messages now follow format: "Process '{path}' exited with code {code}. Error/Output: {message}"

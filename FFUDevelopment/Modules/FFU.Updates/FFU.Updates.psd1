@@ -25,7 +25,7 @@
     Description = 'Windows Update and servicing module for FFU Builder. Provides Windows Update catalog parsing, MSU package download with disk space validation, DISM servicing operations with automatic retry, and unattend.xml extraction from MSU packages. Includes pre-flight checks and self-healing for transient DISM failures.'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules = @(

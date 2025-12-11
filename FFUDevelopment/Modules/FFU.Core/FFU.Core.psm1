@@ -12,7 +12,7 @@
     Dependencies: None (foundation module)
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 # Import constants module
 using module ..\FFU.Constants\FFU.Constants.psm1
@@ -1822,6 +1822,16 @@ function Test-FFUConfiguration {
                 Add-ValidationWarning "Unknown property '$key' - not defined in schema"
             }
             continue
+        }
+
+        # Check for deprecated properties (warn but allow)
+        if ($schemaProp.deprecated -eq $true) {
+            $deprecationMsg = "Property '$key' is deprecated"
+            if ($schemaProp.description -and $schemaProp.description -match '\[DEPRECATED\](.+?)(?:This property is ignored|$)') {
+                $deprecationMsg = "Property '$key' is deprecated: $($Matches[1].Trim())"
+            }
+            Add-ValidationWarning $deprecationMsg
+            # Continue validation - deprecated properties still need valid values
         }
 
         # Skip null values (optional properties)

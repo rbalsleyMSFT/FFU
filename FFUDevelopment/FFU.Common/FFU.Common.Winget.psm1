@@ -1,10 +1,12 @@
+#Requires -Version 7.0
+
 <#
 .SYNOPSIS
     Provides functions for interacting with WinGet and the Microsoft Store to find, download, and configure applications.
 
 .DESCRIPTION
-    This module contains a set of functions designed to automate application management using the WinGet package manager and the Microsoft Store. 
-    It supports checking for and installing WinGet, downloading applications, handling different application types (Win32 and UWP), and generating silent installation commands for Win32 applications. 
+    This module contains a set of functions designed to automate application management using the WinGet package manager and the Microsoft Store.
+    It supports checking for and installing WinGet, downloading applications, handling different application types (Win32 and UWP), and generating silent installation commands for Win32 applications.
     This module is used by both the build script (BuildFFUVM.ps1) and the UI (BuildFFUVM_UI.ps1) to manage application downloads and configuration.
 #>
 function Get-Application {

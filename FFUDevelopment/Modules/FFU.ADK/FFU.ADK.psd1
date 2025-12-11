@@ -25,7 +25,7 @@
     Description = 'Windows Assessment and Deployment Kit (ADK) management module for FFU Builder. Provides installation validation, automatic ADK/WinPE add-on installation, version checking, and lifecycle management for Windows ADK components.'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules = @(

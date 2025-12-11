@@ -15,7 +15,7 @@
     - Thread-safe progress reporting for UI integration
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 # Configuration class for parallel downloads
 class ParallelDownloadConfig {

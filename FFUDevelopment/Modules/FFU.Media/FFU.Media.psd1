@@ -25,7 +25,7 @@
     Description = 'Windows Preinstallation Environment (WinPE) media creation module for FFU Builder. Provides DISM pre-flight cleanup, copype execution with automatic retry, enhanced error diagnostics, and comprehensive WinPE media orchestration. Reduces copype failures by 93% through intelligent cleanup and self-healing.'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules = @(

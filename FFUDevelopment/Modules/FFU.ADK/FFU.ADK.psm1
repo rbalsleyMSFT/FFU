@@ -14,7 +14,7 @@
     Requires: Administrator privileges for ADK installation operations
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 #Requires -RunAsAdministrator
 
 function Write-ADKValidationLog {

@@ -26,7 +26,7 @@
     Description = 'Application installation and management module for FFU Builder. Handles Office Deployment Tool, application ISO creation, and provisioned app removal (bloatware cleanup).'
 
     # Minimum version of the Windows PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules = @(

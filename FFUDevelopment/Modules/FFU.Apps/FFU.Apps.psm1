@@ -13,7 +13,7 @@
     Dependencies: FFU.Core
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 # Import dependencies
 $modulePath = Split-Path -Parent $PSScriptRoot

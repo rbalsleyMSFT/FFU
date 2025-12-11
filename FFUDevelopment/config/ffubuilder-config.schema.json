@@ -81,6 +81,14 @@
             "default": "",
             "description": "Path to a JSON file containing parameters to use for the script. Used for loading saved configurations."
         },
+        "AdditionalFFUFiles": {
+            "oneOf": [
+                { "type": "array", "items": { "type": "string" } },
+                { "type": "null" }
+            ],
+            "default": null,
+            "description": "Array of paths to additional FFU files to copy to the USB drive when CopyAdditionalFFUFiles is set to true."
+        },
         "CopyAdditionalFFUFiles": {
             "type": "boolean",
             "default": false,
@@ -463,6 +471,48 @@
             "default": "24h2",
             "pattern": "^(\\d{4}|[12][0-9][hH][12]|LTSC|ltsc)$",
             "description": "Windows version to download (e.g., '21H2', '22H2', '23H2', '24H2', '25H2', 'LTSC')."
+        },
+        "AppsPath": {
+            "type": "string",
+            "default": "",
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used. The Apps folder path is now derived from FFUDevelopmentPath automatically. This property is ignored but accepted for backward compatibility."
+        },
+        "CopyOfficeConfigXML": {
+            "type": "boolean",
+            "default": false,
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used. Use OfficeConfigXMLFile to specify a custom Office configuration XML file instead. This property is ignored but accepted for backward compatibility."
+        },
+        "DownloadDrivers": {
+            "type": "boolean",
+            "default": false,
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used. Use Make and Model parameters to enable automatic driver downloads. This property is ignored but accepted for backward compatibility."
+        },
+        "InstallWingetApps": {
+            "type": "boolean",
+            "default": false,
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used. Use InstallApps and AppListPath instead for WinGet app installation. This property is ignored but accepted for backward compatibility."
+        },
+        "OfficePath": {
+            "type": "string",
+            "default": "",
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used. The Office folder path is now derived from FFUDevelopmentPath automatically. This property is ignored but accepted for backward compatibility."
+        },
+        "Threads": {
+            "type": "integer",
+            "default": 1,
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used. Parallel processing is now managed automatically. This property is ignored but accepted for backward compatibility."
+        },
+        "Verbose": {
+            "type": "boolean",
+            "default": false,
+            "deprecated": true,
+            "description": "[DEPRECATED] Legacy property - no longer used in config files. Use the -Verbose switch when running BuildFFUVM.ps1 from the command line instead. This property is ignored but accepted for backward compatibility."
         }
     },
     "additionalProperties": false

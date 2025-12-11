@@ -8,7 +8,7 @@
     Description = 'Central constants and configuration values for FFUBuilder. Defines all hardcoded paths, timeouts, retry counts, and magic numbers used throughout the project.'
 
     # PowerShell version requirements
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Root module
     RootModule = 'FFU.Constants.psm1'

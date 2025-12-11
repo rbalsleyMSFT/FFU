@@ -1,14 +1,19 @@
+#Requires -Version 7.0
+
 <#
 .SYNOPSIS
     Provides core, shared functions for logging, process execution, and resilient file transfers used across the FFU project.
 .DESCRIPTION
-    This module is a central component of the FFU project, offering a set of robust, reusable functions. 
-    It includes a centralized logging mechanism (WriteLog), a wrapper for running external processes with error handling (Invoke-Process), 
-    a retry-aware BITS transfer function for reliable downloads (Start-BitsTransferWithRetry), and a progress reporting helper. 
+    This module is a central component of the FFU project, offering a set of robust, reusable functions.
+    It includes a centralized logging mechanism (WriteLog), a wrapper for running external processes with error handling (Invoke-Process),
+    a retry-aware BITS transfer function for reliable downloads (Start-BitsTransferWithRetry), and a progress reporting helper.
     This module is designed to be imported by other scripts and modules within the project to ensure consistent behavior for common tasks.
 #>
 # Script-scoped variable for the log file path
 $script:CommonCoreLogFilePath = $null
+# Script-scoped variable for FFU.Messaging context (for real-time UI updates)
+# When set, WriteLog will also write messages to the messaging queue
+$script:CommonCoreMessagingContext = $null
 # Mutex for log file access
 $script:commonCoreLogMutexName = "Global\FFUCommonCoreLogMutex" # Unique name
 $script:commonCoreLogMutex = New-Object System.Threading.Mutex($false, $script:commonCoreLogMutexName)
@@ -86,6 +91,52 @@ function Set-CommonCoreLogPath {
     }
 }
 
+# Function to set the messaging context for real-time UI updates
+function Set-CommonCoreMessagingContext {
+    <#
+    .SYNOPSIS
+        Sets the FFU.Messaging context for real-time UI updates via WriteLog.
+    .DESCRIPTION
+        When a messaging context is set, WriteLog will write messages to both:
+        1. The log file (FFUDevelopment.log)
+        2. The messaging queue for real-time UI display
+
+        This enables the Monitor tab in BuildFFUVM_UI.ps1 to display log entries
+        in real-time (50ms polling) instead of waiting for file system updates.
+    .PARAMETER Context
+        The synchronized hashtable from New-FFUMessagingContext (FFU.Messaging module).
+        Must contain a MessageQueue property (ConcurrentQueue).
+        Pass $null to disable messaging integration.
+    .EXAMPLE
+        # In ThreadJob scriptblock after importing FFU.Messaging:
+        Set-CommonCoreMessagingContext -Context $SyncContext
+
+        # All subsequent WriteLog calls will also write to the queue
+        WriteLog "This appears in both file and UI"
+    .EXAMPLE
+        # Disable messaging integration:
+        Set-CommonCoreMessagingContext -Context $null
+    .NOTES
+        This function is typically called by BuildFFUVM_UI.ps1's ThreadJob scriptblock
+        after importing FFU.Common.Core, to enable real-time log updates in the Monitor tab.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [hashtable]$Context
+    )
+
+    $script:CommonCoreMessagingContext = $Context
+
+    if ($null -ne $Context) {
+        Write-Verbose "CommonCoreMessagingContext set - WriteLog will write to messaging queue"
+    }
+    else {
+        Write-Verbose "CommonCoreMessagingContext cleared - WriteLog will only write to file"
+    }
+}
+
 # Centralized WriteLog function
 function WriteLog {
     [CmdletBinding()]
@@ -102,36 +153,74 @@ function WriteLog {
         return
     }
 
-    # Check if the log file path has been set
-    if ([string]::IsNullOrWhiteSpace($script:CommonCoreLogFilePath)) {
-        Write-Warning "CommonCoreLogFilePath not set. Message: $LogText"
-        return
-    }
+    # Track whether we wrote to at least one destination
+    $wroteToFile = $false
+    $wroteToQueue = $false
 
-    $logEntry = "$((Get-Date).ToString()) $LogText"
-    $streamWriter = $null
+    # Write to log file if path is set
+    if (-not [string]::IsNullOrWhiteSpace($script:CommonCoreLogFilePath)) {
+        $logEntry = "$((Get-Date).ToString()) $LogText"
+        $streamWriter = $null
 
-    try {
-        $script:commonCoreLogMutex.WaitOne() | Out-Null
-        # Ensure directory exists before writing
-        $logDir = Split-Path -Path $script:CommonCoreLogFilePath -Parent
-        if (-not (Test-Path -Path $logDir -PathType Container)) {
-            New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+        try {
+            $script:commonCoreLogMutex.WaitOne() | Out-Null
+            # Ensure directory exists before writing
+            $logDir = Split-Path -Path $script:CommonCoreLogFilePath -Parent
+            if (-not (Test-Path -Path $logDir -PathType Container)) {
+                New-Item -Path $logDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+            }
+            $streamWriter = New-Object System.IO.StreamWriter($script:CommonCoreLogFilePath, $true, [System.Text.Encoding]::UTF8)
+            $streamWriter.WriteLine($logEntry)
+            $wroteToFile = $true
+
+            Write-Verbose $LogText
         }
-        $streamWriter = New-Object System.IO.StreamWriter($script:CommonCoreLogFilePath, $true, [System.Text.Encoding]::UTF8)
-        $streamWriter.WriteLine($logEntry)
-
-        Write-Verbose $LogText
-    }
-    catch {
-        # Use Write-Host for console visibility as Write-Warning might also try to log
-        Write-Host "WARNING: Error writing to log file '$($script:CommonCoreLogFilePath)': $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-    finally {
-        if ($null -ne $streamWriter) {
-            $streamWriter.Dispose()
+        catch {
+            # Use Write-Host for console visibility as Write-Warning might also try to log
+            Write-Host "WARNING: Error writing to log file '$($script:CommonCoreLogFilePath)': $($_.Exception.Message)" -ForegroundColor Yellow
         }
-        $script:commonCoreLogMutex.ReleaseMutex()
+        finally {
+            if ($null -ne $streamWriter) {
+                $streamWriter.Dispose()
+            }
+            $script:commonCoreLogMutex.ReleaseMutex()
+        }
+    }
+
+    # Also write to messaging queue if context is set (for real-time UI updates)
+    # This enables the Monitor tab to display log entries via the fast queue polling (50ms)
+    # instead of waiting for the slower file polling fallback
+    # NOTE: This runs EVEN if log file path isn't set - queue is primary for UI updates
+    if ($null -ne $script:CommonCoreMessagingContext -and $null -ne $script:CommonCoreMessagingContext.MessageQueue) {
+        try {
+            # Create FFUMessage-compatible object for the queue
+            # Using [PSCustomObject] to match FFU.Messaging's FFUMessage class structure
+            $msgObject = [PSCustomObject]@{
+                Timestamp = [DateTime]::Now
+                Level     = 'Info'  # Default to Info level for WriteLog messages
+                Message   = $LogText
+                Source    = 'WriteLog'
+                Data      = @{}
+            }
+
+            # Add ToLogString method for compatibility with UI timer's message processing
+            $msgObject | Add-Member -MemberType ScriptMethod -Name 'ToLogString' -Value {
+                return "$($this.Timestamp.ToString('yyyy-MM-dd HH:mm:ss.fff')) [$($this.Level.ToString().PadRight(8))] $($this.Message)"
+            }
+
+            # Enqueue the message (thread-safe via ConcurrentQueue)
+            $script:CommonCoreMessagingContext.MessageQueue.Enqueue($msgObject)
+            $wroteToQueue = $true
+        }
+        catch {
+            # Don't fail the log operation if messaging fails
+            # This is a best-effort enhancement for real-time UI updates
+        }
+    }
+
+    # Warn only if we couldn't write anywhere (neither file nor queue)
+    if (-not $wroteToFile -and -not $wroteToQueue) {
+        Write-Warning "CommonCoreLogFilePath not set and no messaging queue. Message: $LogText"
     }
 }
 

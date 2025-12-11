@@ -14,7 +14,7 @@
     Requires: Administrator privileges and Hyper-V feature enabled
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 #Requires -RunAsAdministrator
 
 #region Cross-Version Local User Management Helper Functions

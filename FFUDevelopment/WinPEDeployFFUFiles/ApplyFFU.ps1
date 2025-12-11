@@ -892,8 +892,10 @@ if ($null -ne $DriverSourcePath) {
             
             WriteLog "Mounting WIM contents to $TempDriverDir"
             Write-Host "Mounting WIM contents to $TempDriverDir"
-            # For some reason can't use /mount-image with invoke-process, so using dism.exe directly
-            dism.exe /Mount-Image /ImageFile:$DriverSourcePath /Index:1 /MountDir:$TempDriverDir /ReadOnly /optimize
+            # Use native PowerShell Mount-WindowsImage cmdlet instead of dism.exe to avoid
+            # WIMMount filter driver issues (error 0x800704db "The specified service does not exist")
+            # The PowerShell cmdlet uses the OS DISM infrastructure which is more reliable
+            Mount-WindowsImage -ImagePath $DriverSourcePath -Index 1 -Path $TempDriverDir -ReadOnly -Optimize -ErrorAction Stop | Out-Null
             WriteLog "WIM mount successful."
 
             WriteLog "Injecting drivers from $TempDriverDir"
@@ -914,9 +916,18 @@ if ($null -ne $DriverSourcePath) {
             if (Test-Path -Path $TempDriverDir) {
                 WriteLog "Unmounting WIM from $TempDriverDir"
                 Write-Host "Unmounting WIM from $TempDriverDir"
-                Invoke-Process dism.exe "/Unmount-Image /MountDir:""$TempDriverDir"" /Discard"
-                WriteLog "Unmount successful."
-                Write-Host "Unmount successful."
+                # Use native PowerShell Dismount-WindowsImage cmdlet for consistency with Mount-WindowsImage
+                try {
+                    Dismount-WindowsImage -Path $TempDriverDir -Discard -ErrorAction Stop | Out-Null
+                    WriteLog "Unmount successful."
+                    Write-Host "Unmount successful."
+                }
+                catch {
+                    WriteLog "Warning: Dismount-WindowsImage failed: $_. Attempting DISM cleanup..."
+                    Write-Host "Warning: Dismount failed. Attempting cleanup..."
+                    # Fallback to DISM cleanup for stale mounts
+                    dism.exe /Cleanup-Mountpoints 2>&1 | Out-Null
+                }
                 WriteLog "Cleaning up temporary driver directory: $TempDriverDir"
                 Write-Host "Cleaning up temporary driver directory: $TempDriverDir"
                 Remove-Item -Path $TempDriverDir -Recurse -Force

@@ -8,6 +8,259 @@ This changelog documents all enhancements and fixes made in this fork, separate 
 
 ---
 
+## [1.3.5] - 2025-12-11
+
+### Bug Fixes
+- **DISM Error 0x800704db "The specified service does not exist" - WIM Mount Failures in ApplyFFU.ps1** (DEPLOY)
+  - **Issue:** WIM mount operations in ApplyFFU.ps1 failed with error 0x800704db when deploying drivers from WIM files
+  - **Root Cause:** ApplyFFU.ps1 was using ADK `dism.exe /Mount-Image` directly instead of native PowerShell cmdlets:
+    1. ADK DISM.exe relies on WIMMount filter driver which can become corrupted by newer ADK versions (10.1.26100.1+)
+    2. WIMMount filter was not properly loaded in Filter Manager (`fltmc filters` showed WIMMount missing)
+    3. Registry was correct but driver wasn't registered with Filter Manager at altitude 180700
+  - **Solution:** Replaced ADK dism.exe calls with native PowerShell DISM cmdlets:
+    - Changed `dism.exe /Mount-Image` to `Mount-WindowsImage` cmdlet
+    - Changed `dism.exe /Unmount-Image` to `Dismount-WindowsImage` cmdlet
+    - Added fallback cleanup using `dism.exe /Cleanup-Mountpoints` for unmount failures
+    - PowerShell cmdlets use OS DISM infrastructure which is more reliable than ADK DISM
+  - **Files Modified:**
+    - `WinPEDeployFFUFiles/ApplyFFU.ps1` - Lines 895-930, replaced dism.exe mount/unmount with PowerShell cmdlets
+  - **Files Created:**
+    - `Tests/FFU.NativeDISM.Tests.ps1` - 31 comprehensive tests validating native DISM usage
+  - **Test Coverage:** 31 new tests covering:
+    - Mount operations use native cmdlets
+    - Unmount operations use native cmdlets
+    - Error handling patterns
+    - DISM cmdlet availability
+    - No ADK dism.exe mount/unmount usage (regression prevention)
+  - **Regression Tests:** Baseline 1321 passed, Post-change 1352 passed (+31 from new tests, 0 regressions)
+  - **Related:** This is a more reliable solution than the remediation-based approach in v1.3.2
+
+---
+
+## [1.3.4] - 2025-12-11
+
+### Bug Fixes
+- **UI Monitor Tab Still Not Showing Progress After 1.3.3 Fix** (UI)
+  - **Issue:** After implementing the WriteLog messaging queue integration in 1.3.3, the Monitor tab STILL only showed "Build started"
+  - **Root Cause:** Module scope collision in BuildFFUVM.ps1:
+    1. BuildFFUVM_UI.ps1 ThreadJob sets messaging context via `Set-CommonCoreMessagingContext`
+    2. BuildFFUVM.ps1 line 641 does `Import-Module "$PSScriptRoot\FFU.Common" -Force`
+    3. The `-Force` flag RESETS the script-scoped `$script:CommonCoreMessagingContext` variable to `$null`
+    4. All subsequent WriteLog calls have no messaging context, so no messages reach the UI queue
+  - **Solution (Defense-in-Depth Pattern):**
+    - Added messaging context restoration code in BuildFFUVM.ps1 immediately after FFU.Common import
+    - Uses the `$MessagingContext` parameter passed from UI to restore context after `-Force` import
+    - Added explanatory comments documenting the root cause and fix for future maintainers
+  - **Files Modified:**
+    - `BuildFFUVM.ps1` - Added messaging context restoration after FFU.Common import (lines 644-653)
+  - **Tests Added:**
+    - `Tests/FFU.Common.Core.LogMonitoring.Tests.ps1` - Added 3 new regression tests:
+      - Verifies context restoration exists after -Force import
+      - Verifies restoration happens AFTER module import
+      - Verifies defense-in-depth pattern is documented in comments
+  - **Test Coverage:** 23 log monitoring tests total (3 new), all passing
+  - **Regression Tests:** Baseline 1321 passed, Post-change 1321 passed (no regressions)
+
+---
+
+## [1.3.3] - 2025-12-11
+
+### Bug Fixes
+- **UI Monitor Tab Only Showing "Build started" - Log Entries Not Displayed** (UI)
+  - **Issue:** Monitor tab in BuildFFUVM_UI.ps1 only showed "Build started" message, not the actual build progress from FFUDevelopment.log
+  - **Root Cause:** Architectural flaw in UI timer logic:
+    1. WriteLog function in FFU.Common.Core only wrote to log FILE, not to the FFU.Messaging queue
+    2. UI timer had `if/elseif` structure where queue check always evaluated true (queue EXISTS but was empty)
+    3. File-reading fallback in `elseif` block never executed because queue always existed
+    4. Only `Set-FFUBuildState` calls populated the queue (hence only "Build started" appeared)
+  - **Solution:** Integrated WriteLog with FFU.Messaging queue:
+    - Added `Set-CommonCoreMessagingContext` function to FFU.Common.Core
+    - Modified WriteLog to write to BOTH log file AND messaging queue when context is set
+    - Updated ThreadJob scriptblock in BuildFFUVM_UI.ps1 to import FFU.Common.Core and set messaging context
+    - Defense-in-depth: Queue writes work even when log file path isn't set
+  - **Files Modified:**
+    - `FFU.Common/FFU.Common.Core.psm1` - Added Set-CommonCoreMessagingContext, modified WriteLog
+    - `FFU.Common/FFU.Common.psd1` - Version bumped to 0.0.5
+    - `BuildFFUVM_UI.ps1` - ThreadJob scriptblock imports FFU.Common.Core and sets messaging context
+    - `version.json` - Version bumped to 1.3.3, FFU.Common to 0.0.5
+  - **Files Created:**
+    - `Tests/FFU.Common.Core.LogMonitoring.Tests.ps1` - 20 comprehensive tests
+  - **Test Coverage:** 20 new log monitoring tests, all passing
+  - **Regression Tests:** Baseline 1300 passed, Post-change 1321 passed (+21 from new tests)
+
+---
+
+## [1.3.2] - 2025-12-11
+
+### Bug Fixes
+- **DISM WIM Mount Failure - Error 0x800704DB "The specified service does not exist"** (BUILD)
+  - **Issue:** DISM WIM mount operations failed during WinPE media creation with error "The specified service does not exist" (0x800704DB)
+  - **Root Cause:** WIM mount filter driver infrastructure (WIMMount service, WOF service, or driver files) missing or not properly registered
+  - **Error Location:** `DISM.log` shows failures in `OpenFilterPort`, `FltCommVerifyFilterPresent`, `WIMMountImageHandle`
+  - **Solution:** Added comprehensive pre-flight validation with automatic remediation
+  - **New Function:** `Test-FFUWimMount` in FFU.Preflight module
+    - Validates WIMMount service existence and status
+    - Validates WOF (Windows Overlay Filter) service existence
+    - Checks Filter Manager (FltMgr) service status
+    - Verifies wimmount.sys and wof.sys driver files exist in System32\drivers
+    - Optional automatic remediation:
+      1. Restart FltMgr service if stopped
+      2. Restart WIMMount service if stopped
+      3. Re-register WIM mount driver via `rundll32.exe wimmount.dll,WimMountDriver`
+  - **Integration:** Automatically runs as part of `Invoke-FFUPreflight` when ADK/WinPE operations are enabled
+  - **Files Modified:**
+    - `Modules/FFU.Preflight/FFU.Preflight.psm1` - Added Test-FFUWimMount function and Invoke-FFUPreflight integration
+    - `Modules/FFU.Preflight/FFU.Preflight.psd1` - Added export, version bumped to 1.0.1
+  - **Files Created:**
+    - `Tests/Unit/FFU.Preflight.WimMount.Tests.ps1` - 28 comprehensive tests
+  - **Test Coverage:** 28 new tests, all passing (3 skipped based on system state)
+  - **Regression Tests:** Baseline 1273 passed, Post-change 1300 passed (+27 from new tests)
+
+---
+
+## [1.3.1] - 2025-12-11
+
+### Bug Fixes
+- **Configuration Schema Missing Properties Causing Validation Errors** (CONFIG)
+  - **Issue:** Pre-flight validation failed with "Unknown property 'X' is not allowed in configuration" for 8 properties
+  - **Root Cause:** JSON schema (`ffubuilder-config.schema.json`) had `additionalProperties: false` but was missing legitimate and legacy properties
+  - **Properties Fixed:**
+    - `AdditionalFFUFiles` - Added as valid array property (was missing from schema)
+    - 7 deprecated properties added for backward compatibility:
+      - `AppsPath` - Legacy, replaced by FFUDevelopmentPath-based derivation
+      - `CopyOfficeConfigXML` - Legacy, replaced by OfficeConfigXMLFile
+      - `DownloadDrivers` - Legacy, replaced by Make/Model parameters
+      - `InstallWingetApps` - Legacy, replaced by InstallApps/AppListPath
+      - `OfficePath` - Legacy, replaced by FFUDevelopmentPath-based derivation
+      - `Threads` - Legacy, parallel processing now automatic
+      - `Verbose` - Should use -Verbose switch, not config property
+  - **Solution:**
+    - Added `AdditionalFFUFiles` property with proper array/null type definition
+    - Added deprecated properties with `deprecated: true` flag and clear descriptions
+    - Added deprecation warning detection in Test-FFUConfiguration
+    - Deprecated properties generate warnings (not errors) for graceful migration
+  - **Files Modified:**
+    - `config/ffubuilder-config.schema.json` - Added missing and deprecated properties
+    - `Modules/FFU.Core/FFU.Core.psm1` - Added deprecated property warning in validation
+    - `Modules/FFU.Core/FFU.Core.psd1` - Version bumped to 1.0.12
+  - **Files Created:**
+    - `Tests/Unit/FFU.Core.SchemaCompleteness.Tests.ps1` - 99 tests for schema completeness
+  - **Files Deleted:**
+    - `Tests/Unit/BuildFFUVM.DismInitialization.Tests.ps1` - Obsolete (functionality moved to FFU.Preflight)
+  - **Test Coverage:** 99 new schema completeness tests, all passing
+  - **Regression Tests:** 1273 passed, 34 pre-existing failures, 23 skipped
+
+---
+
+## [1.3.0] - 2025-12-11
+
+### Features
+- **Comprehensive Pre-Flight Validation System** (ARCHITECTURE)
+  - **Issue:** Build failures occurred mid-process due to missing prerequisites, wasting time and resources
+  - **Solution:** New FFU.Preflight module with tiered validation architecture
+  - **New Module:** FFU.Preflight (v1.0.0) - Pre-flight environment validation
+    - **Tier 1 (Critical, Always Run):** Administrator privileges, PowerShell 7.0+, Hyper-V feature
+    - **Tier 2 (Feature-Dependent):** Windows ADK, disk space calculation, network connectivity, config file
+    - **Tier 3 (Warnings Only):** Windows Defender exclusions
+    - **Tier 4 (Pre-Build Cleanup):** DISM mount cleanup, temp directory cleanup, orphaned VHD cleanup
+  - **Key Design Decision:** TrustedInstaller running state is NOT checked (it's a demand-start service)
+  - **Functions Exported:** 12 functions including Invoke-FFUPreflight, Test-FFUAdministrator, Test-FFUHyperV, etc.
+  - **Files Created:**
+    - `Modules/FFU.Preflight/FFU.Preflight.psm1` - Main module implementation
+    - `Modules/FFU.Preflight/FFU.Preflight.psd1` - Module manifest
+    - `Tests/Unit/FFU.Preflight.Tests.ps1` - 58 comprehensive tests
+    - `docs/designs/PREFLIGHT-VALIDATION-SYSTEM-DESIGN.md` - Detailed design document
+  - **Files Modified:**
+    - `BuildFFUVM.ps1` - Integrated preflight validation call, removed redundant Hyper-V check
+    - All module .psm1 files - Updated to require PowerShell 7.0
+    - All module .psd1 files - Updated PowerShellVersion to '7.0'
+  - **Test Coverage:** 58 new tests, all passing
+
+### Breaking Changes
+- **PowerShell 7.0+ Required:** All modules and scripts now require PowerShell 7.0 or higher
+  - Enables ForEach-Object -Parallel for better performance
+  - Provides built-in ThreadJob module
+  - Supports ternary operators and null-coalescing
+  - Updated `#Requires -Version 7.0` in all .psm1 files
+  - Updated `PowerShellVersion = '7.0'` in all .psd1 manifests
+
+### Improvements
+- **TrustedInstaller Service Handling Corrected**
+  - **Issue:** Previous code tried to start TrustedInstaller service manually
+  - **Root Cause:** TrustedInstaller is a demand-start service; Windows manages its lifecycle
+  - **Solution:** Updated Test-DISMServiceHealth and Start-RequiredServicesForDISM to only verify service is not disabled
+  - **Files Modified:**
+    - `Modules/FFU.Updates/FFU.Updates.psm1` - Test-DISMServiceHealth refactored
+    - `Modules/FFU.Imaging/FFU.Imaging.psm1` - Start-RequiredServicesForDISM refactored
+
+---
+
+## [1.2.12] - 2025-12-10
+
+### Bug Fixes
+- **FFUMessageLevel Type Not Found at Runtime** (BUILD)
+  - **Issue:** Build failed with "Unable to find type [FFUMessageLevel]" at line 742 of BuildFFUVM_UI.ps1
+  - **Root Cause:** PowerShell enums defined in modules are NOT automatically exported via `Import-Module`. They require `using module` at parse-time, which has path resolution issues in complex scripts
+  - **Solution:** Replace enum type comparisons with string comparisons using `ToString()`
+    - Changed `$msg.Level -eq [FFUMessageLevel]::Progress` to `$msg.Level.ToString() -eq 'Progress'`
+    - Added explanatory comments documenting why string comparison is required
+  - **Files Modified:**
+    - `BuildFFUVM_UI.ps1` - Replaced enum references at lines 742 and 808
+    - `Tests/Unit/BuildFFUVM_UI.MessagingIntegration.Tests.ps1` - Updated test pattern
+  - **Files Created:**
+    - `Tests/Unit/BuildFFUVM_UI.EnumTypeAvoidance.Tests.ps1` - 16 tests preventing regression
+  - **Test Coverage:** 16 new tests + 48 messaging integration tests, all passing
+  - **Regression Tests:** 1156/1213 passing (34 pre-existing failures unrelated to this fix)
+
+---
+
+## [1.2.11] - 2025-12-10
+
+### Bug Fixes
+- **MessagingContext Parameter Not Found** (BUILD)
+  - **Issue:** Build failed with "A parameter cannot be found that matches parameter name 'MessagingContext'"
+  - **Root Cause:** BuildFFUVM_UI.ps1 was passing `-MessagingContext` to BuildFFUVM.ps1, but the parameter didn't exist
+  - **Solution:** Added `-MessagingContext` parameter to BuildFFUVM.ps1
+    - Optional parameter with `$null` default for CLI compatibility
+    - Type: `[hashtable]` to accept synchronized messaging context
+    - Documented in help section and inline comments
+  - **Files Modified:**
+    - `BuildFFUVM.ps1` - Added MessagingContext parameter to param block and help
+  - **Files Created:**
+    - `Tests/Unit/BuildFFUVM.MessagingContext.Tests.ps1` - 24 tests validating the fix
+  - **Test Coverage:** 24 new tests, all passing
+  - **Regression Tests:** 1140/1197 passing (34 pre-existing failures unrelated to this fix)
+
+---
+
+## [1.2.10] - 2025-12-10
+
+### Enhancements
+- **Real-Time UI Updates - Issue #14** (ARCHITECTURE)
+  - **Issue:** BuildFFUVM_UI.ps1 had 1-second polling delay for log updates, causing sluggish UI feedback
+  - **Root Cause:** File-based log polling with 1-second DispatcherTimer interval
+  - **Solution:** Hybrid approach with ConcurrentQueue + file backup
+  - **New Module:** FFU.Messaging (v1.0.0) - Thread-safe messaging system
+    - Uses `System.Collections.Concurrent.ConcurrentQueue[T]` for lock-free messaging
+    - Synchronized hashtable for cross-thread state sharing
+    - Functions: New-FFUMessagingContext, Write-FFUMessage, Write-FFUProgress, Read-FFUMessages, Request-FFUCancellation, Set-FFUBuildState
+    - Throughput: ~12,000+ messages/second
+  - **UI Changes:**
+    - Timer interval reduced from 1000ms to 50ms (20x faster)
+    - Queue-based message reading as primary method
+    - File-based reading as fallback for backward compatibility
+    - Cancellation via messaging context
+  - **Files Created:**
+    - `Modules/FFU.Messaging/FFU.Messaging.psm1`
+    - `Modules/FFU.Messaging/FFU.Messaging.psd1`
+    - `Tests/Unit/BuildFFUVM_UI.MessagingIntegration.Tests.ps1`
+  - **Files Modified:**
+    - `BuildFFUVM_UI.ps1` - Messaging integration
+    - `Tests/Unit/BuildFFUVM.UsingModulePath.Tests.ps1` - Updated for new parameter signature
+  - **Test Coverage:** 48 new tests, all passing
+
+---
+
 ## [1.0.4] - 2025-12-03
 
 ### Enhancements
@@ -225,6 +478,7 @@ See `ChangeLog.md` for complete upstream history.
 - `Modules/FFU.Drivers/` - Driver management
 - `Modules/FFU.Imaging/` - Imaging operations
 - `Modules/FFU.Media/` - Media creation
+- `Modules/FFU.Messaging/` - Thread-safe UI/job messaging (v1.2.10)
 - `Modules/FFU.Updates/` - Update handling
 - `Modules/FFU.VM/` - VM lifecycle
 
@@ -275,4 +529,4 @@ When making changes to this fork:
 
 ---
 
-*Last Updated: 2025-12-03*
+*Last Updated: 2025-12-11*

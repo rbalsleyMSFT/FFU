@@ -117,8 +117,8 @@ Describe 'BuildFFUVM_UI.ps1 Working Directory Fix' {
         }
 
         It 'Should use $ScriptRoot parameter (not $PSScriptRoot)' {
-            # Check the scriptBlock parameter declaration
-            $script:BuildFFUVMUIContent | Should -Match 'param\(\$buildParams,\s*\$ScriptRoot\)'
+            # Check the scriptBlock parameter declaration - now includes SyncContext for messaging
+            $script:BuildFFUVMUIContent | Should -Match 'param\(\$buildParams,\s*\$ScriptRoot,\s*\$SyncContext\)'
         }
 
         It 'Should have comment explaining why Set-Location is needed' {

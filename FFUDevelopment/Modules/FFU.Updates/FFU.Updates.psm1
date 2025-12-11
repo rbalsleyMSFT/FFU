@@ -19,7 +19,7 @@
     - Add-WindowsPackageWithUnattend: Robust unattend.xml extraction from MSU packages
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 # Import constants module
 using module ..\FFU.Constants\FFU.Constants.psm1
@@ -901,11 +901,15 @@ function Test-FileLocked {
 function Test-DISMServiceHealth {
     <#
     .SYNOPSIS
-    Validates DISM service (TrustedInstaller) health
+    Validates DISM service (TrustedInstaller) availability
 
     .DESCRIPTION
-    Checks if the TrustedInstaller service is running and attempts to start it if stopped.
-    Returns true if the service is healthy, false otherwise.
+    Checks if the TrustedInstaller service is available and not disabled.
+    NOTE: TrustedInstaller is a demand-start service - Windows automatically starts it
+    when DISM operations are invoked and stops it when complete. We should NOT try to
+    start it manually; we only verify it's not disabled.
+
+    Returns true if the service is available (exists and not disabled), false otherwise.
 
     .EXAMPLE
     if (-not (Test-DISMServiceHealth)) {
@@ -918,35 +922,25 @@ function Test-DISMServiceHealth {
     try {
         $service = Get-Service -Name 'TrustedInstaller' -ErrorAction Stop
 
-        if ($service.Status -ne 'Running') {
-            WriteLog "WARNING: TrustedInstaller service not running (Status: $($service.Status)). Attempting to start..."
-
-            try {
-                Start-Service -Name 'TrustedInstaller' -ErrorAction Stop
-                Start-Sleep -Seconds ([FFUConstants]::UPDATE_CATALOG_WAIT)
-
-                $service = Get-Service -Name 'TrustedInstaller' -ErrorAction Stop
-                if ($service.Status -eq 'Running') {
-                    WriteLog "TrustedInstaller service started successfully"
-                    return $true
-                }
-                else {
-                    WriteLog "ERROR: TrustedInstaller service failed to start (Status: $($service.Status))"
-                    WriteLog "RESOLUTION: Reboot your computer and try again to reset the DISM service"
-                    return $false
-                }
-            }
-            catch {
-                WriteLog "ERROR: Failed to start TrustedInstaller service: $($_.Exception.Message)"
-                WriteLog "RESOLUTION: Reboot your computer and try again to reset the DISM service"
-                return $false
-            }
+        # Check if service is disabled - this is a real problem
+        if ($service.StartType -eq 'Disabled') {
+            WriteLog "ERROR: TrustedInstaller service is disabled. DISM operations will fail."
+            WriteLog "RESOLUTION: Enable the Windows Modules Installer service:"
+            WriteLog "  Run: Set-Service -Name TrustedInstaller -StartupType Manual"
+            return $false
         }
 
+        # TrustedInstaller is demand-start (Manual) - Windows starts it when needed
+        # Log current status for debugging purposes but don't try to change it
+        WriteLog "TrustedInstaller service: StartType=$($service.StartType), Status=$($service.Status)"
+
+        # Service exists and is not disabled - it's healthy
         return $true
     }
     catch {
         WriteLog "ERROR: Failed to query TrustedInstaller service: $($_.Exception.Message)"
+        WriteLog "RESOLUTION: The Windows Modules Installer service may be corrupted. Consider running:"
+        WriteLog "  sfc /scannow"
         return $false
     }
 }
@@ -1059,7 +1053,7 @@ function Add-WindowsPackageWithRetry {
                     WriteLog "RESOLUTION: Reboot your computer and restart the FFU build process"
                     throw "DISM service is not available for retry. Cannot continue."
                 }
-                WriteLog "DISM service health check passed. TrustedInstaller is running."
+                WriteLog "DISM service health check passed. TrustedInstaller is available."
 
                 WriteLog "Waiting $RetryDelaySeconds seconds before retry..."
                 Start-Sleep -Seconds $RetryDelaySeconds

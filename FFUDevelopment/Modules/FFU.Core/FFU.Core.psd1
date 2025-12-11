@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.11'
+    ModuleVersion = '1.0.12'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -25,7 +25,7 @@
     Description = 'Core utility module for FFU Builder providing common configuration management, logging, session tracking, and helper operations used across all FFU Builder modules.'
 
     # Minimum version of the PowerShell engine required by this module
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
 
     # Modules that must be imported into the global environment prior to importing this module
     RequiredModules = @(

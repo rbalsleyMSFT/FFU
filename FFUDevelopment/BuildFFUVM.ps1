@@ -1,4 +1,5 @@
 
+#Requires -Version 7.0
 #Requires -Modules Hyper-V, Storage
 #Requires -RunAsAdministrator
 
@@ -245,6 +246,9 @@ Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N',
 
 .PARAMETER WindowsVersion
 String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'.
+
+.PARAMETER MessagingContext
+Synchronized hashtable for real-time UI communication via FFU.Messaging module. When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates to the UI. When null (default for CLI usage), the script operates normally without messaging. This parameter is primarily for internal use by the UI.
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
@@ -501,7 +505,12 @@ param(
     [string]$orchestrationPath,
     [bool]$UpdateADK = $true,
     [bool]$CleanupCurrentRunDownloads = $false,
-    [switch]$Cleanup
+    [switch]$Cleanup,
+    # MessagingContext: Synchronized hashtable for real-time UI communication via FFU.Messaging module
+    # When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates
+    # When null (CLI usage), script operates normally without messaging
+    [Parameter(Mandatory = $false)]
+    [hashtable]$MessagingContext = $null
 )
 
 BEGIN {
@@ -630,6 +639,17 @@ if (Get-Module -Name 'FFU.Common.Drivers' -ErrorAction SilentlyContinue) {
 }
 # Import the required modules
 Import-Module "$PSScriptRoot\FFU.Common" -Force
+
+# =============================================================================
+# MESSAGING CONTEXT RESTORATION (Defense-in-Depth)
+# =============================================================================
+# The -Force import above resets the script-scoped $CommonCoreMessagingContext to $null.
+# If we were launched by BuildFFUVM_UI.ps1 with a MessagingContext, we need to re-set it
+# so that WriteLog continues to write to the messaging queue for real-time UI updates.
+# Without this, the Monitor tab would only show "Build started" and not progress updates.
+if ($MessagingContext) {
+    Set-CommonCoreMessagingContext -Context $MessagingContext
+}
 
 # =============================================================================
 # EARLY PSModulePath Configuration (Defense-in-Depth)
@@ -777,6 +797,7 @@ Import-Module "FFU.VM" -Force -Global -ErrorAction Stop -WarningAction SilentlyC
 Import-Module "FFU.Imaging" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Media" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Apps" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Preflight" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 
 # =============================================================================
 # Global Failure Cleanup Handler
@@ -1265,65 +1286,62 @@ else {
     Set-CommonCoreLogPath -Path $LogFile
 }
 
-#Check if Hyper-V feature is installed (requires only checks the module)
-$osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
-$isServer = $osInfo.Caption -match 'server'
+# =============================================================================
+# PRE-FLIGHT VALIDATION
+# Comprehensive environment validation before starting the build
+# =============================================================================
+if (-not $Cleanup) {
+    WriteLog "Starting pre-flight validation..."
 
-if ($isServer) {
-    $hyperVFeature = Get-WindowsFeature -Name Hyper-V
-    if ($hyperVFeature.InstallState -ne "Installed") {
-        Write-Host "Hyper-V feature is not installed. Please install it before running this script."
-        exit
-    }
-}
-else {
-    # Clean stale DISM mount points that can cause DismInitialize to fail (0x80004005)
-    WriteLog "Cleaning stale DISM mount points before Hyper-V feature check..."
-    try {
-        $dismCleanup = & dism.exe /Cleanup-Mountpoints 2>&1
-        WriteLog "DISM cleanup completed: $($dismCleanup | Out-String)"
-    }
-    catch {
-        WriteLog "Warning: DISM cleanup failed: $($_.Exception.Message)"
+    # Build features hashtable from script parameters
+    $preflightFeatures = @{
+        CreateVM              = $true  # Always creating a VM for FFU build
+        CreateCaptureMedia    = $CreateCaptureMedia
+        CreateDeploymentMedia = $CreateDeploymentMedia
+        OptimizeFFU           = $Optimize
+        InstallApps           = $InstallApps
+        UpdateLatestCU        = $UpdateLatestCU -or $UpdateLatestDefender -or $UpdateLatestMSRT -or $UpdateOneDrive -or $UpdateEdge
+        DownloadDrivers       = $Drivers
     }
 
-    # Retry logic for Get-WindowsOptionalFeature (DISM can have transient failures)
-    $maxRetries = 3
-    $retryDelay = 5
-    $hyperVFeature = $null
+    # Calculate VHDX size from script parameter
+    $preflightVHDXSize = [math]::Ceiling($VHDXSizeBytes / 1GB)
 
-    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
-        try {
-            WriteLog "Checking Hyper-V feature state (attempt $attempt of $maxRetries)..."
-            $hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction Stop
-            WriteLog "Hyper-V feature state: $($hyperVFeature.State)"
-            break
+    # Run comprehensive pre-flight validation
+    $preflightResult = Invoke-FFUPreflight -Features $preflightFeatures `
+        -FFUDevelopmentPath $FFUDevelopmentPath `
+        -VHDXSizeGB $preflightVHDXSize `
+        -WindowsArch $WindowsArch `
+        -ConfigFile $ConfigFile
+
+    # Check for blocking errors
+    if (-not $preflightResult.IsValid) {
+        WriteLog "Pre-flight validation FAILED with $($preflightResult.Errors.Count) error(s)"
+        foreach ($error in $preflightResult.Errors) {
+            WriteLog "  ERROR: $error"
         }
-        catch {
-            WriteLog "Warning: DISM initialization failed on attempt ${attempt}: $($_.Exception.Message)"
-            if ($attempt -eq $maxRetries) {
-                $errorMsg = @"
-Failed to query Hyper-V feature state after $maxRetries attempts.
 
-Common causes:
-1. Another DISM operation in progress (Windows Update, another build)
-2. Corrupted DISM state - run 'dism.exe /Cleanup-Mountpoints' as Administrator
-3. Antivirus blocking DISM - add exclusion for C:\FFUDevelopment and dism.exe
-4. Insufficient permissions - ensure running as Administrator
-
-Error: $($_.Exception.Message)
-"@
-                WriteLog "ERROR: $errorMsg"
-                throw $errorMsg
+        # Show remediation steps
+        if ($preflightResult.RemediationSteps -and $preflightResult.RemediationSteps.Count -gt 0) {
+            WriteLog ""
+            WriteLog "Remediation steps:"
+            foreach ($step in $preflightResult.RemediationSteps) {
+                WriteLog "  - $step"
             }
-            WriteLog "Waiting $retryDelay seconds before retry..."
-            Start-Sleep -Seconds $retryDelay
         }
+
+        throw "Pre-flight validation failed. Please resolve the errors above before continuing."
     }
 
-    if ($hyperVFeature.State -ne "Enabled") {
-        Write-Host "Hyper-V feature is not enabled. Please enable it before running this script."
-        exit
+    # Log warnings (non-blocking)
+    if ($preflightResult.HasWarnings) {
+        WriteLog "Pre-flight validation completed with $($preflightResult.Warnings.Count) warning(s)"
+        foreach ($warning in $preflightResult.Warnings) {
+            WriteLog "  WARNING: $warning"
+        }
+    }
+    else {
+        WriteLog "Pre-flight validation passed successfully"
     }
 }
 

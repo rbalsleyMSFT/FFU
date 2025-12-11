@@ -10,7 +10,7 @@
     CompanyName = 'Community'
     Copyright = '(c) 2025 FFU Builder Team. MIT License.'
     Description = 'Hyper-V virtual machine lifecycle management module for FFU Builder. Provides VM creation with TPM/HGS configuration, comprehensive cleanup, and environment validation for FFU build operations.'
-    PowerShellVersion = '5.1'
+    PowerShellVersion = '7.0'
     RequiredModules = @(
         @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
     )

@@ -20,7 +20,7 @@
     - Reduces copype failures by 93%, self-healing for 90% of transient issues
 #>
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 #Requires -RunAsAdministrator
 
 # Import constants module

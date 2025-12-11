@@ -1,3 +1,5 @@
+#Requires -Version 7.0
+
 param (
     [string]$FFUDevelopmentPath = $PSScriptRoot,
     [string]$adkPath = 'C:\Program Files (x86)\Windows Kits\10\',

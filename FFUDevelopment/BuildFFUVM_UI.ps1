@@ -15,6 +15,7 @@
 
     This script acts as the primary host for the UI, connecting the user interface with the underlying build and logic modules.
 #>
+#Requires -Version 7.0
 #Requires -RunAsAdministrator
 
 [CmdletBinding()]
@@ -22,12 +23,12 @@
 param()
 
 # Check PowerShell Version
-# Note: FFUBuilder supports both PowerShell 5.1 and 7+ with cross-version compatibility
+# Note: FFUBuilder requires PowerShell 7.0 or later
+# - PowerShell 7+ provides modern features, performance, and cross-platform compatibility
 # - Windows management cmdlets use .NET DirectoryServices APIs for compatibility
-# - UI works best in PowerShell 7+ for modern features and performance
-# - PowerShell 5.1 is minimum requirement (included with Windows 10/11)
-if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
-    Write-Error "PowerShell 5.1 or later is required to run this script."
+# - The #Requires -Version 7.0 directive above enforces this requirement
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Error "PowerShell 7.0 or later is required to run this script. Please install PowerShell 7 from https://aka.ms/powershell"
     exit 1
 }
 
@@ -63,9 +64,10 @@ $script:uiState = [PSCustomObject]@{
         versionData                 = $null;
         vmSwitchMap                 = @{};
         logData                     = $null;
-        logStreamReader             = $null;
+        logStreamReader             = $null;  # Legacy: kept for backward compatibility
         pollTimer                   = $null;
-        lastConfigFilePath          = $null
+        lastConfigFilePath          = $null;
+        messagingContext            = $null   # New: synchronized queue for real-time UI updates
     };
     Flags              = @{
         installAppsForcedByUpdates        = $false;
@@ -92,9 +94,15 @@ if (Get-Module -Name 'FFU.Common' -ErrorAction SilentlyContinue) {
 if (Get-Module -Name 'FFUUI.Core' -ErrorAction SilentlyContinue) {
     Remove-Module -Name 'FFUUI.Core' -Force
 }
+if (Get-Module -Name 'FFU.Messaging' -ErrorAction SilentlyContinue) {
+    Remove-Module -Name 'FFU.Messaging' -Force
+}
 # Import Modules
 Import-Module "$PSScriptRoot\FFU.Common" -Force
 Import-Module "$PSScriptRoot\FFUUI.Core" -Force
+# Import FFU.Messaging for real-time UI updates via synchronized queue
+# This provides ~20x faster updates (50ms vs 1000ms) compared to file polling
+Import-Module "$PSScriptRoot\Modules\FFU.Messaging" -Force -DisableNameChecking
 
 # Import ThreadJob module for better credential handling in background jobs
 # ThreadJob runs jobs as threads in the current process, preserving network credentials
@@ -206,10 +214,22 @@ $script:uiState.Controls.btnRun.Add_Click({
                 $script:uiState.Controls.txtStatus.Text = "Cancel requested. Stopping build..."
                 WriteLog "Cancel requested by user. Stopping background build job."
 
+                # Request cancellation via messaging context (notifies background job)
+                if ($null -ne $script:uiState.Data.messagingContext) {
+                    Request-FFUCancellation -Context $script:uiState.Data.messagingContext
+                    WriteLog "Cancellation requested via messaging context."
+                }
+
                 # Stop the timer
                 if ($null -ne $script:uiState.Data.pollTimer) {
                     $script:uiState.Data.pollTimer.Stop()
                     $script:uiState.Data.pollTimer = $null
+                }
+
+                # Close the messaging context
+                if ($null -ne $script:uiState.Data.messagingContext) {
+                    Close-FFUMessagingContext -Context $script:uiState.Data.messagingContext
+                    $script:uiState.Data.messagingContext = $null
                 }
 
                 # Close the log stream
@@ -591,6 +611,14 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Define main log path for monitoring (matches cleanup flow definition)
             $mainLogPath = Join-Path $ffuDevPath "FFUDevelopment.log"
 
+            # ============================================================================
+            # Initialize FFU.Messaging context for real-time UI updates
+            # This provides ~20x faster updates (50ms vs 1000ms) via synchronized queue
+            # File logging is kept as backup for persistence and troubleshooting
+            # ============================================================================
+            $script:uiState.Data.messagingContext = New-FFUMessagingContext -EnableFileLogging -LogFilePath $mainLogPath
+            WriteLog "Messaging context initialized with real-time queue + file logging."
+
             # Prepare parameters for splatting
             $buildParams = @{
                 ConfigFile = $configFilePath
@@ -600,8 +628,9 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
 
             # Define the script block to run in the background job
+            # Note: MessagingContext is passed separately as it's a synchronized hashtable
             $scriptBlock = {
-                param($buildParams, $ScriptRoot)
+                param($buildParams, $ScriptRoot, $SyncContext)
 
                 # Set working directory to the script's location
                 # This ensures BuildFFUVM.ps1 runs with the correct working directory context.
@@ -609,8 +638,37 @@ $script:uiState.Controls.btnRun.Add_Click({
                 # Setting location here provides defense-in-depth for any relative path operations.
                 Set-Location $ScriptRoot
 
-                # This script runs in a new process. BuildFFUVM.ps1 is expected to handle its own module imports.
-                & "$ScriptRoot\BuildFFUVM.ps1" @buildParams
+                # Import FFU.Messaging module in ThreadJob context for queue access
+                Import-Module "$ScriptRoot\Modules\FFU.Messaging" -Force -DisableNameChecking
+
+                # Import FFU.Common.Core and set messaging context for real-time WriteLog updates
+                # This enables WriteLog to write to both the log file AND the messaging queue
+                Import-Module "$ScriptRoot\FFU.Common\FFU.Common.Core.psm1" -Force -DisableNameChecking
+                if ($SyncContext) {
+                    Set-CommonCoreMessagingContext -Context $SyncContext
+                }
+
+                # If messaging context is available, set build state
+                if ($SyncContext) {
+                    Set-FFUBuildState -Context $SyncContext -State Running -SendMessage
+                }
+
+                try {
+                    # This script runs in a new process. BuildFFUVM.ps1 is expected to handle its own module imports.
+                    & "$ScriptRoot\BuildFFUVM.ps1" @buildParams -MessagingContext $SyncContext
+
+                    # Mark completion if context available
+                    if ($SyncContext) {
+                        Set-FFUBuildState -Context $SyncContext -State Completed -SendMessage
+                    }
+                }
+                catch {
+                    if ($SyncContext) {
+                        Write-FFUError -Context $SyncContext -Message "Build failed: $($_.Exception.Message)" -Source 'BuildFFUVM'
+                        Set-FFUBuildState -Context $SyncContext -State Failed -SendMessage
+                    }
+                    throw
+                }
             }
 
             # FIX: Delete old log file BEFORE starting the background job to prevent race condition
@@ -631,16 +689,18 @@ $script:uiState.Controls.btnRun.Add_Click({
 
             # Start the job and store it in the shared state object
             # Use ThreadJob for credential inheritance (fixes BITS error 0x800704DD)
+            # Pass messaging context for real-time UI updates via synchronized queue
             if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue) {
-                $script:uiState.Data.currentBuildJob = Start-ThreadJob -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
-                WriteLog "Build job started using ThreadJob (with network credential inheritance)."
+                $script:uiState.Data.currentBuildJob = Start-ThreadJob -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot, $script:uiState.Data.messagingContext)
+                WriteLog "Build job started using ThreadJob (with network credential inheritance + messaging context)."
             }
             else {
-                $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
+                $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot, $script:uiState.Data.messagingContext)
                 WriteLog "WARNING: Build job started using Start-Job (network credentials may not be available for BITS transfers)."
             }
 
             # Wait for the new log file to be created by the background job.
+            # With messaging context, file creation is less critical but still useful for persistence
             $logWaitTimeout = 15 # seconds
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
             while (-not (Test-Path $mainLogPath) -and $watch.Elapsed.TotalSeconds -lt $logWaitTimeout) {
@@ -648,30 +708,69 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
             $watch.Stop()
 
-            # Open a stream reader to the main log file
+            # Open a stream reader to the main log file (fallback/backup for queue-based messaging)
             if (Test-Path $mainLogPath) {
                 $fileStream = [System.IO.File]::Open($mainLogPath, 'Open', 'Read', 'ReadWrite')
                 $script:uiState.Data.logStreamReader = [System.IO.StreamReader]::new($fileStream)
             }
             else {
-                WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Monitor tab will not update."
+                WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Using queue-only messaging."
             }
 
-            # Create a timer to poll the job status from the UI thread
+            # ============================================================================
+            # Create timer with 50ms interval for real-time UI updates via messaging queue
+            # This is 20x faster than the previous 1-second file-polling approach
+            # Timer reads from ConcurrentQueue (lock-free) with file fallback
+            # ============================================================================
             $script:uiState.Data.pollTimer = New-Object System.Windows.Threading.DispatcherTimer
-            $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromSeconds(1)
+            $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromMilliseconds(50)
             
             # Add the Tick event handler
+            # ============================================================================
+            # REAL-TIME UI UPDATES: Primary reads from synchronized queue, file as fallback
+            # Queue polling at 50ms provides near-instant UI feedback (vs 1s file polling)
+            # ============================================================================
             $script:uiState.Data.pollTimer.Add_Tick({
                     param($sender, $e)
                     # This scriptblock runs on the UI thread, so it can safely access script-scoped variables
                     $currentJob = $script:uiState.Data.currentBuildJob
-                    
-                    # Read from log stream
-                    if ($null -ne $script:uiState.Data.logStreamReader) {
+                    $msgContext = $script:uiState.Data.messagingContext
+                    $lastLine = $null
+
+                    # PRIMARY: Read from messaging queue (real-time, lock-free)
+                    if ($null -ne $msgContext -and $null -ne $msgContext.MessageQueue) {
+                        $messages = Read-FFUMessages -Context $msgContext -MaxMessages 50
+                        foreach ($msg in $messages) {
+                            # Format message for display
+                            $displayText = $msg.ToLogString()
+                            $script:uiState.Data.logData.Add($displayText)
+                            $lastLine = $displayText
+
+                            # Handle progress messages specially
+                            # Note: Use string comparison instead of [FFUMessageLevel]::Progress enum
+                            # because PowerShell enums defined in modules are not exported via Import-Module
+                            # (would require 'using module' at parse-time which has path issues)
+                            if ($msg.Level.ToString() -eq 'Progress' -or $msg.Data.ContainsKey('PercentComplete')) {
+                                $percentage = if ($msg.Data.ContainsKey('PercentComplete')) { $msg.Data['PercentComplete'] } else { 0 }
+                                $statusMsg = if ($msg.Data.ContainsKey('CurrentOperation')) { $msg.Data['CurrentOperation'] } else { $msg.Message }
+
+                                $script:uiState.Controls.pbOverallProgress.Value = $percentage
+                                $script:uiState.Controls.txtStatus.Text = $statusMsg
+                            }
+                        }
+
+                        # Scroll to latest if auto-scroll enabled and messages were received
+                        if ($messages.Count -gt 0 -and $script:uiState.Flags.autoScrollLog -and $lastLine) {
+                            $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
+                            $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
+                        }
+                    }
+                    # FALLBACK: Read from log file stream (legacy support)
+                    elseif ($null -ne $script:uiState.Data.logStreamReader) {
                         while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
                             # Add the full line to the log view first to maintain consistency
                             $script:uiState.Data.logData.Add($line)
+                            $lastLine = $line
                             if ($script:uiState.Flags.autoScrollLog) {
                                 $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
                                 $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
@@ -681,7 +780,7 @@ $script:uiState.Controls.btnRun.Add_Click({
                             if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
                                 $percentage = [double]$matches[1]
                                 $message = $matches[2]
-                                
+
                                 # Update progress bar and status text
                                 $script:uiState.Controls.pbOverallProgress.Value = $percentage
                                 $script:uiState.Controls.txtStatus.Text = $message
@@ -705,10 +804,31 @@ $script:uiState.Controls.btnRun.Add_Click({
                             $sender.Stop()
                         }
                         $script:uiState.Data.pollTimer = $null
-                        
-                        # Final read of the log stream
+
+                        # Final read of any remaining messages from queue
+                        if ($null -ne $msgContext -and $null -ne $msgContext.MessageQueue) {
+                            $finalMessages = Read-FFUMessages -Context $msgContext -MaxMessages 1000
+                            foreach ($msg in $finalMessages) {
+                                $displayText = $msg.ToLogString()
+                                $script:uiState.Data.logData.Add($displayText)
+                                $lastLine = $displayText
+
+                                # Note: Use string comparison instead of [FFUMessageLevel] enum (see earlier comment)
+                                if ($msg.Level.ToString() -eq 'Progress' -or $msg.Data.ContainsKey('PercentComplete')) {
+                                    $percentage = if ($msg.Data.ContainsKey('PercentComplete')) { $msg.Data['PercentComplete'] } else { 0 }
+                                    $statusMsg = if ($msg.Data.ContainsKey('CurrentOperation')) { $msg.Data['CurrentOperation'] } else { $msg.Message }
+                                    $script:uiState.Controls.pbOverallProgress.Value = $percentage
+                                    $script:uiState.Controls.txtStatus.Text = $statusMsg
+                                }
+                            }
+
+                            # Close messaging context
+                            Close-FFUMessagingContext -Context $msgContext
+                            $script:uiState.Data.messagingContext = $null
+                        }
+
+                        # Final read of the log stream (fallback)
                         if ($null -ne $script:uiState.Data.logStreamReader) {
-                            $lastLine = $null
                             while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
                                 # Add the full line to the log view first
                                 $script:uiState.Data.logData.Add($line)
@@ -718,21 +838,21 @@ $script:uiState.Controls.btnRun.Add_Click({
                                 if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
                                     $percentage = [double]$matches[1]
                                     $message = $matches[2]
-                                    
+
                                     $script:uiState.Controls.pbOverallProgress.Value = $percentage
                                     $script:uiState.Controls.txtStatus.Text = $message
                                 }
-                            }
-                            
-                            # After the final read, scroll to the last line if autoscroll is enabled
-                            if ($script:uiState.Flags.autoScrollLog -and $null -ne $lastLine) {
-                                $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
-                                $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
                             }
 
                             $script:uiState.Data.logStreamReader.Close()
                             $script:uiState.Data.logStreamReader.Dispose()
                             $script:uiState.Data.logStreamReader = $null
+                        }
+
+                        # Scroll to last line if auto-scroll enabled
+                        if ($script:uiState.Flags.autoScrollLog -and $null -ne $lastLine) {
+                            $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
+                            $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
                         }
 
                         # Determine final status based on job result and error output
@@ -848,7 +968,13 @@ $script:uiState.Controls.btnRun.Add_Click({
             $errorMessage = "An error occurred before starting the build job: $_"
             WriteLog $errorMessage
             [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
-            
+
+            # Clean up messaging context if it was created
+            if ($null -ne $script:uiState.Data.messagingContext) {
+                Close-FFUMessagingContext -Context $script:uiState.Data.messagingContext
+                $script:uiState.Data.messagingContext = $null
+            }
+
             # Clean up stream reader if it was opened
             if ($null -ne $script:uiState.Data.logStreamReader) {
                 $script:uiState.Data.logStreamReader.Close()
@@ -887,11 +1013,18 @@ $window.Add_Closed({
         # Stop any running build job if the window is closed
         if ($null -ne $script:uiState.Data.currentBuildJob) {
             WriteLog "UI closing, stopping background build job."
-            
+
             # Stop the timer
             if ($null -ne $script:uiState.Data.pollTimer) {
                 $script:uiState.Data.pollTimer.Stop()
                 $script:uiState.Data.pollTimer = $null
+            }
+
+            # Request cancellation and close messaging context
+            if ($null -ne $script:uiState.Data.messagingContext) {
+                Request-FFUCancellation -Context $script:uiState.Data.messagingContext
+                Close-FFUMessagingContext -Context $script:uiState.Data.messagingContext
+                $script:uiState.Data.messagingContext = $null
             }
 
             # Close the log stream
@@ -904,7 +1037,7 @@ $window.Add_Closed({
             # Stop and remove the job
             $jobToStop = $script:uiState.Data.currentBuildJob
             $script:uiState.Data.currentBuildJob = $null # Clear it from state first
-            
+
             try {
                 Stop-Job -Job $jobToStop
                 Remove-Job -Job $jobToStop
