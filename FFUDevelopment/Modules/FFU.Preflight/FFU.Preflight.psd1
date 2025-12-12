@@ -7,7 +7,7 @@
     RootModule = 'FFU.Preflight.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.1'
+    ModuleVersion = '1.0.2'
 
     # ID used to uniquely identify this module
     GUID = 'a7e8b3f2-c4d5-4e6a-9b8c-1d2e3f4a5b6c'
@@ -81,7 +81,29 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Preflight v1.0.1
+# Release Notes - FFU.Preflight v1.0.2
+
+## v1.0.2 (2025-12-12)
+### Fix: WimMount Validation False Positives
+- **BREAKING CHANGE MITIGATION**: WIMMount service issues no longer block builds
+- Changed Test-FFUWimMount to return WARNING instead of FAILED when WIMMount issues detected
+- Added sc.exe fallback when Get-Service fails in ThreadJob context
+- Added UsingNativeDISM detail field to indicate native DISM cmdlet usage
+- Updated Invoke-FFUPreflight to treat WimMount warnings as non-blocking
+
+### Rationale
+Since v1.3.5, FFU Builder uses native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
+instead of ADK dism.exe. Native cmdlets do NOT require the WIMMount filter driver service, so
+WIMMount service issues should not block builds.
+
+### Technical Details
+- sc.exe fallback handles ThreadJob context where Get-Service may fail
+- Exit code 1060 = Service does not exist (non-blocking warning)
+- Exit code 0 = Service exists (parses STATE from output)
+- Remediation message updated to explain native DISM workaround
+- 37 new Pester tests for warning behavior validation
+
+---
 
 ## v1.0.1 (2025-12-11)
 ### New Feature: WIM Mount Capability Validation

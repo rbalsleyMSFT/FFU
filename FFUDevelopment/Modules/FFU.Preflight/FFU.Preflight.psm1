@@ -1192,12 +1192,14 @@ function Test-FFUWimMount {
         FltMgrServiceStatus    = 'Unknown'
         RemediationAttempted   = $false
         RemediationActions     = [System.Collections.Generic.List[string]]::new()
+        UsingNativeDISM        = $false  # Set to $true when WIMMount issues detected (v1.3.5+ uses native cmdlets)
     }
 
     $errors = [System.Collections.Generic.List[string]]::new()
 
     try {
         # CHECK 1: WIMMount Service
+        # NOTE: Get-Service can fail in ThreadJob context, so we use sc.exe as fallback
         try {
             $wimMountSvc = Get-Service -Name 'WIMMount' -ErrorAction Stop
             $details.WimMountServiceExists = $true
@@ -1210,8 +1212,36 @@ function Test-FFUWimMount {
             }
         }
         catch {
-            $details.WimMountServiceExists = $false
-            $errors.Add('WIMMount service does not exist')
+            # Fallback: Use sc.exe to query service (works in ThreadJob context where Get-Service may fail)
+            try {
+                $scOutput = & sc.exe query WIMMount 2>&1
+                if ($LASTEXITCODE -eq 1060) {
+                    # Service does not exist (ERROR_SERVICE_DOES_NOT_EXIST = 1060)
+                    $details.WimMountServiceExists = $false
+                    $details.WimMountServiceStatus = 'NotFound'
+                    # Don't add to errors here - will be handled as warning due to native DISM usage
+                }
+                elseif ($LASTEXITCODE -eq 0) {
+                    # Service exists - parse state from output
+                    $details.WimMountServiceExists = $true
+                    if ($scOutput -match 'STATE\s+:\s+\d+\s+(\w+)') {
+                        $details.WimMountServiceStatus = $Matches[1]
+                    }
+                    else {
+                        $details.WimMountServiceStatus = 'Unknown'
+                    }
+                }
+                else {
+                    # Unexpected exit code
+                    $details.WimMountServiceExists = $false
+                    $details.WimMountServiceStatus = "QueryFailed (sc.exe exit code: $LASTEXITCODE)"
+                }
+            }
+            catch {
+                # Both Get-Service and sc.exe failed
+                $details.WimMountServiceExists = $false
+                $details.WimMountServiceStatus = 'QueryFailed'
+            }
         }
 
         # CHECK 2: WOF (Windows Overlay Filter) Service
@@ -1351,12 +1381,20 @@ function Test-FFUWimMount {
                 -DurationMs $stopwatch.ElapsedMilliseconds
         }
         else {
+            # Mark that we'll use native DISM cmdlets as a workaround
+            $details.UsingNativeDISM = $true
+
             $remediation = @'
-WIM mount capability is not available. This prevents DISM from mounting WIM images.
+WIM mount capability has issues. However, this is a WARNING (not blocking) because
+FFU Builder v1.3.5+ uses native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
+instead of ADK dism.exe, which do NOT require the WIMMount filter driver service.
+
+The build will proceed using native DISM cmdlets.
 
 Error 0x800704DB indicates the WIM filter driver service is missing or not registered.
+If you want to fix the underlying issue for other tools that use ADK DISM:
 
-Automatic remediation steps (run as Administrator):
+Remediation steps (run as Administrator):
 
 1. Re-register the WIM mount driver:
    rundll32.exe wimmount.dll,WimMountDriver
@@ -1373,9 +1411,6 @@ Automatic remediation steps (run as Administrator):
 5. If still failing, the Windows installation may be corrupted.
    Consider Feature Experience Pack update or Windows repair install.
 
-Alternative: Use OS DISM instead of ADK DISM:
-   %SystemRoot%\System32\Dism.exe
-
 Issues found:
 '@
             foreach ($err in $errors) {
@@ -1389,8 +1424,9 @@ Issues found:
                 }
             }
 
-            return New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
-                -Message "WIM mount not available: $($errors -join '; ')" `
+            # Return WARNING instead of Failed - native DISM cmdlets don't require WIMMount service
+            return New-FFUCheckResult -CheckName 'WimMount' -Status 'Warning' `
+                -Message "WIM mount service issues detected (non-blocking - using native DISM cmdlets): $($errors -join '; ')" `
                 -Details $details `
                 -Remediation $remediation `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1398,16 +1434,21 @@ Issues found:
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
-            -Message "Failed to check WIM mount capability: $($_.Exception.Message)" `
+        # Mark that we'll use native DISM cmdlets as a workaround
+        $details.UsingNativeDISM = $true
+
+        # Return WARNING instead of Failed - native DISM cmdlets don't require WIMMount service
+        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Warning' `
+            -Message "Unable to verify WIM mount capability (non-blocking - using native DISM cmdlets): $($_.Exception.Message)" `
             -Details $details `
             -Remediation @'
-Unable to verify WIM mount capability. Ensure:
-1. Running as Administrator
-2. Windows services are accessible
-3. System is not in a partially updated state
+Unable to verify WIM mount capability. However, this is a WARNING (not blocking) because
+FFU Builder v1.3.5+ uses native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
+instead of ADK dism.exe, which do NOT require the WIMMount filter driver service.
 
-Try running:
+The build will proceed using native DISM cmdlets.
+
+If you want to verify the WIM mount infrastructure manually, try running:
   sc.exe query WIMMount
   sc.exe query Wof
   sc.exe query FltMgr
@@ -1970,7 +2011,16 @@ function Invoke-FFUPreflight {
             $msg = if ($wimMountResult.Details.RemediationAttempted) { ' (after remediation)' } else { '' }
             Write-Host " PASSED$msg" -ForegroundColor Green
         }
+        elseif ($wimMountResult.Status -eq 'Warning') {
+            # v1.3.5+: WIMMount issues are non-blocking because native DISM cmdlets are used
+            Write-Host " WARNING (using native DISM)" -ForegroundColor Yellow
+            $result.HasWarnings = $true
+            $result.Warnings.Add("WimMount: $($wimMountResult.Message)")
+            # Do NOT set $result.IsValid = $false - this is non-blocking
+            # Do NOT add to Errors - add to Warnings instead
+        }
         else {
+            # Unexpected status (should not happen after refactoring, but keep as safety)
             Write-Host " FAILED" -ForegroundColor Red
             $result.IsValid = $false
             $result.Errors.Add("WimMount: $($wimMountResult.Message)")

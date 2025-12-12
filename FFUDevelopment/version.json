@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.3.5",
-    "buildDate": "2025-12-11",
+    "version": "1.3.6",
+    "buildDate": "2025-12-12",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -79,9 +79,9 @@
             "description": "Thread-safe messaging for UI/background job communication"
         },
         "FFU.Preflight": {
-            "version": "1.0.1",
+            "version": "1.0.2",
             "path": "Modules/FFU.Preflight/FFU.Preflight.psd1",
-            "description": "Comprehensive pre-flight validation with tiered checks, WIM mount validation, and remediation guidance"
+            "description": "Comprehensive pre-flight validation with tiered checks, WIM mount warning (non-blocking for native DISM), and remediation guidance"
         }
     },
 
