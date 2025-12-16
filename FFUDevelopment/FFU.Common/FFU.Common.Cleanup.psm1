@@ -49,8 +49,15 @@ function Invoke-FFUPostBuildCleanup {
         }
 
         if ($RemoveDrivers -and -not [string]::IsNullOrWhiteSpace($DriversPath) -and (Test-Path -LiteralPath $DriversPath -PathType Container)) {
-            WriteLog "CommonCleanup: Removing contents of $DriversPath"
-            try { Get-ChildItem -LiteralPath $DriversPath -Force -ErrorAction SilentlyContinue | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue } catch { WriteLog "CommonCleanup: Driver content cleanup issue: $($_.Exception.Message)" }
+            WriteLog "CommonCleanup: Removing contents of $DriversPath (preserving Drivers.json and DriverMapping.json)"
+            try {
+                # Preserve drivers json files
+                $driverItems = Get-ChildItem -LiteralPath $DriversPath -Force -ErrorAction SilentlyContinue | Where-Object { @('Drivers.json', 'DriverMapping.json') -notcontains $_.Name }
+                if ($driverItems) {
+                    $driverItems | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+                }
+            }
+            catch { WriteLog "CommonCleanup: Driver content cleanup issue: $($_.Exception.Message)" }
         }
 
         if ($RemoveFFU -and -not [string]::IsNullOrWhiteSpace($FFUCapturePath) -and (Test-Path -LiteralPath $FFUCapturePath -PathType Container)) {
@@ -72,14 +79,16 @@ function Invoke-FFUPostBuildCleanup {
                 try { Remove-Item -LiteralPath $store -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $store : $($_.Exception.Message)" }
             }
             $office = Join-Path $AppsPath 'Office'
-            if (Test-Path -LiteralPath $office) {
-                WriteLog "CommonCleanup: Cleaning Office artifacts"
+            if ((Test-Path -LiteralPath $office) -and $InstallOffice) {
+                WriteLog "CommonCleanup: Checking for Office artifacts in $office"
                 $officeSub = Join-Path $office 'Office'
                 if (Test-Path -LiteralPath $officeSub) {
+                    WriteLog "CommonCleanup: Removing $officeSub"
                     try { Remove-Item -LiteralPath $officeSub -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $officeSub : $($_.Exception.Message)" }
                 }
                 $setupExe = Join-Path $office 'setup.exe'
                 if (Test-Path -LiteralPath $setupExe) {
+                    WriteLog "CommonCleanup: Removing $setupExe"
                     try { Remove-Item -LiteralPath $setupExe -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $setupExe : $($_.Exception.Message)" }
                 }
             }

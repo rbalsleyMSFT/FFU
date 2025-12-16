@@ -3809,15 +3809,10 @@ function Get-FFUEnvironment {
         Remove-FFUUserShare
         WriteLog 'Removal complete'
     }
-    if ($RemoveApps) {
-        WriteLog "Removing Apps in $AppsPath"
-        Remove-Apps
-    }
-    #Remove updates
-    if ($RemoveUpdates) {
-        WriteLog "Removing updates"
-        Remove-Updates
-    }
+
+    #Run shared cleanup to avoid duplicated logic
+    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates
+
     #Clean up $KBPath
     If (Test-Path -Path $KBPath) {
         WriteLog "Removing $KBPath"
@@ -3840,12 +3835,6 @@ function Get-FFUEnvironment {
     WriteLog 'Removing dirty.txt file'
     Remove-Item -Path "$FFUDevelopmentPath\dirty.txt" -Force
     WriteLog "Cleanup complete"
-}
-function Remove-FFU {
-    #Remove all FFU files in the FFUCaptureLocation
-    WriteLog "Removing all FFU files in $FFUCaptureLocation"
-    Remove-Item -Path $FFUCaptureLocation\*.ffu -Force
-    WriteLog "Removal complete"
 }
 Function Remove-DisabledArtifacts {
     # Remove Office artifacts if Install Office is disabled
@@ -3932,101 +3921,6 @@ Function Remove-DisabledArtifacts {
     }
 }
 
-Function Remove-Updates {
-    if ($UpdateLatestDefender) {
-        #Clean up $installDefenderPath
-        WriteLog "Removing $installDefenderPath"
-        If (Test-Path -Path $installDefenderPath) {
-            Remove-Item -Path $installDefenderPath -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-        #Clean up $DefenderPath
-        If (Test-Path -Path $DefenderPath) {
-            WriteLog "Removing $DefenderPath"
-            Remove-Item -Path $DefenderPath -Recurse -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-    }
-    if ($UpdateLatestMSRT) {
-        # Clean up Update-MSRT.ps1
-        WriteLog "Removing $installMSRTPath"
-        If (Test-Path -Path $installMSRTPath) {
-            Remove-Item -Path $installMSRTPath -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-        #Clean up $MSRTPath
-        If (Test-Path -Path $MSRTPath) {
-            WriteLog "Removing $MSRTPath"
-            Remove-Item -Path $MSRTPath -Recurse -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-    }
-    if ($UpdateOneDrive) {
-        # Clean up Update-OneDrive.ps1
-        WriteLog "Removing $installODPath"
-        If (Test-Path -Path $installODPath) {
-            Remove-Item -Path $installODPath -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-        #Clean up $OneDrivePath
-        If (Test-Path -Path $OneDrivePath) {
-            WriteLog "Removing $OneDrivePath"
-            Remove-Item -Path $OneDrivePath -Recurse -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-    }
-    if ($UpdateEdge) {
-        # Clean up Update-Edge.ps1
-        WriteLog "Removing $installEdgePath"
-        If (Test-Path -Path $installEdgePath) {
-            Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-        #Clean up $EdgePath
-        If (Test-Path -Path $EdgePath) {
-            WriteLog "Removing $EdgePath"
-            Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-    }
-
-}
-function Remove-Apps {
-   
-    # Check if the file exists before attempting to clear it
-    if (Test-Path -Path $wingetWin32jsonFile) {
-        WriteLog "Removing $wingetWin32jsonFile"
-        Remove-Item -Path $wingetWin32jsonFile -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
-    # Clean up Win32 and MSStore folders
-    if (Test-Path -Path "$AppsPath\Win32" -PathType Container) {
-        WriteLog "Cleaning up Win32 folder"
-        Remove-Item -Path "$AppsPath\Win32" -Recurse -Force
-    }
-    if (Test-Path -Path "$AppsPath\MSStore" -PathType Container) {
-        WriteLog "Cleaning up MSStore folder"
-        Remove-Item -Path "$AppsPath\MSStore" -Recurse -Force
-    }
-
-    #Remove the Office Download and ODT
-    if ($InstallOffice) {
-        $ODTPath = "$AppsPath\Office"
-        $OfficeDownloadPath = "$ODTPath\Office"
-        WriteLog 'Removing Office and ODT download'
-        Remove-Item -Path $OfficeDownloadPath -Recurse -Force
-        Remove-Item -Path "$ODTPath\setup.exe"
-        Remove-Item -Path "$orchestrationPath\Install-Office.ps1"
-        WriteLog 'Removal complete'
-    }
-
-    #Remove AppsISO
-    if ($CleanupAppsISO) {
-        WriteLog "Removing $AppsISO"
-        Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
-}
 function Export-ConfigFile {
     [CmdletBinding()]
     param (
@@ -6220,30 +6114,6 @@ If ($InstallApps) {
         Remove-FFUVM -VMName $VMName
         throw $_
     }
-    #Clean up Apps
-    if ($RemoveApps) {
-        try {
-            WriteLog "Cleaning up $AppsPath"
-            Remove-Apps
-        }
-        catch {
-            Write-Host 'Cleaning up Apps failed'
-            Writelog "Cleaning up Apps failed with error $_"
-            throw $_
-        }
-    }
-    #Clean up Updates
-    if ($RemoveUpdates) {
-        try {
-            WriteLog "Cleaning up downloaded update files"
-            Remove-Updates
-        }
-        catch {
-            Write-Host 'Cleaning up downloaded update files failed'
-            Writelog "Cleaning up downloaded update files failed with error $_"
-            throw $_
-        }
-    }
 }
 #Clean up VM or VHDX
 try {
@@ -6315,17 +6185,7 @@ If ($BuildUSBDrive) {
         throw $_
     }
 }
-If ($RemoveFFU) {
-    try {
-        Remove-FFU
-    }
-    catch {
-        Write-Host 'Removing FFU files failed'
-        Writelog "Removing FFU files failed with error $_"
-        throw $_
-    }
-       
-}
+
 Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 # Delegated post-build cleanup to common module
 Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $Driversfolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates
