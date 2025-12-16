@@ -5303,6 +5303,11 @@ if ($InstallApps) {
                         }
                     )
 
+                    # Add 30 second delay to allow for Windows Security Platform to install
+                    # I suspect this is related to AppxSVC not being immediately ready when booting to audit mode
+                    # Long-term solution would be the check for AppxSVC being started, but for now the 30 second sleep seems to work consistently
+                    $installDefenderCommand = "Start-Sleep -Seconds 30`r`n"
+
                     # Download each update
                     foreach ($update in $defenderUpdates) {
                         WriteLog "Searching for $($update.Name) from Microsoft Update Catalog and saving to $DefenderPath"
