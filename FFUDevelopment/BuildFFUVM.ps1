@@ -5873,8 +5873,10 @@ try {
                         $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
                     }
                 }
-                WriteLog "Removing $KBPath"
-                Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+               if ($RemoveUpdates) {
+					WriteLog "Removing $KBPath"
+					Remove-Item -Path $KBPath -Recurse -Force | Out-Null
+                }
                 WriteLog 'Clean Up the WinSxS Folder'
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
