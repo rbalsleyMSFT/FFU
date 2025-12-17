@@ -9,6 +9,7 @@ function Invoke-FFUPostBuildCleanup {
         [string]$CaptureISOPath,
         [string]$DeployISOPath,
         [string]$AppsISOPath,
+        [string]$KBPath,
         [bool]$RemoveCaptureISO = $false,
         [bool]$RemoveDeployISO = $false,
         [bool]$RemoveAppsISO = $false,
@@ -20,7 +21,7 @@ function Invoke-FFUPostBuildCleanup {
     $originalProgressPreference = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'
     try {
-        WriteLog "CommonCleanup: Starting cleanup (CaptureISO=$RemoveCaptureISO DeployISO=$RemoveDeployISO AppsISO=$RemoveAppsISO Drivers=$RemoveDrivers FFU=$RemoveFFU Apps=$RemoveApps Updates=$RemoveUpdates)."
+        WriteLog "CommonCleanup: Starting cleanup (CaptureISO=$RemoveCaptureISO DeployISO=$RemoveDeployISO AppsISO=$RemoveAppsISO Drivers=$RemoveDrivers FFU=$RemoveFFU Apps=$RemoveApps Updates=$RemoveUpdates KBPath=$KBPath)."
 
         # Primary ISO paths (new naming/location)
         if ($RemoveCaptureISO -and -not [string]::IsNullOrWhiteSpace($CaptureISOPath) -and (Test-Path -LiteralPath $CaptureISOPath)) {
@@ -94,14 +95,22 @@ function Invoke-FFUPostBuildCleanup {
             }
         }
 
-        if ($RemoveUpdates -and -not [string]::IsNullOrWhiteSpace($AppsPath) -and (Test-Path -LiteralPath $AppsPath)) {
-            $updateDirs = @('Defender', 'Edge', 'MSRT', 'OneDrive', '.NET', 'CU', 'Microcode')
-            foreach ($d in $updateDirs) {
-                $target = Join-Path $AppsPath $d
-                if (Test-Path -LiteralPath $target) {
-                    WriteLog "CommonCleanup: Removing update folder $target"
-                    try { Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $target : $($_.Exception.Message)" }
+        if ($RemoveUpdates) {
+            if (-not [string]::IsNullOrWhiteSpace($AppsPath) -and (Test-Path -LiteralPath $AppsPath)) {
+                # Remove per-run app update payloads stored under Apps
+                $appUpdateDirs = @('Defender', 'Edge', 'MSRT', 'OneDrive')
+                foreach ($d in $appUpdateDirs) {
+                    $target = Join-Path $AppsPath $d
+                    if (Test-Path -LiteralPath $target) {
+                        WriteLog "CommonCleanup: Removing update folder $target"
+                        try { Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $target : $($_.Exception.Message)" }
+                    }
                 }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($KBPath) -and (Test-Path -LiteralPath $KBPath)) {
+                # Remove Windows/.NET CU downloads stored under KB
+                WriteLog "CommonCleanup: Removing downloaded updates in $KBPath"
+                try { Remove-Item -LiteralPath $KBPath -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $KBPath : $($_.Exception.Message)" }
             }
         }
 

@@ -3811,14 +3811,8 @@ function Get-FFUEnvironment {
     }
 
     #Run shared cleanup to avoid duplicated logic
-    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates
+    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -KBPath:$KBPath
 
-    #Clean up $KBPath
-    If (Test-Path -Path $KBPath) {
-        WriteLog "Removing $KBPath"
-        Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
-        WriteLog 'Removal complete'
-    }
     # Remove existing Apps.iso
     if (Test-Path -Path $AppsISO) {
         WriteLog "Removing $AppsISO"
@@ -5873,8 +5867,6 @@ try {
                         $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
                     }
                 }
-                WriteLog "Removing $KBPath"
-                Remove-Item -Path $KBPath -Recurse -Force | Out-Null
                 WriteLog 'Clean Up the WinSxS Folder'
                 WriteLog 'This can take 10+ minutes depending on how old the media is and the size of the KB. Please be patient'
                 Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
@@ -6193,22 +6185,8 @@ If ($BuildUSBDrive) {
 
 Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 # Delegated post-build cleanup to common module
-Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $Driversfolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates
+Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -KBPath:$KBPath
 
-# Remove KBPath for cached vhdx files
-if ($AllowVHDXCaching) {
-    try {
-        If (Test-Path -Path $KBPath) {
-            WriteLog "Removing $KBPath"
-            Remove-Item -Path $KBPath -Recurse -Force -ErrorAction SilentlyContinue
-            WriteLog 'Removal complete'
-        }
-    }
-    catch {
-        Writelog "Removing $KBPath failed with error $_"
-        throw $_
-    }
-}
 
 # Remove WinGetWin32Apps.json so it is always rebuilt next run
 if (Test-Path -Path $wingetWin32jsonFile -PathType Leaf) {

@@ -870,6 +870,7 @@ function Invoke-RestoreDefaults {
             -CaptureISOPath $captureISOPath `
             -DeployISOPath $deployISOPath `
             -AppsISOPath $appsISOPath `
+            -KBPath (Join-Path $rootPath 'KB') `
             -RemoveCaptureISO:$true `
             -RemoveDeployISO:$true `
             -RemoveAppsISO:$true `
