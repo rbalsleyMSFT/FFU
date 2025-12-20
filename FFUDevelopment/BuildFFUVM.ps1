@@ -1942,7 +1942,7 @@ function Get-ProductsCab {
     return $OutFile
 }
 
-function Get-WindowsESD {
+function Get-WindowsESDMetadata {
     param(
         [Parameter(Mandatory = $false)]
         [ValidateSet(10, 11)]
@@ -1959,12 +1959,10 @@ function Get-WindowsESD {
         [ValidateSet('consumer', 'business')]
         [string]$MediaType
     )
-    WriteLog "Downloading Windows $WindowsRelease ESD file"
-    WriteLog "Windows Architecture: $WindowsArch"
-    WriteLog "Windows Language: $WindowsLang"
-    WriteLog "Windows Media Type: $MediaType"
-
+    WriteLog "Resolving Windows $WindowsRelease ESD metadata"
     $cabFilePath = Join-Path $PSScriptRoot "tempCabFile.cab"
+    $xmlFilePath = Join-Path $PSScriptRoot "products.xml"
+    $esdMetadata = $null
     $OriginalVerbosePreference = $VerbosePreference
     $VerbosePreference = 'SilentlyContinue'
     try {
@@ -1995,46 +1993,101 @@ function Get-WindowsESD {
         else {
             throw "Downloading Windows $WindowsRelease is not supported. Please use the -ISOPath parameter to specify the path to the Windows $WindowsRelease ISO file."
         }
-        WriteLog "Download succeeded"
+        WriteLog "products.cab download succeeded"
     }
     finally {
         $VerbosePreference = $OriginalVerbosePreference
     }
 
-    # Extract XML from cab file
     WriteLog "Extracting Products XML from cab"
-    $xmlFilePath = Join-Path $PSScriptRoot "products.xml"
     Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" | Out-Null
     WriteLog "Products XML extracted"
 
-    # Load XML content
     [xml]$xmlContent = Get-Content -Path $xmlFilePath
-
-    # Define the client type to look for in the FilePath
     $clientType = if ($MediaType -eq 'consumer') { 'CLIENTCONSUMER' } else { 'CLIENTBUSINESS' }
 
-    # Find FilePath values based on WindowsArch, WindowsLang, and MediaType
     foreach ($file in $xmlContent.MCT.Catalogs.Catalog.PublishedMedia.Files.File) {
         if ($file.Architecture -eq $WindowsArch -and $file.LanguageCode -eq $WindowsLang -and $file.FilePath -like "*$clientType*") {
-            $esdFilePath = Join-Path $PSScriptRoot (Split-Path $file.FilePath -Leaf)
-            #Download if ESD file doesn't already exist
-            If (-not (Test-Path $esdFilePath)) {
-                WriteLog "Downloading $($file.filePath) to $esdFIlePath"
-                $OriginalVerbosePreference = $VerbosePreference
-                $VerbosePreference = 'SilentlyContinue'
-                Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
-                Start-BitsTransferWithRetry -Source $file.FilePath -Destination $esdFilePath
-                Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
-                $VerbosePreference = $OriginalVerbosePreference
-                WriteLog "Download succeeded"
-                WriteLog "Cleanup cab and xml file"
-                Remove-Item -Path $cabFilePath -Force
-                Remove-Item -Path $xmlFilePath -Force
-                WriteLog "Cleanup done"
+            $fileName = Split-Path $file.FilePath -Leaf
+            $esdFilePath = Join-Path $PSScriptRoot $fileName
+            $esdVersion = $null
+            if ($file.FileName -match '^([0-9]+\.[0-9]+)') {
+                $esdVersion = $matches[1]
             }
-            return $esdFilePath
+
+            $esdMetadata = [pscustomobject]@{
+                FileUrl   = $file.FilePath
+                FileName  = $fileName
+                LocalPath = $esdFilePath
+                Version   = $esdVersion
+            }
+            break
         }
     }
+
+    if ($esdMetadata) {
+        WriteLog "Resolved ESD metadata: $($esdMetadata.FileName) (Version: $($esdMetadata.Version))"
+    }
+    else {
+        WriteLog "No matching ESD entry found in products.xml."
+    }
+
+    WriteLog "Cleaning up temporary cab and xml files"
+    Remove-Item -Path $cabFilePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $xmlFilePath -Force -ErrorAction SilentlyContinue
+
+    return $esdMetadata
+}
+
+function Get-WindowsESD {
+    param(
+        [Parameter(Mandatory = $false)]
+        [ValidateSet(10, 11)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('x86', 'x64', 'ARM64')]
+        [string]$WindowsArch,
+
+        [Parameter(Mandatory = $false)]
+        [string]$WindowsLang,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('consumer', 'business')]
+        [string]$MediaType,
+
+        [Parameter(Mandatory = $false)]
+        [pscustomobject]$Metadata
+    )
+    WriteLog "Downloading Windows $WindowsRelease ESD file"
+    WriteLog "Windows Architecture: $WindowsArch"
+    WriteLog "Windows Language: $WindowsLang"
+    WriteLog "Windows Media Type: $MediaType"
+
+    $esdMetadata = $Metadata
+    if (-not $esdMetadata) {
+        $esdMetadata = Get-WindowsESDMetadata -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $MediaType
+    }
+    if (-not $esdMetadata) {
+        throw "Unable to resolve Windows ESD metadata."
+    }
+
+    $esdFilePath = $esdMetadata.LocalPath
+    if (-not (Test-Path $esdFilePath)) {
+        WriteLog "Downloading $($esdMetadata.FileUrl) to $esdFilePath"
+        $OriginalVerbosePreference = $VerbosePreference
+        $VerbosePreference = 'SilentlyContinue'
+        Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
+        Start-BitsTransferWithRetry -Source $esdMetadata.FileUrl -Destination $esdFilePath
+        Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
+        $VerbosePreference = $OriginalVerbosePreference
+        WriteLog "ESD download succeeded"
+    }
+    else {
+        WriteLog "Found existing ESD at $esdFilePath, skipping download"
+    }
+
+    return $esdFilePath
 }
 
 function Get-ODTURL {
@@ -2123,17 +2176,24 @@ function Get-KBLink {
     $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name" -Headers $Headers -UserAgent $UserAgent
     $VerbosePreference = $OriginalVerbosePreference
 
-    # Extract the first KB article ID from the HTML content and store it globally
+    # Extract the first KB article ID and Windows version (if present) from the HTML content and store globally
     # Edge and Defender do not have KB article IDs
     if ($Name -notmatch 'Defender|Edge') {
-        if ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)(?:\s*\([^)]+\))*\s*<') {
+        $global:LastKBArticleID = $null
+        $global:LastKBWindowsVersion = $null
+        if ($results.Content -match '\(KB(\d+)\)[^(<]*\(([0-9]+\.[0-9]+)\)\s*<') {
+            $kbArticleID = "KB$($matches[1])"
+            $global:LastKBArticleID = $kbArticleID
+            $global:LastKBWindowsVersion = $matches[2]
+            WriteLog "Found KB article ID: $kbArticleID with Windows version $($matches[2])"
+        }
+        elseif ($results.Content -match '>\s*([^\(<]+)\(KB(\d+)\)(?:\s*\([^)]+\))*\s*<') {
             $kbArticleID = "KB$($matches[2])"
             $global:LastKBArticleID = $kbArticleID
-            WriteLog "Found KB article ID: $kbArticleID"
+            WriteLog "Found KB article ID: $kbArticleID (no Windows version found)"
         }
         else {
             WriteLog "No KB article ID found in search results."
-            $global:LastKBArticleID = $null
         }
     }
 
@@ -5561,6 +5621,28 @@ try {
     $netUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
     $netFeatureUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
     $microcodeUpdateInfos = [System.Collections.Generic.List[pscustomobject]]::new()
+    $cachedIncludedUpdateNames = [System.Collections.Generic.List[string]]::new()
+
+    $esdMetadata = $null
+    $esdVersion = $null
+    $cuKbWindowsVersion = $null
+    $cupKbWindowsVersion = $null
+
+    if ($WindowsRelease -eq 11 -and -not $ISOPath) {
+        try {
+            $esdMetadata = Get-WindowsESDMetadata -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
+            if ($esdMetadata -and $esdMetadata.Version) {
+                $esdVersion = $esdMetadata.Version
+                WriteLog "ESD version identified as $esdVersion"
+            }
+            elseif ($esdMetadata) {
+                WriteLog "ESD metadata resolved but no version could be parsed from filename."
+            }
+        }
+        catch {
+            WriteLog "Failed to resolve Windows ESD metadata: $($_.Exception.Message)"
+        }
+    }
 
     if ($UpdateLatestCU -or $UpdatePreviewCU -or $UpdateLatestNet -or $UpdateLatestMicrocode) {
         # Determine required updates without downloading them yet
@@ -5588,6 +5670,7 @@ try {
             WriteLog "Searching for $Name from Microsoft Update Catalog"
             (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $cuUpdateInfos.Add($_) }
             $cuKbArticleId = $global:LastKBArticleID
+            $cuKbWindowsVersion = $global:LastKBWindowsVersion
         }
 
         if ($UpdatePreviewCU -and $installationType -eq 'Client' -and $WindowsSKU -notlike "*LTSC") {
@@ -5596,6 +5679,7 @@ try {
             WriteLog "Searching for $Name from Microsoft Update Catalog"
             (Get-UpdateFileInfo -Name $Name) | ForEach-Object { $cupUpdateInfos.Add($_) }
             $cupKbArticleId = $global:LastKBArticleID
+            $cupKbWindowsVersion = $global:LastKBWindowsVersion
         }
 
         if ($UpdateLatestNet) {
@@ -5639,6 +5723,46 @@ try {
             (Get-UpdateFileInfo -Name $name) | ForEach-Object { $microcodeUpdateInfos.Add($_) }
         }
         
+        $esdVerObj = $null
+        $cuVerObj = $null
+        $cupVerObj = $null
+        if ($esdVersion) { try { $esdVerObj = [version]$esdVersion } catch { } }
+        if ($cuKbWindowsVersion) { try { $cuVerObj = [version]$cuKbWindowsVersion } catch { } }
+        if ($cupKbWindowsVersion) { try { $cupVerObj = [version]$cupKbWindowsVersion } catch { } }
+        
+        if ($esdVerObj -and $cuVerObj) {
+            if ($esdVerObj -eq $cuVerObj -or $esdVerObj -gt $cuVerObj) {
+                $skipReason = if ($esdVerObj -eq $cuVerObj) { 'matches' } else { 'is newer than' }
+                WriteLog "Windows 11 ESD version $esdVersion $skipReason CU version $cuKbWindowsVersion. Skipping CU download and installation."
+                if ($AllowVHDXCaching -and $cuUpdateInfos -and $cuUpdateInfos.Count -gt 0) {
+                    foreach ($cuUpdateInfo in $cuUpdateInfos) {
+                        if (-not [string]::IsNullOrWhiteSpace($cuUpdateInfo.Name) -and -not $cachedIncludedUpdateNames.Contains($cuUpdateInfo.Name)) {
+                            $cachedIncludedUpdateNames.Add($cuUpdateInfo.Name)
+                        }
+                    }
+                }
+                $cuUpdateInfos.Clear()
+                $UpdateLatestCU = $false
+                $CUPath = $null
+            }
+        }
+        if ($esdVerObj -and $cupVerObj) {
+            if ($esdVerObj -eq $cupVerObj -or $esdVerObj -gt $cupVerObj) {
+                $skipReason = if ($esdVerObj -eq $cupVerObj) { 'matches' } else { 'is newer than' }
+                WriteLog "Windows 11 ESD version $esdVersion $skipReason Preview CU version $cupKbWindowsVersion. Skipping Preview CU download and installation."
+                if ($AllowVHDXCaching -and $cupUpdateInfos -and $cupUpdateInfos.Count -gt 0) {
+                    foreach ($cupUpdateInfo in $cupUpdateInfos) {
+                        if (-not [string]::IsNullOrWhiteSpace($cupUpdateInfo.Name) -and -not $cachedIncludedUpdateNames.Contains($cupUpdateInfo.Name)) {
+                            $cachedIncludedUpdateNames.Add($cupUpdateInfo.Name)
+                        }
+                    }
+                }
+                $cupUpdateInfos.Clear()
+                $UpdatePreviewCU = $false
+                $CUPPath = $null
+            }
+        }
+        
         $requiredUpdates.AddRange($ssuUpdateInfos)
         $requiredUpdates.AddRange($cuUpdateInfos)
         $requiredUpdates.AddRange($cupUpdateInfos)
@@ -5655,10 +5779,23 @@ try {
             $vhdxJsons = @(Get-ChildItem -File -Path $VHDXCacheFolder -Filter '*_config.json' | Sort-Object -Property CreationTime -Descending)
             WriteLog "Found $($vhdxJsons.Count) cached VHDX config files"
             
-            # Extract file names from URLs for comparison
+            # Build comparison list from update names and cached names
             $requiredUpdateFileNames = @()
             if ($requiredUpdates.Count -gt 0) {
-                $requiredUpdateFileNames = @(($requiredUpdates.Url | ForEach-Object { ($_ -split '/')[-1] }) | Sort-Object)
+                $requiredUpdateFileNames += $requiredUpdates | ForEach-Object {
+                    if (-not [string]::IsNullOrWhiteSpace($_.Name)) {
+                        $_.Name
+                    }
+                    elseif (-not [string]::IsNullOrWhiteSpace($_.Url)) {
+                        ($_.Url -split '/')[-1]
+                    }
+                }
+            }
+            if ($cachedIncludedUpdateNames.Count -gt 0) {
+                $requiredUpdateFileNames += $cachedIncludedUpdateNames
+            }
+            if ($requiredUpdateFileNames.Count -gt 0) {
+                $requiredUpdateFileNames = @($requiredUpdateFileNames | Where-Object { $_ } | Sort-Object -Unique)
             }
 
             foreach ($vhdxJson in $vhdxJsons) {
@@ -5730,6 +5867,15 @@ try {
             if (-not (Test-Path -Path $destinationPath)) {
                 New-Item -Path $destinationPath -ItemType Directory -Force | Out-Null
             }
+
+            # Skip download if expected file is already present
+            $expectedFilePath = Join-Path -Path $destinationPath -ChildPath $update.Name
+
+            if (Test-Path -LiteralPath $expectedFilePath) {
+                WriteLog "Update already exists at $expectedFilePath, skipping download"
+                continue
+            }
+
             WriteLog "Downloading $($update.Name) to $destinationPath"
             Start-BitsTransferWithRetry -Source $update.Url -Destination $destinationPath
         }
@@ -5784,7 +5930,7 @@ try {
             $wimPath = Get-WimFromISO
         }
         else {
-            $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType
+            $wimPath = Get-WindowsESD -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsLang $WindowsLang -MediaType $mediaType -Metadata $esdMetadata
         }
         #If index not specified by user, try and find based on WindowsSKU
         if (-not($index) -and ($WindowsSKU)) {
@@ -5861,10 +6007,22 @@ try {
                 WriteLog "KBs added to $WindowsPartition"
                 if ($AllowVHDXCaching) {
                     $cachedVHDXInfo = [VhdxCacheItem]::new()
-                    $includedUpdates = Get-ChildItem -Path $KBPath -File -Recurse
-                
-                    foreach ($includedUpdate in $includedUpdates) {
-                        $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedUpdate.Name))
+                    # Record only updates from this build (current required updates and any cached names carried forward)
+                    $includedUpdateNames = [System.Collections.Generic.List[string]]::new()
+                    foreach ($includedUpdate in $requiredUpdates) {
+                        if (-not [string]::IsNullOrWhiteSpace($includedUpdate.Name)) {
+                            $includedUpdateNames.Add($includedUpdate.Name)
+                        }
+                    }
+                    foreach ($cachedName in $cachedIncludedUpdateNames) {
+                        if (-not [string]::IsNullOrWhiteSpace($cachedName)) {
+                            $includedUpdateNames.Add($cachedName)
+                        }
+                    }
+                    foreach ($includedName in ($includedUpdateNames | Sort-Object -Unique)) {
+                        if (-not ($cachedVHDXInfo.IncludedUpdates | Where-Object { $_.Name -eq $includedName })) {
+                            $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($includedName))
+                        }
                     }
                 }
                 WriteLog 'Clean Up the WinSxS Folder'
@@ -5945,6 +6103,13 @@ try {
         #Only create new instance if not created during patching
         if ($null -eq $cachedVHDXInfo) {
             $cachedVHDXInfo = [VhdxCacheItem]::new()
+        }
+        if ($AllowVHDXCaching -and $cachedIncludedUpdateNames.Count -gt 0) {
+            foreach ($cachedName in $cachedIncludedUpdateNames) {
+                if (-not ($cachedVHDXInfo.IncludedUpdates | Where-Object { $_.Name -eq $cachedName })) {
+                    $cachedVHDXInfo.IncludedUpdates += ([VhdxCacheUpdateItem]::new($cachedName))
+                }
+            }
         }
         $cachedVHDXInfo.VhdxFileName = $("$VMName.vhdx")
         $cachedVHDXInfo.LogicalSectorSizeBytes = $LogicalSectorSizeBytes
