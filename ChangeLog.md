@@ -1,21 +1,52 @@
 # Change Log
 
+# 2512.1 UI Preview
+
+## What's Changed
+
+### Refactored Cleanup logic into a shared module
+
+Consolidates duplicated cleanup code by moving logic into a shared function, eliminating redundant implementations across multiple locations.
+
+Removes standalone cleanup functions (Remove-FFU, Remove-Apps, Remove-Updates) and replaces scattered cleanup calls with a single invocation of Invoke-FFUPostBuildCleanup.
+
+### Add 30 second delay to allow for Windows Security Platform to install
+
+There was an issue where the Windows Security Platform would attempt to install in the VM during the build via `Update-Defender.ps1` however the install didn't always happen and on deployment of the FFU, Windows Update would show that the Windows Security Platform needed an update. I suspect this is related to the AppxSVC not being ready during Audit Mode. Adding a 30 second delay appears to work more reliably.
+
+### Windows and .NET CU's now persist across builds
+
+Content in the FFUDevelopment\KB folder was always deleted once it was used. Since the Windows CU is so large now, it doesn't make sense to delete it if a user wants it again and may not be using cached VHDX files.
+
+Deletion of the KB folder is now correctly handled via the **Remove Downloaded Update Files** option on the Build tab.
+
+### Skip CU downloads if the Windows ESD version is current or newer
+
+Now that the Windows ESD media is kept up to date, there rarely will be a need to download the latest CU. There will always be a slight gap when the latest CU comes out and the updated media is available, but that's generally just a few days to a week.
+
+The script will now do some parsing of the windows version of the ESD file and the latest CU and if the ESD is newer, the CU will not be downloaded.
+
+### Fixes an issue with WingetWin32Apps.json file not being created if applications were pre-downloaded via the UI
+
+Fixed a bug due to some code consolidation that broke scenarios where applications that were downloaded via the UI, but were not installing in the VM.
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2511.1preview...v2511.2
+
 # 2511.1 UI Preview
 
 ## What's Changed
 
 ### Major changes to drivers
 
-A few weeks ago I wrote a [lengthy post](https://github.com/rbalsleyMSFT/FFU/discussions/350) asking for some help testing some changes that were added. 
+A few weeks ago I wrote a [lengthy post](https://github.com/rbalsleyMSFT/FFU/discussions/350) asking for some help testing some changes that were added.
 
-The summary of that post is that there have been significant changes for both Dell and HP driver downloads to leverage the SystemID for each model. This increases the total number of driver models that are exposed in the UI. This also requires the `DriverMapping.json` to be modified to require the SystemID and query the SystemID from WMI when doing automatic matching. 
+The summary of that post is that there have been significant changes for both Dell and HP driver downloads to leverage the SystemID for each model. This increases the total number of driver models that are exposed in the UI. This also requires the `DriverMapping.json` to be modified to require the SystemID and query the SystemID from WMI when doing automatic matching.
 
 #### Driver folder structure changes on the USB drive - breaking change
 
 Driver folder structure on the USB drive has also changed. The new structure is `Drivers\Make\Model` (e.g. `D:\Drivers\Lenovo\Lenovo 300w`). This structure is consistent with how the UI and `BuildFFUVM.ps1` script download and store drivers and automatically copy them. So if you've been following that, then no changes are required.
 
-Please read [the post](https://github.com/rbalsleyMSFT/FFU/discussions/350) for more details on these changes to drivers. 
-
+Please read [the post](https://github.com/rbalsleyMSFT/FFU/discussions/350) for more details on these changes to drivers.
 
 ### Windows 11 25H2 is now the default option for MCT/ESD downloads
 
@@ -29,7 +60,7 @@ Thanks to @arwidmark and the [Modern Driver Management](https://msendpointmgr.co
 
 ### Fixed an issue with long paths when applying drivers from USB
 
-Implemented SUBST drive mappings to shorten driver file paths within WinPE as some paths were causing dism to error when servicing drivers. You should see a Z:\ drive when applying drivers from the USB drive. 
+Implemented SUBST drive mappings to shorten driver file paths within WinPE as some paths were causing dism to error when servicing drivers. You should see a Z:\ drive when applying drivers from the USB drive.
 
 ### Added an option to skip driver selection when multiple driver models are detected during deployment
 
@@ -37,8 +68,7 @@ Allows users to bypass driver installation by entering 0 at the selection prompt
 
 ### Add HTTP fallback for BITS transfer network authentication errors
 
-
-Fixes an issue with standard users elevating PowerShell as Admin and getting BITS errors when trying to download content. 
+Fixes an issue with standard users elevating PowerShell as Admin and getting BITS errors when trying to download content.
 
 ### Add -BitsPriority script parameter
 
@@ -48,19 +78,19 @@ The feature adds a priority selector to the UI with four options (Foreground, Hi
 
 ### BYO Apps: Add MSI path quoting to handle spaces in msiexec arguments
 
-
 When specifying Build Your Own Apps msiexec arguments, if there were spaces in the argument list that weren't quoted properly, you'd get an error. This should now automatically add missing spaces in case you forget to add them or there are spaces in your application name.
 
 ### Misc Fixes
 
 * Fixed some reliability issues when trying to download Lenovo drivers
 * Fixed an issue with PPKG files with spaces
-* Replaced SerialNumber with UniqueID for USB drive identification when building USB drives. USB drive manufacturers may use the same serial number for different drives, potentially causing data loss if the wrong drive is chosen. 
+* Replaced SerialNumber with UniqueID for USB drive identification when building USB drives. USB drive manufacturers may use the same serial number for different drives, potentially causing data loss if the wrong drive is chosen.
 * `-Threads` parameter has been added to `BuildFFUVM.ps1` which defaults to 5, matching the UI behavior. This value can be 1-64.
 * ESD media downloads now use BITS by default
 * Fixed an issue with multi-disk devices. Prior, if multiple disks were detected, ApplyFFU.ps1 would fail. Now a menu pops up asking the end user to select the disk they want to deploy the FFU to
 
 ## New Contributors
+
 * @arwidmark made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/325
 
 **Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2509.1preview...v2511.1preview
