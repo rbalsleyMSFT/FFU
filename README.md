@@ -1,4 +1,4 @@
-**Update 2025-12-09:** [2511.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases) - click the link to get the build and check out the [Youtube walk-through](https://www.youtube.com/watch?v=oozG1aVcg9M).
+**Update 2026-01-05:** [2512.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases) - click the link to get the build and check out the [Youtube walk-through](https://www.youtube.com/watch?v=oozG1aVcg9M).
 
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
