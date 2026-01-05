@@ -441,6 +441,26 @@ function Start-WingetAppDownloadTask {
                     $status = "Not Downloaded: Existing content found in $appFolder"
                     Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
                     WriteLog "Found existing content for '$appName' in '$appFolder'. Skipping download to prevent duplicate entry."
+
+                    # Regenerate WinGetWin32Apps.json for CLI builds when content already exists
+                    # UI mode pre-downloads should not generate this file (SkipWin32Json)
+                    if (-not $SkipWin32Json) {
+                        $archFolders = Get-ChildItem -Path $appFolder -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('x86', 'x64', 'arm64') }
+                        if ($archFolders) {
+                            foreach ($archFolder in $archFolders) {
+                                WriteLog "Adding silent install command for pre-downloaded $sanitizedAppName ($($archFolder.Name)) to $OrchestrationPath\WinGetWin32Apps.json"
+                                Add-Win32SilentInstallCommand -AppFolder $sanitizedAppName -AppFolderPath $archFolder.FullName -OrchestrationPath $OrchestrationPath -SubFolder $archFolder.Name | Out-Null
+                            }
+                        }
+                        else {
+                            WriteLog "Adding silent install command for pre-downloaded $sanitizedAppName to $OrchestrationPath\WinGetWin32Apps.json"
+                            Add-Win32SilentInstallCommand -AppFolder $sanitizedAppName -AppFolderPath $appFolder -OrchestrationPath $OrchestrationPath | Out-Null
+                        }
+                    }
+                    else {
+                        WriteLog "Skipping WinGetWin32Apps.json regeneration for pre-downloaded $sanitizedAppName (UI mode)."
+                    }
+
                     return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 0 }
                 }
             }
