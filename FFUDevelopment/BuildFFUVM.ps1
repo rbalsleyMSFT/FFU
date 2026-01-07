@@ -2759,15 +2759,41 @@ function Get-PrivateProfileSection {
         [Parameter()]
         [string]$SectionName
     )
-    $buffer = [byte[]]::new(16384)
-    [void][Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
-    $keyValues = [System.Text.Encoding]::Unicode.GetString($buffer).TrimEnd("`0").Split("`0")
+    # Read the requested section from an INF/INI file
+    # Some INF sections can be large; grow the buffer to avoid truncated results
     $hashTable = @{}
+    $bufferSize = 16384
+    $buffer = $null
+    $charsCopied = 0
+
+    while ($true) {
+        $buffer = [byte[]]::new($bufferSize)
+        $charsCopied = [Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
+
+        # No section found or no content
+        if ($charsCopied -eq 0) {
+            return $hashTable
+        }
+
+        # If the returned data is close to the buffer size, assume truncation and retry bigger
+        if (($charsCopied -ge ($bufferSize - 2)) -and ($bufferSize -lt 1048576)) {
+            $bufferSize = $bufferSize * 2
+            continue
+        }
+
+        break
+    }
+
+    # Convert only the returned portion of the buffer (Unicode = 2 bytes per char)
+    $sectionText = [System.Text.Encoding]::Unicode.GetString($buffer, 0, ($charsCopied * 2))
+    $keyValues = $sectionText.TrimEnd("`0").Split("`0")
 
     foreach ($keyValue in $keyValues) {
         if (![string]::IsNullOrEmpty($keyValue)) {
-            $parts = $keyValue -split "="
-            $hashTable[$parts[0]] = $parts[1]
+            $parts = $keyValue -split "=", 2
+            if ($parts.Count -eq 2) {
+                $hashTable[$parts[0]] = $parts[1]
+            }
         }
     }
 
@@ -2792,53 +2818,161 @@ function Copy-Drivers {
     $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{4d36e96f-e325-11ce-bfc1-08002be10318}", "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}")
     $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware"
     $pathLength = $Path.Length
+
+    # Log start and validate paths
+    WriteLog "Copying PE drivers from '$Path' to '$Output' (WindowsArch: $WindowsArch)"
+    if (-not (Test-Path -Path $Path)) {
+        WriteLog "ERROR: Drivers source path not found: $Path"
+        return
+    }
+    [void](New-Item -Path $Output -ItemType Directory -Force)
+
+    # Determine common arch-specific SourceDisksFiles section names
+    # Many INFs use 'amd64' rather than 'x64' for 64-bit paths (e.g. SourceDisksFiles.amd64)
+    $sourceDisksFileSections = @("SourceDisksFiles")
+    if ($WindowsArch -eq 'x64') {
+        $sourceDisksFileSections += "SourceDisksFiles.amd64"
+    }
+    elseif ($WindowsArch -eq 'arm64') {
+        $sourceDisksFileSections += "SourceDisksFiles.arm64"
+    }
+
     $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
- 
+    WriteLog "Found $($infFiles.Count) INF files under: $Path"
+
+    $matchedInfCount = 0
+    $skippedInfCount = 0
+    $copiedFileCount = 0
+    $errorCount = 0
+
     for ($i = 0; $i -lt $infFiles.Count; $i++) {
         $infFullName = $infFiles[$i].FullName
         $infPath = Split-Path -Path $infFullName
         $childPath = $infPath.Substring($pathLength)
         $targetPath = Join-Path -Path $Output -ChildPath $childPath
-        
-        if ((Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "ClassGUID") -in $filterGUIDs) {
-            #Avoid drivers that reference keywords from the exclusion list to keep the total size small
-            if (((Get-Content -Path $infFullName) -match $exclusionList).Length -eq 0) {
-                $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Version" -KeyName "Provider").Trim("%")
-                
-                WriteLog "Copying PE drivers for $providerName"
-                WriteLog "Driver inf is: $infFullName"
-                [void](New-Item -Path $targetPath -ItemType Directory -Force)
-                Copy-Item -Path $infFullName -Destination $targetPath -Force
-                $CatalogFileName = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "Catalogfile"
-                Copy-Item -Path "$infPath\$CatalogFileName" -Destination $targetPath -Force
-                
-                $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName "SourceDisksFiles"
-                foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
-                    if (!$sourceDiskFiles[$sourceDiskFile].Contains(",")) {
-                        Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
-                    }
-                    else {
-                        $subdir = ($sourceDiskFiles[$sourceDiskFile] -split ",")[1]
-                        [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
-                        Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
+
+        # Filter to known device classes
+        $classGuid = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "ClassGUID"
+        if ($classGuid -notin $filterGUIDs) {
+            $skippedInfCount++
+            continue
+        }
+
+        # Avoid drivers that reference keywords from the exclusion list to keep the total size small
+        if (((Get-Content -Path $infFullName) -match $exclusionList).Length -ne 0) {
+            WriteLog "Skipping PE driver INF due to exclusion match: $infFullName"
+            $skippedInfCount++
+            continue
+        }
+
+        $matchedInfCount++
+
+        # Log the INF being processed
+        $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Version" -KeyName "Provider").Trim("%")
+        if ([string]::IsNullOrWhiteSpace($providerName)) {
+            $providerName = "Unknown Provider"
+        }
+
+        WriteLog "Processing PE driver INF: $infFullName"
+        WriteLog "Provider: $providerName | ClassGUID: $classGuid"
+        WriteLog "Target folder: $targetPath"
+
+        [void](New-Item -Path $targetPath -ItemType Directory -Force)
+
+        # Copy the INF itself
+        try {
+            Copy-Item -Path $infFullName -Destination $targetPath -Force -ErrorAction Stop
+            $copiedFileCount++
+            WriteLog "Copied: $infFullName -> $targetPath"
+        }
+        catch {
+            $errorCount++
+            WriteLog "ERROR: Failed to copy INF '$infFullName' to '$targetPath': $($_.Exception.Message)"
+        }
+
+        # Copy the catalog file (if specified)
+        $CatalogFileName = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "Catalogfile"
+        if (-not [string]::IsNullOrWhiteSpace($CatalogFileName)) {
+            $catalogSource = Join-Path -Path $infPath -ChildPath $CatalogFileName
+            if (Test-Path -Path $catalogSource) {
+                try {
+                    Copy-Item -Path $catalogSource -Destination $targetPath -Force -ErrorAction Stop
+                    $copiedFileCount++
+                    WriteLog "Copied: $catalogSource -> $targetPath"
+                }
+                catch {
+                    $errorCount++
+                    WriteLog "ERROR: Failed to copy catalog '$catalogSource' to '$targetPath': $($_.Exception.Message)"
+                }
+            }
+            else {
+                $errorCount++
+                WriteLog "ERROR: Catalog file not found: $catalogSource (INF: $infFullName)"
+            }
+        }
+        else {
+            WriteLog "WARNING: No CatalogFile entry found in INF: $infFullName"
+        }
+
+        # Copy all files referenced by SourceDisksFiles sections
+        foreach ($sectionName in $sourceDisksFileSections) {
+            $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName $sectionName
+            if ($sourceDiskFiles.Count -eq 0) {
+                continue
+            }
+
+            WriteLog "Copying files from INF section [$sectionName] ($($sourceDiskFiles.Count) entries)"
+
+            foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
+                # Determine if the file lives in a subfolder relative to the INF path
+                $rawValue = $sourceDiskFiles[$sourceDiskFile]
+                $subdir = ""
+
+                if (($null -ne $rawValue) -and ($rawValue.Contains(","))) {
+                    $splitParts = $rawValue -split ","
+                    if ($splitParts.Count -ge 2) {
+                        $subdir = $splitParts[1]
                     }
                 }
 
-                #Arch specific files override the files specified in the universal section
-                $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName "SourceDisksFiles.$WindowsArch"
-                foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
-                    if (!$sourceDiskFiles[$sourceDiskFile].Contains(",")) {
-                        Copy-Item -Path "$infPath\$sourceDiskFile" -Destination $targetPath -Force
+                if ([string]::IsNullOrWhiteSpace($subdir)) {
+                    $subdir = ""
+                }
+
+                # Build source and destination paths
+                if ([string]::IsNullOrEmpty($subdir)) {
+                    $sourceFilePath = Join-Path -Path $infPath -ChildPath $sourceDiskFile
+                    $destinationFolder = $targetPath
+                }
+                else {
+                    $sourceFolder = Join-Path -Path $infPath -ChildPath $subdir
+                    $sourceFilePath = Join-Path -Path $sourceFolder -ChildPath $sourceDiskFile
+                    $destinationFolder = Join-Path -Path $targetPath -ChildPath $subdir
+                    [void](New-Item -Path $destinationFolder -ItemType Directory -Force)
+                }
+
+                # Copy with logging and error handling
+                if (Test-Path -Path $sourceFilePath) {
+                    try {
+                        Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force -ErrorAction Stop
+                        $copiedFileCount++
+                        WriteLog "Copied: $sourceFilePath -> $destinationFolder"
                     }
-                    else {
-                        $subdir = ($sourceDiskFiles[$sourceDiskFile] -split ",")[1]
-                        [void](New-Item -Path "$targetPath\$subdir" -ItemType Directory -Force)
-                        Copy-Item -Path "$infPath\$subdir\$sourceDiskFile" -Destination "$targetPath\$subdir" -Force
+                    catch {
+                        $errorCount++
+                        WriteLog "ERROR: Failed to copy '$sourceFilePath' to '$destinationFolder' (INF: $infFullName): $($_.Exception.Message)"
                     }
+                }
+                else {
+                    $errorCount++
+                    WriteLog "ERROR: Source file not found for [$sectionName] entry '$sourceDiskFile': $sourceFilePath (INF: $infFullName)"
                 }
             }
         }
     }
+
+    # Final summary
+    WriteLog "PE driver copy summary: INF total=$($infFiles.Count) matched=$matchedInfCount skipped=$skippedInfCount filesCopied=$copiedFileCount errors=$errorCount"
 }
 
 function New-PEMedia {
@@ -6243,7 +6377,6 @@ try {
         New-FFU $FFUVM.Name
     }
     else {
-        Set-Progress -Percentage 81 -Message "Starting FFU capture from VHDX..."
         #Shorten Windows SKU for use in FFU file name to remove spaces and long names
         WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
         $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
