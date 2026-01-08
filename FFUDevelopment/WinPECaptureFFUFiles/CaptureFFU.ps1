@@ -364,6 +364,7 @@ function Wait-For-NetworkReady {
     Write-Host "`n========== Network Initialization =========="
     Write-Host "Waiting for network to be ready (timeout: ${TimeoutSeconds}s)..."
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $script:pingWarningShown = $false  # Track if we've shown the ICMP warning
 
     while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         $elapsed = [math]::Round($stopwatch.Elapsed.TotalSeconds)
@@ -390,21 +391,29 @@ function Wait-For-NetworkReady {
         $gateway = Get-WmiDefaultGateway
         $gatewayIP = if ($gateway) { $gateway[0].NextHop } else { "None" }
 
-        # Check 4: Host is reachable via ping
+        # Check 4: Host is reachable via ping (NON-BLOCKING - ICMP may be blocked by firewall)
         # Using ping.exe for WinPE compatibility (Test-Connection may not work)
+        # Note: Many corporate environments block ICMP but allow SMB. If ping fails,
+        # we proceed anyway and let the SMB connection attempt provide the real error.
         $ping = Test-HostConnection -ComputerName $HostIP -Count 1 -Quiet
+        $hostStatus = if ($ping) { "reachable" } else { "ping blocked/failed" }
+
         if (-not $ping) {
-            Write-Host "  [$elapsed`s] Waiting for host connectivity ($HostIP)..." -ForegroundColor Yellow
-            Start-Sleep -Seconds 2
-            continue
+            # Only show warning once, don't block progress
+            if (-not $script:pingWarningShown) {
+                Write-Host "  [$elapsed`s] Note: Ping to host ($HostIP) failed - ICMP may be blocked by firewall" -ForegroundColor Yellow
+                Write-Host "  [$elapsed`s] Proceeding anyway - SMB connection will provide definitive status" -ForegroundColor Yellow
+                $script:pingWarningShown = $true
+            }
+            # Don't 'continue' - proceed to success checks below
         }
 
-        # All checks passed
+        # All checks passed (or ping skipped due to ICMP blocking)
         Write-Host "[SUCCESS] Network ready!" -ForegroundColor Green
         Write-Host "  Adapter: $($adapter[0].Name)" -ForegroundColor Cyan
         Write-Host "  IP Address: $($ip[0].IPAddress)" -ForegroundColor Cyan
         Write-Host "  Gateway: $gatewayIP" -ForegroundColor Cyan
-        Write-Host "  Host: $HostIP (reachable)" -ForegroundColor Cyan
+        Write-Host "  Host: $HostIP ($hostStatus)" -ForegroundColor Cyan
         Write-Host "  Time elapsed: $elapsed seconds" -ForegroundColor Cyan
         Write-Host "==========================================`n"
 

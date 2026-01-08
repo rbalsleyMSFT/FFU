@@ -109,6 +109,13 @@ function Initialize-UIControls {
     $State.Controls.txtStatus = $window.FindName('txtStatus')
     $State.Controls.pbOverallProgress = $window.FindName('progressBar')
     $State.Controls.txtOverallStatus = $window.FindName('txtStatus')
+    $State.Controls.cmbHypervisorType = $window.FindName('cmbHypervisorType')
+    $State.Controls.txtHypervisorStatus = $window.FindName('txtHypervisorStatus')
+    $State.Controls.pnlVMwareSetupLabel = $window.FindName('pnlVMwareSetupLabel')
+    $State.Controls.pnlVMwareSetup = $window.FindName('pnlVMwareSetup')
+    $State.Controls.txtVMwareCredStatus = $window.FindName('txtVMwareCredStatus')
+    $State.Controls.btnConfigureVMrest = $window.FindName('btnConfigureVMrest')
+    $State.Controls.pnlVMSwitchLabel = $window.FindName('pnlVMSwitchLabel')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
     $State.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')
     $State.Controls.txtCustomVMSwitchName = $window.FindName('txtCustomVMSwitchName')
@@ -263,6 +270,14 @@ function Initialize-UIDefaults {
     $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked
     $State.Controls.chkCopyAdditionalFFUFiles.IsChecked = $State.Defaults.generalDefaults.CopyAdditionalFFUFiles
     $State.Controls.additionalFFUPanel.Visibility = if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) { 'Visible' } else { 'Collapsed' }
+
+    # VM Settings / Hypervisor defaults
+    # Initialize hypervisor type dropdown (default to Hyper-V)
+    if ($null -ne $State.Controls.cmbHypervisorType) {
+        $State.Controls.cmbHypervisorType.SelectedIndex = 0  # Default to Hyper-V
+    }
+    # Initialize hypervisor status indicator
+    Update-HypervisorStatus -State $State -SelectedIndex 0
 
     # Hyper-V Settings defaults from General Defaults
     Initialize-VMSwitchData -State $State

@@ -12,7 +12,7 @@
 RootModule = 'FFUUI.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.2'
+ModuleVersion = '0.0.5'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -119,6 +119,25 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.5: Enterprise account support for VMware credentials
+- Removed elevation from credential setup button (was causing issues with separate admin accounts)
+- Status now shows "Configured (current user)" to clarify per-profile storage
+- Added enterprise guidance in terminal output and dialog messages
+- Updated tooltips to explain separate admin account requirements
+- Added dynamic tooltip on status text showing current username
+
+v0.0.4: VMware REST API credential setup UI
+- Added VMware REST API row in VM Settings tab (visible when VMware selected)
+- Added credential status indicator (Configured/Not configured)
+- Added "Configure Credentials..." button that opens terminal for vmrest.exe -C
+- Button launches elevated cmd.exe with guided vmrest credential setup
+- Status refreshes automatically after configuration complete
+
+v0.0.3: Hypervisor selection dropdown
+- Added Hypervisor Type dropdown (Hyper-V, VMware Workstation Pro, Auto-detect)
+- Added Hypervisor Status indicator with availability check
+- Show/hide Hyper-V specific controls based on selection
+
 v0.0.2: Bug fix
 - Fixed expand.exe argument quoting in FFUUI.Core.Drivers.HP.psm1
 - Removed embedded quotes from argument arrays (3 instances)

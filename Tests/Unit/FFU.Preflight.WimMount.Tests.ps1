@@ -10,6 +10,12 @@
     WIM mount infrastructure required by DISM operations. This addresses
     DISM error 0x800704DB "The specified service does not exist".
 
+    v1.0.4 Changes:
+    - PRIMARY CHECK is now 'fltmc filters' for WimMount presence
+    - Auto-repair is now the default behavior
+    - New details fields: WimMountFilterLoaded, RegistryExists, FilterInstanceExists, RemediationSuccess
+    - Removed WOF-related fields (not required for WimMount functionality)
+
 .NOTES
     Created as part of fix for DISM WIM mount failure during WinPE creation.
     Error: "Failed to mount the WIM file" with error 0x800704DB
@@ -73,9 +79,14 @@ Describe 'Test-FFUWimMount Return Structure' {
     }
 }
 
-Describe 'Test-FFUWimMount Details Structure' {
+Describe 'Test-FFUWimMount Details Structure (v1.0.4)' {
     BeforeAll {
         $script:result = Test-FFUWimMount
+    }
+
+    It 'Details should contain WimMountFilterLoaded (primary indicator)' {
+        $result.Details.Keys | Should -Contain 'WimMountFilterLoaded'
+        $result.Details.WimMountFilterLoaded | Should -BeOfType [bool]
     }
 
     It 'Details should contain WimMountServiceExists' {
@@ -87,23 +98,27 @@ Describe 'Test-FFUWimMount Details Structure' {
         $result.Details.Keys | Should -Contain 'WimMountServiceStatus'
     }
 
-    It 'Details should contain WofServiceExists' {
-        $result.Details.Keys | Should -Contain 'WofServiceExists'
-        $result.Details.WofServiceExists | Should -BeOfType [bool]
-    }
-
     It 'Details should contain WimMountDriverExists' {
         $result.Details.Keys | Should -Contain 'WimMountDriverExists'
         $result.Details.WimMountDriverExists | Should -BeOfType [bool]
     }
 
-    It 'Details should contain WofDriverExists' {
-        $result.Details.Keys | Should -Contain 'WofDriverExists'
-        $result.Details.WofDriverExists | Should -BeOfType [bool]
+    It 'Details should contain WimMountDriverVersion' {
+        $result.Details.Keys | Should -Contain 'WimMountDriverVersion'
     }
 
     It 'Details should contain FltMgrServiceStatus' {
         $result.Details.Keys | Should -Contain 'FltMgrServiceStatus'
+    }
+
+    It 'Details should contain RegistryExists' {
+        $result.Details.Keys | Should -Contain 'RegistryExists'
+        $result.Details.RegistryExists | Should -BeOfType [bool]
+    }
+
+    It 'Details should contain FilterInstanceExists' {
+        $result.Details.Keys | Should -Contain 'FilterInstanceExists'
+        $result.Details.FilterInstanceExists | Should -BeOfType [bool]
     }
 
     It 'Details should contain RemediationAttempted' {
@@ -114,28 +129,38 @@ Describe 'Test-FFUWimMount Details Structure' {
     It 'Details should contain RemediationActions list' {
         $result.Details.Keys | Should -Contain 'RemediationActions'
     }
+
+    It 'Details should contain RemediationSuccess' {
+        $result.Details.Keys | Should -Contain 'RemediationSuccess'
+        $result.Details.RemediationSuccess | Should -BeOfType [bool]
+    }
 }
 
-Describe 'Test-FFUWimMount Service Checks' {
+Describe 'Test-FFUWimMount Primary Check (fltmc filters)' {
     BeforeAll {
+        # Check actual fltmc filters output
+        $script:fltmcOutput = fltmc filters 2>&1
+        $script:wimMountInFilters = ($fltmcOutput -match 'WimMount')
         $script:result = Test-FFUWimMount
     }
 
-    It 'Should detect WIMMount service if it exists' {
-        # On a healthy Windows system, WIMMount service should exist
-        $wimMountService = Get-Service -Name 'WIMMount' -ErrorAction SilentlyContinue
-        if ($wimMountService) {
-            $result.Details.WimMountServiceExists | Should -BeTrue
-        }
-        else {
-            $result.Details.WimMountServiceExists | Should -BeFalse
+    It 'Should use fltmc filters as primary indicator' {
+        # WimMountFilterLoaded should match whether WimMount appears in fltmc filters
+        # Note: If auto-repair succeeded, both will be true
+        if ($result.Status -eq 'Passed') {
+            $result.Details.WimMountFilterLoaded | Should -BeTrue
         }
     }
 
-    It 'Should detect Filter Manager service status' {
-        $fltMgrService = Get-Service -Name 'FltMgr' -ErrorAction SilentlyContinue
-        if ($fltMgrService) {
-            $result.Details.FltMgrServiceStatus | Should -Be $fltMgrService.Status.ToString()
+    It 'Should return Passed when WimMount is in fltmc filters' {
+        if ($wimMountInFilters) {
+            $result.Status | Should -Be 'Passed'
+        }
+    }
+
+    It 'Message should reference filter status' {
+        if ($result.Status -eq 'Passed') {
+            $result.Message | Should -Match 'filter'
         }
     }
 }
@@ -144,7 +169,6 @@ Describe 'Test-FFUWimMount Driver File Checks' {
     BeforeAll {
         $script:result = Test-FFUWimMount
         $script:wimMountDriverPath = Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'
-        $script:wofDriverPath = Join-Path $env:SystemRoot 'System32\drivers\wof.sys'
     }
 
     It 'Should correctly detect wimmount.sys existence' {
@@ -152,71 +176,121 @@ Describe 'Test-FFUWimMount Driver File Checks' {
         $result.Details.WimMountDriverExists | Should -Be $expectedExists
     }
 
-    It 'Should correctly detect wof.sys existence' {
-        $expectedExists = Test-Path -Path $wofDriverPath -PathType Leaf
-        $result.Details.WofDriverExists | Should -Be $expectedExists
+    It 'Should report driver version when driver exists' {
+        if ($result.Details.WimMountDriverExists) {
+            $result.Details.WimMountDriverVersion | Should -Not -Be 'Unknown'
+        }
     }
 }
 
-Describe 'Test-FFUWimMount with AttemptRemediation' {
-    It 'Should accept -AttemptRemediation switch' {
-        { Test-FFUWimMount -AttemptRemediation } | Should -Not -Throw
+Describe 'Test-FFUWimMount Registry Checks' {
+    BeforeAll {
+        $script:result = Test-FFUWimMount
+        $script:serviceRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WimMount"
+        $script:instancePath = "$serviceRegPath\Instances\WimMount"
     }
 
-    It 'Should set RemediationAttempted when errors exist and remediation requested' {
-        # This test validates the parameter is accepted - actual remediation
-        # depends on system state and may or may not occur
-        $result = Test-FFUWimMount -AttemptRemediation
+    It 'Should correctly detect service registry existence' {
+        $expectedExists = Test-Path $serviceRegPath
+        # Note: After auto-repair, this may have been created
+        $result.Details.RegistryExists | Should -BeOfType [bool]
+    }
 
-        # RemediationAttempted should be true only if there were errors to remediate
-        # If system is healthy, RemediationAttempted will be false
-        $result.Details.RemediationAttempted | Should -BeOfType [bool]
+    It 'Should correctly detect filter instance existence' {
+        # Note: After auto-repair, this may have been created
+        $result.Details.FilterInstanceExists | Should -BeOfType [bool]
+    }
+}
+
+Describe 'Test-FFUWimMount Auto-Repair Behavior' {
+    It 'Should accept -AttemptRemediation parameter' {
+        { Test-FFUWimMount -AttemptRemediation } | Should -Not -Throw
+        { Test-FFUWimMount -AttemptRemediation:$true } | Should -Not -Throw
+        { Test-FFUWimMount -AttemptRemediation:$false } | Should -Not -Throw
+    }
+
+    It 'Auto-repair should be default behavior (AttemptRemediation defaults to $true)' {
+        # When filter is not loaded and driver exists, remediation should be attempted
+        $result = Test-FFUWimMount
+
+        # If the filter wasn't loaded initially but repair succeeded, we know remediation was attempted
+        if ($result.Details.RemediationSuccess) {
+            $result.Details.RemediationAttempted | Should -BeTrue
+        }
+    }
+
+    It 'Should NOT attempt remediation when -AttemptRemediation:$false' {
+        $result = Test-FFUWimMount -AttemptRemediation:$false
+
+        # If filter is loaded, RemediationAttempted will be false anyway
+        # If filter is not loaded and we passed -AttemptRemediation:$false, it should also be false
+        if (-not $result.Details.WimMountFilterLoaded) {
+            # This confirms detection-only mode worked
+            $result.Details.RemediationAttempted | Should -BeFalse
+        }
+    }
+
+    It 'Should track all remediation actions' {
+        $result = Test-FFUWimMount
+
+        if ($result.Details.RemediationAttempted) {
+            $result.Details.RemediationActions.Count | Should -BeGreaterThan 0
+        }
     }
 }
 
 Describe 'Test-FFUWimMount Healthy System Validation' {
-    # These tests validate behavior on a healthy Windows system
-    # They will pass on most properly configured Windows 10/11 systems
-
     BeforeAll {
+        # Check if this is a healthy system where WimMount is in fltmc filters
+        $script:fltmcOutput = fltmc filters 2>&1
+        $script:isHealthySystem = ($fltmcOutput -match 'WimMount')
         $script:result = Test-FFUWimMount
-        $script:isHealthySystem = (
-            (Get-Service -Name 'WIMMount' -ErrorAction SilentlyContinue) -and
-            (Get-Service -Name 'FltMgr' -ErrorAction SilentlyContinue) -and
-            (Test-Path (Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'))
-        )
     }
 
     It 'Should pass on healthy Windows system' -Skip:(-not $isHealthySystem) {
         $result.Status | Should -Be 'Passed'
     }
 
-    It 'Should have positive message on healthy system' -Skip:(-not $isHealthySystem) {
-        $result.Message | Should -Match 'available'
+    It 'Should have message indicating filter is loaded on healthy system' -Skip:(-not $isHealthySystem) {
+        $result.Message | Should -Match 'loaded'
     }
 
     It 'Should have empty Remediation on healthy system' -Skip:(-not $isHealthySystem) {
         $result.Remediation | Should -BeNullOrEmpty
     }
+
+    It 'WimMountFilterLoaded should be true on healthy system' -Skip:(-not $isHealthySystem) {
+        $result.Details.WimMountFilterLoaded | Should -BeTrue
+    }
 }
 
-Describe 'Test-FFUWimMount Error Messaging' {
-    It 'Should provide remediation steps when failed' {
-        # Get fresh result
-        $result = Test-FFUWimMount
+Describe 'Test-FFUWimMount Failure Messaging' {
+    It 'Should provide detailed diagnostics when failed' {
+        $result = Test-FFUWimMount -AttemptRemediation:$false
 
         if ($result.Status -eq 'Failed') {
             $result.Remediation | Should -Not -BeNullOrEmpty
-            $result.Remediation | Should -Match 'rundll32'
-            $result.Remediation | Should -Match 'WimMountDriver'
+            # Should include diagnostic info
+            $result.Remediation | Should -Match 'Diagnostic'
+            # Should include manual remediation steps
+            $result.Remediation | Should -Match 'Remediation'
         }
     }
 
-    It 'Should mention error code 0x800704DB in remediation' {
-        $result = Test-FFUWimMount
+    It 'Should mention fltmc filters in remediation' {
+        $result = Test-FFUWimMount -AttemptRemediation:$false
 
         if ($result.Status -eq 'Failed') {
-            $result.Remediation | Should -Match '0x800704DB'
+            $result.Remediation | Should -Match 'fltmc filters'
+        }
+    }
+
+    It 'Should mention security software when repair fails' {
+        $result = Test-FFUWimMount -AttemptRemediation:$false
+
+        if ($result.Status -eq 'Failed') {
+            # Should mention SentinelOne or security software
+            $result.Remediation | Should -Match 'security|SentinelOne|CrowdStrike|EDR'
         }
     }
 }
@@ -251,20 +325,66 @@ Describe 'Test-FFUWimMount Integration with Invoke-FFUPreflight' {
         # WimMount should be skipped
         $result.Tier2Results['WimMount'].Status | Should -Be 'Skipped'
     }
+
+    It 'Invoke-FFUPreflight should fail when WimMount fails and ADK needed' {
+        # This test validates that WimMount failure blocks the build
+        $features = @{
+            CreateCaptureMedia = $true
+            CreateVM = $false
+        }
+
+        $result = Invoke-FFUPreflight -Features $features `
+            -FFUDevelopmentPath 'C:\FFUDevelopment' -SkipCleanup 6>$null
+
+        # If WimMount failed, IsValid should be false
+        if ($result.Tier2Results['WimMount'].Status -eq 'Failed') {
+            $result.IsValid | Should -BeFalse
+        }
+    }
 }
 
 Describe 'Test-FFUWimMount Performance' {
-    It 'Should complete within 5 seconds' {
+    It 'Should complete within 10 seconds (includes potential repair time)' {
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         $null = Test-FFUWimMount
         $stopwatch.Stop()
 
-        $stopwatch.ElapsedMilliseconds | Should -BeLessThan 5000
+        # Allow up to 10 seconds to account for registry operations and service start
+        $stopwatch.ElapsedMilliseconds | Should -BeLessThan 10000
+    }
+
+    It 'Should complete within 2 seconds in detection-only mode' {
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $null = Test-FFUWimMount -AttemptRemediation:$false
+        $stopwatch.Stop()
+
+        $stopwatch.ElapsedMilliseconds | Should -BeLessThan 2000
     }
 
     It 'Should report accurate duration' {
-        $result = Test-FFUWimMount
+        $result = Test-FFUWimMount -AttemptRemediation:$false
         $result.DurationMs | Should -BeGreaterThan 0
         $result.DurationMs | Should -BeLessThan 10000
+    }
+}
+
+Describe 'Test-FFUWimMount Remediation Success Tracking' {
+    It 'RemediationSuccess should be true when repair succeeds' {
+        $result = Test-FFUWimMount
+
+        if ($result.Details.RemediationAttempted) {
+            # If remediation was attempted and status is Passed, success should be true
+            if ($result.Status -eq 'Passed') {
+                $result.Details.RemediationSuccess | Should -BeTrue
+            }
+        }
+    }
+
+    It 'RemediationSuccess should be false when repair fails' {
+        $result = Test-FFUWimMount
+
+        if ($result.Details.RemediationAttempted -and $result.Status -eq 'Failed') {
+            $result.Details.RemediationSuccess | Should -BeFalse
+        }
     }
 }

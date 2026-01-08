@@ -82,11 +82,14 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- TAB: Hyper-V Settings -->
-            <TabItem Header="Hyper-V Settings" Padding="20">
+            <!-- TAB: VM Settings (Hypervisor) -->
+            <TabItem Header="VM Settings" Padding="20">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid Margin="10">
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
@@ -101,48 +104,70 @@
                             <ColumnDefinition Width="200"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <!-- Row 0: VM Switch Name -->
+                        <!-- Row 0: Hypervisor Type -->
                         <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                            <TextBlock Text="VM Switch Name" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
+                            <TextBlock Text="Hypervisor Type" ToolTip="Select which hypervisor to use for VM operations. 'Auto' will detect the best available option."/>
                         </StackPanel>
-                        <ComboBox x:Name="cmbVMSwitchName" Grid.Row="0" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
-                        <!-- Row 1: Custom VM Switch Name -->
-                        <TextBox x:Name="txtCustomVMSwitchName" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Visibility="Collapsed" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
-                        <!-- Row 2: VM Host IP Address -->
-                        <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                            <TextBlock Text="VM Host IP Address" ToolTip="IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP)."/>
+                        <ComboBox x:Name="cmbHypervisorType" Grid.Row="0" Grid.Column="1" Margin="5" Width="200" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="Select which hypervisor to use for VM operations. 'Auto' will detect the best available option.">
+                            <ComboBoxItem Content="Hyper-V" IsSelected="True"/>
+                            <ComboBoxItem Content="VMware Workstation Pro"/>
+                            <ComboBoxItem Content="Auto-detect"/>
+                        </ComboBox>
+                        <!-- Row 1: Hypervisor Status (read-only indicator) -->
+                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="Hypervisor Status" ToolTip="Shows the availability status of the selected hypervisor."/>
                         </StackPanel>
-                        <TextBox x:Name="txtVMHostIPAddress" Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                        <!-- Row 3: Disk Size (GB) -->
-                        <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBlock x:Name="txtHypervisorStatus" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center" Text="Checking..." Foreground="Gray" ToolTip="Shows the availability status of the selected hypervisor."/>
+                        <!-- Row 2: VMware Setup (VMware only) -->
+                        <StackPanel x:Name="pnlVMwareSetupLabel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
+                            <TextBlock Text="VMware REST API" ToolTip="VMware requires vmrest.exe credentials to be configured before use."/>
+                        </StackPanel>
+                        <StackPanel x:Name="pnlVMwareSetup" Grid.Row="2" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="5" Visibility="Collapsed">
+                            <TextBlock x:Name="txtVMwareCredStatus" Text="Not configured" Foreground="Orange" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Shows credential status for your current user profile. Enterprise users with separate admin accounts should also configure credentials from an elevated command prompt."/>
+                            <Button x:Name="btnConfigureVMrest" Content="Configure Credentials..." Width="150" Height="25" ToolTip="Opens a terminal to configure vmrest.exe credentials for your current user profile. If builds run with a separate admin account, also run 'vmrest.exe -C' from an elevated command prompt."/>
+                        </StackPanel>
+                        <!-- Row 3: VM Switch Name (Hyper-V only) -->
+                        <StackPanel x:Name="pnlVMSwitchLabel" Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Switch Name" ToolTip="Name of the Hyper-V virtual switch. Required when InstallApps is enabled with Hyper-V. The default is '*external*', but you will likely need to change this."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbVMSwitchName" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Name of the Hyper-V virtual switch. Required when InstallApps is enabled with Hyper-V."/>
+                        <!-- Row 4: Custom VM Switch Name -->
+                        <TextBox x:Name="txtCustomVMSwitchName" Grid.Row="4" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Visibility="Collapsed" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
+                        <!-- Row 5: VM Host IP Address -->
+                        <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Host IP Address" ToolTip="IP address of the host for FFU capture. Required when InstallApps is enabled. You must manually configure this."/>
+                        </StackPanel>
+                        <TextBox x:Name="txtVMHostIPAddress" Grid.Row="5" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                        <!-- Row 6: Disk Size (GB) -->
+                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                         </StackPanel>
-                        <TextBox x:Name="txtDiskSize" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="50" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
-                        <!-- Row 4: Memory (GB) -->
-                        <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtDiskSize" Grid.Row="6" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="50" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
+                        <!-- Row 7: Memory (GB) -->
+                        <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Memory (GB)" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
                         </StackPanel>
-                        <TextBox x:Name="txtMemory" Grid.Row="4" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
-                        <!-- Row 5: Processors -->
-                        <StackPanel Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtMemory" Grid.Row="7" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
+                        <!-- Row 8: Processors -->
+                        <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Processors" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
                         </StackPanel>
-                        <TextBox x:Name="txtProcessors" Grid.Row="5" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
-                        <!-- Row 6: VM Location -->
-                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                            <TextBlock Text="VM Location" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
+                        <TextBox x:Name="txtProcessors" Grid.Row="8" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
+                        <!-- Row 9: VM Location -->
+                        <StackPanel Grid.Row="9" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="VM Location" ToolTip="Location where the virtual disk and VM files will be created. Default is FFUDevelopmentPath\VM."/>
                         </StackPanel>
-                        <TextBox x:Name="txtVMLocation" Grid.Row="6" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="{x:Static sys:Environment.CurrentDirectory}" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
-                        <!-- Row 7: VM Name Prefix -->
-                        <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtVMLocation" Grid.Row="9" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="{x:Static sys:Environment.CurrentDirectory}" ToolTip="Location where the virtual disk and VM files will be created. Default is FFUDevelopmentPath\VM."/>
+                        <!-- Row 10: VM Name Prefix -->
+                        <StackPanel Grid.Row="10" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Name Prefix" ToolTip="Prefix for the VM Name. The default is _FFU."/>
                         </StackPanel>
-                        <TextBox x:Name="txtVMNamePrefix" Grid.Row="7" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Prefix for the VM Name. The default is _FFU."/>
-                        <!-- Row 8: Logical Sector Size -->
-                        <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtVMNamePrefix" Grid.Row="10" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Prefix for the VM Name. The default is _FFU."/>
+                        <!-- Row 11: Logical Sector Size -->
+                        <StackPanel Grid.Row="11" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Logical Sector Size" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
                         </StackPanel>
-                        <ComboBox x:Name="cmbLogicalSectorSize" Grid.Row="8" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
+                        <ComboBox x:Name="cmbLogicalSectorSize" Grid.Row="11" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
                             <ComboBoxItem Content="512" IsSelected="True"/>
                             <ComboBoxItem Content="4096"/>
                         </ComboBox>

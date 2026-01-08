@@ -365,6 +365,354 @@ TO RETRY WITH ADK REINSTALLATION:
     return $success
 }
 
+function New-WinPEMediaNative {
+    <#
+    .SYNOPSIS
+    Creates WinPE working directory structure using native PowerShell DISM cmdlets
+
+    .DESCRIPTION
+    Replicates copype.cmd functionality using native PowerShell Mount-WindowsImage
+    cmdlet instead of ADK dism.exe. IMPORTANT: Both methods require the WIMMount
+    service to be functional - this function performs just-in-time validation
+    using Test-FFUWimMount before attempting to mount the WIM file.
+
+    Creates the following directory structure:
+    - $DestinationPath\media       - Boot files and sources
+    - $DestinationPath\mount       - WIM mount point (empty after completion)
+    - $DestinationPath\bootbins    - Boot binaries (EFI files, boot sector files)
+
+    .PARAMETER Architecture
+    Target architecture: 'x64' or 'arm64'
+
+    .PARAMETER DestinationPath
+    Path where WinPE working directory will be created
+
+    .PARAMETER ADKPath
+    Path to Windows ADK installation root (e.g., "C:\Program Files (x86)\Windows Kits\10\")
+
+    .OUTPUTS
+    [bool] Returns $true on success, throws on failure
+
+    .EXAMPLE
+    New-WinPEMediaNative -Architecture 'x64' -DestinationPath 'C:\FFUDevelopment\WinPE' -ADKPath 'C:\Program Files (x86)\Windows Kits\10\'
+
+    .NOTES
+    Requires Administrator privileges for DISM operations.
+    Uses Mount-WindowsImage/Dismount-WindowsImage instead of dism.exe.
+    NOTE: Both native cmdlets AND ADK dism.exe require the WIMMount service.
+    This function validates WIMMount availability using Test-FFUWimMount before mount operations.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x64', 'arm64')]
+        [string]$Architecture,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$DestinationPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ADKPath
+    )
+
+    WriteLog "=== New-WinPEMediaNative Starting ==="
+    WriteLog "Architecture: $Architecture"
+    WriteLog "DestinationPath: $DestinationPath"
+    WriteLog "ADKPath: $ADKPath"
+
+    # Determine architecture-specific folder names
+    # ADK uses 'amd64' for x64 architecture
+    $adkArchFolder = if ($Architecture -eq 'x64') { 'amd64' } else { $Architecture }
+
+    # Build source paths
+    $winPERoot = Join-Path $ADKPath "Assessment and Deployment Kit\Windows Preinstallation Environment"
+    $sourceRoot = Join-Path $winPERoot $adkArchFolder
+    $mediaSource = Join-Path $sourceRoot "Media"
+    $wimSourcePath = Join-Path $sourceRoot "en-us\winpe.wim"
+    $oscdimgRoot = Join-Path $ADKPath "Assessment and Deployment Kit\Deployment Tools\$adkArchFolder\Oscdimg"
+
+    # Build destination paths
+    $mediaPath = Join-Path $DestinationPath "media"
+    $mountPath = Join-Path $DestinationPath "mount"
+    $bootbinsPath = Join-Path $DestinationPath "bootbins"
+    $bootWimPath = Join-Path $mediaPath "sources\boot.wim"
+
+    # Track if WIM is mounted for cleanup
+    $wimMounted = $false
+
+    try {
+        # ============================================
+        # Step 1: Validate source paths exist
+        # ============================================
+        WriteLog "Step 1: Validating source paths..."
+
+        if (-not (Test-Path $sourceRoot)) {
+            throw "Architecture '$Architecture' not found at: $sourceRoot"
+        }
+        WriteLog "  Source root validated: $sourceRoot"
+
+        if (-not (Test-Path $mediaSource)) {
+            throw "Media source not found at: $mediaSource"
+        }
+        WriteLog "  Media source validated: $mediaSource"
+
+        if (-not (Test-Path $wimSourcePath)) {
+            throw "WinPE WIM file not found at: $wimSourcePath"
+        }
+        WriteLog "  WinPE WIM validated: $wimSourcePath"
+
+        if (-not (Test-Path $oscdimgRoot)) {
+            throw "OSCDIMG root not found at: $oscdimgRoot"
+        }
+        WriteLog "  OSCDIMG root validated: $oscdimgRoot"
+
+        # ============================================
+        # Step 2: Validate destination does not exist
+        # ============================================
+        WriteLog "Step 2: Checking destination path..."
+
+        if (Test-Path $DestinationPath) {
+            throw "Destination directory already exists: $DestinationPath. Remove it first or use a different path."
+        }
+
+        # ============================================
+        # Step 3: Create directory structure
+        # ============================================
+        WriteLog "Step 3: Creating directory structure..."
+
+        WriteLog "  Creating: $DestinationPath"
+        New-Item -Path $DestinationPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+
+        WriteLog "  Creating: $mediaPath"
+        New-Item -Path $mediaPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+
+        WriteLog "  Creating: $mountPath"
+        New-Item -Path $mountPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+
+        WriteLog "  Creating: $bootbinsPath"
+        New-Item -Path $bootbinsPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+
+        # ============================================
+        # Step 4: Copy media files (equivalent to xcopy /herky)
+        # ============================================
+        WriteLog "Step 4: Copying media files from $mediaSource to $mediaPath..."
+
+        # Use robocopy for reliable copy with hidden, empty, and overwrite
+        $robocopyArgs = @(
+            "`"$mediaSource`"",
+            "`"$mediaPath`"",
+            "/E",      # Include subdirectories, including empty ones
+            "/NFL",    # No file listing
+            "/NDL",    # No directory listing
+            "/NJH",    # No job header
+            "/NJS",    # No job summary
+            "/R:3",    # Retry 3 times
+            "/W:5"     # Wait 5 seconds between retries
+        )
+
+        $robocopyOutput = & robocopy.exe $mediaSource $mediaPath /E /NFL /NDL /NJH /NJS /R:3 /W:5 2>&1
+        $robocopyExitCode = $LASTEXITCODE
+
+        # Robocopy exit codes 0-7 are success, 8+ are failures
+        if ($robocopyExitCode -ge 8) {
+            WriteLog "ERROR: Robocopy failed with exit code $robocopyExitCode"
+            WriteLog "Output: $($robocopyOutput -join ' ')"
+            throw "Failed to copy media files from '$mediaSource' to '$mediaPath'. Robocopy exit code: $robocopyExitCode"
+        }
+        WriteLog "  Media files copied successfully (robocopy exit code: $robocopyExitCode)"
+
+        # ============================================
+        # Step 5: Create sources directory and copy winpe.wim as boot.wim
+        # ============================================
+        WriteLog "Step 5: Copying WinPE WIM to boot.wim..."
+
+        $sourcesPath = Join-Path $mediaPath "sources"
+        if (-not (Test-Path $sourcesPath)) {
+            WriteLog "  Creating: $sourcesPath"
+            New-Item -Path $sourcesPath -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
+
+        WriteLog "  Copying: $wimSourcePath -> $bootWimPath"
+        Copy-Item -Path $wimSourcePath -Destination $bootWimPath -Force -ErrorAction Stop
+        WriteLog "  boot.wim copied successfully"
+
+        # ============================================
+        # Step 6: Validate WIMMount service (required for Mount-WindowsImage)
+        # ============================================
+        WriteLog "Step 6: Validating WIMMount service before mount operation..."
+        WriteLog "  NOTE: Both native PowerShell cmdlets AND ADK dism.exe require WIMMount service"
+
+        # Check if Test-FFUWimMount is available (from FFU.Preflight module)
+        if (Get-Command Test-FFUWimMount -ErrorAction SilentlyContinue) {
+            $wimMountCheck = Test-FFUWimMount -AttemptRemediation
+            if ($wimMountCheck.Status -ne 'Passed') {
+                $errorMsg = "WIMMount service validation failed: $($wimMountCheck.Message)"
+                WriteLog "ERROR: $errorMsg"
+                if ($wimMountCheck.Remediation) {
+                    WriteLog "Remediation: $($wimMountCheck.Remediation)"
+                }
+                throw $errorMsg
+            }
+            WriteLog "  WIMMount service validation passed"
+        } else {
+            WriteLog "  WARNING: Test-FFUWimMount not available (FFU.Preflight module may not be loaded)"
+            WriteLog "  Proceeding with mount operation without pre-validation..."
+        }
+
+        # ============================================
+        # Step 7: Mount boot.wim using native PowerShell cmdlet
+        # ============================================
+        WriteLog "Step 7: Mounting boot.wim using Mount-WindowsImage cmdlet..."
+        WriteLog "  ImagePath: $bootWimPath"
+        WriteLog "  MountPath: $mountPath"
+
+        # Register cleanup action if available
+        if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+            WriteLog "  Registering DISM mount cleanup action..."
+            $null = Register-DISMMountCleanup -MountPath $mountPath
+        }
+
+        # Mount the WIM read-only (we only need to copy files from it)
+        Mount-WindowsImage -ImagePath $bootWimPath -Index 1 -Path $mountPath -ReadOnly -ErrorAction Stop | Out-Null
+        $wimMounted = $true
+        WriteLog "  boot.wim mounted successfully"
+
+        # ============================================
+        # Step 8: Copy boot files from mounted WIM
+        # ============================================
+        WriteLog "Step 8: Copying boot files from mounted WIM..."
+
+        # Copy bootmgfw.efi (required)
+        $bootmgfwSource = Join-Path $mountPath "Windows\Boot\EFI\bootmgfw.efi"
+        if (Test-Path $bootmgfwSource) {
+            Copy-Item -Path $bootmgfwSource -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: bootmgfw.efi"
+        } else {
+            throw "Required boot file not found: $bootmgfwSource"
+        }
+
+        # Copy bootmgfw_EX.efi (required for newer ADK versions)
+        $bootmgfwExSource = Join-Path $mountPath "Windows\Boot\EFI_EX\bootmgfw_EX.efi"
+        if (Test-Path $bootmgfwExSource) {
+            Copy-Item -Path $bootmgfwExSource -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: bootmgfw_EX.efi"
+        } else {
+            WriteLog "  WARNING: bootmgfw_EX.efi not found (may not be required for this ADK version)"
+        }
+
+        # Copy bootmgr.efi if it exists (legacy support)
+        $bootmgrSource = Join-Path $mountPath "Windows\Boot\EFI\bootmgr.efi"
+        if (Test-Path $bootmgrSource) {
+            Copy-Item -Path $bootmgrSource -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: bootmgr.efi"
+        } else {
+            WriteLog "  INFO: bootmgr.efi not found (optional, may not be present)"
+        }
+
+        # ============================================
+        # Step 9: Copy boot sector files from OSCDIMG folder
+        # ============================================
+        WriteLog "Step 9: Copying boot sector files from OSCDIMG folder..."
+
+        # efisys.bin (required for UEFI boot)
+        $efisysBin = Join-Path $oscdimgRoot "efisys.bin"
+        if (Test-Path $efisysBin) {
+            Copy-Item -Path $efisysBin -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: efisys.bin"
+        } else {
+            throw "Required boot sector file not found: $efisysBin"
+        }
+
+        # efisys_noprompt.bin (required for automated UEFI boot)
+        $efisysNopromptBin = Join-Path $oscdimgRoot "efisys_noprompt.bin"
+        if (Test-Path $efisysNopromptBin) {
+            Copy-Item -Path $efisysNopromptBin -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: efisys_noprompt.bin"
+        } else {
+            throw "Required boot sector file not found: $efisysNopromptBin"
+        }
+
+        # efisys_EX.bin (2023 signed, optional)
+        $efisysExBin = Join-Path $oscdimgRoot "efisys_EX.bin"
+        if (Test-Path $efisysExBin) {
+            Copy-Item -Path $efisysExBin -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: efisys_EX.bin"
+        } else {
+            WriteLog "  INFO: efisys_EX.bin not found (optional, may not be present in older ADK)"
+        }
+
+        # efisys_noprompt_EX.bin (2023 signed, optional)
+        $efisysNopromptExBin = Join-Path $oscdimgRoot "efisys_noprompt_EX.bin"
+        if (Test-Path $efisysNopromptExBin) {
+            Copy-Item -Path $efisysNopromptExBin -Destination $bootbinsPath -Force -ErrorAction Stop
+            WriteLog "  Copied: efisys_noprompt_EX.bin"
+        } else {
+            WriteLog "  INFO: efisys_noprompt_EX.bin not found (optional, may not be present in older ADK)"
+        }
+
+        # etfsboot.com (only for x64/x86, not arm64 - needed for BIOS boot)
+        if ($Architecture -eq 'x64') {
+            $etfsbootCom = Join-Path $oscdimgRoot "etfsboot.com"
+            if (Test-Path $etfsbootCom) {
+                Copy-Item -Path $etfsbootCom -Destination $bootbinsPath -Force -ErrorAction Stop
+                WriteLog "  Copied: etfsboot.com"
+            } else {
+                WriteLog "  WARNING: etfsboot.com not found (BIOS boot may not be available)"
+            }
+        } else {
+            WriteLog "  INFO: Skipping etfsboot.com (not used for ARM64 architecture)"
+        }
+
+        # ============================================
+        # Step 10: Dismount WIM using native PowerShell cmdlet
+        # ============================================
+        WriteLog "Step 10: Dismounting boot.wim using Dismount-WindowsImage cmdlet..."
+
+        Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop | Out-Null
+        $wimMounted = $false
+        WriteLog "  boot.wim dismounted successfully"
+
+        # ============================================
+        # Success
+        # ============================================
+        WriteLog "=== New-WinPEMediaNative COMPLETED Successfully ==="
+        WriteLog "WinPE working directory created at: $DestinationPath"
+        WriteLog "  media:    $mediaPath"
+        WriteLog "  mount:    $mountPath"
+        WriteLog "  bootbins: $bootbinsPath"
+
+        return $true
+
+    } catch {
+        WriteLog "ERROR: New-WinPEMediaNative failed: $($_.Exception.Message)"
+
+        # Cleanup: Dismount WIM if still mounted
+        if ($wimMounted) {
+            WriteLog "Attempting to dismount WIM after failure..."
+            try {
+                Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction SilentlyContinue | Out-Null
+                WriteLog "  WIM dismounted during cleanup"
+            } catch {
+                WriteLog "  WARNING: Failed to dismount WIM during cleanup: $($_.Exception.Message)"
+
+                # Fallback: Try DISM cleanup-mountpoints
+                WriteLog "  Attempting DISM cleanup-mountpoints as fallback..."
+                try {
+                    & dism.exe /Cleanup-Mountpoints 2>&1 | Out-Null
+                    WriteLog "  DISM cleanup-mountpoints executed"
+                } catch {
+                    WriteLog "  WARNING: DISM cleanup-mountpoints also failed"
+                }
+            }
+        }
+
+        # Re-throw the original exception
+        throw
+    }
+}
+
 function New-PEMedia {
     <#
     .SYNOPSIS
@@ -411,6 +759,11 @@ function New-PEMedia {
     .PARAMETER CompressDownloadedDriversToWim
     Boolean indicating whether to compress drivers into WIM format
 
+    .PARAMETER UseNativeMethod
+    Boolean indicating whether to use native PowerShell DISM cmdlets instead of copype.cmd.
+    Default is $true (recommended) as it avoids WIMMount filter driver issues (error 0x800704db).
+    Set to $false to use the legacy copype.cmd method.
+
     .EXAMPLE
     New-PEMedia -Capture $true -Deploy $true -adkPath "C:\Program Files (x86)\Windows Kits\10\" `
                 -FFUDevelopmentPath "C:\FFU" -WindowsArch "x64" -CaptureISO "C:\FFU\Capture.iso" `
@@ -455,13 +808,16 @@ function New-PEMedia {
         [string]$DriversFolder,
 
         [Parameter(Mandatory = $true)]
-        [bool]$CompressDownloadedDriversToWim
+        [bool]$CompressDownloadedDriversToWim,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$UseNativeMethod = $true
     )
     #Need to use the Deployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
 
-    # ENHANCED: Comprehensive pre-flight cleanup before copype
+    # ENHANCED: Comprehensive pre-flight cleanup before WinPE creation
     WriteLog "Performing DISM pre-flight cleanup before WinPE media creation..."
     $cleanupSuccess = Invoke-DISMPreFlightCleanup -WinPEPath $WinPEFFUPath -MinimumFreeSpaceGB 10
 
@@ -470,21 +826,44 @@ function New-PEMedia {
         WriteLog "Attempting to proceed with WinPE creation anyway..."
     }
 
-    # ENHANCED: Execute copype with automatic retry logic
-    WriteLog "Copying WinPE files to $WinPEFFUPath"
+    # Choose between native method (default, recommended) and legacy copype method
+    if ($UseNativeMethod) {
+        # NATIVE METHOD: Uses Mount-WindowsImage cmdlet instead of ADK dism.exe
+        # This avoids WIMMount filter driver corruption issues (error 0x800704db)
+        WriteLog "Using NATIVE method for WinPE creation (avoids WIMMount filter driver issues)..."
+        WriteLog "Creating WinPE working directory at $WinPEFFUPath"
 
-    $copySuccess = Invoke-CopyPEWithRetry -Architecture $WindowsArch `
-                                           -DestinationPath $WinPEFFUPath `
-                                           -DandIEnvPath $DandIEnv `
-                                           -MaxRetries 1
+        # Call the native WinPE media creator
+        $nativeSuccess = New-WinPEMediaNative -Architecture $WindowsArch `
+                                               -DestinationPath $WinPEFFUPath `
+                                               -ADKPath $adkPath
 
-    if (-not $copySuccess) {
-        throw "copype execution failed after all retry attempts. See errors above."
+        if (-not $nativeSuccess) {
+            throw "Native WinPE media creation failed. See errors above."
+        }
+
+        WriteLog 'WinPE files created successfully using native method'
+    }
+    else {
+        # LEGACY METHOD: Uses copype.cmd which internally calls ADK dism.exe
+        # May fail with error 0x800704db if WIMMount filter driver is corrupted
+        WriteLog "Using LEGACY copype method for WinPE creation..."
+        WriteLog "WARNING: This may fail with error 0x800704db if WIMMount filter driver is corrupted."
+        WriteLog "Copying WinPE files to $WinPEFFUPath"
+
+        $copySuccess = Invoke-CopyPEWithRetry -Architecture $WindowsArch `
+                                               -DestinationPath $WinPEFFUPath `
+                                               -DandIEnvPath $DandIEnv `
+                                               -MaxRetries 1
+
+        if (-not $copySuccess) {
+            throw "copype execution failed after all retry attempts. See errors above."
+        }
+
+        WriteLog 'WinPE files copied successfully using legacy copype method'
     }
 
-    WriteLog 'WinPE files copied successfully'
-
-    # Ensure mount directory exists and is empty
+    # Ensure mount directory exists and is empty for package installation
     $mountPath = "$WinPEFFUPath\mount"
     if (Test-Path $mountPath) {
         WriteLog "Removing existing mount directory: $mountPath"
@@ -704,6 +1083,7 @@ function Get-PEArchitecture {
 Export-ModuleMember -Function @(
     'Invoke-DISMPreFlightCleanup',
     'Invoke-CopyPEWithRetry',
+    'New-WinPEMediaNative',
     'New-PEMedia',
     'Get-PEArchitecture'
 )

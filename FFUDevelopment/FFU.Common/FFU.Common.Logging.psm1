@@ -235,6 +235,8 @@ function Write-FFUWarning {
         Log message text.
     .PARAMETER Context
         Optional hashtable of additional context data.
+    .PARAMETER Source
+        Optional source identifier (accepted for signature compatibility with FFU.Messaging, not used in file logging).
     #>
     [CmdletBinding()]
     param(
@@ -242,7 +244,10 @@ function Write-FFUWarning {
         [string]$Message,
 
         [Parameter(Mandatory = $false)]
-        [hashtable]$Context = @{}
+        [hashtable]$Context = @{},
+
+        [Parameter(Mandatory = $false)]
+        [string]$Source = ''
     )
     Write-FFULog -Level Warning -Message $Message -Context $Context
 }
@@ -255,6 +260,10 @@ function Write-FFUError {
         Log message text.
     .PARAMETER Context
         Optional hashtable of additional context data.
+    .PARAMETER Source
+        Optional source identifier (accepted for signature compatibility with FFU.Messaging, not used in file logging).
+    .PARAMETER Data
+        Optional data hashtable (accepted for signature compatibility with FFU.Messaging, not used in file logging).
     #>
     [CmdletBinding()]
     param(
@@ -262,7 +271,13 @@ function Write-FFUError {
         [string]$Message,
 
         [Parameter(Mandatory = $false)]
-        [hashtable]$Context = @{}
+        [hashtable]$Context = @{},
+
+        [Parameter(Mandatory = $false)]
+        [string]$Source = '',
+
+        [Parameter(Mandatory = $false)]
+        [hashtable]$Data = @{}
     )
     Write-FFULog -Level Error -Message $Message -Context $Context
 }
@@ -275,6 +290,8 @@ function Write-FFUCritical {
         Log message text.
     .PARAMETER Context
         Optional hashtable of additional context data.
+    .PARAMETER Source
+        Optional source identifier (accepted for signature compatibility with FFU.Messaging, not used in file logging).
     #>
     [CmdletBinding()]
     param(
@@ -282,7 +299,10 @@ function Write-FFUCritical {
         [string]$Message,
 
         [Parameter(Mandatory = $false)]
-        [hashtable]$Context = @{}
+        [hashtable]$Context = @{},
+
+        [Parameter(Mandatory = $false)]
+        [string]$Source = ''
     )
     Write-FFULog -Level Critical -Message $Message -Context $Context
 }

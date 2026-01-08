@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.12'
+    ModuleVersion = '1.0.13'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -60,6 +60,8 @@
         'Invoke-WithErrorHandling',
         'Test-ExternalCommandSuccess',
         'Invoke-WithCleanup',
+        # WIM mount error handling (v1.0.13)
+        'Invoke-WimMountWithErrorHandling',
         # Cleanup registration system (v1.0.6)
         'Register-CleanupAction',
         'Unregister-CleanupAction',
@@ -113,7 +115,20 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.11
+# Release Notes - FFU.Core v1.0.13
+
+## v1.0.13 - WIM Mount Error Handling Enhancement
+- Added Invoke-WimMountWithErrorHandling: Wraps Mount-WindowsImage with enhanced error detection
+- Detects error 0x800704DB (WIMMount filter driver missing/corrupted)
+- Provides clear, actionable remediation steps when WIMMount issues occur
+- References pre-flight validation (Invoke-FFUPreflight -CheckWimMount)
+- Includes DISM log path for diagnostics
+- Supports all Mount-WindowsImage parameters: ImagePath, Path, Index, ReadOnly, Optimize
+- Uses safe logging pattern (WriteLog or Write-Verbose fallback)
+- 40 total functions now exported
+
+## v1.0.12 - Bug Fixes
+- Internal maintenance release
 
 ## v1.0.11 - PowerShell Best Practices Compliance
 - **BREAKING CHANGE (with backward compatibility)**: Renamed 3 functions to use approved verbs

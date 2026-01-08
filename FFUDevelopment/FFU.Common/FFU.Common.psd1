@@ -12,7 +12,7 @@
 RootModule = 'FFU.Common.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.6'
+ModuleVersion = '0.0.7'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -115,6 +115,15 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.7: Signature compatibility fix for FFU.Messaging module collision
+- Fixed: "A parameter cannot be found that matches parameter name 'Source'" error
+- Root cause: FFU.Common.Logging exports Write-FFUError/Warning/Critical without -Source parameter,
+  but FFU.Messaging exports same function names WITH -Source parameter. When BuildFFUVM.ps1 imports
+  FFU.Common, it overwrites the FFU.Messaging versions, breaking UI error handling.
+- Solution: Added -Source and -Data optional parameters to FFU.Common.Logging functions for
+  signature compatibility with FFU.Messaging (parameters are accepted but not used for file logging)
+- Functions updated: Write-FFUError, Write-FFUWarning, Write-FFUCritical
+
 v0.0.6: Defense-in-depth fix for log monitoring after module -Force import
 - Fixed: Monitor tab STILL showing only "Build started" after v0.0.5 fix
 - Root cause: BuildFFUVM.ps1 imports FFU.Common with -Force, which resets the script-scoped

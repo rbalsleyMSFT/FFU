@@ -215,18 +215,21 @@ Update-FFUBuilderVersion -FFUDevelopmentPath "C:\FFUDevelopment" -BumpType Patch
 
 | Version | Date | Type | Description |
 |---------|------|------|-------------|
-| 1.3.6 | 2025-12-12 | PATCH | WimMount warning fix - Changed Test-FFUWimMount from FAILED to WARNING since native DISM cmdlets don't require WIMMount service; added sc.exe fallback for ThreadJob context |
+| 1.6.0 | 2026-01-07 | MINOR | VMware Workstation Pro integration - UI hypervisor selection dropdown, config schema support, auto-detection of available hypervisors |
+| 1.5.0 | 2026-01-07 | MINOR | Full VMware provider implementation - REST API integration, VM lifecycle, disk operations via diskpart (no Hyper-V dependency) |
+| 1.4.0 | 2026-01-06 | MINOR | FFU.Hypervisor module foundation - Provider pattern, IHypervisorProvider interface, HyperVProvider, VMConfiguration/VMInfo classes |
+| 1.3.12 | 2025-12-17 | PATCH | WimMount auto-repair in preflight - Test-FFUWimMount now uses `fltmc filters` as primary check, auto-repairs by recreating registry entries and starting service when filter not loaded; fails with detailed diagnostics if repair unsuccessful |
+| 1.3.11 | 2025-12-15 | PATCH | WIMMount just-in-time validation - New-WinPEMediaNative now calls Test-FFUWimMount before Mount-WindowsImage; fixes misleading documentation that native cmdlets avoid WIMMount issues (they don't - both ADK and native require WIMMount service) |
+| 1.3.10 | 2025-12-15 | PATCH | FFU.Common.Logging signature compatibility fix - Added -Source and -Data parameters to Write-FFUError/Warning/Critical for compatibility when FFU.Messaging functions are overwritten by FFU.Common -Force import |
+| 1.3.9 | 2025-12-15 | PATCH | Enhanced WIM mount error handling - New Invoke-WimMountWithErrorHandling function in FFU.Core detects error 0x800704db and provides clear remediation guidance with DISM log path |
+| 1.3.8 | 2025-12-15 | PATCH | WimMount pre-flight now BLOCKING - Reverted v1.3.6 change; both ADK dism.exe AND PowerShell Mount-WindowsImage require WIMMount service; builds now fail fast with clear remediation guidance instead of cryptic errors mid-build |
+| 1.3.7 | 2025-12-13 | MINOR | Native WinPE creation - New-WinPEMediaNative function replaces copype.cmd with native Mount-WindowsImage cmdlet, fixing error 0x800704db; New-PEMedia now uses native method by default |
+| 1.3.6 | 2025-12-12 | PATCH | **SUPERSEDED by v1.3.8** - WimMount warning fix was incorrect; native DISM cmdlets DO require WIMMount service |
 | 1.3.5 | 2025-12-11 | PATCH | Native DISM fix - Replace ADK dism.exe with PowerShell cmdlets (Mount-WindowsImage/Dismount-WindowsImage) in ApplyFFU.ps1 to avoid WIMMount filter driver errors |
 | 1.3.4 | 2025-12-11 | PATCH | Defense-in-depth fix for log monitoring - Restore messaging context after FFU.Common -Force import |
 | 1.3.3 | 2025-12-11 | PATCH | UI Monitor tab fix - Integrate WriteLog with messaging queue for real-time UI updates |
 | 1.3.2 | 2025-12-11 | PATCH | DISM WIM mount error 0x800704DB pre-flight validation with Test-FFUWimMount remediation |
 | 1.3.1 | 2025-12-11 | PATCH | Config schema validation fix - Added AdditionalFFUFiles property and 7 deprecated properties (AppsPath, CopyOfficeConfigXML, DownloadDrivers, InstallWingetApps, OfficePath, Threads, Verbose) with backward compatibility warnings |
-| 1.3.0 | 2025-12-11 | MINOR | Pre-flight validation system with FFU.Preflight module - Tiered validation (Critical/Feature/Warning/Cleanup), PowerShell 7.0+ requirement, corrected TrustedInstaller handling |
-| 1.2.12 | 2025-12-10 | PATCH | Fix FFUMessageLevel type not found - Replace enum type references with string comparisons |
-| 1.2.11 | 2025-12-10 | PATCH | Fix MessagingContext parameter not found - Add -MessagingContext parameter to BuildFFUVM.ps1 |
-| 1.2.10 | 2025-12-10 | MINOR | Issue #14: Real-time UI updates with FFU.Messaging module (ConcurrentQueue, 50ms timer, 20x faster) |
-| 1.2.9 | 2025-12-10 | PATCH | [FFUConstants] type not found during FFU capture - Eliminated runtime FFUConstants type references |
-| 1.2.8 | 2025-12-10 | PATCH | FFU.Constants module loading fix - Removed 'using module' statement, added UI Set-Location fix |
 
 > **Note:** Older versions archived in [docs/VERSION_ARCHIVE.md](docs/VERSION_ARCHIVE.md). See `version.json` for complete history.
 
@@ -245,11 +248,12 @@ BuildFFUVM_UI.ps1 (WPF UI Host)
 │   ├── FFU.Common.Cleanup.psm1 (Build artifact cleanup)
 │   └── FFU.Common.Classes.psm1 (Shared class definitions)
 └── BuildFFUVM.ps1 (Core Build Orchestrator - 2,404 lines after modularization)
-    └── Modules/ (Extracted functions now in 10 specialized modules)
+    └── Modules/ (Extracted functions now in 11 specialized modules)
         ├── FFU.Core (Core functionality - 36 functions for configuration, session tracking, error handling, cleanup, credential management)
         ├── FFU.Apps (Application management - 5 functions for Office, Apps ISO, cleanup)
         ├── FFU.Drivers (OEM driver management - 5 functions for Dell, HP, Lenovo, Microsoft)
         ├── FFU.VM (Hyper-V VM operations - 3 functions for VM lifecycle)
+        ├── FFU.Hypervisor (Hypervisor abstraction - Provider pattern supporting Hyper-V and VMware Workstation Pro)
         ├── FFU.Media (WinPE media creation - 4 functions for PE media and architecture)
         ├── FFU.ADK (Windows ADK management - 8 functions for validation and installation)
         ├── FFU.Updates (Windows Update handling - 8 functions for KB downloads and MSU processing)
@@ -374,6 +378,30 @@ Invoke-Pester -Path 'Tests/Unit/Module.Dependencies.Tests.ps1' -Output Detailed
   - `Get-FFUEnvironment`: Comprehensive environment cleanup for dirty state recovery
 - **Dependencies:** FFU.Core module for logging and common variables
 - **Requirements:** Administrator privileges, Hyper-V feature enabled
+
+**FFU.Hypervisor Module** (FFUDevelopment/Modules/FFU.Hypervisor/FFU.Hypervisor.psm1)
+- **Purpose:** Hypervisor abstraction layer supporting multiple VM platforms (v1.6.0)
+- **Version:** 1.1.0
+- **Classes:**
+  - `IHypervisorProvider`: Base interface for hypervisor providers
+  - `HyperVProvider`: Microsoft Hyper-V implementation
+  - `VMwareProvider`: VMware Workstation Pro implementation
+  - `VMConfiguration`: VM configuration settings
+  - `VMInfo`: VM state information
+  - `VMState`: Enum for VM power states
+- **Public Functions:**
+  - `Get-HypervisorProvider`: Factory function to get provider by type (HyperV, VMware, Auto)
+  - `Test-HypervisorAvailable`: Check if hypervisor is available
+  - `Get-AvailableHypervisors`: List all supported hypervisors and their availability
+  - `New-HypervisorVM`, `Start-HypervisorVM`, `Stop-HypervisorVM`, `Remove-HypervisorVM`: VM lifecycle
+  - `New-HypervisorVirtualDisk`, `Mount-HypervisorVirtualDisk`, `Dismount-HypervisorVirtualDisk`: Disk operations
+- **Private Functions (VMware):**
+  - `Start-VMrestService`, `Stop-VMrestService`, `Test-VMrestEndpoint`: vmrest.exe management
+  - `Invoke-VMwareRestMethod`: REST API wrapper
+  - `New-VMwareVMX`, `Update-VMwareVMX`, `Get-VMwareVMXSettings`: VMX file management
+  - `New-VHDWithDiskpart`, `Mount-VHDWithDiskpart`, `Dismount-VHDWithDiskpart`: VHD ops without Hyper-V
+- **Test Coverage:** 101 Pester tests (FFU.Hypervisor.Tests.ps1)
+- **Documentation:** See [docs/VMWARE_WORKSTATION_GUIDE.md](docs/VMWARE_WORKSTATION_GUIDE.md)
 
 **FFU.Apps Module** (FFUDevelopment/Modules/FFU.Apps/FFU.Apps.psm1)
 - **Purpose:** Application installation and management for FFU Builder
@@ -800,8 +828,9 @@ For detailed fix documentation, see:
 
 | Issue | Version | Quick Reference |
 |-------|---------|-----------------|
-| WimMount Warning (False Positives) | v1.3.6 | Changed to WARNING; sc.exe fallback for ThreadJob |
-| DISM WIM Mount Error 0x800704DB | v1.3.5 | Use native PowerShell DISM cmdlets instead of ADK dism.exe |
+| WIMMount JIT Validation Missing | v1.3.11 | Added Test-FFUWimMount call before Mount-WindowsImage in New-WinPEMediaNative |
+| WimMount Warning (False Positives) | v1.3.6 | **SUPERSEDED** - native cmdlets DO require WIMMount service |
+| DISM WIM Mount Error 0x800704DB | v1.3.5 | **CORRECTED v1.3.8** - Both ADK and native cmdlets require WIMMount |
 | [FFUConstants] Type Not Found | v1.2.9 | Hardcoded VM poll interval value |
 | FFU.Constants Not Found in ThreadJob | v1.2.8 | Removed `using module`, added Set-Location in UI |
 | Module Loading Failure | v1.2.7 | Early PSModulePath setup, defensive error handlers |

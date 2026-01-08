@@ -15,6 +15,13 @@ function Get-UIConfig {
         AllowVHDXCaching               = $State.Controls.chkAllowVHDXCaching.IsChecked
         AppListPath                    = $State.Controls.txtAppListJsonPath.Text
         AppsPath                       = $State.Controls.txtApplicationPath.Text
+        # Convert hypervisor dropdown selection to parameter value
+        HypervisorType                 = switch ($State.Controls.cmbHypervisorType.SelectedIndex) {
+            0 { 'HyperV' }
+            1 { 'VMware' }
+            2 { 'Auto' }
+            default { 'HyperV' }
+        }
         AppsScriptVariables            = if ($State.Controls.chkDefineAppsScriptVariables.IsChecked) {
             $vars = @{}
             foreach ($item in $State.Data.appsScriptVariablesDataList) {
@@ -398,7 +405,21 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkRemoveApps' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveApps' -State $State
     Set-UIValue -ControlName 'chkRemoveUpdates' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveUpdates' -State $State
 
-    # Hyper-V Settings
+    # VM/Hypervisor Settings
+    # Load HypervisorType selection
+    if ($ConfigContent.PSObject.Properties.Match('HypervisorType').Count -gt 0) {
+        $hypervisorType = $ConfigContent.HypervisorType
+        $hypervisorIndex = switch ($hypervisorType) {
+            'HyperV' { 0 }
+            'VMware' { 1 }
+            'Auto' { 2 }
+            default { 0 }
+        }
+        if ($null -ne $State.Controls.cmbHypervisorType) {
+            $State.Controls.cmbHypervisorType.SelectedIndex = $hypervisorIndex
+            WriteLog "LoadConfig: Set HypervisorType to '$hypervisorType' (index $hypervisorIndex)."
+        }
+    }
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
     Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State

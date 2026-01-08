@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.3.6",
-    "buildDate": "2025-12-12",
+    "version": "1.6.3",
+    "buildDate": "2026-01-08",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -14,9 +14,9 @@
 
     "modules": {
         "FFU.Common": {
-            "version": "0.0.6",
+            "version": "0.0.7",
             "path": "FFU.Common/FFU.Common.psd1",
-            "description": "Core logging, process execution, shared utilities, and messaging queue integration"
+            "description": "Core logging, process execution, shared utilities, messaging queue integration, and signature compatibility with FFU.Messaging"
         },
         "FFU.Common.Logging": {
             "version": "1.0.0",
@@ -24,14 +24,14 @@
             "description": "Structured logging with levels, JSON output, session correlation"
         },
         "FFUUI.Core": {
-            "version": "0.0.2",
+            "version": "0.0.5",
             "path": "FFUUI.Core/FFUUI.Core.psd1",
-            "description": "WPF UI framework and handlers"
+            "description": "WPF UI framework with hypervisor selection, VMware REST API credential setup (non-elevated with enterprise guidance)"
         },
         "FFU.Core": {
-            "version": "1.0.12",
+            "version": "1.0.13",
             "path": "Modules/FFU.Core/FFU.Core.psd1",
-            "description": "Core configuration, session tracking, credential security, schema validation, PowerShell best practices"
+            "description": "Core configuration, session tracking, credential security, schema validation, PowerShell best practices, WIM mount error handling"
         },
         "FFU.Constants": {
             "version": "1.1.0",
@@ -59,9 +59,9 @@
             "description": "DISM operations and FFU creation"
         },
         "FFU.Media": {
-            "version": "1.0.0",
+            "version": "1.2.0",
             "path": "Modules/FFU.Media/FFU.Media.psd1",
-            "description": "WinPE media creation"
+            "description": "WinPE media creation with just-in-time WIMMount validation (Test-FFUWimMount) before mount operations"
         },
         "FFU.Updates": {
             "version": "1.0.1",
@@ -79,9 +79,14 @@
             "description": "Thread-safe messaging for UI/background job communication"
         },
         "FFU.Preflight": {
-            "version": "1.0.2",
+            "version": "1.0.4",
             "path": "Modules/FFU.Preflight/FFU.Preflight.psd1",
-            "description": "Comprehensive pre-flight validation with tiered checks, WIM mount warning (non-blocking for native DISM), and remediation guidance"
+            "description": "Comprehensive pre-flight validation with tiered checks, WIM mount auto-repair via fltmc filters detection, and remediation guidance"
+        },
+        "FFU.Hypervisor": {
+            "version": "1.1.0",
+            "path": "Modules/FFU.Hypervisor/FFU.Hypervisor.psd1",
+            "description": "Hypervisor abstraction layer with full VMware Workstation Pro provider - REST API, VM lifecycle, disk operations via diskpart"
         }
     },
 

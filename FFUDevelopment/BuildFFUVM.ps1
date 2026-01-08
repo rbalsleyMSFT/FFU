@@ -247,6 +247,13 @@ Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N',
 .PARAMETER WindowsVersion
 String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'.
 
+.PARAMETER HypervisorType
+Specifies which hypervisor to use for VM operations. Accepted values are: 'HyperV', 'VMware', 'Auto'.
+- 'HyperV': Use Microsoft Hyper-V (default, requires Hyper-V feature enabled)
+- 'VMware': Use VMware Workstation Pro (requires VMware Workstation Pro 17.x installed)
+- 'Auto': Automatically detect the best available hypervisor
+Default is 'HyperV' for backward compatibility.
+
 .PARAMETER MessagingContext
 Synchronized hashtable for real-time UI communication via FFU.Messaging module. When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates to the UI. When null (default for CLI usage), the script operates normally without messaging. This parameter is primarily for internal use by the UI.
 
@@ -506,6 +513,11 @@ param(
     [bool]$UpdateADK = $true,
     [bool]$CleanupCurrentRunDownloads = $false,
     [switch]$Cleanup,
+    # HypervisorType: Specifies which hypervisor to use for VM operations
+    # 'HyperV' = Microsoft Hyper-V (default), 'VMware' = VMware Workstation Pro, 'Auto' = auto-detect
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('HyperV', 'VMware', 'Auto')]
+    [string]$HypervisorType = 'HyperV',
     # MessagingContext: Synchronized hashtable for real-time UI communication via FFU.Messaging module
     # When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates
     # When null (CLI usage), script operates normally without messaging
@@ -522,39 +534,42 @@ BEGIN {
 
     # Validate InstallApps dependencies
     if ($InstallApps) {
-        if ([string]::IsNullOrWhiteSpace($VMSwitchName)) {
+        # VMHostIPAddress is required regardless of hypervisor type
+        if ([string]::IsNullOrWhiteSpace($VMHostIPAddress)) {
             throw @"
-VMSwitchName is required when InstallApps is enabled.
+VMHostIPAddress is required when InstallApps is enabled.
+
+Please specify your host IP address using -VMHostIPAddress parameter.
+This is the IP address of the host that will be used for FFU capture.
+
+To find your IP address, run: Get-NetIPAddress -AddressFamily IPv4 | Where-Object {`$_.IPAddress -notlike '127.*'}
+
+Example: -VMHostIPAddress '192.168.1.100'
+"@
+        }
+
+        # Hyper-V specific validations (only when HypervisorType is HyperV)
+        if ($HypervisorType -eq 'HyperV') {
+            if ([string]::IsNullOrWhiteSpace($VMSwitchName)) {
+                throw @"
+VMSwitchName is required when InstallApps is enabled with Hyper-V.
 
 Please specify a VM switch name using -VMSwitchName parameter.
 To see available switches, run: Get-VMSwitch | Select-Object Name
 
 Example: -VMSwitchName 'Default Switch'
 "@
-        }
+            }
 
-        if ([string]::IsNullOrWhiteSpace($VMHostIPAddress)) {
-            throw @"
-VMHostIPAddress is required when InstallApps is enabled.
-
-Please specify your host IP address using -VMHostIPAddress parameter.
-This is the IP address of the Hyper-V host that will be used for FFU capture.
-
-To find your IP address, run: Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike '127.*'}
-
-Example: -VMHostIPAddress '192.168.1.100'
-"@
-        }
-
-        # Validate VM switch exists
-        try {
-            $switch = Get-VMSwitch -Name $VMSwitchName -ErrorAction Stop
-            Write-Verbose "VM switch '$VMSwitchName' found and will be used for the build VM"
-        }
-        catch {
-            $availableSwitches = @(Get-VMSwitch | Select-Object -ExpandProperty Name)
-            if ($availableSwitches.Count -gt 0) {
-                throw @"
+            # Validate VM switch exists
+            try {
+                $switch = Get-VMSwitch -Name $VMSwitchName -ErrorAction Stop
+                Write-Verbose "VM switch '$VMSwitchName' found and will be used for the build VM"
+            }
+            catch {
+                $availableSwitches = @(Get-VMSwitch | Select-Object -ExpandProperty Name)
+                if ($availableSwitches.Count -gt 0) {
+                    throw @"
 VM switch '$VMSwitchName' not found.
 
 Available VM switches on this host:
@@ -562,9 +577,9 @@ $($availableSwitches | ForEach-Object { "  - $_" } | Out-String)
 
 Please specify a valid VM switch using -VMSwitchName parameter.
 "@
-            }
-            else {
-                throw @"
+                }
+                else {
+                    throw @"
 VM switch '$VMSwitchName' not found and no VM switches exist on this host.
 
 Please create a VM switch first:
@@ -575,8 +590,14 @@ Please create a VM switch first:
 
 Or create via PowerShell: New-VMSwitch -Name 'Default Switch' -SwitchType External -NetAdapterName (Get-NetAdapter | Select-Object -First 1).Name
 "@
+                }
             }
         }
+        elseif ($HypervisorType -eq 'VMware') {
+            # VMware-specific validations will be added in Milestone 2
+            Write-Verbose "VMware hypervisor selected - VMSwitchName not required (uses bridged networking)"
+        }
+        # Auto-detect: validation deferred until after module import
     }
 
     # Validate Make/Model dependency
@@ -794,10 +815,77 @@ Import-Module "FFU.ADK" -Force -Global -ErrorAction Stop -WarningAction Silently
 Import-Module "FFU.Drivers" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Updates" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.VM" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+Import-Module "FFU.Hypervisor" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Imaging" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Media" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Apps" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Preflight" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+
+# =============================================================================
+# Hypervisor Provider Initialization
+# Validates and initializes the selected hypervisor provider for VM operations
+# =============================================================================
+$script:HypervisorProvider = $null
+if ($InstallApps) {
+    WriteLog "Initializing hypervisor provider: $HypervisorType"
+
+    # Handle Auto-detect mode
+    if ($HypervisorType -eq 'Auto') {
+        WriteLog "Auto-detecting available hypervisors..."
+        $availableHypervisors = Get-AvailableHypervisors
+        $available = $availableHypervisors | Where-Object { $_.Available }
+
+        if ($available.Count -eq 0) {
+            throw @"
+No supported hypervisor found on this system.
+
+FFU Builder requires either Hyper-V or VMware Workstation Pro for VM operations.
+
+To enable Hyper-V (Windows 10/11 Pro/Enterprise):
+  Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
+
+To use VMware Workstation Pro:
+  Download and install from https://www.vmware.com/products/workstation-pro.html
+"@
+        }
+
+        # Use the first available hypervisor (Hyper-V takes priority)
+        $detectedType = $available[0].Name
+        WriteLog "Auto-detected hypervisor: $detectedType"
+        $HypervisorType = $detectedType
+
+        # Perform deferred validation for auto-detected hypervisor
+        if ($HypervisorType -eq 'HyperV' -and [string]::IsNullOrWhiteSpace($VMSwitchName)) {
+            throw @"
+VMSwitchName is required when InstallApps is enabled with Hyper-V.
+
+Please specify a VM switch name using -VMSwitchName parameter.
+To see available switches, run: Get-VMSwitch | Select-Object Name
+
+Example: -VMSwitchName 'Default Switch'
+"@
+        }
+    }
+
+    # Validate the selected hypervisor is available
+    $providerAvailability = Test-HypervisorAvailable -Type $HypervisorType -Detailed
+
+    if (-not $providerAvailability.IsAvailable) {
+        $issues = $providerAvailability.Issues -join "`n  - "
+        throw @"
+Selected hypervisor '$HypervisorType' is not available on this system.
+
+Issues found:
+  - $issues
+
+Please verify the hypervisor is installed and properly configured.
+"@
+    }
+
+    # Get the provider instance (will be used for VM operations)
+    $script:HypervisorProvider = Get-HypervisorProvider -Type $HypervisorType
+    WriteLog "Hypervisor provider initialized: $($script:HypervisorProvider.Name) v$($script:HypervisorProvider.Version)"
+}
 
 # =============================================================================
 # Global Failure Cleanup Handler

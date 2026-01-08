@@ -176,6 +176,53 @@
             "pattern": "^[a-zA-Z0-9_\\-]+$",
             "description": "Prefix for the generated FFU file. Must contain only alphanumeric characters, underscores, and hyphens."
         },
+        "HypervisorType": {
+            "type": "string",
+            "enum": ["HyperV", "VMware", "Auto"],
+            "default": "HyperV",
+            "description": "Specifies which hypervisor to use for VM operations. 'HyperV' = Microsoft Hyper-V (default, requires Hyper-V feature), 'VMware' = VMware Workstation Pro 17.x, 'Auto' = auto-detect available hypervisor."
+        },
+        "VMwareSettings": {
+            "type": "object",
+            "description": "VMware Workstation Pro-specific settings. Only used when HypervisorType is 'VMware'.",
+            "properties": {
+                "WorkstationPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to VMware Workstation Pro installation. Leave empty for auto-detection from registry."
+                },
+                "VMrestPort": {
+                    "type": "integer",
+                    "default": 8697,
+                    "minimum": 1024,
+                    "maximum": 65535,
+                    "description": "Port number for VMware REST API (vmrest.exe). Default is 8697."
+                },
+                "VMrestUsername": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Username for vmrest authentication. Leave empty to use default credentials."
+                },
+                "VMrestPassword": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Password for vmrest authentication. Leave empty to use default credentials."
+                },
+                "DefaultNetworkType": {
+                    "type": "string",
+                    "enum": ["bridged", "nat", "hostonly"],
+                    "default": "bridged",
+                    "description": "Default network adapter type for VMware VMs. 'bridged' recommended for FFU capture."
+                }
+            },
+            "additionalProperties": false
+        },
+        "VirtualDiskFormat": {
+            "type": "string",
+            "enum": ["VHD", "VHDX"],
+            "default": "VHDX",
+            "description": "Virtual disk format to use. 'VHDX' is supported by Hyper-V only. 'VHD' works with both Hyper-V and VMware."
+        },
         "Headers": {
             "type": "object",
             "default": {},

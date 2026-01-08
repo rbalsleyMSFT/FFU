@@ -1142,23 +1142,26 @@ Common JSON errors:
 function Test-FFUWimMount {
     <#
     .SYNOPSIS
-    Validates that WIM mount capability is functional (WIMMount/WOF services and drivers).
+    Validates that WIM mount capability is functional by checking fltmc filters for WimMount.
 
     .DESCRIPTION
-    Checks for the Windows Imaging (WIM) mount infrastructure required by DISM:
-    - WIMMount service existence and status
-    - WOF (Windows Overlay Filter) service existence
-    - wimmount.sys driver file
-    - wof.sys driver file
-    - Filter Manager (FltMgr) service status
+    PRIMARY CHECK: Runs 'fltmc filters' and looks for "WimMount" in the output.
+    This is the definitive indicator that WIM mount operations will work.
+
+    If WimMount is not found in the filter list, auto-repair is attempted:
+    1. Verify wimmount.sys driver file exists
+    2. Create/recreate WimMount service registry entries
+    3. Create filter instance configuration
+    4. Start the service via 'sc start wimmount'
+    5. Load filter via 'fltmc load WimMount'
+    6. Re-verify filter is now loaded
 
     This addresses DISM error 0x800704DB "The specified service does not exist"
     which occurs when WIM mount filter drivers are missing or not registered.
 
     .PARAMETER AttemptRemediation
-    If $true, attempts to fix issues by:
-    - Starting stopped services
-    - Re-registering the WIM mount driver via rundll32
+    If $true (default), attempts automatic repair when WimMount is not loaded.
+    Set to $false to only detect without attempting repairs.
 
     .EXAMPLE
     $result = Test-FFUWimMount
@@ -1167,8 +1170,8 @@ function Test-FFUWimMount {
     }
 
     .EXAMPLE
-    # With automatic remediation
-    $result = Test-FFUWimMount -AttemptRemediation
+    # Detection only, no repair
+    $result = Test-FFUWimMount -AttemptRemediation:$false
 
     .OUTPUTS
     FFUCheckResult object with status, message, and remediation steps
@@ -1177,282 +1180,312 @@ function Test-FFUWimMount {
     [OutputType([PSCustomObject])]
     param(
         [Parameter()]
-        [switch]$AttemptRemediation
+        [switch]$AttemptRemediation = $true
     )
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     $details = @{
+        # Primary indicator - is WimMount in fltmc filters?
+        WimMountFilterLoaded   = $false
+        # Supporting details
         WimMountServiceExists  = $false
         WimMountServiceStatus  = 'Unknown'
-        WofServiceExists       = $false
-        WofServiceStatus       = 'Unknown'
         WimMountDriverExists   = $false
-        WofDriverExists        = $false
+        WimMountDriverVersion  = 'Unknown'
         FltMgrServiceStatus    = 'Unknown'
+        RegistryExists         = $false
+        FilterInstanceExists   = $false
+        # Repair tracking
         RemediationAttempted   = $false
         RemediationActions     = [System.Collections.Generic.List[string]]::new()
-        UsingNativeDISM        = $false  # Set to $true when WIMMount issues detected (v1.3.5+ uses native cmdlets)
+        RemediationSuccess     = $false
     }
 
     $errors = [System.Collections.Generic.List[string]]::new()
 
     try {
-        # CHECK 1: WIMMount Service
-        # NOTE: Get-Service can fail in ThreadJob context, so we use sc.exe as fallback
-        try {
-            $wimMountSvc = Get-Service -Name 'WIMMount' -ErrorAction Stop
-            $details.WimMountServiceExists = $true
-            $details.WimMountServiceStatus = $wimMountSvc.Status.ToString()
+        #region PRIMARY CHECK: fltmc filters for WimMount
+        # This is THE definitive check - if WimMount is in the filter list, WIM operations will work
+        $fltmcOutput = fltmc filters 2>&1
+        $details.WimMountFilterLoaded = [bool]($fltmcOutput -match 'WimMount')
 
-            # WIMMount is a demand-start service, doesn't need to be Running
-            # Just needs to exist and not be Disabled
-            if ($wimMountSvc.StartType -eq 'Disabled') {
-                $errors.Add('WIMMount service is disabled')
-            }
+        if ($details.WimMountFilterLoaded) {
+            # WimMount is loaded - all good!
+            $stopwatch.Stop()
+            return New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
+                -Message 'WimMount filter is loaded and functional' `
+                -Details $details `
+                -DurationMs $stopwatch.ElapsedMilliseconds
         }
-        catch {
-            # Fallback: Use sc.exe to query service (works in ThreadJob context where Get-Service may fail)
+
+        # WimMount not found in filters - gather diagnostic info before attempting repair
+        $errors.Add('WimMount filter not found in fltmc filters (BLOCKING)')
+        #endregion
+
+        #region Gather Diagnostic Information
+        # Check driver file
+        $driverPath = Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'
+        if (Test-Path -Path $driverPath -PathType Leaf) {
+            $details.WimMountDriverExists = $true
             try {
-                $scOutput = & sc.exe query WIMMount 2>&1
-                if ($LASTEXITCODE -eq 1060) {
-                    # Service does not exist (ERROR_SERVICE_DOES_NOT_EXIST = 1060)
-                    $details.WimMountServiceExists = $false
-                    $details.WimMountServiceStatus = 'NotFound'
-                    # Don't add to errors here - will be handled as warning due to native DISM usage
-                }
-                elseif ($LASTEXITCODE -eq 0) {
-                    # Service exists - parse state from output
-                    $details.WimMountServiceExists = $true
-                    if ($scOutput -match 'STATE\s+:\s+\d+\s+(\w+)') {
-                        $details.WimMountServiceStatus = $Matches[1]
-                    }
-                    else {
-                        $details.WimMountServiceStatus = 'Unknown'
-                    }
-                }
-                else {
-                    # Unexpected exit code
-                    $details.WimMountServiceExists = $false
-                    $details.WimMountServiceStatus = "QueryFailed (sc.exe exit code: $LASTEXITCODE)"
-                }
+                $driverFile = Get-Item $driverPath -ErrorAction SilentlyContinue
+                $details.WimMountDriverVersion = $driverFile.VersionInfo.FileVersion
             }
             catch {
-                # Both Get-Service and sc.exe failed
-                $details.WimMountServiceExists = $false
-                $details.WimMountServiceStatus = 'QueryFailed'
+                $details.WimMountDriverVersion = 'Unable to read'
             }
         }
+        else {
+            $details.WimMountDriverExists = $false
+            $errors.Add('wimmount.sys driver file not found - cannot repair')
+        }
 
-        # CHECK 2: WOF (Windows Overlay Filter) Service
+        # Check service registry
+        $serviceRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WimMount"
+        $details.RegistryExists = Test-Path $serviceRegPath
+
+        # Check filter instance registry
+        $instancesPath = "$serviceRegPath\Instances\WimMount"
+        $details.FilterInstanceExists = Test-Path $instancesPath
+
+        # Check service via sc.exe (more reliable in various contexts)
         try {
-            $wofSvc = Get-Service -Name 'Wof' -ErrorAction Stop
-            $details.WofServiceExists = $true
-            $details.WofServiceStatus = $wofSvc.Status.ToString()
-
-            # WOF should be Running for optimal operation
-            if ($wofSvc.Status -ne 'Running' -and $wofSvc.StartType -ne 'Disabled') {
-                # Not critical, but note it
+            $scOutput = & sc.exe query WIMMount 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $details.WimMountServiceExists = $true
+                if ($scOutput -match 'STATE\s+:\s+\d+\s+(\w+)') {
+                    $details.WimMountServiceStatus = $Matches[1]
+                }
+            }
+            elseif ($LASTEXITCODE -eq 1060) {
+                $details.WimMountServiceExists = $false
+                $details.WimMountServiceStatus = 'NotFound'
             }
         }
         catch {
-            # WOF may not exist on all systems (optional)
-            $details.WofServiceExists = $false
+            $details.WimMountServiceStatus = 'QueryFailed'
         }
 
-        # CHECK 3: Filter Manager Service (required for all filter drivers)
+        # Check Filter Manager
         try {
             $fltMgrSvc = Get-Service -Name 'FltMgr' -ErrorAction Stop
             $details.FltMgrServiceStatus = $fltMgrSvc.Status.ToString()
-
             if ($fltMgrSvc.Status -ne 'Running') {
                 $errors.Add('Filter Manager (FltMgr) service is not running')
             }
         }
         catch {
+            $details.FltMgrServiceStatus = 'NotFound'
             $errors.Add('Filter Manager (FltMgr) service not found')
         }
+        #endregion
 
-        # CHECK 4: wimmount.sys driver file
-        $wimMountDriver = Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'
-        if (Test-Path -Path $wimMountDriver -PathType Leaf) {
-            $details.WimMountDriverExists = $true
-        }
-        else {
-            $details.WimMountDriverExists = $false
-            $errors.Add('wimmount.sys driver file not found')
-        }
-
-        # CHECK 5: wof.sys driver file
-        $wofDriver = Join-Path $env:SystemRoot 'System32\drivers\wof.sys'
-        if (Test-Path -Path $wofDriver -PathType Leaf) {
-            $details.WofDriverExists = $true
-        }
-        else {
-            # WOF driver is optional on older systems
-            $details.WofDriverExists = $false
-        }
-
-        # REMEDIATION ATTEMPTS (if requested)
-        if ($AttemptRemediation -and $errors.Count -gt 0) {
+        #region AUTO-REPAIR (if driver exists and remediation requested)
+        if ($AttemptRemediation -and $details.WimMountDriverExists) {
             $details.RemediationAttempted = $true
 
-            # Try to start WIMMount service if it exists but isn't running
-            if ($details.WimMountServiceExists -and $details.WimMountServiceStatus -eq 'Stopped') {
-                try {
-                    Start-Service -Name 'WIMMount' -ErrorAction Stop
-                    $details.RemediationActions.Add('Started WIMMount service')
+            # Step 1: Create/recreate WimMount service registry entries
+            try {
+                $instancesPath = "$serviceRegPath\Instances"
+                $defaultInstancePath = "$instancesPath\WimMount"
+
+                # Create main service key if missing
+                if (-not (Test-Path $serviceRegPath)) {
+                    New-Item -Path $serviceRegPath -Force | Out-Null
+                    $details.RemediationActions.Add('Created WimMount service registry key')
+                }
+
+                # Set service properties (same as Windows default)
+                Set-ItemProperty -Path $serviceRegPath -Name "Type" -Value 2 -Type DWord              # FILE_SYSTEM_DRIVER
+                Set-ItemProperty -Path $serviceRegPath -Name "Start" -Value 3 -Type DWord             # DEMAND_START (Manual)
+                Set-ItemProperty -Path $serviceRegPath -Name "ErrorControl" -Value 1 -Type DWord      # NORMAL
+                Set-ItemProperty -Path $serviceRegPath -Name "ImagePath" -Value "system32\drivers\wimmount.sys" -Type ExpandString
+                Set-ItemProperty -Path $serviceRegPath -Name "DisplayName" -Value "WIMMount" -Type String
+                Set-ItemProperty -Path $serviceRegPath -Name "Description" -Value "@%SystemRoot%\system32\drivers\wimmount.sys,-102" -Type ExpandString
+                Set-ItemProperty -Path $serviceRegPath -Name "Group" -Value "FSFilter Infrastructure" -Type String
+                Set-ItemProperty -Path $serviceRegPath -Name "Tag" -Value 1 -Type DWord
+                Set-ItemProperty -Path $serviceRegPath -Name "SupportedFeatures" -Value 3 -Type DWord
+                Set-ItemProperty -Path $serviceRegPath -Name "DebugFlags" -Value 0 -Type DWord
+
+                $details.RemediationActions.Add('Configured WimMount service registry entries')
+                $details.RegistryExists = $true
+
+                # Create Instances key for filter registration
+                if (-not (Test-Path $instancesPath)) {
+                    New-Item -Path $instancesPath -Force | Out-Null
+                }
+                Set-ItemProperty -Path $instancesPath -Name "DefaultInstance" -Value "WimMount" -Type String
+
+                # Create default instance with correct altitude
+                if (-not (Test-Path $defaultInstancePath)) {
+                    New-Item -Path $defaultInstancePath -Force | Out-Null
+                }
+                Set-ItemProperty -Path $defaultInstancePath -Name "Altitude" -Value "180700" -Type String
+                Set-ItemProperty -Path $defaultInstancePath -Name "Flags" -Value 0 -Type DWord
+
+                $details.RemediationActions.Add('Configured filter instance (Altitude 180700)')
+                $details.FilterInstanceExists = $true
+            }
+            catch {
+                $details.RemediationActions.Add("Registry creation failed: $($_.Exception.Message)")
+            }
+
+            # Step 2: Try to start the service via sc.exe
+            try {
+                $startResult = & sc.exe start wimmount 2>&1
+                $startExitCode = $LASTEXITCODE
+
+                if ($startExitCode -eq 0) {
+                    $details.RemediationActions.Add('Started WimMount service via sc.exe')
                     $details.WimMountServiceStatus = 'Running'
-                    # Remove related error if we fixed it
                 }
-                catch {
-                    $details.RemediationActions.Add("Failed to start WIMMount: $($_.Exception.Message)")
+                elseif ($startExitCode -eq 1056) {
+                    # Already running
+                    $details.RemediationActions.Add('WimMount service already running')
+                    $details.WimMountServiceStatus = 'Running'
                 }
-            }
-
-            # Try to re-register WIM mount driver
-            $wimMountDll = Join-Path $env:SystemRoot 'System32\wimmount.dll'
-            if ((Test-Path $wimMountDll) -and $details.WimMountDriverExists) {
-                try {
-                    $regOutput = & rundll32.exe wimmount.dll,WimMountDriver 2>&1
-                    Start-Sleep -Milliseconds 500  # Allow registration to complete
-                    $details.RemediationActions.Add('Re-registered WIM mount driver')
-                }
-                catch {
-                    $details.RemediationActions.Add("Failed to re-register driver: $($_.Exception.Message)")
-                }
-            }
-
-            # Try to start Filter Manager if not running
-            if ($details.FltMgrServiceStatus -ne 'Running') {
-                try {
-                    Start-Service -Name 'FltMgr' -ErrorAction Stop
-                    $details.RemediationActions.Add('Started Filter Manager service')
-                    $details.FltMgrServiceStatus = 'Running'
-                }
-                catch {
-                    $details.RemediationActions.Add("Failed to start FltMgr: $($_.Exception.Message)")
-                }
-            }
-
-            # Re-check errors after remediation
-            $errors.Clear()
-
-            # Re-verify WIMMount service
-            try {
-                $wimMountSvc = Get-Service -Name 'WIMMount' -ErrorAction Stop
-                if ($wimMountSvc.StartType -eq 'Disabled') {
-                    $errors.Add('WIMMount service is disabled')
+                else {
+                    $details.RemediationActions.Add("sc start returned exit code: $startExitCode")
                 }
             }
             catch {
-                $errors.Add('WIMMount service does not exist')
+                $details.RemediationActions.Add("sc start failed: $($_.Exception.Message)")
             }
 
-            # Re-verify Filter Manager
-            try {
-                $fltMgrSvc = Get-Service -Name 'FltMgr' -ErrorAction Stop
-                if ($fltMgrSvc.Status -ne 'Running') {
-                    $errors.Add('Filter Manager (FltMgr) service is not running')
+            # Step 3: Try fltmc load as fallback
+            Start-Sleep -Milliseconds 500  # Brief pause after sc start
+            $fltmcCheck = fltmc filters 2>&1
+            if (-not [bool]($fltmcCheck -match 'WimMount')) {
+                try {
+                    $loadResult = & fltmc load WimMount 2>&1
+                    $loadExitCode = $LASTEXITCODE
+
+                    if ($loadExitCode -eq 0) {
+                        $details.RemediationActions.Add('Loaded WimMount filter via fltmc')
+                    }
+                    else {
+                        $details.RemediationActions.Add("fltmc load returned exit code: $loadExitCode")
+                    }
+                }
+                catch {
+                    $details.RemediationActions.Add("fltmc load failed: $($_.Exception.Message)")
                 }
             }
-            catch {
-                $errors.Add('Filter Manager (FltMgr) service not found')
-            }
 
-            # Re-verify driver file
-            if (-not (Test-Path -Path $wimMountDriver -PathType Leaf)) {
-                $errors.Add('wimmount.sys driver file not found')
+            # Step 4: Final verification - re-check fltmc filters
+            Start-Sleep -Seconds 1  # Allow filter to fully load
+            $finalCheck = fltmc filters 2>&1
+            $details.WimMountFilterLoaded = [bool]($finalCheck -match 'WimMount')
+            $details.RemediationSuccess = $details.WimMountFilterLoaded
+
+            if ($details.RemediationSuccess) {
+                # Repair succeeded!
+                $errors.Clear()
+                $stopwatch.Stop()
+
+                return New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
+                    -Message 'WimMount filter loaded after automatic repair' `
+                    -Details $details `
+                    -DurationMs $stopwatch.ElapsedMilliseconds
+            }
+            else {
+                $details.RemediationActions.Add('Filter still not loaded after repair attempt')
             }
         }
+        elseif ($AttemptRemediation -and -not $details.WimMountDriverExists) {
+            $details.RemediationAttempted = $false
+            $details.RemediationActions.Add('Cannot repair - wimmount.sys driver file missing')
+        }
+        #endregion
 
         $stopwatch.Stop()
 
-        # Determine result
-        if ($errors.Count -eq 0) {
-            $message = 'WIM mount capability is available'
-            if ($details.RemediationAttempted) {
-                $message += ' (after remediation)'
+        #region Build Failure Response with Diagnostics
+        $diagnosticInfo = @"
+
+=== WimMount Diagnostic Information ===
+Filter loaded (fltmc filters): $($details.WimMountFilterLoaded)
+Driver file exists: $($details.WimMountDriverExists)
+Driver version: $($details.WimMountDriverVersion)
+Service registry exists: $($details.RegistryExists)
+Filter instance exists: $($details.FilterInstanceExists)
+Service status: $($details.WimMountServiceStatus)
+Filter Manager status: $($details.FltMgrServiceStatus)
+"@
+
+        if ($details.RemediationAttempted) {
+            $diagnosticInfo += "`n`n=== Repair Actions Attempted ==="
+            foreach ($action in $details.RemediationActions) {
+                $diagnosticInfo += "`n  - $action"
             }
-
-            return New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
-                -Message $message `
-                -Details $details `
-                -DurationMs $stopwatch.ElapsedMilliseconds
+            $diagnosticInfo += "`n`nRepair result: $( if ($details.RemediationSuccess) { 'SUCCESS' } else { 'FAILED' } )"
         }
-        else {
-            # Mark that we'll use native DISM cmdlets as a workaround
-            $details.UsingNativeDISM = $true
 
-            $remediation = @'
-WIM mount capability has issues. However, this is a WARNING (not blocking) because
-FFU Builder v1.3.5+ uses native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
-instead of ADK dism.exe, which do NOT require the WIMMount filter driver service.
+        $remediation = @"
+WimMount filter is NOT LOADED - this is a BLOCKING failure.
 
-The build will proceed using native DISM cmdlets.
+Both ADK dism.exe AND native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
+require the WimMount filter driver to be loaded in the Filter Manager.
 
-Error 0x800704DB indicates the WIM filter driver service is missing or not registered.
-If you want to fix the underlying issue for other tools that use ADK DISM:
+$diagnosticInfo
 
-Remediation steps (run as Administrator):
+=== Manual Remediation Steps ===
 
-1. Re-register the WIM mount driver:
-   rundll32.exe wimmount.dll,WimMountDriver
+1. Run the standalone repair script (if available):
+   .\Repair-WimMountService.ps1 -Force
 
-2. Restart the WIMMount service:
-   sc.exe start WIMMount
+2. Or manually recreate the service:
+   # Create registry entries
+   New-Item -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\WimMount' -Force
+   Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\WimMount' -Name 'Type' -Value 2 -Type DWord
+   Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\WimMount' -Name 'Start' -Value 3 -Type DWord
+   Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\WimMount' -Name 'ImagePath' -Value 'system32\drivers\wimmount.sys'
 
-3. If the above fail, run system file checker:
+   # Start the service
+   sc.exe start wimmount
+
+3. If repair fails, check for security software blocking:
+   - SentinelOne, CrowdStrike, or other EDR may block driver loading
+   - Contact your security team to whitelist wimmount.sys
+
+4. If security software is not the issue:
    sfc /scannow
-
-4. Repair Windows image:
    DISM /Online /Cleanup-Image /RestoreHealth
 
-5. If still failing, the Windows installation may be corrupted.
-   Consider Feature Experience Pack update or Windows repair install.
+5. A system reboot may be required after repairs.
 
-Issues found:
-'@
-            foreach ($err in $errors) {
-                $remediation += "`n  - $err"
-            }
+=== Verification Command ===
+Run: fltmc filters | Select-String WimMount
+Expected: WimMount should appear with Altitude 180700
+"@
 
-            if ($details.RemediationAttempted -and $details.RemediationActions.Count -gt 0) {
-                $remediation += "`n`nRemediation attempted:"
-                foreach ($action in $details.RemediationActions) {
-                    $remediation += "`n  - $action"
-                }
-            }
-
-            # Return WARNING instead of Failed - native DISM cmdlets don't require WIMMount service
-            return New-FFUCheckResult -CheckName 'WimMount' -Status 'Warning' `
-                -Message "WIM mount service issues detected (non-blocking - using native DISM cmdlets): $($errors -join '; ')" `
-                -Details $details `
-                -Remediation $remediation `
-                -DurationMs $stopwatch.ElapsedMilliseconds
-        }
+        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
+            -Message "WimMount filter not loaded (BLOCKING): Automatic repair $( if ($details.RemediationAttempted) { 'attempted but failed' } else { 'not possible - driver missing' } )" `
+            -Details $details `
+            -Remediation $remediation `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+        #endregion
     }
     catch {
         $stopwatch.Stop()
-        # Mark that we'll use native DISM cmdlets as a workaround
-        $details.UsingNativeDISM = $true
 
-        # Return WARNING instead of Failed - native DISM cmdlets don't require WIMMount service
-        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Warning' `
-            -Message "Unable to verify WIM mount capability (non-blocking - using native DISM cmdlets): $($_.Exception.Message)" `
+        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
+            -Message "WimMount validation error (BLOCKING): $($_.Exception.Message)" `
             -Details $details `
-            -Remediation @'
-Unable to verify WIM mount capability. However, this is a WARNING (not blocking) because
-FFU Builder v1.3.5+ uses native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
-instead of ADK dism.exe, which do NOT require the WIMMount filter driver service.
+            -Remediation @"
+An unexpected error occurred during WimMount validation.
 
-The build will proceed using native DISM cmdlets.
+Error: $($_.Exception.Message)
 
-If you want to verify the WIM mount infrastructure manually, try running:
-  sc.exe query WIMMount
-  sc.exe query Wof
-  sc.exe query FltMgr
-'@ `
+To verify WimMount manually:
+  fltmc filters | Select-String WimMount
+
+If WimMount is not listed, run:
+  .\Repair-WimMountService.ps1 -Force
+
+Or contact support with the error details above.
+"@ `
             -DurationMs $stopwatch.ElapsedMilliseconds
     }
 }
@@ -2011,20 +2044,18 @@ function Invoke-FFUPreflight {
             $msg = if ($wimMountResult.Details.RemediationAttempted) { ' (after remediation)' } else { '' }
             Write-Host " PASSED$msg" -ForegroundColor Green
         }
-        elseif ($wimMountResult.Status -eq 'Warning') {
-            # v1.3.5+: WIMMount issues are non-blocking because native DISM cmdlets are used
-            Write-Host " WARNING (using native DISM)" -ForegroundColor Yellow
-            $result.HasWarnings = $true
-            $result.Warnings.Add("WimMount: $($wimMountResult.Message)")
-            # Do NOT set $result.IsValid = $false - this is non-blocking
-            # Do NOT add to Errors - add to Warnings instead
-        }
-        else {
-            # Unexpected status (should not happen after refactoring, but keep as safety)
-            Write-Host " FAILED" -ForegroundColor Red
+        elseif ($wimMountResult.Status -eq 'Failed') {
+            # v1.3.8: WIMMount failures are BLOCKING - both ADK dism.exe AND PowerShell DISM cmdlets require WIMMount
+            Write-Host " FAILED (BLOCKING)" -ForegroundColor Red
             $result.IsValid = $false
             $result.Errors.Add("WimMount: $($wimMountResult.Message)")
             $result.RemediationSteps.Add($wimMountResult.Remediation)
+        }
+        else {
+            # Unexpected status (Warning or other - should not happen in v1.3.8+)
+            Write-Host " $($wimMountResult.Status.ToUpper())" -ForegroundColor Yellow
+            $result.HasWarnings = $true
+            $result.Warnings.Add("WimMount: $($wimMountResult.Message)")
         }
     }
     else {

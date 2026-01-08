@@ -7,7 +7,7 @@
     RootModule = 'FFU.Preflight.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.2'
+    ModuleVersion = '1.0.4'
 
     # ID used to uniquely identify this module
     GUID = 'a7e8b3f2-c4d5-4e6a-9b8c-1d2e3f4a5b6c'
@@ -81,9 +81,67 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Preflight v1.0.2
+# Release Notes - FFU.Preflight v1.0.4
 
-## v1.0.2 (2025-12-12)
+## v1.0.4 (2025-12-17)
+### Enhanced WimMount Detection and Auto-Repair
+- **PRIMARY CHECK**: Now uses `fltmc filters` as THE definitive indicator
+  - If WimMount appears in filter list -> PASSED (no further checks needed)
+  - If WimMount not found -> attempt auto-repair
+- **AUTO-REPAIR**: Silently repairs WimMount when filter not loaded:
+  1. Verify wimmount.sys driver file exists
+  2. Create/recreate service registry entries
+  3. Create filter instance with Altitude 180700
+  4. Start service via `sc start wimmount`
+  5. Load filter via `fltmc load WimMount`
+  6. Re-verify filter is now loaded
+- **FAIL WITH DIAGNOSTICS**: If repair fails, provides detailed diagnostic info:
+  - Filter loaded status, driver file status, registry status
+  - All repair actions attempted and their results
+  - Manual remediation steps including security software guidance
+- **New Details Fields**:
+  - WimMountFilterLoaded (primary indicator)
+  - WimMountDriverVersion
+  - RegistryExists
+  - FilterInstanceExists
+  - RemediationSuccess
+
+### Behavior
+- Default: Auto-repair is enabled (`-AttemptRemediation:$true`)
+- Detection only: Use `-AttemptRemediation:$false`
+- Returns PASSED if WimMount in fltmc filters (before or after repair)
+- Returns FAILED with full diagnostics if repair unsuccessful
+
+---
+
+## v1.0.3 (2025-12-15)
+### CRITICAL FIX: WimMount Failures Now Blocking
+- **REVERTED v1.0.2 CHANGE**: WIMMount service issues are now BLOCKING failures again
+- Test-FFUWimMount returns FAILED (not WARNING) when WIMMount issues detected
+- Removed incorrect UsingNativeDISM fallback logic
+
+### Root Cause
+The v1.0.2 change was based on an INCORRECT assumption that PowerShell DISM cmdlets
+(Mount-WindowsImage/Dismount-WindowsImage) do not require the WIMMount filter driver.
+
+**FACT: Both ADK dism.exe AND native PowerShell DISM cmdlets require the WIMMount
+filter driver service.** The cmdlets are just PowerShell wrappers around the same
+underlying DISM infrastructure.
+
+### Impact of v1.0.2 Bug
+Users with corrupted WIMMount saw a WARNING during pre-flight, the build proceeded,
+then failed 5 minutes later at Mount-WindowsImage with error 0x800704db
+("The specified service does not exist").
+
+### Behavior After This Fix
+- Test-FFUWimMount returns Status 'Passed' when WIMMount is healthy
+- Test-FFUWimMount returns Status 'Failed' when WIMMount has issues (BLOCKING)
+- Build will NOT proceed if WIMMount validation fails
+- Users get clear remediation steps upfront, not a cryptic failure mid-build
+
+---
+
+## v1.0.2 (2025-12-12) - SUPERSEDED
 ### Fix: WimMount Validation False Positives
 - **BREAKING CHANGE MITIGATION**: WIMMount service issues no longer block builds
 - Changed Test-FFUWimMount to return WARNING instead of FAILED when WIMMount issues detected
@@ -91,17 +149,7 @@
 - Added UsingNativeDISM detail field to indicate native DISM cmdlet usage
 - Updated Invoke-FFUPreflight to treat WimMount warnings as non-blocking
 
-### Rationale
-Since v1.3.5, FFU Builder uses native PowerShell DISM cmdlets (Mount-WindowsImage/Dismount-WindowsImage)
-instead of ADK dism.exe. Native cmdlets do NOT require the WIMMount filter driver service, so
-WIMMount service issues should not block builds.
-
-### Technical Details
-- sc.exe fallback handles ThreadJob context where Get-Service may fail
-- Exit code 1060 = Service does not exist (non-blocking warning)
-- Exit code 0 = Service exists (parses STATE from output)
-- Remediation message updated to explain native DISM workaround
-- 37 new Pester tests for warning behavior validation
+### NOTE: This version contained an incorrect assumption and was superseded by v1.0.3
 
 ---
 

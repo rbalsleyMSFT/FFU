@@ -1397,6 +1397,166 @@ function Invoke-WithCleanup {
 }
 
 # =============================================================================
+# WIM Mount Error Handling
+# Enhanced error handling for Mount-WindowsImage operations
+# =============================================================================
+
+function Invoke-WimMountWithErrorHandling {
+    <#
+    .SYNOPSIS
+    Mounts a Windows image with enhanced error handling for WIMMount issues.
+
+    .DESCRIPTION
+    Wraps Mount-WindowsImage with detection and user-friendly messaging for
+    error 0x800704db (WIMMount filter driver missing/corrupted).
+
+    When the WIMMount filter driver is missing or corrupted, Mount-WindowsImage
+    fails with a cryptic "specified service does not exist" error. This function
+    detects that specific error and provides clear remediation guidance.
+
+    .PARAMETER ImagePath
+    Path to the WIM or FFU file to mount.
+
+    .PARAMETER Path
+    Directory to mount the image to.
+
+    .PARAMETER Index
+    Index of the image to mount (default: 1).
+
+    .PARAMETER ReadOnly
+    Mount the image as read-only.
+
+    .PARAMETER Optimize
+    Optimize the mount for faster access (read-only mounts only).
+
+    .EXAMPLE
+    Invoke-WimMountWithErrorHandling -ImagePath "C:\boot.wim" -Path "C:\mount" -Index 1 -ReadOnly
+
+    .EXAMPLE
+    Invoke-WimMountWithErrorHandling -ImagePath "D:\images\install.wim" -Path "C:\mount\offline" -Index 3
+
+    .OUTPUTS
+    None. The function outputs nothing on success (like Mount-WindowsImage with Out-Null).
+
+    .NOTES
+    Version: 1.0.0
+    Added in FFU.Core v1.0.13
+
+    ROOT CAUSE: The WIMMount filter driver (wimmount.sys) is required for all WIM
+    mount operations. ADK versions 10.1.26100.1 and later can corrupt this driver
+    during installation, causing error 0x800704DB.
+
+    .LINK
+    https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ImagePath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path,
+
+        [Parameter()]
+        [ValidateRange(1, 999)]
+        [int]$Index = 1,
+
+        [Parameter()]
+        [switch]$ReadOnly,
+
+        [Parameter()]
+        [switch]$Optimize
+    )
+
+    # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
+    $logMessage = {
+        param([string]$Message)
+        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog $Message
+        } else {
+            Write-Verbose $Message
+        }
+    }
+
+    try {
+        & $logMessage "Mounting image '$ImagePath' (Index: $Index) to '$Path'..."
+
+        $mountParams = @{
+            ImagePath = $ImagePath
+            Path = $Path
+            Index = $Index
+            ErrorAction = 'Stop'
+        }
+
+        if ($ReadOnly) { $mountParams.ReadOnly = $true }
+        if ($Optimize) { $mountParams.Optimize = $true }
+
+        Mount-WindowsImage @mountParams | Out-Null
+
+        & $logMessage "Successfully mounted image to '$Path'"
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        $errorCode = if ($_.Exception.HResult) { '0x{0:X8}' -f $_.Exception.HResult } else { 'Unknown' }
+
+        # Check for WIMMount filter driver error (0x800704DB = -2147023653 signed, 2147943643 unsigned)
+        $isWimMountError = $false
+        if ($errorMessage -match 'specified service does not exist' -or
+            $errorMessage -match '0x800704[dD][bB]' -or
+            $_.Exception.HResult -eq -2147023653 -or  # 0x800704DB as signed int32
+            $_.Exception.HResult -eq 2147943643) {    # 0x800704DB as unsigned int32
+            $isWimMountError = $true
+        }
+
+        if ($isWimMountError) {
+            $dismLogPath = Join-Path $env:WINDIR 'Logs\DISM\dism.log'
+
+            $enhancedMessage = @"
+MOUNT FAILED: WIMMount filter driver service is missing or corrupted
+
+Error: $errorMessage
+Error Code: $errorCode
+Image: $ImagePath
+Mount Path: $Path
+DISM Log: $dismLogPath
+
+ROOT CAUSE: The WIMMount filter driver (wimmount.sys) is required for all WIM mount
+operations, including native PowerShell cmdlets (Mount-WindowsImage). ADK versions
+10.1.26100.1 and later can corrupt this driver during installation.
+
+REMEDIATION STEPS:
+1. Run FFU Builder pre-flight validation to diagnose the issue:
+   Invoke-FFUPreflight -CheckWimMount
+
+2. Try reinstalling the Windows ADK Deployment Tools:
+   - Open "Add or remove programs"
+   - Find "Windows Assessment and Deployment Kit"
+   - Select Modify, then reinstall "Deployment Tools"
+
+3. If reinstallation doesn't work, manually re-register the WIMMount service:
+   - Open Administrator PowerShell
+   - Run: RUNDLL32.EXE WIMGAPI.DLL,WIMRegisterFilterDriver
+   - Reboot and retry
+
+4. As a last resort, completely uninstall and reinstall the Windows ADK
+
+For full diagnostics, check the DISM log at: $dismLogPath
+"@
+            & $logMessage "ERROR: WIMMount filter driver issue detected - $errorMessage"
+            throw $enhancedMessage
+        }
+        else {
+            # Re-throw with enhanced context for non-WIMMount errors
+            & $logMessage "ERROR: Mount-WindowsImage failed - $errorMessage (Code: $errorCode)"
+            throw "Mount-WindowsImage failed for '$ImagePath': $errorMessage (Error code: $errorCode)"
+        }
+    }
+}
+
+# =============================================================================
 # Secure Credential Management
 # Provides secure password generation and credential handling
 # =============================================================================
@@ -2483,6 +2643,8 @@ Export-ModuleMember -Function @(
     # Configuration schema validation (v1.0.10)
     'Test-FFUConfiguration'
     'Get-FFUConfigurationSchema'
+    # WIM mount error handling (v1.0.13)
+    'Invoke-WimMountWithErrorHandling'
 )
 
 # Export backward compatibility aliases (deprecated - use new function names)

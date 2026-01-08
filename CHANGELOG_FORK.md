@@ -8,6 +8,50 @@ This changelog documents all enhancements and fixes made in this fork, separate 
 
 ---
 
+## [1.6.3] - 2026-01-08
+
+### Bug Fixes
+- **CaptureFFU.ps1 Network Ping Timeout - ICMP Blocked by Firewall** (CAPTURE)
+  - **Issue:** WinPE capture failed with "Network failed to become ready within 60 seconds" when host firewall blocks ICMP
+  - **Symptoms:** Ping shows "[Request interrupted by user]" and build times out even though network is configured correctly
+  - **Root Cause:** `Wait-For-NetworkReady` function required successful ping to host before proceeding, but many corporate firewalls block ICMP while allowing SMB
+  - **Solution:** Made ping check non-blocking:
+    - Ping failure now generates a warning instead of blocking progress
+    - Warning shown only once per boot (via `$script:pingWarningShown` flag)
+    - Status message shows "ping blocked/failed" vs "reachable" for diagnostics
+    - Proceeds to SMB connection which provides more accurate connectivity status
+  - **Files Modified:**
+    - `WinPECaptureFFUFiles/CaptureFFU.ps1` - Modified `Wait-For-NetworkReady` function (lines 350-420)
+  - **Documentation:**
+    - `docs/pending/PENDING-FIX-CaptureFFU-Ping-Timeout.md` - Marked as implemented
+  - **Rationale:**
+    - Many corporate environments block ICMP but allow SMB
+    - SMB connection attempt provides more specific error messages than ping timeout
+    - Ping is an optimization, not a hard requirement for FFU capture
+
+---
+
+## [1.6.2] - 2026-01-08
+
+### Bug Fixes
+- **VMware REST API Credentials Not Detected After Setup in Enterprise Environments** (UI)
+  - **Issue:** After configuring vmrest.exe credentials, UI status still showed "Not configured"
+  - **Root Cause:** Button requested UAC elevation (`$psi.Verb = 'runas'`), which with separate admin accounts writes credentials to admin's profile, not logged-in user's profile
+  - **Solution:** Removed elevation from credential setup button and added enterprise guidance:
+    - Status now shows "Configured (current user)" to clarify per-profile storage
+    - Terminal output includes guidance for separate admin account scenarios
+    - Dialog message explains enterprise configuration requirements
+    - Updated tooltips on XAML controls
+    - Added dynamic tooltip showing current username
+  - **Files Modified:**
+    - `FFUUI.Core/FFUUI.Core.Handlers.psm1` - Removed elevation, added enterprise guidance
+    - `FFUUI.Core/FFUUI.Core.Shared.psm1` - Updated status text and dynamic tooltips
+    - `BuildFFUVM_UI.xaml` - Updated control tooltips
+    - `FFUUI.Core/FFUUI.Core.psd1` - Version bump to 0.0.5
+    - `docs/VMWARE_WORKSTATION_GUIDE.md` - Added enterprise environment section
+
+---
+
 ## [1.3.5] - 2025-12-11
 
 ### Bug Fixes

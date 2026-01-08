@@ -951,4 +951,196 @@ function Clear-ListViewContent {
     }
 }
 
+<#
+.SYNOPSIS
+    Updates the hypervisor status indicator and shows/hides hypervisor-specific controls.
+.DESCRIPTION
+    This function checks the availability of the selected hypervisor (Hyper-V, VMware, or Auto)
+    and updates the UI status text accordingly. It also shows/hides Hyper-V-specific controls
+    like VM Switch selection based on the hypervisor type.
+.PARAMETER State
+    The UI state object containing control references.
+.PARAMETER SelectedIndex
+    The selected index in the hypervisor dropdown (0=Hyper-V, 1=VMware, 2=Auto).
+#>
+function Update-HypervisorStatus {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State,
+
+        [Parameter(Mandatory = $false)]
+        [int]$SelectedIndex = -1
+    )
+
+    try {
+        $statusText = $State.Controls.txtHypervisorStatus
+        $vmSwitchLabel = $State.Controls.pnlVMSwitchLabel
+        $vmSwitchCombo = $State.Controls.cmbVMSwitchName
+        $vmwareSetupLabel = $State.Controls.pnlVMwareSetupLabel
+        $vmwareSetupPanel = $State.Controls.pnlVMwareSetup
+        $vmwareCredStatus = $State.Controls.txtVMwareCredStatus
+
+        if ($null -eq $statusText) {
+            WriteLog "Update-HypervisorStatus: txtHypervisorStatus control not found."
+            return
+        }
+
+        # Get selected index from dropdown if not provided
+        if ($SelectedIndex -lt 0 -and $null -ne $State.Controls.cmbHypervisorType) {
+            $SelectedIndex = $State.Controls.cmbHypervisorType.SelectedIndex
+        }
+
+        $hypervisorType = switch ($SelectedIndex) {
+            0 { 'HyperV' }
+            1 { 'VMware' }
+            2 { 'Auto' }
+            default { 'HyperV' }
+        }
+
+        WriteLog "Update-HypervisorStatus: Checking availability for '$hypervisorType'..."
+
+        # Check VMware REST API credentials status
+        $vmrestCredentialsConfigured = $false
+        $vmrestConfigPath = Join-Path $env:USERPROFILE '.vmrestCfg'
+        if (Test-Path $vmrestConfigPath) {
+            $content = Get-Content $vmrestConfigPath -Raw -ErrorAction SilentlyContinue
+            $vmrestCredentialsConfigured = ($content -match 'username' -and $content -match 'password')
+        }
+
+        # Try to import FFU.Hypervisor module for availability check
+        $moduleLoaded = $false
+        try {
+            $modulePath = Join-Path $State.FFUDevelopmentPath 'Modules'
+            if ($env:PSModulePath -notlike "*$modulePath*") {
+                $env:PSModulePath = "$modulePath;$env:PSModulePath"
+            }
+            Import-Module 'FFU.Hypervisor' -Force -ErrorAction Stop
+            $moduleLoaded = $true
+        }
+        catch {
+            WriteLog "Update-HypervisorStatus: Could not load FFU.Hypervisor module: $($_.Exception.Message)"
+        }
+
+        if ($moduleLoaded) {
+            # Use the module to check availability
+            try {
+                $hypervisors = Get-AvailableHypervisors
+
+                if ($hypervisorType -eq 'Auto') {
+                    # Find first available
+                    $available = $hypervisors | Where-Object { $_.Available } | Select-Object -First 1
+                    if ($available) {
+                        $statusText.Text = "$($available.DisplayName) v$($available.Version) (auto-detected)"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Green
+                        $hypervisorType = $available.Name  # For visibility toggle
+                    }
+                    else {
+                        $statusText.Text = "No hypervisor available"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Red
+                    }
+                }
+                else {
+                    $selected = $hypervisors | Where-Object { $_.Name -eq $hypervisorType }
+                    if ($selected -and $selected.Available) {
+                        $statusText.Text = "$($selected.DisplayName) v$($selected.Version)"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Green
+                    }
+                    elseif ($selected) {
+                        $issues = if ($selected.Issues) { $selected.Issues -join '; ' } else { 'Not installed or not available' }
+                        $statusText.Text = "Not available: $issues"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Orange
+                    }
+                    else {
+                        $statusText.Text = "Unknown hypervisor type"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Red
+                    }
+                }
+            }
+            catch {
+                WriteLog "Update-HypervisorStatus: Error checking hypervisor: $($_.Exception.Message)"
+                $statusText.Text = "Error checking availability"
+                $statusText.Foreground = [System.Windows.Media.Brushes]::Red
+            }
+        }
+        else {
+            # Fallback: Basic check without module
+            switch ($hypervisorType) {
+                'HyperV' {
+                    $hyperv = Get-Service -Name 'vmms' -ErrorAction SilentlyContinue
+                    if ($hyperv -and $hyperv.Status -eq 'Running') {
+                        $statusText.Text = "Hyper-V available (service running)"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Green
+                    }
+                    else {
+                        $statusText.Text = "Hyper-V not available (service not running)"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Orange
+                    }
+                }
+                'VMware' {
+                    $vmwareKey = 'HKLM:\SOFTWARE\VMware, Inc.\VMware Workstation'
+                    if (Test-Path $vmwareKey) {
+                        $statusText.Text = "VMware Workstation detected"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Green
+                    }
+                    else {
+                        $statusText.Text = "VMware Workstation not found"
+                        $statusText.Foreground = [System.Windows.Media.Brushes]::Orange
+                    }
+                }
+                'Auto' {
+                    $statusText.Text = "Auto-detection (run build to detect)"
+                    $statusText.Foreground = [System.Windows.Media.Brushes]::Gray
+                }
+            }
+        }
+
+        # Show/hide Hyper-V specific controls (VM Switch is Hyper-V only)
+        $showHyperVControls = ($hypervisorType -eq 'HyperV')
+        $hyperVVisibility = if ($showHyperVControls) { 'Visible' } else { 'Collapsed' }
+
+        if ($null -ne $vmSwitchLabel) {
+            $vmSwitchLabel.Visibility = $hyperVVisibility
+        }
+        if ($null -ne $vmSwitchCombo) {
+            $vmSwitchCombo.Visibility = $hyperVVisibility
+        }
+        if ($null -ne $State.Controls.txtCustomVMSwitchName -and -not $showHyperVControls) {
+            $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+        }
+
+        # Show/hide VMware specific controls (REST API setup is VMware only)
+        $showVMwareControls = ($hypervisorType -eq 'VMware')
+        $vmwareVisibility = if ($showVMwareControls) { 'Visible' } else { 'Collapsed' }
+
+        if ($null -ne $vmwareSetupLabel) {
+            $vmwareSetupLabel.Visibility = $vmwareVisibility
+        }
+        if ($null -ne $vmwareSetupPanel) {
+            $vmwareSetupPanel.Visibility = $vmwareVisibility
+        }
+
+        # Update VMware credential status text
+        # Note: We can only check credentials in the current user's profile.
+        # Enterprise users with separate admin accounts need to configure
+        # credentials for the admin account separately via elevated prompt.
+        if ($null -ne $vmwareCredStatus -and $showVMwareControls) {
+            if ($vmrestCredentialsConfigured) {
+                $vmwareCredStatus.Text = "Configured (current user)"
+                $vmwareCredStatus.Foreground = [System.Windows.Media.Brushes]::Green
+                $vmwareCredStatus.ToolTip = "Credentials configured for current user profile ($env:USERNAME). If builds run with a separate admin account, ensure that account also has credentials configured."
+            }
+            else {
+                $vmwareCredStatus.Text = "Not configured"
+                $vmwareCredStatus.Foreground = [System.Windows.Media.Brushes]::Orange
+                $vmwareCredStatus.ToolTip = "Click 'Configure Credentials...' to set up vmrest credentials for your current user profile."
+            }
+        }
+
+        WriteLog "Update-HypervisorStatus: Status updated to '$($statusText.Text)', Hyper-V visibility: $hyperVVisibility, VMware visibility: $vmwareVisibility"
+    }
+    catch {
+        WriteLog "Update-HypervisorStatus: Unexpected error: $($_.Exception.Message)"
+    }
+}
+
 Export-ModuleMember -Function *

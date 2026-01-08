@@ -7,7 +7,7 @@
     RootModule = 'FFU.Media.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.2.0'
 
     # ID used to uniquely identify this module
     GUID = 'a84d5d7c-3cb5-4ba3-a1a8-2dcd0916fb5d'
@@ -31,6 +31,7 @@
     RequiredModules = @(
         @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
         @{ModuleName = 'FFU.ADK'; ModuleVersion = '1.0.0'}
+        @{ModuleName = 'FFU.Preflight'; ModuleVersion = '1.0.0'}
     )
 
     # Assemblies that must be loaded prior to importing this module
@@ -40,6 +41,7 @@
     FunctionsToExport = @(
         'Invoke-DISMPreFlightCleanup',
         'Invoke-CopyPEWithRetry',
+        'New-WinPEMediaNative',
         'New-PEMedia',
         'Get-PEArchitecture'
     )
@@ -67,9 +69,24 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Media v1.0.0
+# Release Notes - FFU.Media v1.2.0
 
-## Initial Release
+## v1.2.0 - Just-in-Time WIMMount Validation
+- NEW: Pre-mount WIMMount service validation using Test-FFUWimMount (from FFU.Preflight)
+- FIXED: Misleading documentation - native PowerShell cmdlets ALSO require WIMMount service
+- Added FFU.Preflight module dependency for Test-FFUWimMount function
+- Validates WIMMount service before Mount-WindowsImage call with automatic remediation
+- Clear error messages with remediation guidance when WIMMount validation fails
+- Updated step numbering (Step 6: validation, Step 7: mount) for clarity
+
+## v1.1.0 - Native PowerShell WIM Mount Support
+- NEW: New-WinPEMediaNative function - Replaces copype.cmd with native PowerShell
+- Uses Mount-WindowsImage/Dismount-WindowsImage cmdlets instead of ADK dism.exe
+- Creates bootbins folder with EFI boot files (2011 and 2023 signed)
+- Full architecture support: x64 and arm64
+- Proper cleanup on failure with fallback to DISM cleanup-mountpoints
+
+## v1.0.0 - Initial Release
 - Extracted WinPE media creation functions from monolithic BuildFFUVM.ps1
 - 4 functions for complete WinPE media lifecycle
 - Comprehensive DISM cleanup and copype retry logic
@@ -79,10 +96,13 @@
 ## Functions Included
 - Invoke-DISMPreFlightCleanup: 6-step DISM cleanup (mount points, disk space, services)
 - Invoke-CopyPEWithRetry: Automatic retry with enhanced diagnostics
+- New-WinPEMediaNative: Native PowerShell copype replacement with WIMMount validation
 - New-PEMedia: Complete WinPE media orchestration (capture/deployment)
 - Get-PEArchitecture: PE file architecture detection (x86/x64/ARM64)
 
 ## Key Improvements
+- **Just-in-Time Validation:** Test-FFUWimMount check before WIM mount operations
+- **Native WIM Mount:** Uses PowerShell cmdlets (still requires WIMMount service)
 - **Pre-Flight Cleanup:** Stale mount points, locked directories, disk space validation
 - **Automatic Retry:** Up to 2 attempts with aggressive cleanup between retries
 - **Enhanced Diagnostics:** DISM log extraction with 6 common failure causes
@@ -90,6 +110,7 @@
 - **Robustness:** Handles locked WinPE directories with robocopy mirror technique
 
 ## Impact
+- Fails fast with clear remediation when WIMMount service unavailable (error 0x800704db)
 - Eliminates manual DISM cleanup (saves 5-30 minutes per failure)
 - Adds only 5-8 seconds to normal execution
 - Clear error messages with actionable resolution steps
