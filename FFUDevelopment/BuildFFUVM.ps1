@@ -568,7 +568,7 @@ class VhdxCacheItem {
 
 #Support for ini reading
 $definition = @'
-[DllImport("kernel32.dll")]
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 public static extern uint GetPrivateProfileString(
     string lpAppName,
     string lpKeyName,
@@ -2746,8 +2746,27 @@ function Get-PrivateProfileString {
         [Parameter()]
         [string]$KeyName
     )
-    $sbuilder = [System.Text.StringBuilder]::new(1024)
-    [void][Win32.Kernel32]::GetPrivateProfileString($SectionName, $KeyName, "", $sbuilder, $sbuilder.Capacity, $FileName)
+
+    # Read key from an INF/INI file. Use a larger buffer and allow it to grow if needed.
+    $bufferSize = 4096
+    $maxBufferSize = 65536
+    $sbuilder = $null
+    $charsCopied = 0
+
+    while ($true) {
+        $sbuilder = [System.Text.StringBuilder]::new($bufferSize)
+        $charsCopied = [Win32.Kernel32]::GetPrivateProfileString($SectionName, $KeyName, "", $sbuilder, [uint32]$sbuilder.Capacity, $FileName)
+
+        if ([int]$charsCopied -lt ($sbuilder.Capacity - 1)) {
+            break
+        }
+
+        if ($bufferSize -ge $maxBufferSize) {
+            break
+        }
+
+        $bufferSize = [Math]::Min(($bufferSize * 2), $maxBufferSize)
+    }
 
     return $sbuilder.ToString()
 }
@@ -2799,7 +2818,188 @@ function Get-PrivateProfileSection {
 
     return $hashTable
 }
+    
+function Get-AvailableDriveLetter {
+    # Get an unused drive letter for temporary SUBST mappings
+    $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name | ForEach-Object { $_.ToUpperInvariant() }
+    for ($ascii = [int][char]'Z'; $ascii -ge [int][char]'A'; $ascii--) {
+        $candidate = [char]$ascii
+        if ($usedLetters -notcontains $candidate) {
+            return $candidate
+        }
+    }
+    return $null
+}
+    
+function New-DriverSubstMapping {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath
+    )
+    
+    # Map a long driver source folder to a short drive root using SUBST
+    $resolvedPath = (Resolve-Path -Path $SourcePath -ErrorAction Stop).Path
+    $driveLetter = Get-AvailableDriveLetter
+    if ($null -eq $driveLetter) {
+        throw 'No drive letters are available for SUBST mapping.'
+    }
+    $driveName = "$driveLetter`:"
+    $mappedPath = "$driveLetter`:\"
+    WriteLog "Mapping driver folder '$resolvedPath' to $driveName with SUBST."
+    $escapedPath = $resolvedPath -replace '"', '""'
+    $arguments = "/c subst $driveName `"$escapedPath`""
+    Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
+    return [PSCustomObject]@{
+        DriveLetter = $driveLetter
+        DriveName   = $driveName
+        DrivePath   = $mappedPath
+    }
+}
+    
+function Remove-DriverSubstMapping {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DriveLetter
+    )
+    
+    # Remove the temporary SUBST mapping
+    $driveName = "$DriveLetter`:"
+    WriteLog "Removing SUBST drive $driveName"
+    try {
+        $arguments = "/c subst $driveName /d"
+        Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
+    }
+    catch {
+        WriteLog "Failed to remove SUBST drive $($driveName): $_"
+    }
+}
 
+function Invoke-DismDriverInjectionWithSubstLoop {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ImagePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriverRoot
+    )
+
+    # Resolve input paths
+    $resolvedImagePath = (Resolve-Path -Path $ImagePath -ErrorAction Stop).Path
+    $resolvedDriverRoot = (Resolve-Path -Path $DriverRoot -ErrorAction Stop).Path
+
+    # Discover INF files under the driver root
+    WriteLog "Scanning for INF files under: $resolvedDriverRoot"
+    $infFiles = Get-ChildItem -Path $resolvedDriverRoot -Filter '*.inf' -File -Recurse -ErrorAction SilentlyContinue
+    if ($null -eq $infFiles -or $infFiles.Count -eq 0) {
+        WriteLog "No INF files found under: $resolvedDriverRoot"
+        return
+    }
+
+    # Determine the deepest stable folders we can map with SUBST (SUBST has its own max path constraints)
+    # Strategy:
+    # - Start at the INF parent folder
+    # - If too long for SUBST, walk up until the path is short enough
+    # - Deduplicate and avoid redundant child folders when a parent already covers them via DISM /Recurse
+    $substTargetMaxLength = 240
+    $candidateDirs = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($infFile in $infFiles) {
+        $candidateDir = Split-Path -Path $infFile.FullName -Parent
+
+        while ($candidateDir.Length -gt $substTargetMaxLength) {
+            $parentDir = Split-Path -Path $candidateDir -Parent
+            if ([string]::IsNullOrWhiteSpace($parentDir) -or $parentDir -eq $candidateDir) {
+                break
+            }
+            $candidateDir = $parentDir
+        }
+
+        if ($candidateDir.Length -gt $substTargetMaxLength) {
+            WriteLog "Warning: Skipping INF folder due to SUBST length limit (len=$($candidateDir.Length)): $candidateDir"
+            continue
+        }
+
+        [void]$candidateDirs.Add($candidateDir)
+    }
+
+    $sortedCandidates = $candidateDirs | Sort-Object Length, @{ Expression = { $_ }; Ascending = $true }
+    $selectedDirs = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($candidateDir in $sortedCandidates) {
+        $isCovered = $false
+        foreach ($selectedDir in $selectedDirs) {
+            if ($candidateDir.Equals($selectedDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $isCovered = $true
+                break
+            }
+
+            $prefix = $selectedDir.TrimEnd('\') + '\'
+            if ($candidateDir.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $isCovered = $true
+                break
+            }
+        }
+
+        if (-not $isCovered) {
+            [void]$selectedDirs.Add($candidateDir)
+        }
+    }
+
+    $infDirs = $selectedDirs | Sort-Object
+    WriteLog "Driver injection will process $($infDirs.Count) SUBST-safe folders (candidateFolders=$($candidateDirs.Count), INF total=$($infFiles.Count), substMaxLen=$substTargetMaxLength)."
+
+    # Use a single SUBST drive letter and reuse it in a loop (map -> dism -> unmap)
+    $driveLetter = Get-AvailableDriveLetter
+    if ($null -eq $driveLetter) {
+        throw 'No drive letters are available for SUBST mapping.'
+    }
+
+    $driveName = "$driveLetter`:"
+    $drivePath = "$driveLetter`:\"
+    WriteLog "Using SUBST drive $driveName for driver injection loop."
+
+    $currentIndex = 0
+    foreach ($infDir in $infDirs) {
+        $currentIndex++
+        $escapedPath = $infDir -replace '"', '""'
+
+        try {
+            WriteLog "[$currentIndex/$($infDirs.Count)] Mapping '$infDir' to $driveName with SUBST."
+            $mapArgs = "/c subst $driveName `"$escapedPath`""
+            Invoke-Process -FilePath cmd.exe -ArgumentList $mapArgs | Out-Null
+
+            # Inject drivers (do not use \\?\ with DISM)
+            $dismArgs = @(
+                "/Image:`"$resolvedImagePath`""
+                '/Add-Driver'
+                "/Driver:$drivePath"
+                '/Recurse'
+            )
+
+            WriteLog "dism.exe $($dismArgs -join ' ')"
+            Invoke-Process -FilePath dism.exe -ArgumentList $dismArgs | Out-Null
+        }
+        catch {
+            WriteLog "Warning: Driver injection failed for '$infDir': $($_.Exception.Message)"
+        }
+        finally {
+            try {
+                WriteLog "Removing SUBST drive $driveName"
+                $unmapArgs = "/c subst $driveName /d"
+                Invoke-Process -FilePath cmd.exe -ArgumentList $unmapArgs | Out-Null
+            }
+            catch {
+                WriteLog "Warning: Failed removing SUBST drive $($driveName): $($_.Exception.Message)"
+            }
+        }
+    }
+
+    WriteLog "Driver injection loop complete for $resolvedDriverRoot"
+}
+    
 function Copy-Drivers {
     param (
         [Parameter()]
@@ -2817,7 +3017,6 @@ function Copy-Drivers {
     # 745a17a0-74d3-11d0-b6fe-00a0c90f57da = Human Interface Devices
     $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{4d36e96f-e325-11ce-bfc1-08002be10318}", "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}")
     $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware"
-    $pathLength = $Path.Length
 
     # Log start and validate paths
     WriteLog "Copying PE drivers from '$Path' to '$Output' (WindowsArch: $WindowsArch)"
@@ -2826,7 +3025,10 @@ function Copy-Drivers {
         return
     }
     [void](New-Item -Path $Output -ItemType Directory -Force)
-
+    
+    $driverSourcePath = $Path
+    $pathLength = $Path.Length
+    
     # Determine common arch-specific SourceDisksFiles section names
     # Many INFs use 'amd64' rather than 'x64' for 64-bit paths (e.g. SourceDisksFiles.amd64)
     $sourceDisksFileSections = @("SourceDisksFiles")
@@ -2836,52 +3038,71 @@ function Copy-Drivers {
     elseif ($WindowsArch -eq 'arm64') {
         $sourceDisksFileSections += "SourceDisksFiles.arm64"
     }
-
+    
     $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
-    WriteLog "Found $($infFiles.Count) INF files under: $Path"
-
+    WriteLog "Found $($infFiles.Count) INF files under: $driverSourcePath"
+    
     $matchedInfCount = 0
     $skippedInfCount = 0
     $copiedFileCount = 0
     $errorCount = 0
-
+    
     for ($i = 0; $i -lt $infFiles.Count; $i++) {
         $infFullName = $infFiles[$i].FullName
+        # Add long path prefix to handle long paths
+        $longInfFullName = "\\?\$infFullName"
         $infPath = Split-Path -Path $infFullName
-        $childPath = $infPath.Substring($pathLength)
+        $childPath = $infPath.Substring($pathLength).TrimStart('\')
         $targetPath = Join-Path -Path $Output -ChildPath $childPath
-
+    
+        # Log the INF files found
+        WriteLog "Examining PE driver INF ($($i + 1)/$($infFiles.Count)): $infFullName"
+    
         # Filter to known device classes
-        $classGuid = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "ClassGUID"
+        # Some INFs include trailing comments after the value (e.g. "{GUID} ; TODO: ..."), so normalize to the GUID token only.
+        $classGuidRaw = Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName "ClassGUID"
+        $classGuid = $classGuidRaw
+        if (-not [string]::IsNullOrWhiteSpace($classGuid)) {
+            # Remove any trailing ';' comment and trim whitespace
+            $classGuid = ($classGuid -split ';', 2)[0].Trim()
+
+            # Extract the GUID token if the value contains other text
+            if ($classGuid -match '\{[0-9A-Fa-f\-]{36}\}') {
+                $classGuid = $matches[0]
+            }
+        }
+
+        # WriteLog "ClassGUID: $classGuid"
         if ($classGuid -notin $filterGUIDs) {
+            # WriteLog "Skipping PE driver INF due to GUID: $infFullName"
             $skippedInfCount++
             continue
         }
-
+    
         # Avoid drivers that reference keywords from the exclusion list to keep the total size small
         if (((Get-Content -Path $infFullName) -match $exclusionList).Length -ne 0) {
             WriteLog "Skipping PE driver INF due to exclusion match: $infFullName"
             $skippedInfCount++
             continue
         }
-
+    
         $matchedInfCount++
-
+    
         # Log the INF being processed
-        $providerName = (Get-PrivateProfileString -FileName $infFullName -SectionName "Version" -KeyName "Provider").Trim("%")
+        $providerName = (Get-PrivateProfileString -FileName $longInfFullName -SectionName "Version" -KeyName "Provider").Trim("%")
         if ([string]::IsNullOrWhiteSpace($providerName)) {
             $providerName = "Unknown Provider"
         }
-
+    
         WriteLog "Processing PE driver INF: $infFullName"
         WriteLog "Provider: $providerName | ClassGUID: $classGuid"
         WriteLog "Target folder: $targetPath"
-
+    
         [void](New-Item -Path $targetPath -ItemType Directory -Force)
-
+    
         # Copy the INF itself
         try {
-            Copy-Item -Path $infFullName -Destination $targetPath -Force -ErrorAction Stop
+            Copy-Item -LiteralPath "$infFullName" -Destination "$targetPath" -Force -ErrorAction Stop
             $copiedFileCount++
             WriteLog "Copied: $infFullName -> $targetPath"
         }
@@ -2889,14 +3110,14 @@ function Copy-Drivers {
             $errorCount++
             WriteLog "ERROR: Failed to copy INF '$infFullName' to '$targetPath': $($_.Exception.Message)"
         }
-
+    
         # Copy the catalog file (if specified)
-        $CatalogFileName = Get-PrivateProfileString -FileName $infFullName -SectionName "version" -KeyName "Catalogfile"
+        $CatalogFileName = Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName "Catalogfile"
         if (-not [string]::IsNullOrWhiteSpace($CatalogFileName)) {
             $catalogSource = Join-Path -Path $infPath -ChildPath $CatalogFileName
             if (Test-Path -Path $catalogSource) {
                 try {
-                    Copy-Item -Path $catalogSource -Destination $targetPath -Force -ErrorAction Stop
+                    Copy-Item -LiteralPath "$catalogSource" -Destination "$targetPath" -Force -ErrorAction Stop
                     $copiedFileCount++
                     WriteLog "Copied: $catalogSource -> $targetPath"
                 }
@@ -2913,32 +3134,32 @@ function Copy-Drivers {
         else {
             WriteLog "WARNING: No CatalogFile entry found in INF: $infFullName"
         }
-
+    
         # Copy all files referenced by SourceDisksFiles sections
         foreach ($sectionName in $sourceDisksFileSections) {
-            $sourceDiskFiles = Get-PrivateProfileSection -FileName $infFullName -SectionName $sectionName
+            $sourceDiskFiles = Get-PrivateProfileSection -FileName $longInfFullName -SectionName $sectionName
             if ($sourceDiskFiles.Count -eq 0) {
                 continue
             }
-
+    
             WriteLog "Copying files from INF section [$sectionName] ($($sourceDiskFiles.Count) entries)"
-
+    
             foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
                 # Determine if the file lives in a subfolder relative to the INF path
                 $rawValue = $sourceDiskFiles[$sourceDiskFile]
                 $subdir = ""
-
+    
                 if (($null -ne $rawValue) -and ($rawValue.Contains(","))) {
                     $splitParts = $rawValue -split ","
                     if ($splitParts.Count -ge 2) {
                         $subdir = $splitParts[1]
                     }
                 }
-
+    
                 if ([string]::IsNullOrWhiteSpace($subdir)) {
                     $subdir = ""
                 }
-
+    
                 # Build source and destination paths
                 if ([string]::IsNullOrEmpty($subdir)) {
                     $sourceFilePath = Join-Path -Path $infPath -ChildPath $sourceDiskFile
@@ -2950,11 +3171,11 @@ function Copy-Drivers {
                     $destinationFolder = Join-Path -Path $targetPath -ChildPath $subdir
                     [void](New-Item -Path $destinationFolder -ItemType Directory -Force)
                 }
-
+    
                 # Copy with logging and error handling
                 if (Test-Path -Path $sourceFilePath) {
                     try {
-                        Copy-Item -Path $sourceFilePath -Destination $destinationFolder -Force -ErrorAction Stop
+                        Copy-Item -LiteralPath "$sourceFilePath" -Destination "$destinationFolder" -Force -ErrorAction Stop
                         $copiedFileCount++
                         WriteLog "Copied: $sourceFilePath -> $destinationFolder"
                     }
@@ -2970,7 +3191,7 @@ function Copy-Drivers {
             }
         }
     }
-
+    
     # Final summary
     WriteLog "PE driver copy summary: INF total=$($infFiles.Count) matched=$matchedInfCount skipped=$skippedInfCount filesCopied=$copiedFileCount errors=$errorCount"
 }
@@ -3079,7 +3300,10 @@ function New-PEMedia {
             
             WriteLog "Adding drivers to WinPE media"
             try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver $PEDriversFolder -Recurse -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-null
+                $WinPEMount = "$WinPEFFUPath\Mount"
+
+                # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
+                Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $PEDriversFolder
             }
             catch {
                 WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
@@ -3381,7 +3605,8 @@ function New-FFU {
         WriteLog 'Mounting complete'
         WriteLog 'Adding drivers - This will take a few minutes, please be patient'
         try {
-            Add-WindowsDriver -Path "$FFUDevelopmentPath\Mount" -Driver "$DriversFolder" -Recurse -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-null
+            # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
+            Invoke-DismDriverInjectionWithSubstLoop -ImagePath "$FFUDevelopmentPath\Mount" -DriverRoot "$DriversFolder"
         }
         catch {
             WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
