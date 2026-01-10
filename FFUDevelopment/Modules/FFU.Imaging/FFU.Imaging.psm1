@@ -579,6 +579,170 @@ function New-ScratchVhdx {
     $toReturn
 }
 
+function Get-DiskWithDiskpartFallback {
+    <#
+    .SYNOPSIS
+    Gets disk information using diskpart as fallback when Get-Disk fails
+
+    .DESCRIPTION
+    When the Storage WMI provider is broken (Get-Disk returns "Invalid property"),
+    this function uses diskpart to enumerate disks and returns PSCustomObjects
+    compatible with disk operations.
+
+    .PARAMETER ExpectedSizeBytes
+    Expected size of the disk to find (used to match the correct disk)
+
+    .PARAMETER VhdPath
+    Path to the VHD file (used to identify the attached disk via diskpart detail vdisk)
+
+    .OUTPUTS
+    PSCustomObject with Number, Size, BusType, PartitionStyle properties
+    #>
+    [CmdletBinding()]
+    param(
+        [uint64]$ExpectedSizeBytes,
+        [string]$VhdPath
+    )
+
+    WriteLog "Using diskpart fallback for disk enumeration (Get-Disk unavailable)..."
+
+    # Method 1: If we have a VhdPath, use diskpart to get details about the attached vdisk
+    if ($VhdPath -and (Test-Path -Path $VhdPath)) {
+        WriteLog "  Querying attached vdisk: $VhdPath"
+
+        $detailScript = @"
+select vdisk file="$VhdPath"
+detail vdisk
+"@
+        $detailScriptPath = Join-Path $env:TEMP "diskpart_detail_$(Get-Random).txt"
+        $detailScript | Out-File -FilePath $detailScriptPath -Encoding ASCII
+
+        try {
+            $detailOutput = & diskpart /s $detailScriptPath 2>&1 | Out-String
+            Remove-Item -Path $detailScriptPath -Force -ErrorAction SilentlyContinue
+
+            WriteLog "  diskpart detail output:"
+            $detailOutput -split "`n" | ForEach-Object { WriteLog "    $_" }
+
+            # Parse "Disk ###" from detail output
+            if ($detailOutput -match "Disk\s*:\s*Disk\s+(\d+)") {
+                $diskNumber = [int]$Matches[1]
+                WriteLog "  Found attached VHD at Disk $diskNumber"
+
+                # Now get disk details using diskpart list disk
+                $listScript = "list disk"
+                $listScriptPath = Join-Path $env:TEMP "diskpart_list_$(Get-Random).txt"
+                $listScript | Out-File -FilePath $listScriptPath -Encoding ASCII
+
+                $listOutput = & diskpart /s $listScriptPath 2>&1 | Out-String
+                Remove-Item -Path $listScriptPath -Force -ErrorAction SilentlyContinue
+
+                # Parse disk info from list output
+                # Format: "  Disk 2    Online       30 GB  1024 KB        *"
+                $diskLines = $listOutput -split "`n" | Where-Object { $_ -match "^\s*Disk\s+$diskNumber\s+" }
+
+                if ($diskLines) {
+                    $diskLine = $diskLines | Select-Object -First 1
+                    WriteLog "  Disk line: $diskLine"
+
+                    # Extract size (e.g., "30 GB" or "128 GB")
+                    $sizeGB = 0
+                    if ($diskLine -match "(\d+)\s*(GB|MB)") {
+                        $sizeValue = [int]$Matches[1]
+                        $sizeUnit = $Matches[2]
+                        if ($sizeUnit -eq 'GB') {
+                            $sizeGB = $sizeValue
+                        } else {
+                            $sizeGB = $sizeValue / 1024
+                        }
+                    }
+
+                    # Return disk object
+                    return [PSCustomObject]@{
+                        Number = $diskNumber
+                        Size = [uint64]($sizeGB * 1GB)
+                        BusType = 'File Backed Virtual'
+                        PartitionStyle = 'RAW'
+                        FriendlyName = "VHD Disk $diskNumber"
+                        OperationalStatus = 'Online'
+                    }
+                }
+            }
+        }
+        catch {
+            WriteLog "  WARNING: diskpart detail failed: $($_.Exception.Message)"
+        }
+    }
+
+    # Method 2: Parse list disk output and find by size
+    WriteLog "  Parsing diskpart list disk output..."
+
+    $listScript = "list disk"
+    $listScriptPath = Join-Path $env:TEMP "diskpart_list_$(Get-Random).txt"
+    $listScript | Out-File -FilePath $listScriptPath -Encoding ASCII
+
+    try {
+        $listOutput = & diskpart /s $listScriptPath 2>&1 | Out-String
+        Remove-Item -Path $listScriptPath -Force -ErrorAction SilentlyContinue
+
+        WriteLog "  diskpart list disk output:"
+        $listOutput -split "`n" | ForEach-Object { WriteLog "    $_" }
+
+        # Parse all disk lines and find matches
+        # Format: "  Disk 2    Online       30 GB  1024 KB        *"
+        $disks = @()
+        $listOutput -split "`n" | ForEach-Object {
+            if ($_ -match "^\s*Disk\s+(\d+)\s+\S+\s+(\d+)\s*(GB|MB)") {
+                $diskNum = [int]$Matches[1]
+                $sizeValue = [int]$Matches[2]
+                $sizeUnit = $Matches[3]
+
+                $sizeBytes = if ($sizeUnit -eq 'GB') {
+                    [uint64]($sizeValue * 1GB)
+                } else {
+                    [uint64]($sizeValue * 1MB)
+                }
+
+                $disks += [PSCustomObject]@{
+                    Number = $diskNum
+                    Size = $sizeBytes
+                    BusType = 'Unknown'  # Can't determine from list disk
+                    PartitionStyle = 'Unknown'
+                    FriendlyName = "Disk $diskNum"
+                    OperationalStatus = 'Online'
+                }
+            }
+        }
+
+        WriteLog "  Found $($disks.Count) disks via diskpart"
+
+        # If we have an expected size, find the matching disk
+        if ($ExpectedSizeBytes -gt 0) {
+            $expectedGB = [math]::Round($ExpectedSizeBytes / 1GB)
+            WriteLog "  Looking for disk with size ~$expectedGB GB"
+
+            foreach ($disk in $disks) {
+                $diskGB = [math]::Round($disk.Size / 1GB)
+                WriteLog "    Disk $($disk.Number): $diskGB GB"
+
+                # Match within 1GB tolerance (for overhead differences)
+                if ([math]::Abs($disk.Size - $ExpectedSizeBytes) -lt 2GB) {
+                    WriteLog "  Found matching disk: Disk $($disk.Number)"
+                    $disk.BusType = 'File Backed Virtual'
+                    $disk.PartitionStyle = 'RAW'
+                    return $disk
+                }
+            }
+        }
+
+        return $null
+    }
+    catch {
+        WriteLog "  ERROR: diskpart list failed: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 function New-ScratchVhd {
     <#
     .SYNOPSIS
@@ -743,29 +907,55 @@ attach vdisk
         $disk = $null
         $retryCount = 0
         $maxRetries = 5
+        $usesDiskpartFallback = $false
+
+        # First, test if Get-Disk is working on this system
+        $getDiskWorks = $true
+        try {
+            $testDisks = Get-Disk -ErrorAction Stop
+            WriteLog "  Get-Disk is functional (found $($testDisks.Count) disk(s))"
+        }
+        catch {
+            if ($_.Exception.Message -match 'Invalid property') {
+                WriteLog "  WARNING: Get-Disk failed with 'Invalid property' (WMI/Storage issue)"
+                WriteLog "  Using diskpart fallback for disk enumeration"
+                $getDiskWorks = $false
+                $usesDiskpartFallback = $true
+            }
+            else {
+                WriteLog "  WARNING: Get-Disk failed: $($_.Exception.Message)"
+                $getDiskWorks = $false
+                $usesDiskpartFallback = $true
+            }
+        }
 
         while (-not $disk -and $retryCount -lt $maxRetries) {
             $retryCount++
             WriteLog "  Disk enumeration attempt $retryCount of $maxRetries..."
 
-            # Method 1: Try to find by Location property
-            $disk = Get-Disk | Where-Object {
-                $_.Location -eq $VhdPath -or
-                ($_.BusType -eq 'File Backed Virtual' -and $_.PartitionStyle -eq 'RAW')
-            } | Select-Object -First 1
+            if ($getDiskWorks) {
+                # Method 1: Try Get-Disk to find newly attached virtual disk
+                $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object {
+                    $_.BusType -eq 'File Backed Virtual' -and $_.PartitionStyle -eq 'RAW'
+                } | Select-Object -First 1
 
-            if (-not $disk) {
-                # Method 2: Check disk paths
-                $allDisks = Get-Disk | Where-Object { $_.BusType -eq 'File Backed Virtual' }
-                foreach ($d in $allDisks) {
-                    WriteLog "    Checking disk $($d.Number): BusType=$($d.BusType), Size=$([math]::Round($d.Size / 1GB, 2))GB, PartitionStyle=$($d.PartitionStyle)"
-                    # Match by expected size (within 1GB tolerance for fixed VHD overhead)
-                    if ([math]::Abs($d.Size - $SizeBytes) -lt 1GB) {
-                        $disk = $d
-                        WriteLog "    Found matching disk by size: Disk $($d.Number)"
-                        break
+                if (-not $disk) {
+                    # Method 2: Check disk paths
+                    $allDisks = Get-Disk -ErrorAction SilentlyContinue | Where-Object { $_.BusType -eq 'File Backed Virtual' }
+                    foreach ($d in $allDisks) {
+                        WriteLog "    Checking disk $($d.Number): BusType=$($d.BusType), Size=$([math]::Round($d.Size / 1GB, 2))GB, PartitionStyle=$($d.PartitionStyle)"
+                        # Match by expected size (within 1GB tolerance for fixed VHD overhead)
+                        if ([math]::Abs($d.Size - $SizeBytes) -lt 1GB) {
+                            $disk = $d
+                            WriteLog "    Found matching disk by size: Disk $($d.Number)"
+                            break
+                        }
                     }
                 }
+            }
+            else {
+                # Fallback: Use diskpart to find the disk
+                $disk = Get-DiskWithDiskpartFallback -VhdPath $VhdPath -ExpectedSizeBytes $SizeBytes
             }
 
             if (-not $disk) {
@@ -776,9 +966,11 @@ attach vdisk
 
         if (-not $disk) {
             WriteLog "ERROR: Could not find mounted VHD after $maxRetries attempts"
-            WriteLog "All disks:"
-            Get-Disk | ForEach-Object {
-                WriteLog "  Disk $($_.Number): BusType=$($_.BusType), Size=$([math]::Round($_.Size / 1GB, 2))GB, Location=$($_.Location)"
+            if ($getDiskWorks) {
+                WriteLog "All disks:"
+                Get-Disk -ErrorAction SilentlyContinue | ForEach-Object {
+                    WriteLog "  Disk $($_.Number): BusType=$($_.BusType), Size=$([math]::Round($_.Size / 1GB, 2))GB, FriendlyName=$($_.FriendlyName)"
+                }
             }
             throw "Could not find mounted VHD disk"
         }
@@ -791,9 +983,37 @@ attach vdisk
         # Step 4: Initialize disk with GPT
         WriteLog "Step 4/5: Initializing disk with GPT..."
 
-        if ($disk.PartitionStyle -eq 'RAW') {
-            $disk = $disk | Initialize-Disk -PartitionStyle GPT -PassThru
-            WriteLog "Disk initialized with GPT partition style"
+        if ($disk.PartitionStyle -eq 'RAW' -or $disk.PartitionStyle -eq 'Unknown') {
+            if ($usesDiskpartFallback) {
+                # Use diskpart to initialize when storage cmdlets are unavailable
+                WriteLog "  Using diskpart to initialize disk (fallback mode)..."
+                $initScript = @"
+select disk $($disk.Number)
+clean
+convert gpt
+"@
+                $initScriptPath = Join-Path $env:TEMP "diskpart_init_$(Get-Random).txt"
+                $initScript | Out-File -FilePath $initScriptPath -Encoding ASCII
+
+                $initOutput = & diskpart /s $initScriptPath 2>&1 | Out-String
+                Remove-Item -Path $initScriptPath -Force -ErrorAction SilentlyContinue
+
+                WriteLog "  diskpart init output:"
+                $initOutput -split "`n" | ForEach-Object { WriteLog "    $_" }
+
+                if ($initOutput -match "successfully") {
+                    WriteLog "Disk initialized with GPT partition style (via diskpart)"
+                    $disk.PartitionStyle = 'GPT'
+                }
+                else {
+                    WriteLog "WARNING: diskpart initialization may have issues"
+                }
+            }
+            else {
+                # Use standard cmdlet
+                $disk = Initialize-Disk -Number $disk.Number -PartitionStyle GPT -PassThru
+                WriteLog "Disk initialized with GPT partition style"
+            }
         }
         else {
             WriteLog "Disk already initialized (PartitionStyle: $($disk.PartitionStyle))"
@@ -802,27 +1022,45 @@ attach vdisk
         # Step 5: Remove auto-created partition
         WriteLog "Step 5/5: Removing auto-created partition..."
 
-        $partitions = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue
-        if ($partitions) {
-            WriteLog "Found $($partitions.Count) partition(s) to remove"
-            foreach ($partition in $partitions) {
-                WriteLog "  Removing partition $($partition.PartitionNumber) (Type: $($partition.Type), Size: $([math]::Round($partition.Size / 1MB, 2)) MB)"
-                Remove-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -Confirm:$false
-            }
+        if ($usesDiskpartFallback) {
+            # Use diskpart to clean partitions since we already did "clean" above
+            WriteLog "  Disk already cleaned via diskpart (no partitions to remove)"
         }
         else {
-            WriteLog "No partitions to remove (clean disk)"
+            $partitions = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue
+            if ($partitions) {
+                WriteLog "Found $($partitions.Count) partition(s) to remove"
+                foreach ($partition in $partitions) {
+                    WriteLog "  Removing partition $($partition.PartitionNumber) (Type: $($partition.Type), Size: $([math]::Round($partition.Size / 1MB, 2)) MB)"
+                    Remove-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -Confirm:$false
+                }
+            }
+            else {
+                WriteLog "No partitions to remove (clean disk)"
+            }
         }
 
         # Refresh disk object after partition removal
-        $disk = Get-Disk -Number $disk.Number
+        if ($usesDiskpartFallback) {
+            # When using fallback, update our PSCustomObject
+            $disk.PartitionStyle = 'GPT'
+            WriteLog "Disk object updated (fallback mode)"
+        }
+        else {
+            $disk = Get-Disk -Number $disk.Number
+        }
 
         WriteLog "=========================================="
         WriteLog "New-ScratchVhd: VHD creation complete"
         WriteLog "  Disk Number: $($disk.Number)"
         WriteLog "  Size: $([math]::Round($disk.Size / 1GB, 2)) GB"
         WriteLog "  PartitionStyle: $($disk.PartitionStyle)"
-        WriteLog "  Partitions: $((@(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)).Count)"
+        if (-not $usesDiskpartFallback) {
+            WriteLog "  Partitions: $((@(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)).Count)"
+        }
+        else {
+            WriteLog "  Partitions: 0 (via diskpart clean)"
+        }
         WriteLog "=========================================="
 
         $disk
@@ -934,13 +1172,17 @@ detach vdisk
 function New-SystemPartition {
     param(
         [Parameter(Mandatory = $true)]
-        [ciminstance]$VhdxDisk,
+        $VhdxDisk,  # Accept any object type (CimInstance or PSCustomObject from diskpart fallback)
         [uint64]$SystemPartitionSize = 260MB
     )
 
     WriteLog "Creating System partition..."
 
-    $sysPartition = $VhdxDisk | New-Partition -DriveLetter 'S' -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden
+    # Get disk number from object (works with both CimInstance and PSCustomObject)
+    $diskNumber = if ($VhdxDisk.DiskNumber) { $VhdxDisk.DiskNumber } else { $VhdxDisk.Number }
+    WriteLog "  Using disk number: $diskNumber"
+
+    $sysPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'S' -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden
     $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System"
 
     WriteLog 'Done.'
@@ -950,13 +1192,16 @@ function New-SystemPartition {
 function New-MSRPartition {
     param(
         [Parameter(Mandatory = $true)]
-        [ciminstance]$VhdxDisk
+        $VhdxDisk  # Accept any object type (CimInstance or PSCustomObject from diskpart fallback)
     )
 
     WriteLog "Creating MSR partition..."
 
-    # $toReturn = $VhdxDisk | New-Partition -AssignDriveLetter -Size 16MB -GptType "{e3c9e316-0b5c-4db8-817d-f92df00215ae}" -IsHidden | Out-Null
-    $toReturn = $VhdxDisk | New-Partition -Size 16MB -GptType "{e3c9e316-0b5c-4db8-817d-f92df00215ae}" -IsHidden | Out-Null
+    # Get disk number from object (works with both CimInstance and PSCustomObject)
+    $diskNumber = if ($VhdxDisk.DiskNumber) { $VhdxDisk.DiskNumber } else { $VhdxDisk.Number }
+    WriteLog "  Using disk number: $diskNumber"
+
+    $toReturn = New-Partition -DiskNumber $diskNumber -Size 16MB -GptType "{e3c9e316-0b5c-4db8-817d-f92df00215ae}" -IsHidden | Out-Null
 
     WriteLog "Done."
 
@@ -1011,7 +1256,7 @@ function New-OSPartition {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ciminstance]$VhdxDisk,
+        $VhdxDisk,  # Accept any object type (CimInstance or PSCustomObject from diskpart fallback)
 
         [Parameter(Mandatory = $true)]
         [string]$WimPath,
@@ -1031,11 +1276,15 @@ function New-OSPartition {
 
     WriteLog "Creating OS partition..."
 
+    # Get disk number from object (works with both CimInstance and PSCustomObject)
+    $diskNumber = if ($VhdxDisk.DiskNumber) { $VhdxDisk.DiskNumber } else { $VhdxDisk.Number }
+    WriteLog "  Using disk number: $diskNumber"
+
     if ($OSPartitionSize -gt 0) {
-        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        $osPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'W' -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
     }
     else {
-        $osPartition = $vhdxDisk | New-Partition -DriveLetter 'W' -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        $osPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'W' -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
     }
 
     $osPartition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel "Windows"
@@ -1081,14 +1330,18 @@ function New-OSPartition {
 function New-RecoveryPartition {
     param(
         [Parameter(Mandatory = $true)]
-        [ciminstance]$VhdxDisk,
+        $VhdxDisk,  # Accept any object type (CimInstance or PSCustomObject from diskpart fallback)
         [Parameter(Mandatory = $true)]
         $OsPartition,
         [uint64]$RecoveryPartitionSize = 0,
-        [ciminstance]$DataPartition
+        $DataPartition  # Accept any object type
     )
 
     WriteLog "Creating empty Recovery partition (to be filled on first boot automatically)..."
+
+    # Get disk number from object (works with both CimInstance and PSCustomObject)
+    $diskNumber = if ($VhdxDisk.DiskNumber) { $VhdxDisk.DiskNumber } else { $VhdxDisk.Number }
+    WriteLog "  Using disk number: $diskNumber"
 
     $calculatedRecoverySize = 0
     $recoveryPartition = $null
@@ -1119,7 +1372,7 @@ function New-RecoveryPartition {
                 WriteLog "OS partition shrunk by $calculatedRecoverySize bytes for Recovery partition."
             }
 
-            $recoveryPartition = $VhdxDisk | New-Partition -DriveLetter 'R' -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}" `
+            $recoveryPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'R' -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}" `
             | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery'
 
             WriteLog "Done. Recovery partition at drive $($recoveryPartition.DriveLetter):"

@@ -6,7 +6,7 @@
     RootModule = 'FFU.Hypervisor.psm1'
 
     # Version number of this module
-    ModuleVersion = '1.1.15'
+    ModuleVersion = '1.1.16'
 
     # ID used to uniquely identify this module
     GUID = 'a8e2c3f1-5d7b-4e9a-bc12-3f4d5e6a7b8c'
@@ -78,6 +78,12 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.1.16 (2026-01-10)
+- FIX: Get-VHDMountedDriveLetter and Set-VHDDriveLetter now have diskpart fallback
+- Systems with broken WMI/Storage namespace (Get-Disk "Invalid property" error) now work
+- Fallback uses diskpart "detail vdisk" and "list volume" commands to find disk info
+- Enables VHD operations on Windows 10/11 systems with corrupted Storage namespace
+
 v1.1.15 (2026-01-09)
 - FIX: vmrun command syntax for stop - option (hard/soft) must come AFTER VMX path
 - Corrected: "vmrun stop 'path.vmx' hard" instead of "vmrun stop hard 'path.vmx'"

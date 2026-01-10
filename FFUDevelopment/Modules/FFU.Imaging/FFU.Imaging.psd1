@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.2'
+    ModuleVersion = '1.0.4'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -79,6 +79,18 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.4 - Full diskpart fallback for all disk operations
+- Updated partition functions to accept both CimInstance and PSCustomObject (from diskpart fallback)
+- New-SystemPartition, New-MSRPartition, New-OSPartition, New-RecoveryPartition now use -DiskNumber parameter
+- Removed [ciminstance] type constraint to enable flexible disk object handling
+- Full build process works on systems where Get-Disk returns "Invalid property" (WMI corruption)
+
+v1.0.3 - Diskpart fallback for disk enumeration
+- Added Get-DiskWithDiskpartFallback function for systems where Get-Disk fails with "Invalid property" (WMI/Storage issues)
+- New-ScratchVhd now detects Get-Disk availability and falls back to diskpart for disk enumeration
+- Full diskpart-based initialization when Storage cmdlets are unavailable
+- Supports Windows 10/11 systems with corrupted WMI Storage namespace
+
 v1.0.2 - VMware VHD support
 - Added New-ScratchVhd function for diskpart-based VHD creation (no Hyper-V dependency)
 - Added Dismount-ScratchVhd function for diskpart-based VHD dismount

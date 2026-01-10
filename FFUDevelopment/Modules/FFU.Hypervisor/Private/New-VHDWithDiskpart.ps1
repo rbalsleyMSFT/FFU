@@ -273,35 +273,90 @@ function Get-VHDMountedDriveLetter {
     )
 
     try {
-        # Use Get-Disk to find mounted VHDs
-        $disk = Get-Disk | Where-Object {
-            $_.Location -eq $Path -or
-            $_.FriendlyName -like "*$([System.IO.Path]::GetFileName($Path))*"
-        } | Select-Object -First 1
+        $vhdFileName = [System.IO.Path]::GetFileName($Path)
 
-        if ($disk) {
-            $partition = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue |
-                Where-Object { $_.DriveLetter } |
-                Select-Object -First 1
-
-            if ($partition -and $partition.DriveLetter) {
-                return "$($partition.DriveLetter):"
+        # First, test if Get-Disk is working
+        $getDiskWorks = $true
+        try {
+            $null = Get-Disk -ErrorAction Stop | Select-Object -First 1
+        }
+        catch {
+            if ($_.Exception.Message -match 'Invalid property') {
+                WriteLog "WARNING: Get-Disk unavailable (WMI/Storage issue), using diskpart fallback"
+                $getDiskWorks = $false
             }
         }
 
-        # Fallback: check storage management
-        $vdisk = Get-Disk -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Path }
-        if ($vdisk) {
-            $part = $vdisk | Get-Partition -ErrorAction SilentlyContinue |
-                Where-Object { $_.DriveLetter }
-            if ($part) {
-                return "$($part.DriveLetter):"
+        $disk = $null
+        if ($getDiskWorks) {
+            # Find virtual disks (File Backed Virtual bus type)
+            $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object {
+                $_.BusType -eq 'File Backed Virtual' -and
+                $_.FriendlyName -like "*$vhdFileName*"
+            } | Select-Object -First 1
+
+            # If not found by filename, try finding any recently attached virtual disk
+            if (-not $disk) {
+                $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object {
+                    $_.BusType -eq 'File Backed Virtual' -and
+                    $_.OperationalStatus -eq 'Online'
+                } | Sort-Object Number -Descending | Select-Object -First 1
+            }
+
+            if ($disk) {
+                $partition = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DriveLetter } |
+                    Select-Object -First 1
+
+                if ($partition -and $partition.DriveLetter) {
+                    return "$($partition.DriveLetter):"
+                }
+            }
+        }
+        else {
+            # Fallback: Use diskpart to get vdisk detail
+            if (Test-Path -Path $Path) {
+                $detailScript = @"
+select vdisk file="$Path"
+detail vdisk
+"@
+                $detailScriptPath = Join-Path $env:TEMP "diskpart_driveLetter_$(Get-Random).txt"
+                $detailScript | Out-File -FilePath $detailScriptPath -Encoding ASCII
+
+                $detailOutput = & diskpart /s $detailScriptPath 2>&1 | Out-String
+                Remove-Item -Path $detailScriptPath -Force -ErrorAction SilentlyContinue
+
+                # Look for "Associated Disk" line to get disk number
+                if ($detailOutput -match "Disk\s*:\s*Disk\s+(\d+)") {
+                    $diskNumber = [int]$Matches[1]
+                    WriteLog "Found disk $diskNumber for VHD via diskpart"
+
+                    # Use diskpart to list volumes and find matching volume
+                    $volScript = @"
+select disk $diskNumber
+list volume
+"@
+                    $volScriptPath = Join-Path $env:TEMP "diskpart_vol_$(Get-Random).txt"
+                    $volScript | Out-File -FilePath $volScriptPath -Encoding ASCII
+
+                    $volOutput = & diskpart /s $volScriptPath 2>&1 | Out-String
+                    Remove-Item -Path $volScriptPath -Force -ErrorAction SilentlyContinue
+
+                    # Parse volume output for drive letter
+                    # Format: "  Volume 3     E   FFUDisk    NTFS   Partition    29 GB  Healthy"
+                    if ($volOutput -match "Volume\s+\d+\s+([A-Z])\s+") {
+                        $driveLetter = $Matches[1]
+                        WriteLog "Found drive letter $driveLetter via diskpart"
+                        return "$driveLetter`:"
+                    }
+                }
             }
         }
 
         return $null
     }
     catch {
+        WriteLog "WARNING: Error finding VHD drive letter: $($_.Exception.Message)"
         return $null
     }
 }
@@ -319,43 +374,100 @@ function Set-VHDDriveLetter {
     )
 
     try {
-        # Find the disk
-        $disk = Get-Disk | Where-Object {
-            $_.Location -eq $Path -or
-            $_.BusType -eq 'File Backed Virtual'
-        } | Select-Object -First 1
+        $vhdFileName = [System.IO.Path]::GetFileName($Path)
 
-        if (-not $disk) {
-            WriteLog "WARNING: Could not find disk for VHD: $Path"
-            return $null
+        # First, test if Get-Disk is working
+        $getDiskWorks = $true
+        try {
+            $null = Get-Disk -ErrorAction Stop | Select-Object -First 1
+        }
+        catch {
+            if ($_.Exception.Message -match 'Invalid property') {
+                WriteLog "WARNING: Get-Disk unavailable (WMI/Storage issue), using diskpart fallback"
+                $getDiskWorks = $false
+            }
         }
 
-        # Find a partition without a drive letter
-        $partition = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue |
-            Where-Object { $_.Type -notin @('Reserved', 'Unknown') } |
-            Select-Object -First 1
+        if ($getDiskWorks) {
+            # Find the disk by filename or by virtual disk type
+            $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object {
+                $_.BusType -eq 'File Backed Virtual' -and
+                ($_.FriendlyName -like "*$vhdFileName*" -or $_.OperationalStatus -eq 'Online')
+            } | Select-Object -First 1
 
-        if (-not $partition) {
-            WriteLog "WARNING: No suitable partition found on disk"
-            return $null
+            if (-not $disk) {
+                WriteLog "WARNING: Could not find disk for VHD: $Path"
+                return $null
+            }
+
+            # Find a partition without a drive letter
+            $partition = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue |
+                Where-Object { $_.Type -notin @('Reserved', 'Unknown') } |
+                Select-Object -First 1
+
+            if (-not $partition) {
+                WriteLog "WARNING: No suitable partition found on disk"
+                return $null
+            }
+
+            # Find available drive letter
+            $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name
+            $availableLetter = 68..90 | ForEach-Object { [char]$_ } |
+                Where-Object { $_ -notin $usedLetters } |
+                Select-Object -First 1
+
+            if (-not $availableLetter) {
+                WriteLog "WARNING: No available drive letters"
+                return $null
+            }
+
+            # Assign drive letter
+            Set-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber `
+                -NewDriveLetter $availableLetter -ErrorAction Stop
+
+            return "$availableLetter`:"
         }
+        else {
+            # Fallback: Use diskpart to assign drive letter
+            if (-not (Test-Path -Path $Path)) {
+                WriteLog "WARNING: VHD file not found: $Path"
+                return $null
+            }
 
-        # Find available drive letter
-        $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name
-        $availableLetter = 68..90 | ForEach-Object { [char]$_ } |
-            Where-Object { $_ -notin $usedLetters } |
-            Select-Object -First 1
+            # Find available drive letter
+            $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name
+            $availableLetter = 68..90 | ForEach-Object { [char]$_ } |
+                Where-Object { $_ -notin $usedLetters } |
+                Select-Object -First 1
 
-        if (-not $availableLetter) {
-            WriteLog "WARNING: No available drive letters"
-            return $null
+            if (-not $availableLetter) {
+                WriteLog "WARNING: No available drive letters"
+                return $null
+            }
+
+            # Use diskpart to assign drive letter
+            $assignScript = @"
+select vdisk file="$Path"
+select partition 1
+assign letter=$availableLetter
+"@
+            $assignScriptPath = Join-Path $env:TEMP "diskpart_assign_$(Get-Random).txt"
+            $assignScript | Out-File -FilePath $assignScriptPath -Encoding ASCII
+
+            $assignOutput = & diskpart /s $assignScriptPath 2>&1 | Out-String
+            Remove-Item -Path $assignScriptPath -Force -ErrorAction SilentlyContinue
+
+            WriteLog "diskpart assign output: $assignOutput"
+
+            if ($assignOutput -match "successfully assigned") {
+                WriteLog "Assigned drive letter $availableLetter via diskpart"
+                return "$availableLetter`:"
+            }
+            else {
+                WriteLog "WARNING: diskpart assign may have failed"
+                return $null
+            }
         }
-
-        # Assign drive letter
-        Set-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber `
-            -NewDriveLetter $availableLetter -ErrorAction Stop
-
-        return "$availableLetter`:"
     }
     catch {
         WriteLog "WARNING: Failed to assign drive letter: $($_.Exception.Message)"
