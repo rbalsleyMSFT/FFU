@@ -792,39 +792,44 @@ function Get-Apps {
         if ($overrideMap.Count -gt 0) {
             $winGetWin32Path = Join-Path -Path $OrchestrationPath -ChildPath 'WinGetWin32Apps.json'
             if (Test-Path -Path $winGetWin32Path) {
-                [array]$appsDataUpdated = Get-Content -Path $winGetWin32Path -Raw | ConvertFrom-Json
-                $changed = $false
-                foreach ($entry in $appsDataUpdated) {
-                    if ($overrideMap.ContainsKey($entry.Name)) {
-                        $ov = $overrideMap[$entry.Name]
-                        if ($ov.CommandLine) {
-                            WriteLog "Override (AppList.json) CommandLine for $($entry.Name)"
-                            $entry.CommandLine = $ov.CommandLine
-                            $changed = $true
-                        }
-                        if ($ov.Arguments) {
-                            WriteLog "Override (AppList.json) Arguments for $($entry.Name)"
-                            $entry.Arguments = $ov.Arguments
-                            $changed = $true
-                        }
-                        if ($ov.ContainsKey('AdditionalExitCodes') -and $null -ne $ov.AdditionalExitCodes) {
-                            WriteLog "Override (AppList.json) AdditionalExitCodes for $($entry.Name)"
-                            $entry | Add-Member -NotePropertyName AdditionalExitCodes -NotePropertyValue $ov.AdditionalExitCodes -Force
-                            $changed = $true
-                        }
-                        if ($ov.ContainsKey('IgnoreNonZeroExitCodes') -and $null -ne $ov.IgnoreNonZeroExitCodes) {
-                            WriteLog "Override (AppList.json) IgnoreNonZeroExitCodes for $($entry.Name)"
-                            $entry | Add-Member -NotePropertyName IgnoreNonZeroExitCodes -NotePropertyValue ([bool]$ov.IgnoreNonZeroExitCodes) -Force
-                            $changed = $true
+                # Lock WinGetWin32Apps.json during override writes to avoid any unexpected concurrent access
+                $mutexName = Get-WinGetWin32AppsJsonMutexName -WinGetWin32AppsJsonPath $winGetWin32Path
+                Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
+                    [array]$appsDataUpdated = Get-Content -Path $winGetWin32Path -Raw | ConvertFrom-Json
+                    $changed = $false
+                    foreach ($entry in $appsDataUpdated) {
+                        if ($overrideMap.ContainsKey($entry.Name)) {
+                            $ov = $overrideMap[$entry.Name]
+                            if ($ov.CommandLine) {
+                                WriteLog "Override (AppList.json) CommandLine for $($entry.Name)"
+                                $entry.CommandLine = $ov.CommandLine
+                                $changed = $true
+                            }
+                            if ($ov.Arguments) {
+                                WriteLog "Override (AppList.json) Arguments for $($entry.Name)"
+                                $entry.Arguments = $ov.Arguments
+                                $changed = $true
+                            }
+                            if ($ov.ContainsKey('AdditionalExitCodes') -and $null -ne $ov.AdditionalExitCodes) {
+                                WriteLog "Override (AppList.json) AdditionalExitCodes for $($entry.Name)"
+                                $entry | Add-Member -NotePropertyName AdditionalExitCodes -NotePropertyValue $ov.AdditionalExitCodes -Force
+                                $changed = $true
+                            }
+                            if ($ov.ContainsKey('IgnoreNonZeroExitCodes') -and $null -ne $ov.IgnoreNonZeroExitCodes) {
+                                WriteLog "Override (AppList.json) IgnoreNonZeroExitCodes for $($entry.Name)"
+                                $entry | Add-Member -NotePropertyName IgnoreNonZeroExitCodes -NotePropertyValue ([bool]$ov.IgnoreNonZeroExitCodes) -Force
+                                $changed = $true
+                            }
                         }
                     }
-                }
-                if ($changed) {
-                    $appsDataUpdated | ConvertTo-Json -Depth 10 | Set-Content -Path $winGetWin32Path
-                    WriteLog "Applied AppList.json command overrides to WinGetWin32Apps.json"
-                }
-                else {
-                    WriteLog "No matching apps required command overrides."
+                    if ($changed) {
+                        $jsonText = $appsDataUpdated | ConvertTo-Json -Depth 10
+                        Set-FileContentAtomic -Path $winGetWin32Path -Content $jsonText
+                        WriteLog "Applied AppList.json command overrides to WinGetWin32Apps.json"
+                    }
+                    else {
+                        WriteLog "No matching apps required command overrides."
+                    }
                 }
             }
             else {
@@ -909,6 +914,96 @@ function Confirm-WinGetInstallation {
         WriteLog "Installed WinGet version: $wingetVersion"
     }
 }
+# --------------------------------------------------------------------------
+# SECTION: WinGetWin32Apps.json File Locking Helpers
+# --------------------------------------------------------------------------
+function Get-WinGetWin32AppsJsonMutexName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WinGetWin32AppsJsonPath
+    )
+
+    # Create a stable, safe mutex name based on the full file path
+    # This prevents cross-runspace/cross-process corruption when multiple apps write the same JSON.
+    $normalizedPath = $WinGetWin32AppsJsonPath.ToLowerInvariant()
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($normalizedPath)
+        $hashBytes = $sha256.ComputeHash($bytes)
+    }
+    finally {
+        $sha256.Dispose()
+    }
+
+    $hash = -join ($hashBytes | ForEach-Object { $_.ToString('x2') })
+    return "WinGetWin32AppsJsonLock_$hash"
+}
+
+function Invoke-WithNamedMutex {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MutexName,
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$ScriptBlock,
+        [int]$TimeoutSeconds = 60
+    )
+
+    # Use a named mutex so all parallel runspaces serialize file access
+    $mutex = New-Object System.Threading.Mutex($false, $MutexName)
+    $lockTaken = $false
+
+    try {
+        $lockTaken = $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
+        if (-not $lockTaken) {
+            throw "Timed out waiting for mutex '$MutexName' after $TimeoutSeconds seconds."
+        }
+
+        & $ScriptBlock
+    }
+    finally {
+        if ($lockTaken) {
+            try {
+                $mutex.ReleaseMutex() | Out-Null
+            }
+            catch {
+                # Best-effort release; ignore release failures
+            }
+        }
+        $mutex.Dispose()
+    }
+}
+
+function Set-FileContentAtomic {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Content
+    )
+
+    # Write to a unique temp file in the same directory and then rename into place
+    # to reduce the chance of partial writes.
+    $parentPath = Split-Path -Path $Path -Parent
+    if (-not (Test-Path -Path $parentPath -PathType Container)) {
+        New-Item -Path $parentPath -ItemType Directory -Force | Out-Null
+    }
+
+    $tempPath = "$Path.$([guid]::NewGuid().ToString('N')).tmp"
+    Set-Content -Path $tempPath -Value $Content -Encoding UTF8
+
+    try {
+        # PowerShell 7+ (.NET) supports overwrite via File.Move overload
+        [System.IO.File]::Move($tempPath, $Path, $true)
+    }
+    catch {
+        # Fallback for environments where overwrite overload is unavailable
+        Move-Item -Path $tempPath -Destination $Path -Force
+    }
+}
+
 function Add-Win32SilentInstallCommand {
     param (
         [string]$AppFolder,
@@ -1061,30 +1156,50 @@ function Add-Win32SilentInstallCommand {
     # Path to the JSON file
     $wingetWin32AppsJson = "$OrchestrationPath\WinGetWin32Apps.json"
 
-    # Initialize or load existing JSON data
-    if (Test-Path -Path $wingetWin32AppsJson) {
-        [array]$appsData = Get-Content -Path $wingetWin32AppsJson -Raw | ConvertFrom-Json
-
-        # Get highest priority value
-        if ($appsData.Count -gt 0) {
-            $highestPriority = $appsData.Count + 1
-        }
-    }
-    else {
+    # Serialize access to WinGetWin32Apps.json to prevent corruption when multiple apps are processed in parallel
+    $mutexName = Get-WinGetWin32AppsJsonMutexName -WinGetWin32AppsJsonPath $wingetWin32AppsJson
+    Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
+        # Initialize or load existing JSON data
         $appsData = @()
-        $highestPriority = 1
-    }
+        if (Test-Path -Path $wingetWin32AppsJson) {
+            try {
+                [array]$appsData = Get-Content -Path $wingetWin32AppsJson -Raw | ConvertFrom-Json
+                if ($null -eq $appsData) {
+                    $appsData = @()
+                }
+            }
+            catch {
+                # Backup the corrupted file so the build can continue
+                $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+                $backupPath = "$wingetWin32AppsJson.corrupt.$timestamp"
+                try {
+                    Copy-Item -Path $wingetWin32AppsJson -Destination $backupPath -Force
+                    WriteLog "WinGetWin32Apps.json could not be parsed. Backed up corrupt file to '$backupPath' and rebuilding."
+                }
+                catch {
+                    WriteLog "WinGetWin32Apps.json could not be parsed and backup failed: $($_.Exception.Message). Rebuilding anyway."
+                }
 
-    # Create new app entry
-    $newApp = [PSCustomObject]@{
-        Priority    = $highestPriority
-        Name        = if (-not [string]::IsNullOrEmpty($SubFolder)) { "$appName ($SubFolder)" } else { $appName }
-        CommandLine = $silentInstallCommand
-        Arguments   = $silentInstallSwitch
-    }
+                $appsData = @()
+            }
+        }
 
-    $appsData += $newApp
-    $appsData | ConvertTo-Json -Depth 10 | Set-Content -Path $wingetWin32AppsJson
+        # Calculate next priority (always set, even if the file exists but is empty)
+        $highestPriority = if ($appsData.Count -gt 0) { $appsData.Count + 1 } else { 1 }
+
+        # Create new app entry
+        $newApp = [PSCustomObject]@{
+            Priority    = $highestPriority
+            Name        = if (-not [string]::IsNullOrEmpty($SubFolder)) { "$appName ($SubFolder)" } else { $appName }
+            CommandLine = $silentInstallCommand
+            Arguments   = $silentInstallSwitch
+        }
+
+        # Write the updated JSON file using a temp+rename to reduce partial-write risk
+        $appsData += $newApp
+        $jsonText = $appsData | ConvertTo-Json -Depth 10
+        Set-FileContentAtomic -Path $wingetWin32AppsJson -Content $jsonText
+    }
 
     WriteLog "Added $($newApp.Name) to WinGetWin32Apps.json with priority $highestPriority"
 
