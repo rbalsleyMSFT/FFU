@@ -837,11 +837,108 @@ function Get-Apps {
             }
         }
     }
-    catch {
-        WriteLog "Failed to apply AppList.json command overrides: $($_.Exception.Message)"
+        catch {
+            WriteLog "Failed to apply AppList.json command overrides: $($_.Exception.Message)"
+        }
+    
+        # Post-processing: Ensure WinGetWin32Apps.json ordering matches AppList.json
+        # Parallel downloads can append entries in completion order. We reorder and re-prioritize
+        # so install order matches the ordering specified in AppList.json.
+        try {
+            $winGetWin32Path = Join-Path -Path $OrchestrationPath -ChildPath 'WinGetWin32Apps.json'
+            if (Test-Path -Path $winGetWin32Path) {
+                # Build desired order map from AppList.json (winget entries only)
+                $desiredOrderMap = @{}
+                $orderIndex = 0
+                foreach ($app in ($apps.apps | Where-Object { $_.source -eq 'winget' })) {
+                    if (-not [string]::IsNullOrWhiteSpace($app.name) -and -not $desiredOrderMap.ContainsKey($app.name)) {
+                        $desiredOrderMap[$app.name] = $orderIndex
+                        $orderIndex++
+                    }
+                }
+    
+                # Only attempt reordering when we have a meaningful order map
+                if ($desiredOrderMap.Count -gt 0) {
+                    # Lock WinGetWin32Apps.json to serialize reads/writes
+                    $mutexName = Get-WinGetWin32AppsJsonMutexName -WinGetWin32AppsJsonPath $winGetWin32Path
+                    Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
+                        # Load existing WinGetWin32Apps.json content
+                        [array]$currentAppsData = Get-Content -Path $winGetWin32Path -Raw | ConvertFrom-Json
+                        if ($null -eq $currentAppsData) {
+                            $currentAppsData = @()
+                        }
+    
+                        # Only reorder when there is more than one entry
+                        if ($currentAppsData.Count -gt 1) {
+                            # Capture original order for change detection
+                            $originalNames = @($currentAppsData | ForEach-Object { $_.Name })
+    
+                            # Build sortable records that preserve stable ordering for ties
+                            $indexed = @()
+                            for ($i = 0; $i -lt $currentAppsData.Count; $i++) {
+                                $entry = $currentAppsData[$i]
+    
+                                # Normalize entry names like "Foo (x64)" back to "Foo" for ordering
+                                $baseName = $entry.Name
+                                if (-not [string]::IsNullOrWhiteSpace($baseName)) {
+                                    $baseName = ($baseName -replace '\s+\((x86|x64|arm64)\)$', '')
+                                }
+    
+                                # Determine desired order; unknown entries are pushed to the end
+                                $orderKey = [int]::MaxValue
+                                if (-not [string]::IsNullOrWhiteSpace($baseName) -and $desiredOrderMap.ContainsKey($baseName)) {
+                                    $orderKey = [int]$desiredOrderMap[$baseName]
+                                }
+    
+                                $indexed += [PSCustomObject]@{
+                                    OrderKey      = $orderKey
+                                    OriginalIndex = $i
+                                    App           = $entry
+                                }
+                            }
+    
+                            # Sort by desired AppList.json order, stable within same app using OriginalIndex
+                            $sorted = $indexed | Sort-Object -Property OrderKey, OriginalIndex
+                            $reorderedApps = @($sorted | ForEach-Object { $_.App })
+    
+                            # Detect whether priority needs to be rewritten (even if order is unchanged)
+                            $priorityNeedsUpdate = $false
+                            for ($p = 0; $p -lt $reorderedApps.Count; $p++) {
+                                if ($reorderedApps[$p].PSObject.Properties['Priority'] -and $reorderedApps[$p].Priority -eq ($p + 1)) {
+                                    continue
+                                }
+                                $priorityNeedsUpdate = $true
+                                break
+                            }
+    
+                            # Detect whether the array order actually changed
+                            $sortedNames = @($reorderedApps | ForEach-Object { $_.Name })
+                            $orderNeedsUpdate = (($originalNames -join "`n") -ne ($sortedNames -join "`n"))
+    
+                            if ($orderNeedsUpdate -or $priorityNeedsUpdate) {
+                                # Re-assign priority sequentially to match the ordering
+                                for ($p = 0; $p -lt $reorderedApps.Count; $p++) {
+                                    $reorderedApps[$p].Priority = $p + 1
+                                }
+    
+                                # Write updated JSON content atomically
+                                $jsonText = $reorderedApps | ConvertTo-Json -Depth 10
+                                Set-FileContentAtomic -Path $winGetWin32Path -Content $jsonText
+                                WriteLog "Reordered and re-prioritized WinGetWin32Apps.json to match AppList.json ordering."
+                            }
+                            else {
+                                WriteLog "WinGetWin32Apps.json is already ordered to match AppList.json; no reorder needed."
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            WriteLog "Failed to reorder WinGetWin32Apps.json: $($_.Exception.Message)"
+        }
     }
-}
-function Install-WinGet {
+    function Install-WinGet {
     param (
         [string]$Architecture
     )
