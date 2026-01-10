@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule        = 'FFU.BuildTest.psm1'
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.1.0'
     GUID              = 'a8b9c0d1-e2f3-4567-8901-234567890abc'
     Author            = 'FFU Builder Team'
     CompanyName       = 'FFU Builder'
@@ -18,8 +18,15 @@
 
     # Functions to export
     FunctionsToExport = @(
+        # Admin context and elevated execution
+        'Test-FFUAdminContext',
+        'Start-FFUBuildListener',
+        'Invoke-FFUBuildElevated',
+        'Test-FFUBuildListenerRunning',
+        # Build verification
         'Copy-FFUDevelopmentToTestDrive',
         'Invoke-FFUTestBuild',
+        'Invoke-FFUBuildVerification',
         'Test-FFUBuildOutput',
         'Get-FFUBuildVerificationReport',
         'Get-FFUTestConfiguration'
@@ -37,6 +44,15 @@
             LicenseUri   = 'https://github.com/rbalsleyMSFT/FFU/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/rbalsleyMSFT/FFU'
             ReleaseNotes = @'
+## Version 1.1.0 (2026-01-10)
+- NEW: Elevated execution support for admin-requiring build operations
+  - Test-FFUAdminContext: Check if running as administrator
+  - Start-FFUBuildListener: File-based command queue for elevated execution
+  - Invoke-FFUBuildElevated: Client function to submit commands to listener
+  - Test-FFUBuildListenerRunning: Check listener status
+- NEW: Invoke-FFUBuildVerification: Complete end-to-end build verification workflow
+- Enables Claude Code and non-elevated processes to execute admin builds via listener
+
 ## Version 1.0.0 (2026-01-10)
 - Initial release
 - Copy-FFUDevelopmentToTestDrive: Copy FFUDevelopment to test drive with Robocopy

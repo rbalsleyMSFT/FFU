@@ -546,3 +546,96 @@ RECOMMENDATION: [Continue|Fix Required|Review Needed]
 3. **Dependency Order:** FFU.Constants must load before FFU.Core, which must load before others
 4. **UI Tests Limitation:** Some UI functionality requires actual WPF host and cannot be fully automated
 5. **Coverage Targets:** Aim for 80%+ coverage on core modules
+
+---
+
+## Elevated Build Execution
+
+Build operations that require administrator privileges (VM operations, disk partitioning, FFU capture) cannot run directly from Claude Code due to subprocess limitations. Use the elevated listener pattern instead.
+
+### Architecture
+
+```
+┌─────────────────────┐     JSON files      ┌─────────────────────────┐
+│  Claude Code        │◄──────────────────►│  Elevated Listener      │
+│  (non-elevated)     │  command.json       │  (Administrator)        │
+│                     │  result.json        │                         │
+│  Invoke-FFUBuild-   │                     │  Start-FFUBuild-        │
+│  Elevated           │                     │  Listener               │
+└─────────────────────┘                     └─────────────────────────┘
+```
+
+### Quick Start for Elevated Builds
+
+**Step 1: User starts listener in elevated PowerShell window**
+```powershell
+# Open PowerShell as Administrator, then:
+cd C:\claude\FFUBuilder\FFUDevelopment\Modules\FFU.BuildTest
+Import-Module .\FFU.BuildTest.psd1 -Force
+Start-FFUBuildListener
+```
+
+**Step 2: From Claude Code, submit build commands**
+```powershell
+# First check if listener is running
+Test-FFUBuildListenerRunning
+
+# Submit a build verification
+Invoke-FFUBuildElevated -Action BuildVerification -Parameters @{
+    ConfigType = 'Minimal'
+    Hypervisor = 'VMware'
+    TestDriveLetter = 'D'
+    CleanFirst = $true
+}
+
+# Or just test connectivity
+Invoke-FFUBuildElevated -Action Ping
+```
+
+### Available Actions
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `Ping` | Test listener connectivity | None |
+| `CopyToTestDrive` | Copy FFUDevelopment to test drive | `TestDriveLetter`, `CleanFirst` |
+| `TestBuild` | Execute build only | `ConfigType`, `Hypervisor`, `TestDriveLetter` |
+| `ValidateOutput` | Validate FFU artifacts | `FFUPath`, `TestPath`, `ExpectedSKU` |
+| `BuildVerification` | Full end-to-end workflow | `ConfigType`, `Hypervisor`, `TestDriveLetter` |
+
+### When to Use Elevated Execution
+
+| Operation | Requires Admin | Use Listener |
+|-----------|----------------|--------------|
+| Pester tests | No | No |
+| Module validation | No | No |
+| Static analysis | No | No |
+| Config validation | No | No |
+| Full build verification | **Yes** | **Yes** |
+| VM operations | **Yes** | **Yes** |
+| Disk partitioning | **Yes** | **Yes** |
+| FFU capture | **Yes** | **Yes** |
+
+### Functions Reference
+
+| Function | Context | Purpose |
+|----------|---------|---------|
+| `Test-FFUAdminContext` | Any | Check if current session is admin, show guidance if not |
+| `Start-FFUBuildListener` | Admin only | Start the elevated command listener |
+| `Invoke-FFUBuildElevated` | Non-admin | Submit commands to the listener |
+| `Test-FFUBuildListenerRunning` | Any | Check if listener is active |
+| `Invoke-FFUBuildVerification` | Admin only | Complete build verification workflow |
+
+### Troubleshooting
+
+**"FFU Build Listener is not running"**
+- User needs to start listener in elevated PowerShell window
+- Check: `Test-FFUBuildListenerRunning` returns `$false`
+
+**Timeout waiting for result**
+- Build may still be running (default 1 hour timeout)
+- Check elevated window for progress
+- Listener logs to console in real-time
+
+**"requires administrator privileges"**
+- User ran Start-FFUBuildListener from non-elevated session
+- Must use "Run as Administrator" on PowerShell

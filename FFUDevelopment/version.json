@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.6.24",
+    "version": "1.6.25",
     "buildDate": "2026-01-10",
 
     "versioningPolicy": {
@@ -87,6 +87,11 @@
             "version": "1.1.15",
             "path": "Modules/FFU.Hypervisor/FFU.Hypervisor.psd1",
             "description": "Hypervisor abstraction layer - vmrun syntax fix + [VMState] cross-scope type resolution fix"
+        },
+        "FFU.BuildTest": {
+            "version": "1.1.0",
+            "path": "Modules/FFU.BuildTest/FFU.BuildTest.psd1",
+            "description": "Build testing and verification with elevated execution support (Start-FFUBuildListener, Invoke-FFUBuildElevated)"
         }
     },
 
