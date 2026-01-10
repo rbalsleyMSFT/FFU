@@ -126,6 +126,11 @@
                             <TextBlock x:Name="txtVMwareCredStatus" Text="Not configured" Foreground="Orange" VerticalAlignment="Center" Margin="0,0,10,0" ToolTip="Shows credential status for your current user profile. Enterprise users with separate admin accounts should also configure credentials from an elevated command prompt."/>
                             <Button x:Name="btnConfigureVMrest" Content="Configure Credentials..." Width="150" Height="25" ToolTip="Opens a terminal to configure vmrest.exe credentials for your current user profile. If builds run with a separate admin account, also run 'vmrest.exe -C' from an elevated command prompt."/>
                         </StackPanel>
+                        <!-- Row 2b: Show VM Console (VMware only) - shares row 2 space by being placed after the setup panel -->
+                        <StackPanel x:Name="pnlShowVMConsoleLabel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,30,0,5" Visibility="Collapsed">
+                            <TextBlock Text="Show VM Console" ToolTip="When enabled, the VMware VM window will be visible during the build, allowing you to follow Windows installation progress. When disabled (default), the VM runs in headless mode."/>
+                        </StackPanel>
+                        <CheckBox x:Name="chkShowVMConsole" Grid.Row="2" Grid.Column="1" Content="Display VM window during build (VMware only)" Margin="5,30,5,5" VerticalAlignment="Center" IsChecked="False" Visibility="Collapsed" ToolTip="When enabled, the VMware VM window will be visible during the build, allowing you to follow Windows installation progress. When disabled (default), the VM runs in headless mode for automation."/>
                         <!-- Row 3: VM Switch Name (Hyper-V only) -->
                         <StackPanel x:Name="pnlVMSwitchLabel" Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Switch Name" ToolTip="Name of the Hyper-V virtual switch. Required when InstallApps is enabled with Hyper-V. The default is '*external*', but you will likely need to change this."/>

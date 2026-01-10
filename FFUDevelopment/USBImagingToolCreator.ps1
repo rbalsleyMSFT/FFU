@@ -30,7 +30,7 @@ function Write-ProgressLog {
         $script:currentStep++
       
     }
-Function Get-RemovableDrive {
+function Get-RemovableDrive {
 writelog "Get information for all removable drives"
 $USBDrives = Get-CimInstance -ClassName Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media" -or $_.MediaType -eq "External hard disk media"} 
 If($USBDrives -and ($null -eq $USBDrives.count)) {
@@ -46,10 +46,10 @@ If($USBDrives -and ($null -eq $USBDrives.count)) {
         Pause
         exit 1
     }
-  return $USBDrives, $USBDrivesCount
+  $USBDrives, $USBDrivesCount
   }
   
-Function Build-DeploymentUSB{
+function Build-DeploymentUSB{
       param(
             [Array]$Drives       
             )
@@ -166,7 +166,7 @@ Dismount-DiskImage -ImagePath $DeployISOPath | Out-Null
 Write-ProgressLog "Create Imaging Tool" "Drive creation jobs completed..."
 }
 
-Function New-DeploymentUSB {
+function New-DeploymentUSB {
     param(
         [Array]$Drives,
         [int]$Count,

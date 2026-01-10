@@ -518,6 +518,24 @@ param(
     [Parameter(Mandatory = $false)]
     [ValidateSet('HyperV', 'VMware', 'Auto')]
     [string]$HypervisorType = 'HyperV',
+    # VMware REST API configuration (only used when HypervisorType is VMware or Auto)
+    [Parameter(Mandatory = $false)]
+    [int]$VMwarePort = 8697,
+    [Parameter(Mandatory = $false)]
+    [string]$VMwareUsername = '',
+    [Parameter(Mandatory = $false)]
+    [string]$VMwarePassword = '',
+    # ShowVMConsole: When true, displays the VM window during the build process (VMware only)
+    # This allows you to follow the Windows installation progress visually
+    # When false (default), the VM runs in headless/nogui mode for automation
+    [Parameter(Mandatory = $false)]
+    [bool]$ShowVMConsole = $false,
+    # VMShutdownTimeoutMinutes: Maximum time to wait for VM shutdown before forcing power off
+    # If the VM doesn't shutdown gracefully within this time, it will be forcibly powered off
+    # Default is 20 minutes (from FFUConstants::DefaultVMShutdownTimeoutMinutes)
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(5, 120)]
+    [int]$VMShutdownTimeoutMinutes = 20,
     # MessagingContext: Synchronized hashtable for real-time UI communication via FFU.Messaging module
     # When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates
     # When null (CLI usage), script operates normally without messaging
@@ -883,8 +901,283 @@ Please verify the hypervisor is installed and properly configured.
     }
 
     # Get the provider instance (will be used for VM operations)
-    $script:HypervisorProvider = Get-HypervisorProvider -Type $HypervisorType
+    # Build credential for VMware if username/password provided
+    $vmwareCredential = $null
+    if ((-not [string]::IsNullOrWhiteSpace($VMwareUsername)) -and (-not [string]::IsNullOrWhiteSpace($VMwarePassword))) {
+        $securePassword = ConvertTo-SecureString -String $VMwarePassword -AsPlainText -Force
+        $vmwareCredential = New-Object System.Management.Automation.PSCredential($VMwareUsername, $securePassword)
+        WriteLog "VMware REST API credentials configured for user: $VMwareUsername"
+    }
+
+    $script:HypervisorProvider = Get-HypervisorProvider -Type $HypervisorType -Port $VMwarePort -Credential $vmwareCredential
     WriteLog "Hypervisor provider initialized: $($script:HypervisorProvider.Name) v$($script:HypervisorProvider.Version)"
+}
+
+# =============================================================================
+# Hypervisor-Agnostic VM Cleanup Helper
+# Uses hypervisor provider when available, falls back to Remove-FFUVM for Hyper-V
+# =============================================================================
+function Remove-FFUVMWithProvider {
+    <#
+    .SYNOPSIS
+    Removes FFU VM using the hypervisor provider with fallback to Remove-FFUVM
+
+    .DESCRIPTION
+    This helper function provides hypervisor-agnostic VM cleanup by:
+    1. Using the initialized hypervisor provider if available
+    2. Falling back to Remove-FFUVM for Hyper-V-specific cleanup if provider fails
+    3. Always calling Remove-FFUBuildArtifacts for non-VM cleanup
+
+    .PARAMETER VM
+    The VMInfo object returned from CreateVM (optional - can cleanup by name if null)
+
+    .PARAMETER VMName
+    Name of the VM to remove
+
+    .PARAMETER VMPath
+    Path to the VM configuration directory
+
+    .PARAMETER InstallApps
+    Whether apps were installed (affects VHDX cleanup)
+
+    .PARAMETER VhdxDisk
+    VHDX disk object for cleanup
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+    #>
+    param(
+        [Parameter(Mandatory = $false)]
+        $VM,
+
+        [Parameter(Mandatory = $false)]
+        [string]$VMName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$VMPath,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$InstallApps,
+
+        [Parameter(Mandatory = $false)]
+        $VhdxDisk,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
+    )
+
+    WriteLog "Starting hypervisor-agnostic VM cleanup"
+
+    $vmRemoved = $false
+
+    # Try hypervisor provider first if available
+    if ($null -ne $script:HypervisorProvider) {
+        try {
+            if ($null -ne $VM) {
+                WriteLog "Removing VM via hypervisor provider: $($VM.Name)"
+                $script:HypervisorProvider.RemoveVM($VM, $true)  # $true = remove disks
+                $vmRemoved = $true
+                WriteLog "VM removed via hypervisor provider"
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($VMName)) {
+                # Try to get VM by name from provider
+                WriteLog "Attempting to get VM '$VMName' from provider for cleanup"
+                $existingVM = $script:HypervisorProvider.GetVM($VMName)
+                if ($null -ne $existingVM) {
+                    WriteLog "Found VM, removing via hypervisor provider"
+                    $script:HypervisorProvider.RemoveVM($existingVM, $true)
+                    $vmRemoved = $true
+                    WriteLog "VM removed via hypervisor provider"
+                }
+                else {
+                    WriteLog "VM '$VMName' not found by provider - may already be removed"
+                    $vmRemoved = $true  # Consider it success if VM doesn't exist
+                }
+            }
+        }
+        catch {
+            WriteLog "WARNING: Hypervisor provider cleanup failed: $($_.Exception.Message)"
+            WriteLog "Falling back to Remove-FFUVM for cleanup"
+        }
+    }
+
+    # Fall back to Remove-FFUVM if provider cleanup failed or not available
+    if (-not $vmRemoved) {
+        WriteLog "Using Remove-FFUVM for Hyper-V-specific cleanup"
+        try {
+            Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                         -VhdxDisk $VhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+        catch {
+            WriteLog "WARNING: Remove-FFUVM failed: $($_.Exception.Message)"
+        }
+    }
+    else {
+        # Provider removed VM, but we still need to clean up build artifacts
+        WriteLog "Running Remove-FFUBuildArtifacts for remaining cleanup"
+        try {
+            Remove-FFUBuildArtifacts -VMPath $VMPath -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+        catch {
+            WriteLog "WARNING: Remove-FFUBuildArtifacts failed: $($_.Exception.Message)"
+        }
+    }
+
+    WriteLog "VM cleanup complete"
+}
+
+# =============================================================================
+# Hypervisor-Agnostic VHD/VHDX Dismount Helper
+# Uses appropriate dismount function based on HypervisorType
+# =============================================================================
+function Invoke-DismountScratchDisk {
+    <#
+    .SYNOPSIS
+    Dismounts scratch disk (VHD or VHDX) based on hypervisor type
+
+    .DESCRIPTION
+    Helper function that calls the appropriate dismount function:
+    - VMware: Dismount-ScratchVhd (uses diskpart, no Hyper-V dependency)
+    - Hyper-V: Dismount-ScratchVhdx (uses Hyper-V cmdlets)
+
+    .PARAMETER DiskPath
+    Path to the VHD or VHDX file to dismount
+
+    .EXAMPLE
+    Invoke-DismountScratchDisk -DiskPath "C:\VM\disk.vhd"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DiskPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DiskPath)) {
+        WriteLog "WARNING: Invoke-DismountScratchDisk called with empty path, skipping"
+        return
+    }
+
+    WriteLog "Dismounting scratch disk: $DiskPath"
+
+    # Determine which dismount function to use based on file extension and hypervisor type
+    if ($DiskPath -like "*.vhd" -and $DiskPath -notlike "*.vhdx") {
+        # VHD file - use diskpart-based dismount (for VMware)
+        WriteLog "Using Dismount-ScratchVhd for VHD file"
+        Dismount-ScratchVhd -VhdPath $DiskPath
+    }
+    else {
+        # VHDX file - use Hyper-V cmdlet
+        WriteLog "Using Dismount-ScratchVhdx for VHDX file"
+        Dismount-ScratchVhdx -VhdxPath $DiskPath
+    }
+}
+
+# =============================================================================
+# Hypervisor-Agnostic VHD/VHDX Mount Helper
+# Uses appropriate mount function based on file extension
+# =============================================================================
+function Invoke-MountScratchDisk {
+    <#
+    .SYNOPSIS
+    Mounts scratch disk (VHD or VHDX) and returns the disk object
+
+    .DESCRIPTION
+    Helper function that calls the appropriate mount function:
+    - VHD files: Uses diskpart attach (no Hyper-V dependency)
+    - VHDX files: Uses Mount-VHD cmdlet (requires Hyper-V)
+
+    Returns a disk CIM instance for partition operations.
+
+    .PARAMETER DiskPath
+    Path to the VHD or VHDX file to mount
+
+    .OUTPUTS
+    CimInstance - Disk object for the mounted disk
+
+    .EXAMPLE
+    $disk = Invoke-MountScratchDisk -DiskPath "C:\VM\disk.vhd"
+    #>
+    [CmdletBinding()]
+    [OutputType([CimInstance])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DiskPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DiskPath)) {
+        throw "Invoke-MountScratchDisk: DiskPath cannot be empty"
+    }
+
+    if (-not (Test-Path $DiskPath)) {
+        throw "Invoke-MountScratchDisk: Disk file not found: $DiskPath"
+    }
+
+    WriteLog "Mounting scratch disk: $DiskPath"
+
+    # Determine which mount approach to use based on file extension
+    if ($DiskPath -like "*.vhd" -and $DiskPath -notlike "*.vhdx") {
+        # VHD file - use diskpart-based mount (for VMware, no Hyper-V dependency)
+        WriteLog "Using diskpart to mount VHD file"
+
+        $diskpartScript = @"
+select vdisk file="$DiskPath"
+attach vdisk
+"@
+        $scriptPath = Join-Path $env:TEMP "diskpart_mount_$(Get-Random).txt"
+        $diskpartScript | Out-File -FilePath $scriptPath -Encoding ASCII
+
+        try {
+            $process = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$scriptPath`"" `
+                                     -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_mount_stdout.txt"
+
+            $stdout = Get-Content "$env:TEMP\diskpart_mount_stdout.txt" -Raw -ErrorAction SilentlyContinue
+            if ($stdout) {
+                WriteLog "Diskpart output:"
+                $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { WriteLog "  $_" }
+            }
+
+            if ($process.ExitCode -ne 0) {
+                throw "diskpart attach failed with exit code $($process.ExitCode)"
+            }
+
+            # Wait for disk enumeration
+            Start-Sleep -Seconds 3
+
+            # Find the mounted disk
+            $disk = $null
+            $retryCount = 0
+            while (-not $disk -and $retryCount -lt 5) {
+                $retryCount++
+                $disk = Get-Disk | Where-Object {
+                    $_.Location -eq $DiskPath -or
+                    $_.BusType -eq 'File Backed Virtual'
+                } | Select-Object -First 1
+
+                if (-not $disk) {
+                    WriteLog "  Waiting for disk enumeration (attempt $retryCount)..."
+                    Start-Sleep -Seconds 2
+                }
+            }
+
+            if (-not $disk) {
+                throw "Could not find mounted VHD disk after attach"
+            }
+
+            WriteLog "VHD mounted successfully at Disk $($disk.Number)"
+            return $disk
+        }
+        finally {
+            Remove-Item -Path $scriptPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$env:TEMP\diskpart_mount_stdout.txt" -Force -ErrorAction SilentlyContinue
+        }
+    }
+    else {
+        # VHDX file - use Hyper-V cmdlet
+        WriteLog "Using Mount-VHD for VHDX file"
+        $disk = Mount-VHD -Path $DiskPath -Passthru | Get-Disk
+        WriteLog "VHDX mounted successfully at Disk $($disk.Number)"
+        return $disk
+    }
 }
 
 # =============================================================================
@@ -1455,7 +1748,11 @@ if (-not $rand) { $rand = Get-Random }
 if (-not $VMLocation) { $VMLocation = "$FFUDevelopmentPath\VM" }
 if (-not $VMName) { $VMName = "$FFUPrefix-$rand" }
 if (-not $VMPath) { $VMPath = "$VMLocation\$VMName" }
-if (-not $VHDXPath) { $VHDXPath = "$VMPath\$VMName.vhdx" }
+# Disk path extension depends on hypervisor type
+# - Hyper-V uses VHDX (advanced format with better performance and resilience)
+# - VMware uses VHD (diskpart-based creation for compatibility without Hyper-V)
+$diskExtension = if ($HypervisorType -eq 'VMware') { '.vhd' } else { '.vhdx' }
+if (-not $VHDXPath) { $VHDXPath = "$VMPath\$VMName$diskExtension" }
 if (-not $FFUCaptureLocation) { $FFUCaptureLocation = "$FFUDevelopmentPath\FFU" }
 # Note: $LogFile default is now set EARLY (before Hyper-V check) for DISM error logging
 if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
@@ -1510,7 +1807,8 @@ if ($Cleanup) {
                        -VMLocation $VMLocation -UserName $UserName `
                        -RemoveApps $RemoveApps -AppsPath $AppsPath `
                        -RemoveUpdates $RemoveUpdates -KBPath $KBPath `
-                       -AppsISO $AppsISO
+                       -AppsISO $AppsISO `
+                       -HypervisorProvider $script:HypervisorProvider
     return
 }
 
@@ -1843,7 +2141,8 @@ If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
                        -VMLocation $VMLocation -UserName $UserName `
                        -RemoveApps $RemoveApps -AppsPath $AppsPath `
                        -RemoveUpdates $RemoveUpdates -KBPath $KBPath `
-                       -AppsISO $AppsISO
+                       -AppsISO $AppsISO `
+                       -HypervisorProvider $script:HypervisorProvider
 }
 WriteLog 'Creating dirty.txt file'
 New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
@@ -2622,7 +2921,9 @@ if (Test-Path -Path 'd:\Defender\mpam-fe.exe') {
                     $EdgeMSIFileName = "MicrosoftEdgeEnterprise$WindowsArch.msi"
                     $EdgeFullFilePath = "$EdgePath\$EdgeMSIFileName"
                     WriteLog "Expanding $EdgeCABFilePath"
-                    Invoke-Process Expand "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath" | Out-Null
+                    # Use full path to expand.exe to avoid conflicts with Unix 'expand' command in hybrid environments
+                    $expandExe = Join-Path $env:SystemRoot 'System32\expand.exe'
+                    Invoke-Process $expandExe "$EdgeCABFilePath -F:*.msi $EdgeFullFilePath" | Out-Null
                     WriteLog "Expansion complete"
 
                     #Remove Edge CAB file
@@ -3141,7 +3442,18 @@ try {
             $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU -ISOPath $ISOPath
         }
 
-        $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
+        # Use appropriate disk creation function based on hypervisor type
+        # - Hyper-V: New-ScratchVhdx (uses Hyper-V cmdlets, creates VHDX)
+        # - VMware: New-ScratchVhd (uses diskpart, creates dynamic VHD - VMware cannot read VHDX format)
+        #   Dynamic VHD is used for VMware to avoid disk space issues (grows as needed vs fixed allocation)
+        if ($HypervisorType -eq 'VMware') {
+            WriteLog "Creating dynamic VHD for VMware using diskpart (no Hyper-V dependency)..."
+            $vhdxDisk = New-ScratchVhd -VhdPath $VHDXPath -SizeBytes $disksize -Dynamic
+        }
+        else {
+            WriteLog "Creating VHDX for Hyper-V..."
+            $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
+        }
 
         $systemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk
     
@@ -3289,9 +3601,10 @@ try {
         }
         $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
 
-        $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
+        # Use hypervisor-agnostic mount (works with both VHD and VHDX)
+        $vhdxDisk = Invoke-MountScratchDisk -DiskPath $VHDXPath
 
-        # Register cleanup for mounted VHDX in case of failure
+        # Register cleanup for mounted disk in case of failure
         $vhdxCleanupId = Register-VHDXCleanup -VHDXPath $VHDXPath
         WriteLog "Registered VHDX cleanup handler (ID: $vhdxCleanupId)"
 
@@ -3328,13 +3641,16 @@ try {
             WriteLog "WARNING: Slab consolidation failed - $($_.Exception.Message). Continuing with caching."
         }
 
-        WriteLog 'Dismounting VHDX'
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        WriteLog 'Dismounting disk'
+        Invoke-DismountScratchDisk -DiskPath $VHDXPath
 
         WriteLog 'Copying to cache dir'
 
+        # Get disk filename (uses $diskExtension set earlier based on HypervisorType)
+        $diskFileName = "$VMName$diskExtension"
+
         #Assuming there are now name collisons
-        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J
+        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $diskFileName /E /COPY:DAT /R:5 /W:5 /J
         if (-not (Test-ExternalCommandSuccess -CommandName 'Robocopy (copy VHDX to cache)')) {
             WriteLog "WARNING: Failed to copy VHDX to cache directory. Caching may be incomplete."
             # Non-fatal - continue with build even if caching fails
@@ -3344,7 +3660,7 @@ try {
         if ($null -eq $cachedVHDXInfo) {
             $cachedVHDXInfo = [VhdxCacheItem]::new()
         }
-        $cachedVHDXInfo.VhdxFileName = $("$VMName.vhdx")
+        $cachedVHDXInfo.VhdxFileName = $diskFileName
         $cachedVHDXInfo.LogicalSectorSizeBytes = $LogicalSectorSizeBytes
         $cachedVHDXInfo.WindowsSKU = $WindowsSKU
         $cachedVHDXInfo.WindowsRelease = $WindowsRelease
@@ -3352,19 +3668,19 @@ try {
         $cachedVHDXInfo.OptionalFeatures = $OptionalFeatures
         
         $cachedVHDXInfo | ConvertTo-Json | Out-File -FilePath ("{0}\{1}_config.json" -f $($VHDXCacheFolder), $VMName)
-        WriteLog "Cached VHDX file $("$VMName.vhdx")"
+        WriteLog "Cached VHDX file $diskFileName"
 
-        #Remount the VHDX file if $installapps is false so the VHDX can be captured to an FFU
+        #Remount the disk file if $installapps is false so it can be captured to an FFU
         If (-not $InstallApps) {
-            Mount-Vhd -Path $VHDXPath
+            $null = Invoke-MountScratchDisk -DiskPath $VHDXPath
         }
     } 
 }
 catch {
-    Write-Host 'Creating VHDX Failed'
-    WriteLog "Creating VHDX Failed with error $_"
+    Write-Host 'Creating disk Failed'
+    WriteLog "Creating disk failed with error $_"
     WriteLog "Dismounting $VHDXPath"
-    Dismount-ScratchVhdx -VhdxPath $VHDXPath
+    Invoke-DismountScratchDisk -DiskPath $VHDXPath
     WriteLog "Removing $VMPath"
     if (-not [string]::IsNullOrWhiteSpace($VMPath)) {
         Remove-Item -Path $VMPath -Force -Recurse -ErrorAction SilentlyContinue | Out-Null
@@ -3390,18 +3706,23 @@ catch {
 #Inject unattend after caching so cached VHDX never contains audit-mode unattend
 if ($InstallApps) {
     # Determine mount state and only mount if needed to avoid redundant mount/dismount cycles
-    $vhdMeta = Get-VHD -Path $VHDXPath
-    if ($vhdMeta.Attached) {
-        WriteLog 'VHDX already mounted; reusing existing mount for unattend injection'
-        $disk = Get-Disk -Number $vhdMeta.DiskNumber
+    # Check if disk is already mounted (works for both VHD and VHDX)
+    $existingDisk = Get-Disk | Where-Object {
+        $_.Location -eq $VHDXPath -or
+        ($_.BusType -eq 'File Backed Virtual' -and (Test-Path $VHDXPath))
+    } | Select-Object -First 1
+
+    if ($existingDisk) {
+        WriteLog "Disk already mounted; reusing existing mount for unattend injection (Disk $($existingDisk.Number))"
+        $disk = $existingDisk
     }
     else {
-        WriteLog 'Mounting VHDX to inject unattend for audit-mode boot'
-        $disk = Mount-VHD -Path $VHDXPath -Passthru | Get-Disk
+        WriteLog 'Mounting disk to inject unattend for audit-mode boot'
+        $disk = Invoke-MountScratchDisk -DiskPath $VHDXPath
 
-        # Register cleanup for mounted VHDX in case of failure (only if we did a fresh mount)
+        # Register cleanup for mounted disk in case of failure (only if we did a fresh mount)
         $vhdxUnattendCleanupId = Register-VHDXCleanup -VHDXPath $VHDXPath
-        WriteLog "Registered VHDX cleanup handler for unattend injection (ID: $vhdxUnattendCleanupId)"
+        WriteLog "Registered disk cleanup handler for unattend injection (ID: $vhdxUnattendCleanupId)"
     }
     $osPartition = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
     $osPartitionDriveLetter = $osPartition.DriveLetter
@@ -3434,11 +3755,11 @@ if ($InstallApps) {
     catch {
         WriteLog "ERROR: Failed to copy unattend file for audit mode boot - $($_.Exception.Message)"
         # Ensure dismount happens even on error
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        Invoke-DismountScratchDisk -DiskPath $VHDXPath
         throw "Critical failure: Cannot proceed without unattend file for audit mode boot. Error: $($_.Exception.Message)"
     }
     # Always dismount so downstream VM creation logic has a clean starting point
-    Dismount-ScratchVhdx -VhdxPath $VHDXPath
+    Invoke-DismountScratchDisk -DiskPath $VHDXPath
 }
 
 #If installing apps (Office or 3rd party), we need to build a VM and capture that FFU, if not, just cut the FFU from the VHDX file
@@ -3446,10 +3767,43 @@ if ($InstallApps) {
     Set-Progress -Percentage 41 -Message "Starting VM for app installation..."
     #Create VM and attach VHDX
     try {
-        WriteLog 'Creating new FFU VM'
-        $FFUVM = New-FFUVM -VMName $VMName -VMPath $VMPath -Memory $memory `
-                           -VHDXPath $VHDXPath -Processors $processors -AppsISO $AppsISO
-        WriteLog 'FFU VM Created'
+        WriteLog 'Creating new FFU VM using hypervisor provider'
+
+        # Create VMConfiguration for hypervisor-agnostic VM creation
+        # NOTE: Use New-VMConfiguration factory function instead of [VMConfiguration]::new()
+        # because PowerShell module classes aren't exported to caller's scope (background jobs fail)
+        #
+        # IMPORTANT: VMware requires VMDK format for bootable VMs (VHD is not supported for booting)
+        # The VMwareProvider will create a VMDK disk using vmware-vdiskmanager.exe
+        $diskFormat = if ($HypervisorType -eq 'VMware') { 'VMDK' } else { 'VHDX' }
+
+        # Determine the disk path - VMware needs VMDK extension
+        $vmDiskPath = if ($HypervisorType -eq 'VMware') {
+            # Change extension from .vhd/.vhdx to .vmdk for VMware
+            [System.IO.Path]::ChangeExtension($VHDXPath, '.vmdk')
+        } else {
+            $VHDXPath
+        }
+        WriteLog "VM disk path: $vmDiskPath (format: $diskFormat)"
+
+        $vmConfig = New-VMConfiguration -Name $VMName -Path $VMPath `
+                                        -MemoryBytes $memory -ProcessorCount $processors `
+                                        -VirtualDiskPath $vmDiskPath -ISOPath $AppsISO `
+                                        -DiskFormat $diskFormat -EnableTPM $true `
+                                        -EnableSecureBoot $true -Generation 2 `
+                                        -AutomaticCheckpoints $false -DynamicMemory $false
+
+        WriteLog "VMConfiguration: $($vmConfig.ToString())"
+
+        # Create VM using the initialized hypervisor provider
+        $FFUVM = $script:HypervisorProvider.CreateVM($vmConfig)
+        WriteLog "FFU VM Created: $($FFUVM.Name) [HypervisorType: $($FFUVM.HypervisorType)]"
+
+        # Start the VM - CreateVM only creates it, doesn't start it
+        # (Original New-FFUVM function called Start-VM internally, hypervisor provider does not)
+        WriteLog "Starting VM: $($FFUVM.Name) (ShowVMConsole: $ShowVMConsole)"
+        $script:HypervisorProvider.StartVM($FFUVM, $ShowVMConsole)
+        WriteLog "VM started successfully"
 
         # Register cleanup for VM in case of failure during subsequent operations
         $vmCleanupId = Register-VMCleanup -VMName $VMName
@@ -3458,9 +3812,10 @@ if ($InstallApps) {
     catch {
         Write-Host 'VM creation failed'
         Writelog "VM creation failed with error $_"
-        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                     -Username $Username -ShareName $ShareName
+        # Use hypervisor-agnostic cleanup helper
+        Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                                 -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                                 -FFUDevelopmentPath $FFUDevelopmentPath
         throw $_
 
     }
@@ -3531,9 +3886,9 @@ if ($InstallApps) {
         WriteLog "Set-CaptureFFU function failed with error $_"
         # SECURITY: Dispose credentials on failure
         Remove-SecureStringFromMemory -SecureStringVariable ([ref]$capturePasswordSecure)
-        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                     -Username $Username -ShareName $ShareName
+        Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                                 -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                                 -FFUDevelopmentPath $FFUDevelopmentPath
         throw $_
 
     }
@@ -3582,9 +3937,9 @@ if ($InstallApps) {
         catch {
             Write-Host 'Creating capture media failed'
             WriteLog "Creating capture media failed with error $_"
-            Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                         -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                         -Username $Username -ShareName $ShareName
+            Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                                     -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                                     -FFUDevelopmentPath $FFUDevelopmentPath
             throw $_
 
         }
@@ -3643,11 +3998,56 @@ try {
     #Check if VM is done provisioning
     If ($InstallApps) {
         Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
+
+        # Initial state check before polling loop
+        $initialState = $script:HypervisorProvider.GetVMState($FFUVM)
+        WriteLog "Initial VM state before polling: $initialState (VMX: $($FFUVM.VMXPath))"
+
+        if (Test-VMStateOff -State $initialState) {
+            WriteLog "WARNING: VM is already OFF at start of polling loop - this may indicate the VM failed to start or shut down immediately"
+        }
+
+        # VM shutdown polling with configurable timeout
+        # If VM doesn't shutdown gracefully within timeout, force power off
+        $pollCount = 0
+        $pollIntervalSeconds = 5  # Must match [FFUConstants]::VM_STATE_POLL_INTERVAL
+        $maxPolls = ($VMShutdownTimeoutMinutes * 60) / $pollIntervalSeconds
+        $startTime = Get-Date
+
+        WriteLog "Starting VM shutdown polling (timeout: $VMShutdownTimeoutMinutes minutes, max polls: $maxPolls)"
+
         do {
-            $FFUVM = Get-VM -Name $FFUVM.Name
-            Start-Sleep -Seconds 5  # VM poll interval - must match [FFUConstants]::VM_STATE_POLL_INTERVAL
-            WriteLog 'Waiting for VM to shutdown'
-        } while ($FFUVM.State -ne 'Off')
+            $pollCount++
+            # Use hypervisor provider for VM state polling (works with both Hyper-V and VMware)
+            $vmState = $script:HypervisorProvider.GetVMState($FFUVM)
+            $elapsed = (Get-Date) - $startTime
+            $elapsedMinutes = [math]::Round($elapsed.TotalMinutes, 1)
+
+            WriteLog "Waiting for VM to shutdown (poll #$pollCount, state: $vmState, elapsed: ${elapsedMinutes}m)"
+
+            if (-not (Test-VMStateOff -State $vmState)) {
+                if ($pollCount -ge $maxPolls) {
+                    WriteLog "WARNING: VM shutdown timeout reached after $VMShutdownTimeoutMinutes minutes. Forcing power off..."
+                    try {
+                        $script:HypervisorProvider.StopVM($FFUVM, $true)  # Force = $true
+                        Start-Sleep -Seconds 5  # Allow time for force shutdown to complete
+                    }
+                    catch {
+                        WriteLog "ERROR: Force power off failed: $($_.Exception.Message)"
+                    }
+                    break
+                }
+                Start-Sleep -Seconds $pollIntervalSeconds
+            }
+        } while (-not (Test-VMStateOff -State $vmState))
+
+        # Verify VM is actually off after polling loop exits
+        $finalState = $script:HypervisorProvider.GetVMState($FFUVM)
+        if (-not (Test-VMStateOff -State $finalState)) {
+            WriteLog "ERROR: VM is still running after shutdown polling completed. State: $finalState"
+            throw "Failed to shutdown VM after force power off. State: $finalState"
+        }
+
         WriteLog 'VM Shutdown'
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
@@ -3682,16 +4082,10 @@ try {
 Catch {
     Write-Host 'Capturing FFU file failed'
     Writelog "Capturing FFU file failed with error $_"
-    If ($InstallApps) {
-        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                     -Username $Username -ShareName $ShareName
-    }
-    else {
-        Remove-FFUVM -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                     -Username $Username -ShareName $ShareName
-    }
+    # Use hypervisor-agnostic cleanup helper (works with both Hyper-V and VMware)
+    Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                             -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                             -FFUDevelopmentPath $FFUDevelopmentPath
 
     throw $_
 
@@ -3704,9 +4098,9 @@ If ($InstallApps) {
     catch {
         Write-Host 'Cleaning up FFU User and/or share failed'
         WriteLog "Cleaning up FFU User and/or share failed with error $_"
-        Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                     -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                     -Username $Username -ShareName $ShareName
+        Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                                 -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                                 -FFUDevelopmentPath $FFUDevelopmentPath
         throw $_
     }
     #Clean up Apps
@@ -3726,9 +4120,9 @@ If ($InstallApps) {
 }
 #Clean up VM or VHDX
 try {
-    Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                 -VhdxDisk $vhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath `
-                 -Username $Username -ShareName $ShareName
+    Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                             -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                             -FFUDevelopmentPath $FFUDevelopmentPath
     WriteLog 'FFU build complete!'
 }
 catch {

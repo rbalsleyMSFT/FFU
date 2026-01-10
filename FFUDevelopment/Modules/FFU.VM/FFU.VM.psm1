@@ -59,13 +59,14 @@ function Get-LocalUserAccount {
 
         if ($user) {
             # Return user object
-            return $user
+            $user
+            return
         }
 
-        return $null
+        $null
     }
     catch {
-        return $null
+        $null
     }
 }
 
@@ -135,7 +136,7 @@ function New-LocalUserAccount {
             $context.Dispose()
             $user.Dispose()
 
-            return $true
+            $true
         }
         finally {
             # Always clear password from memory
@@ -191,7 +192,7 @@ function Remove-LocalUserAccount {
 
         $context.Dispose()
 
-        return $true
+        $true
     }
     catch {
         throw "Failed to remove local user account: $($_.Exception.Message)"
@@ -256,7 +257,7 @@ function Set-LocalUserPassword {
         $user.Dispose()
         $context.Dispose()
 
-        return $true
+        $true
     }
     catch {
         throw "Failed to set password for user '$Username': $($_.Exception.Message)"
@@ -341,7 +342,7 @@ function Set-LocalUserAccountExpiry {
         $user.Dispose()
         $context.Dispose()
 
-        return $ExpiryDate
+        $ExpiryDate
     }
     catch {
         throw "Failed to set account expiry for user '$Username': $($_.Exception.Message)"
@@ -476,7 +477,7 @@ function New-FFUVM {
             throw "Failed to start VM '$VMName': $($_.Exception.Message)"
         }
 
-        return $VM
+        $VM
     }
     catch {
         WriteLog "ERROR in New-FFUVM: $($_.Exception.Message)"
@@ -790,7 +791,10 @@ function Get-FFUEnvironment {
         [string]$KBPath,
 
         [Parameter(Mandatory = $true)]
-        [string]$AppsISO
+        [string]$AppsISO,
+
+        [Parameter(Mandatory = $false)]
+        $HypervisorProvider = $null
     )
 
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
@@ -825,44 +829,97 @@ function Get-FFUEnvironment {
         }
     }
 
-    # Check for running VMs that start with '_FFU-' and are in the 'Off' state
-    try {
-        $vms = Get-VM -ErrorAction Stop
-    }
-    catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
-        WriteLog "WARNING: Hyper-V error retrieving VMs: $($_.Exception.Message)"
-        $vms = @()
-    }
-    catch {
-        WriteLog "WARNING: Failed to retrieve VMs: $($_.Exception.Message)"
-        $vms = @()
-    }
+    # Check for running VMs that start with '_FFU-'
+    # Use hypervisor provider if available, otherwise fall back to Hyper-V cmdlets
+    if ($null -ne $HypervisorProvider) {
+        WriteLog "Using hypervisor provider for VM cleanup: $($HypervisorProvider.Name)"
+        try {
+            $vms = $HypervisorProvider.GetAllVMs()
+            WriteLog "Found $($vms.Count) VMs via provider"
+        }
+        catch {
+            WriteLog "WARNING: Failed to get VMs from provider: $($_.Exception.Message)"
+            $vms = @()
+        }
 
-    # Loop through each VM
-    foreach ($vm in $vms) {
-        if ($vm.Name.StartsWith("_FFU-")) {
-            if ($vm.State -eq 'Running') {
-                try {
-                    WriteLog "Stopping running VM: $($vm.Name)"
-                    Stop-VM -Name $vm.Name -TurnOff -Force -ErrorAction Stop
-                    WriteLog "VM $($vm.Name) stopped successfully"
+        foreach ($vm in $vms) {
+            if ($vm.Name.StartsWith("_FFU-")) {
+                WriteLog "Found FFU VM: $($vm.Name) (State: $($vm.State))"
+                # Use Test-VMStateRunning factory function since [VMState] enum isn't accessible from FFU.VM module
+                if (Test-VMStateRunning -State $vm.State) {
+                    try {
+                        WriteLog "Stopping running VM: $($vm.Name)"
+                        $HypervisorProvider.StopVM($vm, $true)  # Force stop
+                        WriteLog "VM $($vm.Name) stopped successfully"
+                    }
+                    catch {
+                        WriteLog "WARNING: Failed to stop VM '$($vm.Name)': $($_.Exception.Message)"
+                    }
                 }
-                catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
-                    WriteLog "WARNING: Hyper-V error stopping VM '$($vm.Name)': $($_.Exception.Message)"
+                # Remove the VM
+                $vmPath = Join-Path $FFUDevelopmentPath "VM\$($vm.Name)"
+                try {
+                    WriteLog "Removing VM: $($vm.Name)"
+                    $HypervisorProvider.RemoveVM($vm, $true)  # Remove with disks
+                    WriteLog "VM removed via provider"
+                    # Clean up remaining artifacts
+                    Remove-FFUBuildArtifacts -VMPath $vmPath -FFUDevelopmentPath $FFUDevelopmentPath
                 }
                 catch {
-                    WriteLog "WARNING: Failed to stop VM '$($vm.Name)': $($_.Exception.Message)"
+                    WriteLog "WARNING: Provider cleanup failed for '$($vm.Name)': $($_.Exception.Message)"
+                    # Fall back to Remove-FFUVM
+                    try {
+                        Remove-FFUVM -VMName $vm.Name -VMPath $vmPath -InstallApps $true `
+                                     -VhdxDisk $null -FFUDevelopmentPath $FFUDevelopmentPath
+                    }
+                    catch {
+                        WriteLog "WARNING: Remove-FFUVM also failed: $($_.Exception.Message)"
+                    }
                 }
             }
-            # If conditions are met, delete the VM
-            # Note: For old VMs we may not have VMPath, so we derive it
-            $vmPath = Join-Path $FFUDevelopmentPath "VM\$($vm.Name)"
-            try {
-                Remove-FFUVM -VMName $vm.Name -VMPath $vmPath -InstallApps $true `
-                             -VhdxDisk $null -FFUDevelopmentPath $FFUDevelopmentPath
-            }
-            catch {
-                WriteLog "WARNING: Failed to remove VM '$($vm.Name)': $($_.Exception.Message)"
+        }
+    }
+    else {
+        # Fallback to Hyper-V cmdlets (original behavior)
+        WriteLog "Using Hyper-V cmdlets for VM cleanup (no provider available)"
+        try {
+            $vms = Get-VM -ErrorAction Stop
+        }
+        catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
+            WriteLog "WARNING: Hyper-V error retrieving VMs: $($_.Exception.Message)"
+            $vms = @()
+        }
+        catch {
+            WriteLog "WARNING: Failed to retrieve VMs: $($_.Exception.Message)"
+            $vms = @()
+        }
+
+        # Loop through each VM
+        foreach ($vm in $vms) {
+            if ($vm.Name.StartsWith("_FFU-")) {
+                if ($vm.State -eq 'Running') {
+                    try {
+                        WriteLog "Stopping running VM: $($vm.Name)"
+                        Stop-VM -Name $vm.Name -TurnOff -Force -ErrorAction Stop
+                        WriteLog "VM $($vm.Name) stopped successfully"
+                    }
+                    catch [Microsoft.HyperV.PowerShell.VirtualizationException] {
+                        WriteLog "WARNING: Hyper-V error stopping VM '$($vm.Name)': $($_.Exception.Message)"
+                    }
+                    catch {
+                        WriteLog "WARNING: Failed to stop VM '$($vm.Name)': $($_.Exception.Message)"
+                    }
+                }
+                # If conditions are met, delete the VM
+                # Note: For old VMs we may not have VMPath, so we derive it
+                $vmPath = Join-Path $FFUDevelopmentPath "VM\$($vm.Name)"
+                try {
+                    Remove-FFUVM -VMName $vm.Name -VMPath $vmPath -InstallApps $true `
+                                 -VhdxDisk $null -FFUDevelopmentPath $FFUDevelopmentPath
+                }
+                catch {
+                    WriteLog "WARNING: Failed to remove VM '$($vm.Name)': $($_.Exception.Message)"
+                }
             }
         }
     }
@@ -1601,6 +1658,145 @@ function Update-CaptureFFUScript {
     }
 }
 
+function Remove-FFUBuildArtifacts {
+    <#
+    .SYNOPSIS
+    Removes FFU build artifacts that are not VM-specific
+
+    .DESCRIPTION
+    Cleans up mounted images, mount folder, mountpoints, and VM path artifacts.
+    This function handles cleanup that is common across all hypervisors (Hyper-V, VMware, etc.)
+    and should be called after the hypervisor provider's RemoveVM method.
+
+    Use this with the hypervisor provider's RemoveVM for complete cleanup:
+    1. Call $provider.RemoveVM($vm, $true) to remove VM and disks
+    2. Call Remove-FFUBuildArtifacts for remaining cleanup
+
+    .PARAMETER VMPath
+    Path to the VM configuration directory to remove
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path for mount folder cleanup
+
+    .PARAMETER CleanupVMPath
+    If true, removes the VMPath directory (default: true)
+
+    .PARAMETER CleanupMountedImages
+    If true, dismounts orphaned mounted images (default: true)
+
+    .PARAMETER CleanupMountFolder
+    If true, removes the Mount folder (default: true)
+
+    .PARAMETER CleanupMountpoints
+    If true, removes unused mountpoints (default: true)
+
+    .EXAMPLE
+    # After provider removes VM
+    $provider.RemoveVM($vm, $true)
+    Remove-FFUBuildArtifacts -VMPath "C:\FFU\VM\_FFU-Build" -FFUDevelopmentPath "C:\FFU"
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $false)]
+        [string]$VMPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$CleanupVMPath = $true,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$CleanupMountedImages = $true,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$CleanupMountFolder = $true,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$CleanupMountpoints = $true
+    )
+
+    WriteLog "Starting FFU build artifact cleanup"
+
+    # Remove VM path if specified
+    if ($CleanupVMPath -and -not [string]::IsNullOrWhiteSpace($VMPath)) {
+        WriteLog "Removing $VMPath"
+        try {
+            if (Test-Path -Path $VMPath) {
+                Remove-Item -Path $VMPath -Force -Recurse -ErrorAction Stop
+                WriteLog 'VM path removal complete'
+            }
+            else {
+                WriteLog "VM path $VMPath does not exist, skipping"
+            }
+        }
+        catch [System.IO.IOException] {
+            WriteLog "WARNING: IO error removing VM path (files may be in use): $($_.Exception.Message)"
+        }
+        catch [System.UnauthorizedAccessException] {
+            WriteLog "WARNING: Access denied removing VM path: $($_.Exception.Message)"
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove VM path: $($_.Exception.Message)"
+        }
+    }
+
+    # Remove orphaned mounted images
+    if ($CleanupMountedImages) {
+        try {
+            $mountedImages = Get-WindowsImage -Mounted -ErrorAction Stop
+            if ($mountedImages) {
+                foreach ($image in $mountedImages) {
+                    $mountPath = $image.Path
+                    WriteLog "Dismounting image at $mountPath"
+                    try {
+                        Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop
+                        WriteLog "Successfully dismounted image at $mountPath"
+                    }
+                    catch [System.Runtime.InteropServices.COMException] {
+                        WriteLog "WARNING: COM error dismounting image at $mountPath (may already be dismounted): $($_.Exception.Message)"
+                    }
+                    catch {
+                        WriteLog "WARNING: Failed to dismount image at $mountPath : $($_.Exception.Message)"
+                    }
+                }
+            }
+        }
+        catch {
+            WriteLog "WARNING: Error retrieving mounted images: $($_.Exception.Message)"
+        }
+    }
+
+    # Remove Mount folder if it exists
+    if ($CleanupMountFolder) {
+        $mountFolder = "$FFUDevelopmentPath\Mount"
+        if (Test-Path -Path $mountFolder) {
+            WriteLog "Remove $mountFolder folder"
+            try {
+                Remove-Item -Path $mountFolder -Recurse -Force -ErrorAction Stop
+                WriteLog 'Mount folder removed'
+            }
+            catch {
+                WriteLog "WARNING: Failed to remove Mount folder: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    # Remove unused mountpoints
+    if ($CleanupMountpoints) {
+        WriteLog 'Remove unused mountpoints'
+        try {
+            Invoke-Process cmd "/c mountvol /r" | Out-Null
+            WriteLog 'Mountpoint cleanup complete'
+        }
+        catch {
+            WriteLog "WARNING: Failed to remove unused mountpoints: $($_.Exception.Message)"
+        }
+    }
+
+    WriteLog "FFU build artifact cleanup complete"
+}
+
 # Export module members
 Export-ModuleMember -Function @(
     'Get-LocalUserAccount',
@@ -1610,6 +1806,7 @@ Export-ModuleMember -Function @(
     'Set-LocalUserAccountExpiry',
     'New-FFUVM',
     'Remove-FFUVM',
+    'Remove-FFUBuildArtifacts',
     'Get-FFUEnvironment',
     'Set-CaptureFFU',
     'Remove-FFUUserShare',

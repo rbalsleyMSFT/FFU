@@ -60,8 +60,16 @@ class IHypervisorProvider {
         Starts a virtual machine
     .PARAMETER VM
         VMInfo object representing the VM to start
+    .PARAMETER ShowConsole
+        If true, display the VM console window (VMware only - Hyper-V always shows console)
+        Default is false for headless/nogui operation during automated builds
     #>
     [void] StartVM([VMInfo]$VM) {
+        # Default overload - runs headless
+        $this.StartVM($VM, $false)
+    }
+
+    [void] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
         throw [System.NotImplementedException]::new("StartVM must be implemented by derived provider")
     }
 

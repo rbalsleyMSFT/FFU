@@ -22,6 +22,7 @@ function Get-UIConfig {
             2 { 'Auto' }
             default { 'HyperV' }
         }
+        ShowVMConsole                  = $State.Controls.chkShowVMConsole.IsChecked
         AppsScriptVariables            = if ($State.Controls.chkDefineAppsScriptVariables.IsChecked) {
             $vars = @{}
             foreach ($item in $State.Data.appsScriptVariablesDataList) {
@@ -133,8 +134,8 @@ function Get-UIConfig {
                 ForEach-Object { $_.FullName }
         )
     }
-    
-    return $config
+
+    $config
 }
 
 function Set-UIValue {
@@ -420,6 +421,7 @@ function Update-UIFromConfig {
             WriteLog "LoadConfig: Set HypervisorType to '$hypervisorType' (index $hypervisorIndex)."
         }
     }
+    Set-UIValue -ControlName 'chkShowVMConsole' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'ShowVMConsole' -State $State
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
     Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State
@@ -778,16 +780,18 @@ function Invoke-RestoreDefaults {
         # Normalize potential array values to single strings
         function Normalize-PathScalar {
             param([object]$value)
-            if ($null -eq $value) { return $null }
+            if ($null -eq $value) { $null; return }
             if ($value -is [System.Array]) {
                 foreach ($v in $value) {
                     if (-not [string]::IsNullOrWhiteSpace([string]$v)) {
-                        return [string]$v
+                        [string]$v
+                        return
                     }
                 }
-                return $null
+                $null
+                return
             }
-            return [string]$value
+            [string]$value
         }
 
         $appsPath = Join-Path $rootPath 'Apps'

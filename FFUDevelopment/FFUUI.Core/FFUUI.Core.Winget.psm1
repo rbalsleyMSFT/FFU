@@ -207,7 +207,7 @@ function Search-WingetPackagesPublic {
             }
         } -ThrottleLimit 20
         WriteLog "Winget search completed. Created $($output.Count) output objects."
-        return $output
+        $output
     }
     catch {
         WriteLog "Error during Winget search: $($_.Exception.Message)"
@@ -291,7 +291,7 @@ function Install-WingetComponents {
             $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction Stop
         }
         
-        return $module
+        $module
     }
     catch {
         Write-Error "Failed to install/update Winget PowerShell module: $_"
@@ -376,7 +376,7 @@ function Confirm-WingetInstallationUI {
         & $UiUpdateCallback $result.CliVersion "Error"
     }
 
-    return $result
+    $result
 }
 # Function to handle downloading a winget application (Modified for ForEach-Object -Parallel)
 function Start-WingetAppDownloadTask {
@@ -694,7 +694,7 @@ function Start-WingetAppDownloadTask {
     $returnObject = @{ Id = $appId; Status = $status; ResultCode = $resultCode }
             
     # Return the final status and result code as a Hashtable
-    return $returnObject
+    $returnObject
 }
 
 function Invoke-WingetDownload {

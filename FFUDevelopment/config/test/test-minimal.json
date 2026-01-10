@@ -1,0 +1,44 @@
+{
+  "$schema": "../ffubuilder-config.schema.json",
+  "_comment": "Minimal test configuration for quick build verification (~15-20 minutes)",
+  "_description": "Creates a basic Windows 11 Pro FFU with deployment media only. No apps, drivers, or updates.",
+
+  "WindowsRelease": 11,
+  "WindowsSKU": "Pro",
+  "WindowsVersion": "24h2",
+  "WindowsArch": "x64",
+
+  "Memory": 4294967296,
+  "Processors": 2,
+  "Disksize": 32212254720,
+
+  "InstallApps": false,
+  "InstallOffice": false,
+  "InstallDrivers": false,
+
+  "CreateCaptureMedia": false,
+  "CreateDeploymentMedia": true,
+  "BuildUSBDrive": false,
+
+  "UpdateLatestCU": false,
+  "UpdateLatestNet48": false,
+  "UpdateLatestDefender": false,
+  "UpdateEdge": false,
+  "UpdateOneDrive": false,
+
+  "CompactOS": true,
+  "Optimize": true,
+  "CleanupCaptureVM": true,
+  "RemoveFFU": false,
+
+  "VMName": "FFU_Test_Minimal",
+  "VMLocation": "",
+  "VMSwitchName": "intswitch",
+  "VMHostIPAddress": "",
+
+  "LogicalSectorSizeBytes": 512,
+  "ShareName": "FFUDevelopment",
+  "SharePath": "",
+
+  "VMShutdownTimeoutMinutes": 20
+}

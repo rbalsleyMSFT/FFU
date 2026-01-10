@@ -161,7 +161,17 @@ class HyperVProvider : IHypervisorProvider {
     }
 
     [void] StartVM([VMInfo]$VM) {
+        # Default overload - calls with ShowConsole=$false
+        $this.StartVM($VM, $false)
+    }
+
+    [void] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
         try {
+            # Hyper-V VMs are always visible via Hyper-V Manager
+            # ShowConsole parameter is ignored for Hyper-V but logged for visibility
+            if ($ShowConsole) {
+                WriteLog "Note: ShowConsole=true has no effect for Hyper-V (use Hyper-V Manager to view console)"
+            }
             Start-VM -Name $VM.Name -ErrorAction Stop
             WriteLog "VM '$($VM.Name)' started"
         }

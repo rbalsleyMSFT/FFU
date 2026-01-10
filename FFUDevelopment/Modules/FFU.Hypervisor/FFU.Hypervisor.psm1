@@ -116,16 +116,24 @@ function New-HypervisorVM {
 <#
 .SYNOPSIS
     Starts a VM using the appropriate hypervisor provider
+
+.PARAMETER ShowConsole
+    When true, displays the VM console window during startup (VMware only).
+    When false (default), runs the VM in headless/nogui mode for automation.
+    For Hyper-V, use Hyper-V Manager to view the VM console.
 #>
 function Start-HypervisorVM {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [VMInfo]$VM
+        [VMInfo]$VM,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$ShowConsole = $false
     )
 
     $provider = Get-HypervisorProvider -Type $VM.HypervisorType
-    $provider.StartVM($VM)
+    $provider.StartVM($VM, $ShowConsole)
 }
 
 <#
@@ -301,6 +309,98 @@ function Remove-HypervisorVMDvdDrive {
 
 #endregion
 
+#region Factory Functions for Cross-Scope Type Access
+
+<#
+.SYNOPSIS
+    Returns a VMState enum value by name
+
+.DESCRIPTION
+    Factory function to get VMState enum values from outside the module.
+    PowerShell module classes and enums aren't automatically exported to the caller's scope,
+    so this function provides access to VMState values.
+
+.PARAMETER State
+    The state name: Unknown, Off, Running, Paused, Saved, Starting, Stopping, Saving, Restoring, Suspended
+
+.EXAMPLE
+    $offState = Get-VMStateValue -State 'Off'
+    if ($vmState -eq $offState) { Write-Host "VM is off" }
+#>
+function Get-VMStateValue {
+    [CmdletBinding()]
+    [OutputType([VMState])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Unknown', 'Off', 'Running', 'Paused', 'Saved', 'Starting', 'Stopping', 'Saving', 'Restoring', 'Suspended')]
+        [string]$State
+    )
+
+    return [VMState]::$State
+}
+
+<#
+.SYNOPSIS
+    Tests if a VM state equals Off
+
+.DESCRIPTION
+    Helper function to check if a VMState value equals Off without requiring
+    direct access to the [VMState] enum type. Accepts any object type to avoid
+    cross-scope type resolution issues in PowerShell background jobs.
+
+.PARAMETER State
+    The VMState value to test (from GetVMState or Get-HypervisorVMState)
+
+.EXAMPLE
+    $state = $provider.GetVMState($VM)
+    if (Test-VMStateOff -State $state) { Write-Host "VM is off" }
+#>
+function Test-VMStateOff {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        # Use [object] instead of [VMState] to avoid type resolution errors in cross-scope calls
+        # PowerShell module types aren't exported to the caller's scope
+        [object]$State
+    )
+
+    # Compare by value (handles both enum and string comparisons)
+    return $State -eq [VMState]::Off -or $State.ToString() -eq 'Off'
+}
+
+<#
+.SYNOPSIS
+    Tests if a VM state equals Running
+
+.DESCRIPTION
+    Helper function to check if a VMState value equals Running without requiring
+    direct access to the [VMState] enum type. Accepts any object type to avoid
+    cross-scope type resolution issues in PowerShell background jobs.
+
+.PARAMETER State
+    The VMState value to test (from GetVMState or Get-HypervisorVMState)
+
+.EXAMPLE
+    $state = $provider.GetVMState($VM)
+    if (Test-VMStateRunning -State $state) { Write-Host "VM is running" }
+#>
+function Test-VMStateRunning {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        # Use [object] instead of [VMState] to avoid type resolution errors in cross-scope calls
+        # PowerShell module types aren't exported to the caller's scope
+        [object]$State
+    )
+
+    # Compare by value (handles both enum and string comparisons)
+    return $State -eq [VMState]::Running -or $State.ToString() -eq 'Running'
+}
+
+#endregion
+
 #region Module Initialization
 
 # Verify WriteLog function is available from FFU.Core
@@ -320,6 +420,10 @@ Export-ModuleMember -Function @(
     'Get-HypervisorProvider',
     'Test-HypervisorAvailable',
     'Get-AvailableHypervisors',
+    'New-VMConfiguration',
+    'Get-VMStateValue',
+    'Test-VMStateOff',
+    'Test-VMStateRunning',
     # VM lifecycle wrapper functions
     'New-HypervisorVM',
     'Start-HypervisorVM',

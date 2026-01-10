@@ -39,6 +39,27 @@ Complete PowerShell expertise across all platforms for scripting, automation, CI
 
 ---
 
+## 📐 Code Style Standards
+
+All PowerShell code MUST follow the [PoshCode Practice and Style Guide](https://github.com/PoshCode/PowerShellPracticeAndStyle).
+
+**Quick Reference:**
+- **Brace Style**: OTBS (One True Brace Style) - opening brace at end of line
+- **Commands**: Full cmdlet names only (`Get-ChildItem` not `gci`)
+- **Parameters**: Always explicit (`-Path $file` not `$file`)
+- **Indentation**: 4 spaces per level
+- **Line Length**: Maximum 115 characters
+- **Functions**: Include `[CmdletBinding()]` and `[OutputType()]`
+- **Paths**: Use `$PSScriptRoot`, avoid `.`, `..`, `~`
+- **Output**: Avoid `return` keyword - place object on own line
+
+**Validate with PSScriptAnalyzer:**
+```powershell
+Invoke-ScriptAnalyzer -Path ./script.ps1 -Settings CodeFormatting
+```
+
+---
+
 ## 🎯 When to Activate
 
 PROACTIVELY activate for ANY PowerShell-related task:

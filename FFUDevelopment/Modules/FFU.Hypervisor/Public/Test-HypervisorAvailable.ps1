@@ -56,22 +56,12 @@ function Test-HypervisorAvailable {
                 $providers = @([HyperVProvider]::new())
             }
             'VMware' {
-                # VMware provider will be implemented in Milestone 2
-                if ($Detailed) {
-                    return @{
-                        IsAvailable = $false
-                        ProviderName = 'VMware'
-                        ProviderVersion = 'N/A'
-                        Issues = @('VMware provider is not yet implemented')
-                        Details = @{}
-                    }
-                }
-                return $false
+                $providers = @([VMwareProvider]::new())
             }
             'Any' {
                 $providers = @(
                     [HyperVProvider]::new()
-                    # VMware would be added here when implemented
+                    [VMwareProvider]::new()
                 )
             }
         }

@@ -32,7 +32,7 @@ function Get-DellDriversModelList {
         $downloadCatalog = $true
         if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
             WriteLog "Dell Catalog XML found: $dellCatalogXML"
-            $dellCatalogCreationTime = (Get-Item $dellCatalogXML).CreationTime
+            $dellCatalogCreationTime = (Get-Item -Path $dellCatalogXML).CreationTime
             WriteLog "Dell Catalog XML Creation time: $dellCatalogCreationTime"
             # Check if the XML file is less than 7 days old
             if (((Get-Date) - $dellCatalogCreationTime).TotalDays -lt 7) {
@@ -152,7 +152,7 @@ function Get-DellDriversModelList {
             })
     }
 
-    return $models
+    $models
 }
 
 # Function to download and extract drivers for a specific Dell model (Modified for ForEach-Object -Parallel)
@@ -219,7 +219,8 @@ function Save-DellDriversTask {
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $existingDriver.Status }
             }
 
-            return $existingDriver
+            $existingDriver
+            return
         }
 
         # Define paths for Dell catalog. The catalog is assumed to be prepared by the calling function.

@@ -233,10 +233,11 @@ function Get-AvailableWindowsReleases {
     )
 
     if (-not [string]::IsNullOrEmpty($IsoPath) -and $IsoPath.EndsWith('.iso', [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $State.Defaults.WindowsSettingsDefaults.AllWindowsReleases
+        $State.Defaults.WindowsSettingsDefaults.AllWindowsReleases
+        return
     }
     else {
-        return $State.Defaults.WindowsSettingsDefaults.MctWindowsReleases
+        $State.Defaults.WindowsSettingsDefaults.MctWindowsReleases
     }
 }
 
@@ -259,7 +260,7 @@ function Get-AvailableWindowsVersions {
     }
 
     if (-not $State.Defaults.WindowsSettingsDefaults.WindowsVersionMap.ContainsKey($SelectedRelease)) {
-        return $result
+        $result
     }
 
     $validVersions = $State.Defaults.WindowsSettingsDefaults.WindowsVersionMap[$SelectedRelease]
@@ -299,7 +300,7 @@ function Get-AvailableWindowsVersions {
         $result.IsEnabled = $false # Combo should be disabled
     }
 
-    return $result
+    $result
 }
 
 # Function to get available SKUs for a given Windows Release value and display name
@@ -320,7 +321,8 @@ function Get-AvailableSkusForRelease {
     # Handle LTSC 2016 specifically
     if ($SelectedReleaseValue -eq 2016 -and $SelectedReleaseDisplayName -like '*LTSB*') {
         WriteLog "Get-AvailableSkusForRelease: Matched LTSB 2016. Returning LTSC 2016 SKUs."
-        return $State.Defaults.WindowsSettingsDefaults.Ltsc2016SKUs
+        $State.Defaults.WindowsSettingsDefaults.Ltsc2016SKUs
+        return
     }
     # Handle LTSC 2019 specifically
     # Ensure "Server" is not in the display name to avoid matching "Windows Server 2019"
@@ -333,12 +335,13 @@ function Get-AvailableSkusForRelease {
     elseif ($State.Defaults.WindowsSettingsDefaults.WindowsReleaseSkuMap.ContainsKey($SelectedReleaseValue)) {
         $availableSkus = $State.Defaults.WindowsSettingsDefaults.WindowsReleaseSkuMap[$SelectedReleaseValue]
         WriteLog "Get-AvailableSkusForRelease: Found $($availableSkus.Count) SKUs for Release '$SelectedReleaseValue' using standard map."
-        return $availableSkus
+        $availableSkus
+        return
     }
     else {
         WriteLog "Get-AvailableSkusForRelease: Warning - Release Value '$SelectedReleaseValue' not found in SKU map. Returning default client SKUs."
         # Fallback to a default list (e.g., client SKUs) or an empty list
-        return $State.Defaults.WindowsSettingsDefaults.ClientSKUs
+        $State.Defaults.WindowsSettingsDefaults.ClientSKUs
     }
 }
 

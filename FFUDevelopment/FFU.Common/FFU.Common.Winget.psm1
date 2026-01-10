@@ -344,8 +344,8 @@ function Get-Application {
             }
         }
     } # End foreach ($arch in $architecturesToDownload)
-    
-    return $overallResult
+
+    $overallResult
 }
 function Get-Apps {
     [CmdletBinding()]

@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.6.3",
-    "buildDate": "2026-01-08",
+    "version": "1.6.24",
+    "buildDate": "2026-01-10",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -24,9 +24,9 @@
             "description": "Structured logging with levels, JSON output, session correlation"
         },
         "FFUUI.Core": {
-            "version": "0.0.5",
+            "version": "0.0.7",
             "path": "FFUUI.Core/FFUUI.Core.psd1",
-            "description": "WPF UI framework with hypervisor selection, VMware REST API credential setup (non-elevated with enterprise guidance)"
+            "description": "WPF UI framework with hypervisor selection, VMware REST API credential setup, ShowVMConsole option"
         },
         "FFU.Core": {
             "version": "1.0.13",
@@ -54,9 +54,9 @@
             "description": "OEM driver download and management"
         },
         "FFU.Imaging": {
-            "version": "1.0.1",
+            "version": "1.0.2",
             "path": "Modules/FFU.Imaging/FFU.Imaging.psd1",
-            "description": "DISM operations and FFU creation"
+            "description": "DISM operations and FFU creation - VMware VHD support via diskpart (New-ScratchVhd, Dismount-ScratchVhd)"
         },
         "FFU.Media": {
             "version": "1.2.0",
@@ -69,9 +69,9 @@
             "description": "Windows Update catalog and MSU handling"
         },
         "FFU.VM": {
-            "version": "1.0.2",
+            "version": "1.0.4",
             "path": "Modules/FFU.VM/FFU.VM.psd1",
-            "description": "Hyper-V VM lifecycle management"
+            "description": "VM lifecycle management - fixed [VMState] type error via factory functions"
         },
         "FFU.Messaging": {
             "version": "1.0.0",
@@ -84,9 +84,9 @@
             "description": "Comprehensive pre-flight validation with tiered checks, WIM mount auto-repair via fltmc filters detection, and remediation guidance"
         },
         "FFU.Hypervisor": {
-            "version": "1.1.0",
+            "version": "1.1.15",
             "path": "Modules/FFU.Hypervisor/FFU.Hypervisor.psd1",
-            "description": "Hypervisor abstraction layer with full VMware Workstation Pro provider - REST API, VM lifecycle, disk operations via diskpart"
+            "description": "Hypervisor abstraction layer - vmrun syntax fix + [VMState] cross-scope type resolution fix"
         }
     },
 

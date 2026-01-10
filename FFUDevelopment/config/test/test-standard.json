@@ -1,0 +1,47 @@
+{
+  "$schema": "../ffubuilder-config.schema.json",
+  "_comment": "Standard test configuration for full build verification (~40-60 minutes)",
+  "_description": "Creates a Windows 11 Pro FFU with apps, updates, and both capture/deployment media.",
+
+  "WindowsRelease": 11,
+  "WindowsSKU": "Pro",
+  "WindowsVersion": "24h2",
+  "WindowsArch": "x64",
+
+  "Memory": 8589934592,
+  "Processors": 4,
+  "Disksize": 53687091200,
+
+  "InstallApps": true,
+  "InstallOffice": false,
+  "InstallDrivers": false,
+
+  "CreateCaptureMedia": true,
+  "CreateDeploymentMedia": true,
+  "BuildUSBDrive": false,
+
+  "UpdateLatestCU": true,
+  "UpdateLatestNet48": false,
+  "UpdateLatestDefender": true,
+  "UpdateEdge": true,
+  "UpdateOneDrive": true,
+
+  "CompactOS": true,
+  "Optimize": true,
+  "CleanupCaptureVM": true,
+  "RemoveFFU": false,
+
+  "VMName": "FFU_Test_Standard",
+  "VMLocation": "",
+  "VMSwitchName": "intswitch",
+  "VMHostIPAddress": "",
+
+  "LogicalSectorSizeBytes": 512,
+  "ShareName": "FFUDevelopment",
+  "SharePath": "",
+
+  "AppsISO": "",
+  "AppsPath": "",
+
+  "VMShutdownTimeoutMinutes": 20
+}

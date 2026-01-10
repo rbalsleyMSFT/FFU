@@ -78,7 +78,7 @@ function Get-LenovoDriversModelList {
         WriteLog "Error querying Lenovo PSREF API: $($_.Exception.Message)"
         # Return empty list on error
     }
-    return $models
+    $models
 }
 # Function to download and extract drivers for a specific Lenovo model (Background Task)
 function Save-LenovoDriversTask {
@@ -150,7 +150,8 @@ function Save-LenovoDriversTask {
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $existingDriver.Status }
             }
 
-            return $existingDriver
+            $existingDriver
+            return
         }
 
         # Ensure base directories exist

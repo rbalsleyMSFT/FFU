@@ -70,7 +70,7 @@ function Get-MicrosoftDriversModelList {
             }
         }
         WriteLog "Parsing complete. Found $($models.Count) models."
-        return $models
+        $models
     }
     catch {
         WriteLog "Error getting Microsoft models: $($_.Exception.Message)"
@@ -141,7 +141,8 @@ function Save-MicrosoftDriversTask {
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $existingDriver.Status }
             }
 
-            return $existingDriver
+            $existingDriver
+            return
         }
 
         ### GET THE DOWNLOAD LINK

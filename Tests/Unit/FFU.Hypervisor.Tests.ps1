@@ -50,9 +50,9 @@ Describe 'FFU.Hypervisor Module Structure' {
         $module | Should -Not -BeNullOrEmpty
     }
 
-    It 'Module version should be 1.1.0' {
+    It 'Module version should be 1.1.15' {
         $module = Get-Module -Name 'FFU.Hypervisor'
-        $module.Version.ToString() | Should -Be '1.1.0'
+        $module.Version.ToString() | Should -Be '1.1.15'
     }
 
     It 'Module should export Get-HypervisorProvider function' {
@@ -65,6 +65,10 @@ Describe 'FFU.Hypervisor Module Structure' {
 
     It 'Module should export Get-AvailableHypervisors function' {
         Get-Command -Name 'Get-AvailableHypervisors' -Module 'FFU.Hypervisor' | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Module should export New-VMConfiguration factory function' {
+        Get-Command -Name 'New-VMConfiguration' -Module 'FFU.Hypervisor' | Should -Not -BeNullOrEmpty
     }
 
     It 'Module should export VM lifecycle functions' {
@@ -189,6 +193,102 @@ Describe 'VMConfiguration Class' {
             }
             $result | Should -Be $true
         }
+    }
+}
+
+Describe 'New-VMConfiguration Factory Function' {
+    # This tests the exported factory function that works around PowerShell's
+    # module class scope limitation (classes aren't exported to caller's scope)
+
+    It 'Should create VMConfiguration with required parameters' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 8GB `
+                                      -ProcessorCount 4 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vhdx'
+        $config | Should -Not -BeNullOrEmpty
+        $config.Name | Should -Be 'TestVM'
+        $config.Path | Should -Be 'C:\VMs\Test'
+        $config.MemoryBytes | Should -Be 8589934592
+        $config.ProcessorCount | Should -Be 4
+    }
+
+    It 'Should auto-detect VHDX disk format' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vhdx'
+        $config.DiskFormat | Should -Be 'VHDX'
+    }
+
+    It 'Should auto-detect VHD disk format' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vhd'
+        $config.DiskFormat | Should -Be 'VHD'
+    }
+
+    It 'Should auto-detect VMDK disk format' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vmdk'
+        $config.DiskFormat | Should -Be 'VMDK'
+    }
+
+    It 'Should apply default values for optional parameters' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vhdx'
+        $config.Generation | Should -Be 2
+        $config.EnableTPM | Should -Be $true
+        $config.EnableSecureBoot | Should -Be $true
+        $config.DynamicMemory | Should -Be $false
+        $config.AutomaticCheckpoints | Should -Be $false
+    }
+
+    It 'Should allow overriding optional parameters' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vhdx' `
+                                      -Generation 1 `
+                                      -EnableTPM $false `
+                                      -EnableSecureBoot $false `
+                                      -DynamicMemory $true `
+                                      -AutomaticCheckpoints $true
+        $config.Generation | Should -Be 1
+        $config.EnableTPM | Should -Be $false
+        $config.EnableSecureBoot | Should -Be $false
+        $config.DynamicMemory | Should -Be $true
+        $config.AutomaticCheckpoints | Should -Be $true
+    }
+
+    It 'Should allow setting ISOPath' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.vhdx' `
+                                      -ISOPath 'C:\ISOs\Apps.iso'
+        $config.ISOPath | Should -Be 'C:\ISOs\Apps.iso'
+    }
+
+    It 'Should allow explicit disk format override' {
+        $config = New-VMConfiguration -Name 'TestVM' `
+                                      -Path 'C:\VMs\Test' `
+                                      -MemoryBytes 4GB `
+                                      -ProcessorCount 2 `
+                                      -VirtualDiskPath 'C:\VMs\Test\TestVM.disk' `
+                                      -DiskFormat 'VMDK'
+        $config.DiskFormat | Should -Be 'VMDK'
     }
 }
 
@@ -450,17 +550,25 @@ Describe 'VMwareProvider Class' {
     }
 
     Context 'Capabilities' {
-        It 'Should support TPM' {
-            $provider.Capabilities.SupportsTPM | Should -Be $true
+        It 'Should NOT support TPM (requires encryption which breaks vmrun automation)' {
+            # VMware vTPM requires VM encryption which breaks vmrun.exe automation
+            # TPM features work on target hardware after FFU deployment
+            $provider.Capabilities.SupportsTPM | Should -Be $false
+        }
+
+        It 'Should have TPMNote explaining the limitation' {
+            $provider.Capabilities.TPMNote | Should -Match 'encryption'
         }
 
         It 'Should support Secure Boot' {
             $provider.Capabilities.SupportsSecureBoot | Should -Be $true
         }
 
-        It 'Should support VHD and VMDK formats' {
-            $provider.Capabilities.SupportedDiskFormats | Should -Contain 'VHD'
+        It 'Should support VMDK format only (VHD not bootable)' {
+            # VMware cannot boot from VHD files - they require VMDK for bootable VMs
             $provider.Capabilities.SupportedDiskFormats | Should -Contain 'VMDK'
+            # VHD is not included as it's not bootable in VMware
+            $provider.Capabilities.SupportedDiskFormats | Should -Not -Contain 'VHD'
         }
 
         It 'Should NOT support dynamic memory' {
@@ -469,10 +577,11 @@ Describe 'VMwareProvider Class' {
     }
 
     Context 'Configuration Validation' {
-        It 'Should validate VHD format as supported' {
+        It 'Should validate VMDK format as supported' {
+            # VMDK is the only bootable format for VMware
             $result = Invoke-InModuleScope {
-                $config = [VMConfiguration]::new('Test', 'C:\Test', 4GB, 2, 'C:\Test\disk.vhd')
-                $config.DiskFormat = 'VHD'
+                $config = [VMConfiguration]::new('Test', 'C:\Test', 4GB, 2, 'C:\Test\disk.vmdk')
+                $config.DiskFormat = 'VMDK'
                 $provider = [VMwareProvider]::new()
                 $provider.ValidateConfiguration($config)
             }
@@ -488,6 +597,22 @@ Describe 'VMwareProvider Class' {
             }
             $result.IsValid | Should -Be $false
             $result.Errors | Should -Match 'VHDX'
+        }
+
+        It 'Should warn about TPM when EnableTPM is true' {
+            $result = Invoke-InModuleScope {
+                $config = [VMConfiguration]::new('Test', 'C:\Test', 4GB, 2, 'C:\Test\disk.vmdk')
+                $config.DiskFormat = 'VMDK'
+                $config.EnableTPM = $true
+                $provider = [VMwareProvider]::new()
+                $provider.ValidateConfiguration($config)
+            }
+            # Should have warnings about TPM (from base class and/or VMwareProvider override)
+            # The combined warnings include "encryption" from VMwareProvider and "not supported" from base
+            $warningText = $result.Warnings -join ' '
+            $warningText | Should -Match 'TPM'
+            # VMwareProvider adds specific warnings about encryption
+            $warningText | Should -Match 'encryption|will be disabled|target hardware'
         }
     }
 

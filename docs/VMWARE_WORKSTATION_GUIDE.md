@@ -50,7 +50,7 @@ When you select VMware Workstation Pro, a new row appears showing the REST API c
 5. Close the terminal and click OK in the dialog
 6. The status updates to show "Configured (current user)"
 
-> **Note:** Credentials are stored in your user profile at `%USERPROFILE%\.vmrestCfg`.
+> **Note:** Credentials are stored in your user profile at `%USERPROFILE%\vmrest.cfg` (VMware 17.x).
 
 #### Enterprise Environments with Separate Admin Accounts
 
@@ -63,7 +63,7 @@ If your organization uses separate admin accounts for elevation (common in enter
    ```
 
 This is necessary because:
-- Credentials are stored per-user in `%USERPROFILE%\.vmrestCfg`
+- Credentials are stored per-user in `%USERPROFILE%\vmrest.cfg`
 - The UI runs as your logged-in user
 - The build process runs elevated (as the admin account)
 - Each account needs its own credentials configured
@@ -269,6 +269,21 @@ After build completion, verify:
 1. Verify vmrest.exe exists: `& "vmrest.exe" --version`
 2. Check port 8697 is not in use: `netstat -an | findstr 8697`
 3. Configure credentials: `vmrest.exe -C`
+
+#### PowerShell 7+ HTTP Authentication Error
+
+**Symptom:** `Invoke-RestMethod: The cmdlet cannot protect plain text secrets sent over unencrypted connections`
+
+**Cause:** PowerShell 7+ refuses to send credentials over HTTP by default for security. VMware's vmrest uses HTTP (not HTTPS).
+
+**Solution:** FFU Builder v1.6.3+ handles this automatically. If testing manually:
+```powershell
+# PowerShell 7+ requires -AllowUnencryptedAuthentication
+Invoke-RestMethod -Uri "http://127.0.0.1:8697/api/vms" -Credential (Get-Credential) -AllowUnencryptedAuthentication
+
+# PowerShell 5.1 works without the extra parameter
+Invoke-RestMethod -Uri "http://127.0.0.1:8697/api/vms" -Credential (Get-Credential)
+```
 
 #### VHD Creation Fails
 

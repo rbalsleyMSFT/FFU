@@ -28,7 +28,7 @@ function Get-Parameters {
 
     # Filter out the unwanted parameters
     $filteredParamNames = $paramNames | Where-Object { $excludedParams -notcontains $_ }
-    return $filteredParamNames
+    $filteredParamNames
 }
 
 function Write-VariableValues {
@@ -105,17 +105,25 @@ function Write-VariableValues {
     WriteLog 'End logging variables'
 }
 
-function Get-ChildProcesses($parentId) {
+function Get-ChildProcesses {
+    [CmdletBinding()]
+    [OutputType([CimInstance[]])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$ParentId
+    )
     $result = @()
-    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId = $parentId"
+    $children = Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $ParentId"
     foreach ($child in $children) {
         $result += $child
-        $result += Get-ChildProcesses $child.ProcessId
+        $result += Get-ChildProcesses -ParentId $child.ProcessId
     }
-    return $result
+    $result
 }
 
 function Test-Url {
+    [CmdletBinding()]
+    [OutputType([bool])]
     param (
         [Parameter(Mandatory = $true)]
         [string]$Url
@@ -125,14 +133,16 @@ function Test-Url {
         $request = [System.Net.WebRequest]::Create($Url)
         $request.Method = 'HEAD'
         $response = $request.GetResponse()
-        return $true
+        $true
     }
     catch {
-        return $false
+        $false
     }
 }
 
 function Get-PrivateProfileString {
+    [CmdletBinding()]
+    [OutputType([string])]
     param (
         [Parameter()]
         [string]$FileName,
@@ -144,10 +154,12 @@ function Get-PrivateProfileString {
     $sbuilder = [System.Text.StringBuilder]::new(1024)
     [void][Win32.Kernel32]::GetPrivateProfileString($SectionName, $KeyName, "", $sbuilder, $sbuilder.Capacity, $FileName)
 
-    return $sbuilder.ToString()
+    $sbuilder.ToString()
 }
 
 function Get-PrivateProfileSection {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
     param (
         [Parameter()]
         [string]$FileName,
@@ -166,7 +178,7 @@ function Get-PrivateProfileSection {
         }
     }
 
-    return $hashTable
+    $hashTable
 }
 
 function Get-ShortenedWindowsSKU {
@@ -257,7 +269,7 @@ function Get-ShortenedWindowsSKU {
         }
     }
 
-    return $shortenedWindowsSKU
+    $shortenedWindowsSKU
 }
 
 function New-FFUFileName {
@@ -350,7 +362,7 @@ function New-FFUFileName {
     if ($CustomFFUNameTemplate -notlike '*.ffu') {
         $CustomFFUNameTemplate += '.ffu'
     }
-    return $CustomFFUNameTemplate
+    $CustomFFUNameTemplate
 }
 
 function Export-ConfigFile {
@@ -504,8 +516,8 @@ function New-RunSession {
 function Get-CurrentRunManifest {
     param([string]$FFUDevelopmentPath)
     $manifestPath = Join-Path $FFUDevelopmentPath '.session\currentRun.json'
-    if (Test-Path $manifestPath) { return (Get-Content $manifestPath -Raw | ConvertFrom-Json) }
-    return $null
+    if (Test-Path -Path $manifestPath) { Get-Content -Path $manifestPath -Raw | ConvertFrom-Json; return }
+    $null
 }
 
 function Save-RunManifest {
@@ -627,13 +639,14 @@ function Remove-InProgressItems {
                     try { (Get-Item -LiteralPath $path -ErrorAction SilentlyContinue).Attributes = 'Normal' } catch {}
                     Remove-Item -Path $path -Force -ErrorAction Stop
                 }
-                return $true
+                $true
+                return
             }
             catch {
                 Start-Sleep -Milliseconds ([FFUConstants]::PROCESS_POLL_INTERVAL_MS)
             }
         }
-        return -not (Test-Path -LiteralPath $path)
+        -not (Test-Path -LiteralPath $path)
     }
 
     Get-ChildItem -Path $sessionInprog -Filter *.marker -ErrorAction SilentlyContinue | ForEach-Object {
@@ -1209,7 +1222,8 @@ function Invoke-WithErrorHandling {
                 & $log "Operation '$OperationName' succeeded on attempt $attempt"
             }
 
-            return $result
+            $result
+            return
         }
         catch {
             $lastError = $_
@@ -1246,7 +1260,7 @@ function Invoke-WithErrorHandling {
     }
     else {
         & $log "WARNING: $finalMessage"
-        return $null
+        $null
     }
 }
 
@@ -1310,23 +1324,25 @@ function Test-ExternalCommandSuccess {
     if ($CommandName -match 'robocopy') {
         $robocopySuccessCodes = @(0, 1, 2, 3, 4, 5, 6, 7)
         if ($robocopySuccessCodes -contains $LASTEXITCODE) {
-            return $true
+            $true
+            return
         } else {
             $errorMsg = "$CommandName failed with exit code $LASTEXITCODE (robocopy: 8+ indicates error)"
             if ($Output) { $errorMsg += "`nOutput: $Output" }
             & $logError $errorMsg
-            return $false
+            $false
+            return
         }
     }
 
     # Standard command handling
     if ($SuccessCodes -contains $LASTEXITCODE) {
-        return $true
+        $true
     } else {
         $errorMsg = "$CommandName failed with exit code $LASTEXITCODE"
         if ($Output) { $errorMsg += "`nOutput: $Output" }
         & $logError $errorMsg
-        return $false
+        $false
     }
 }
 
@@ -1380,7 +1396,7 @@ function Invoke-WithCleanup {
 
     try {
         $result = & $Operation
-        return $result
+        $result
     }
     catch {
         & $logMessage "ERROR:" "in '$OperationName': $($_.Exception.Message)"
@@ -1648,7 +1664,7 @@ function New-SecureRandomPassword {
         # Make SecureString read-only for security
         $securePassword.MakeReadOnly()
 
-        return $securePassword
+        $securePassword
     }
     finally {
         # Dispose of RNG
@@ -1699,7 +1715,7 @@ function ConvertFrom-SecureStringToPlainText {
 
     $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
     try {
-        return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+        [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
     }
     finally {
         # Zero out and free the BSTR
@@ -1900,12 +1916,13 @@ function Test-FFUConfiguration {
             $SchemaPath = Join-Path $moduleRoot "config\ffubuilder-config.schema.json"
         }
 
-        if (-not (Test-Path $SchemaPath -PathType Leaf)) {
+        if (-not (Test-Path -Path $SchemaPath -PathType Leaf)) {
             Add-ValidationError "Schema file not found: $SchemaPath"
             if ($ThrowOnError) {
                 throw "Configuration validation failed: Schema file not found at $SchemaPath"
             }
-            return $result
+            $result
+            return
         }
 
         $schemaContent = Get-Content -Path $SchemaPath -Raw -ErrorAction Stop
@@ -1916,7 +1933,8 @@ function Test-FFUConfiguration {
         if ($ThrowOnError) {
             throw "Configuration validation failed: $($_.Exception.Message)"
         }
-        return $result
+        $result
+        return
     }
 
     # Load configuration
@@ -1952,7 +1970,8 @@ function Test-FFUConfiguration {
         if ($ThrowOnError) {
             throw "Configuration validation failed: Invalid JSON - $($_.Exception.Message)"
         }
-        return $result
+        $result
+        return
     }
 
     # Get schema properties
@@ -2112,7 +2131,7 @@ function Test-FFUConfiguration {
         throw "Configuration validation failed with $($result.Errors.Count) error(s):`n  - $errorSummary"
     }
 
-    return $result
+    $result
 }
 
 function Get-FFUConfigurationSchema {
@@ -2137,7 +2156,7 @@ function Get-FFUConfigurationSchema {
     param()
 
     $moduleRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    return Join-Path $moduleRoot "config\ffubuilder-config.schema.json"
+    Join-Path -Path $moduleRoot -ChildPath "config\ffubuilder-config.schema.json"
 }
 
 # =============================================================================
@@ -2213,7 +2232,7 @@ function Register-CleanupAction {
         WriteLog "Registered cleanup action: $Name (Type: $ResourceType, Id: $ResourceId)"
     }
 
-    return $cleanupId
+    $cleanupId
 }
 
 function Unregister-CleanupAction {
@@ -2250,9 +2269,10 @@ function Unregister-CleanupAction {
         if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
             WriteLog "Unregistered cleanup action: $($entry.Name)"
         }
-        return $true
+        $true
+        return
     }
-    return $false
+    $false
 }
 
 function Invoke-FailureCleanup {
@@ -2371,7 +2391,7 @@ function Get-CleanupRegistry {
     [OutputType([PSCustomObject[]])]
     param()
 
-    return @($script:CleanupRegistry)
+    @($script:CleanupRegistry)
 }
 
 # =============================================================================

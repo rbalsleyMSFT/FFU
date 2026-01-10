@@ -83,7 +83,7 @@ function New-FFUCheckResult {
         [int]$DurationMs = 0
     )
 
-    return [PSCustomObject]@{
+    [PSCustomObject]@{
         CheckName   = $CheckName
         Status      = $Status
         Message     = $Message
@@ -194,7 +194,7 @@ function Get-FFURequirements {
     # Deduplicate features
     $uniqueFeatures = $requiredFeatures | Select-Object -Unique
 
-    return [PSCustomObject]@{
+    [PSCustomObject]@{
         RequiredDiskSpaceGB = $requiredGB
         RequiredFeatures    = $uniqueFeatures
         SpaceBreakdown      = $breakdown
@@ -245,7 +245,7 @@ function Test-FFUAdministrator {
         $stopwatch.Stop()
 
         if ($isAdmin) {
-            return New-FFUCheckResult -CheckName 'Administrator' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'Administrator' -Status 'Passed' `
                 -Message 'Running with Administrator privileges' `
                 -Details @{
                     UserName  = $currentPrincipal.Identity.Name
@@ -254,7 +254,7 @@ function Test-FFUAdministrator {
                 -DurationMs $stopwatch.ElapsedMilliseconds
         }
         else {
-            return New-FFUCheckResult -CheckName 'Administrator' -Status 'Failed' `
+            New-FFUCheckResult -CheckName 'Administrator' -Status 'Failed' `
                 -Message 'Not running with Administrator privileges' `
                 -Details @{
                     UserName  = $currentPrincipal.Identity.Name
@@ -274,7 +274,7 @@ Alternative (from existing terminal):
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'Administrator' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'Administrator' -Status 'Failed' `
             -Message "Failed to check Administrator privileges: $($_.Exception.Message)" `
             -Remediation 'Ensure the security system is accessible and try running as Administrator' `
             -DurationMs $stopwatch.ElapsedMilliseconds
@@ -315,7 +315,7 @@ function Test-FFUPowerShellVersion {
     $stopwatch.Stop()
 
     if ($currentVersion -ge $minVersion) {
-        return New-FFUCheckResult -CheckName 'PowerShellVersion' -Status 'Passed' `
+        New-FFUCheckResult -CheckName 'PowerShellVersion' -Status 'Passed' `
             -Message "PowerShell $currentVersion detected (7.0+ required)" `
             -Details @{
                 Version       = $currentVersion.ToString()
@@ -326,7 +326,7 @@ function Test-FFUPowerShellVersion {
             -DurationMs $stopwatch.ElapsedMilliseconds
     }
     else {
-        return New-FFUCheckResult -CheckName 'PowerShellVersion' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'PowerShellVersion' -Status 'Failed' `
             -Message "PowerShell $currentVersion detected. FFU Builder requires PowerShell 7.0 or higher." `
             -Details @{
                 Version       = $currentVersion.ToString()
@@ -425,7 +425,7 @@ function Test-FFUHyperV {
             $stopwatch.Stop()
 
             if ($isEnabled) {
-                return New-FFUCheckResult -CheckName 'HyperV' -Status 'Passed' `
+                New-FFUCheckResult -CheckName 'HyperV' -Status 'Passed' `
                     -Message 'Hyper-V feature is installed and enabled' `
                     -Details @{
                         OSType       = if ($isServer) { 'Server' } else { 'Client' }
@@ -476,7 +476,7 @@ Prerequisites:
 '@
                 }
 
-                return New-FFUCheckResult -CheckName 'HyperV' -Status 'Failed' `
+                New-FFUCheckResult -CheckName 'HyperV' -Status 'Failed' `
                     -Message "Hyper-V feature is not installed (State: $featureState)" `
                     -Details @{
                         OSType       = if ($isServer) { 'Server' } else { 'Client' }
@@ -498,7 +498,7 @@ Prerequisites:
 
     # All retries exhausted
     $stopwatch.Stop()
-    return New-FFUCheckResult -CheckName 'HyperV' -Status 'Failed' `
+    New-FFUCheckResult -CheckName 'HyperV' -Status 'Failed' `
         -Message "Failed to check Hyper-V status after $MaxRetries attempts: $($lastError.Exception.Message)" `
         -Details @{
             Attempts  = $attempt
@@ -693,7 +693,7 @@ function Test-FFUADK {
                 $message += " (version $adkVersion)"
             }
 
-            return New-FFUCheckResult -CheckName 'ADK' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'ADK' -Status 'Passed' `
                 -Message $message `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -718,7 +718,7 @@ Issues found:
                 $remediation += "`n  - $err"
             }
 
-            return New-FFUCheckResult -CheckName 'ADK' -Status 'Failed' `
+            New-FFUCheckResult -CheckName 'ADK' -Status 'Failed' `
                 -Message "ADK validation failed: $($errors -join '; ')" `
                 -Details $details `
                 -Remediation $remediation `
@@ -727,7 +727,7 @@ Issues found:
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'ADK' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'ADK' -Status 'Failed' `
             -Message "Failed to validate ADK: $($_.Exception.Message)" `
             -Details @{
                 WindowsArch = $WindowsArch
@@ -817,7 +817,7 @@ function Test-FFUDiskSpace {
 
         if ($availableGB -ge $requiredWithMargin) {
             $surplusGB = [Math]::Round($availableGB - $requiredWithMargin, 2)
-            return New-FFUCheckResult -CheckName 'DiskSpace' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'DiskSpace' -Status 'Passed' `
                 -Message "Sufficient disk space available: ${availableGB}GB free, ${requiredWithMargin}GB required (${surplusGB}GB surplus)" `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -830,7 +830,7 @@ function Test-FFUDiskSpace {
                 "  - $($_.Key): $($_.Value)GB"
             }) -join "`n"
 
-            return New-FFUCheckResult -CheckName 'DiskSpace' -Status 'Failed' `
+            New-FFUCheckResult -CheckName 'DiskSpace' -Status 'Failed' `
                 -Message "Insufficient disk space: ${availableGB}GB free, ${requiredWithMargin}GB required (${shortfallGB}GB short)" `
                 -Details $details `
                 -Remediation @"
@@ -855,7 +855,7 @@ Run Disk Cleanup:
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'DiskSpace' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'DiskSpace' -Status 'Failed' `
             -Message "Failed to check disk space: $($_.Exception.Message)" `
             -Details @{
                 FFUDevelopmentPath = $FFUDevelopmentPath
@@ -904,7 +904,7 @@ function Test-FFUNetwork {
     $requirements = Get-FFURequirements -Features $Features -VHDXSizeGB 50
     if (-not $requirements.NeedsNetwork) {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'Network' -Status 'Skipped' `
+        New-FFUCheckResult -CheckName 'Network' -Status 'Skipped' `
             -Message 'Network connectivity check skipped (no network-dependent features enabled)' `
             -Details @{
                 NeedsNetwork = $false
@@ -926,7 +926,7 @@ function Test-FFUNetwork {
 
         if (-not $details.DNSResolution) {
             $stopwatch.Stop()
-            return New-FFUCheckResult -CheckName 'Network' -Status 'Failed' `
+            New-FFUCheckResult -CheckName 'Network' -Status 'Failed' `
                 -Message 'DNS resolution failed - cannot resolve www.microsoft.com' `
                 -Details $details `
                 -Remediation @'
@@ -982,13 +982,13 @@ If behind a corporate proxy:
             if ($details.ProxyDetected) {
                 $message += ' (proxy detected)'
             }
-            return New-FFUCheckResult -CheckName 'Network' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'Network' -Status 'Passed' `
                 -Message $message `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
         }
         else {
-            return New-FFUCheckResult -CheckName 'Network' -Status 'Warning' `
+            New-FFUCheckResult -CheckName 'Network' -Status 'Warning' `
                 -Message "Some endpoints unreachable: $($failedEndpoints -join ', ')" `
                 -Details $details `
                 -Remediation @"
@@ -1014,7 +1014,7 @@ If behind a corporate firewall/proxy:
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'Network' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'Network' -Status 'Failed' `
             -Message "Network check failed: $($_.Exception.Message)" `
             -Details $details `
             -Remediation 'Check network connection and firewall settings.' `
@@ -1052,7 +1052,7 @@ function Test-FFUConfigurationFile {
     # Skip if no config file specified
     if ([string]::IsNullOrWhiteSpace($ConfigFilePath)) {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'Configuration' -Status 'Skipped' `
+        New-FFUCheckResult -CheckName 'Configuration' -Status 'Skipped' `
             -Message 'Configuration file validation skipped (no config file specified)' `
             -DurationMs $stopwatch.ElapsedMilliseconds
     }
@@ -1060,7 +1060,7 @@ function Test-FFUConfigurationFile {
     # Check if file exists
     if (-not (Test-Path -Path $ConfigFilePath -PathType Leaf)) {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'Configuration' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'Configuration' -Status 'Failed' `
             -Message "Configuration file not found: $ConfigFilePath" `
             -Details @{ ConfigFilePath = $ConfigFilePath } `
             -Remediation @"
@@ -1092,14 +1092,14 @@ Options:
             if ($validationResult.Warnings.Count -gt 0) {
                 $message += " (with $($validationResult.Warnings.Count) warning(s))"
             }
-            return New-FFUCheckResult -CheckName 'Configuration' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'Configuration' -Status 'Passed' `
                 -Message $message `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
         }
         else {
             $errorList = ($validationResult.Errors | ForEach-Object { "  - $_" }) -join "`n"
-            return New-FFUCheckResult -CheckName 'Configuration' -Status 'Failed' `
+            New-FFUCheckResult -CheckName 'Configuration' -Status 'Failed' `
                 -Message "Configuration file validation failed with $($validationResult.Errors.Count) error(s)" `
                 -Details $details `
                 -Remediation @"
@@ -1116,7 +1116,7 @@ Or use the FFU Builder UI to create a valid configuration file.
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'Configuration' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'Configuration' -Status 'Failed' `
             -Message "Failed to validate configuration: $($_.Exception.Message)" `
             -Details @{
                 ConfigFilePath = $ConfigFilePath
@@ -1213,7 +1213,7 @@ function Test-FFUWimMount {
         if ($details.WimMountFilterLoaded) {
             # WimMount is loaded - all good!
             $stopwatch.Stop()
-            return New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
                 -Message 'WimMount filter is loaded and functional' `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1229,7 +1229,7 @@ function Test-FFUWimMount {
         if (Test-Path -Path $driverPath -PathType Leaf) {
             $details.WimMountDriverExists = $true
             try {
-                $driverFile = Get-Item $driverPath -ErrorAction SilentlyContinue
+                $driverFile = Get-Item -Path $driverPath -ErrorAction SilentlyContinue
                 $details.WimMountDriverVersion = $driverFile.VersionInfo.FileVersion
             }
             catch {
@@ -1384,7 +1384,7 @@ function Test-FFUWimMount {
                 $errors.Clear()
                 $stopwatch.Stop()
 
-                return New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
+                New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
                     -Message 'WimMount filter loaded after automatic repair' `
                     -Details $details `
                     -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1460,7 +1460,7 @@ Run: fltmc filters | Select-String WimMount
 Expected: WimMount should appear with Altitude 180700
 "@
 
-        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
             -Message "WimMount filter not loaded (BLOCKING): Automatic repair $( if ($details.RemediationAttempted) { 'attempted but failed' } else { 'not possible - driver missing' } )" `
             -Details $details `
             -Remediation $remediation `
@@ -1470,7 +1470,7 @@ Expected: WimMount should appear with Altitude 180700
     catch {
         $stopwatch.Stop()
 
-        return New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
+        New-FFUCheckResult -CheckName 'WimMount' -Status 'Failed' `
             -Message "WimMount validation error (BLOCKING): $($_.Exception.Message)" `
             -Details $details `
             -Remediation @"
@@ -1535,7 +1535,7 @@ function Test-FFUAntivirusExclusions {
 
         if (-not $mpStatus) {
             $stopwatch.Stop()
-            return New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Skipped' `
+            New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Skipped' `
                 -Message 'Windows Defender status unavailable (may be using third-party AV)' `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1545,7 +1545,7 @@ function Test-FFUAntivirusExclusions {
 
         if (-not $mpStatus.RealTimeProtectionEnabled) {
             $stopwatch.Stop()
-            return New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Skipped' `
+            New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Skipped' `
                 -Message 'Windows Defender real-time protection is disabled' `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1586,7 +1586,7 @@ function Test-FFUAntivirusExclusions {
         $allGood = $details.PathExclusionFound -and $details.ProcessExclusionFound
 
         if ($allGood) {
-            return New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Passed' `
                 -Message 'Windows Defender exclusions are properly configured' `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1600,7 +1600,7 @@ function Test-FFUAntivirusExclusions {
                 $missingItems += "Processes: dism.exe, dismhost.exe"
             }
 
-            return New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Warning' `
+            New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Warning' `
                 -Message "Recommended Windows Defender exclusions not configured (may impact performance)" `
                 -Details $details `
                 -Remediation @"
@@ -1632,7 +1632,7 @@ Note: This is optional but recommended for reliability and performance.
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Skipped' `
+        New-FFUCheckResult -CheckName 'AntivirusExclusions' -Status 'Skipped' `
             -Message "Unable to check antivirus exclusions: $($_.Exception.Message)" `
             -Details $details `
             -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1784,13 +1784,13 @@ function Invoke-FFUDISMCleanup {
                         $details.OrphanedVHDsCleaned + $details.MountedImagesDismounted
 
         if ($totalCleaned -gt 0) {
-            return New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Passed' `
                 -Message "DISM cleanup completed: $totalCleaned item(s) cleaned" `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
         }
         else {
-            return New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Passed' `
+            New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Passed' `
                 -Message 'DISM cleanup completed: environment was already clean' `
                 -Details $details `
                 -DurationMs $stopwatch.ElapsedMilliseconds
@@ -1798,7 +1798,7 @@ function Invoke-FFUDISMCleanup {
     }
     catch {
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Warning' `
+        New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Warning' `
             -Message "DISM cleanup completed with warnings: $($_.Exception.Message)" `
             -Details $details `
             -Remediation @'
@@ -2232,7 +2232,7 @@ function Invoke-FFUPreflight {
     Write-Host "  Disk Space: $($result.AvailableDiskSpaceGB)GB available, $($result.RequiredDiskSpaceGB)GB required" -ForegroundColor Gray
     Write-Host "`n========================================`n" -ForegroundColor Cyan
 
-    return $result
+    $result
 }
 
 #endregion Main Orchestrator

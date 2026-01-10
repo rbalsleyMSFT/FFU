@@ -458,6 +458,13 @@
             "default": "",
             "description": "Name of the Hyper-V virtual switch. Required if InstallApps is set to true for FFU capture from the VM."
         },
+        "VMShutdownTimeoutMinutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 120,
+            "default": 20,
+            "description": "Maximum time in minutes to wait for VM shutdown before forcing power off. If the VM does not shutdown within this timeout, it will be forcibly powered off and the build will continue."
+        },
         "WindowsArch": {
             "type": "string",
             "enum": ["x86", "x64", "arm64"],
@@ -560,6 +567,31 @@
             "default": false,
             "deprecated": true,
             "description": "[DEPRECATED] Legacy property - no longer used in config files. Use the -Verbose switch when running BuildFFUVM.ps1 from the command line instead. This property is ignored but accepted for backward compatibility."
+        },
+        "CleanupCaptureVM": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, removes the capture VM after the FFU has been captured successfully."
+        },
+        "UpdateLatestNet48": {
+            "type": "boolean",
+            "default": true,
+            "description": "When set to true, downloads and installs the latest .NET Framework 4.8."
+        },
+        "VMName": {
+            "type": "string",
+            "default": "YOURPC",
+            "pattern": "^[a-zA-Z0-9_\\-]+$",
+            "description": "Name of the virtual machine to create for FFU building. Must contain only alphanumeric characters, underscores, and hyphens."
+        },
+        "SharePath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to the shared folder for FFU capture. Default is FFUDevelopmentPath when empty."
+        },
+        "_description": {
+            "type": "string",
+            "description": "Optional description field for documentation purposes"
         }
     },
     "additionalProperties": false

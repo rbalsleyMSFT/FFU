@@ -357,6 +357,12 @@ class FFUConstants {
     # Cumulative updates can take 5-8 minutes to install on shutdown
     static [int] $VM_SHUTDOWN_TIMEOUT = 600
 
+    # Default VM shutdown timeout for polling loop (20 minutes)
+    # Used when waiting for VM to shutdown during FFU capture
+    # If exceeded, VM is force powered off
+    # Can be overridden via VMShutdownTimeoutMinutes config parameter
+    static [int] $DefaultVMShutdownTimeoutMinutes = 20
+
     # DISM mount operation timeout (5 minutes)
     # Time to mount large VHDX/WIM files (10-20GB)
     # Depends on disk I/O performance

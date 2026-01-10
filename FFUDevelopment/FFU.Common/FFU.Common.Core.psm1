@@ -235,7 +235,8 @@ function Get-ErrorMessage {
     )
 
     if ($null -eq $ErrorRecord) {
-        return "[No error details available]"
+        "[No error details available]"
+        return
     }
 
     # Handle ErrorRecord objects (from catch blocks)
@@ -247,7 +248,8 @@ function Get-ErrorMessage {
         if ([string]::IsNullOrWhiteSpace($message)) {
             $message = "[Error occurred but no message available. Type: $($ErrorRecord.Exception.GetType().FullName)]"
         }
-        return $message
+        $message
+        return
     }
 
     # Handle Exception objects directly
@@ -256,15 +258,17 @@ function Get-ErrorMessage {
         if ([string]::IsNullOrWhiteSpace($message)) {
             $message = "[Exception occurred but no message available. Type: $($ErrorRecord.GetType().FullName)]"
         }
-        return $message
+        $message
+        return
     }
 
     # Handle string or other objects
     $message = $ErrorRecord.ToString()
     if ([string]::IsNullOrWhiteSpace($message)) {
-        return "[Error object could not be converted to string. Type: $($ErrorRecord.GetType().FullName)]"
+        "[Error object could not be converted to string. Type: $($ErrorRecord.GetType().FullName)]"
+        return
     }
-    return $message
+    $message
 }
 
 function Invoke-Process {
@@ -337,7 +341,7 @@ function Invoke-Process {
             Remove-Item -Path $pathsToRemove -Force -ErrorAction Ignore
         }
     }
-    return $cmd
+    $cmd
 }
 
 # Function to download a file using BITS with automatic fallback to other methods
@@ -566,7 +570,7 @@ function ConvertTo-SafeName {
     if ([string]::IsNullOrWhiteSpace($sanitized)) {
         $sanitized = 'Unnamed'
     }
-    return $sanitized
+    $sanitized
 }
 
 function Get-FFUBuilderVersion {
@@ -613,7 +617,8 @@ function Get-FFUBuilderVersion {
 
     if (-not (Test-Path -Path $versionFile -PathType Leaf)) {
         Write-Warning "version.json not found at: $versionFile"
-        return $null
+        $null
+        return
     }
 
     try {
@@ -622,16 +627,18 @@ function Get-FFUBuilderVersion {
         # If a specific module was requested, return just that version
         if (-not [string]::IsNullOrWhiteSpace($ModuleName)) {
             if ($versionData.modules.PSObject.Properties.Name -contains $ModuleName) {
-                return $versionData.modules.$ModuleName.version
+                $versionData.modules.$ModuleName.version
+                return
             }
             else {
                 Write-Warning "Module '$ModuleName' not found in version.json"
-                return $null
+                $null
+                return
             }
         }
 
         # Return the full version object
-        return [PSCustomObject]@{
+        [PSCustomObject]@{
             Version     = $versionData.version
             BuildDate   = $versionData.buildDate
             Modules     = $versionData.modules
@@ -641,7 +648,7 @@ function Get-FFUBuilderVersion {
     }
     catch {
         Write-Warning "Failed to parse version.json: $($_.Exception.Message)"
-        return $null
+        $null
     }
 }
 

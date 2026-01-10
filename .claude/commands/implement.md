@@ -154,6 +154,85 @@ If tests fail:
 3. Fix before continuing
 ```
 
+### 4.3 Automated Verification (BLOCKING) - FFUBuilder Specific
+
+**MANDATORY: After ANY code changes, invoke verify-app before proceeding**
+
+```
+Invoke verify-app (via general-purpose agent) to:
+1. Run full regression with coverage:
+   .\Tests\Unit\Invoke-PesterTests.ps1 -EnableCodeCoverage -OutputVerbosity Minimal
+
+2. Run static analysis:
+   Invoke-ScriptAnalyzer -Path .\FFUDevelopment -Recurse -Severity Error,Warning
+
+3. Validate module imports:
+   Import-Module FFU.Core -Force -ErrorAction Stop
+   Get-Command -Module FFU.Core | Measure-Object
+
+4. Output structured verification report:
+   VERIFICATION_STATUS: [PASS|FAIL|BLOCKED]
+   SUMMARY: Tests, Coverage, PSScriptAnalyzer, Module Import
+   BLOCKING_ISSUES: [list]
+   WARNINGS: [list]
+   RECOMMENDATION: [Continue|Fix Required|Review Needed]
+```
+
+**HALT CONDITIONS** (do not proceed if any):
+- Any Pester test failures (not skipped - actual failures)
+- New PSScriptAnalyzer errors (warnings allowed)
+- Module import failures
+- Code coverage decreased from baseline
+
+**IF HALTED:**
+1. Report specific failures with file:line references
+2. Return to Phase 3 to fix issues
+3. Re-run verification until PASS
+
+**ON PASS:**
+1. Log verification results
+2. Continue to Phase 4.4 (if applicable) or Phase 5 (Code Review)
+
+### 4.4 Full Build Verification (OPTIONAL - Long Running)
+
+**When to run:** After significant changes to build logic, hypervisor integration, imaging code, or VM lifecycle.
+
+**NOT required for:** UI-only changes, documentation, test-only changes, config updates.
+
+```
+Invoke verify-app (via general-purpose agent) with build execution:
+1. Copy FFUDevelopment to test drive:
+   Copy-FFUDevelopmentToTestDrive -SourcePath $PWD -TestDriveLetter "D" -CleanFirst
+
+2. Run minimal build on primary hypervisor:
+   Invoke-FFUTestBuild -ConfigType Minimal -Hypervisor HyperV -TestDriveLetter "D"
+
+3. Validate build output:
+   Test-FFUBuildOutput -FFUPath "D:\FFUDevelopment_Test\FFU" -ExpectedSKU "Pro"
+
+4. Generate structured report:
+   Get-FFUBuildVerificationReport -BuildResult $result
+
+5. (Optional) Run standard build if time permits:
+   Invoke-FFUTestBuild -ConfigType Standard -Hypervisor HyperV -TestDriveLetter "D"
+
+6. (Optional) Test alternate hypervisor:
+   Invoke-FFUTestBuild -ConfigType Minimal -Hypervisor VMware -TestDriveLetter "D"
+```
+
+**HALT CONDITIONS:**
+- Build exits with non-zero exit code
+- FFU file not created
+- FFU file size outside expected range
+- Pre-flight validation fails
+
+**Duration Estimates:**
+| Config | Duration |
+|--------|----------|
+| Minimal | ~20 minutes |
+| Standard | ~45 minutes |
+| Both Hypervisors | ~90 minutes |
+
 ---
 
 ## Phase 5: Code Review
@@ -255,6 +334,8 @@ Invoke pm-agent to:
 | Architecture | `powershell-architect` | CLAUDE.md, docs/patterns/ |
 | PowerShell code | `powershell-module` | Public/, Private/ |
 | Pester tests | `pester-test-developer` | Tests/ |
+| **Verification (BLOCKING)** | `verify-app` | Tests/, FFUDevelopment/ |
+| **Build Verification (OPTIONAL)** | `verify-app` | FFU.BuildTest, config/test/ |
 | WPF/XAML UI | `wpf-xaml` | UI/ |
 | Code review | `code-reviewer` | PSScriptAnalyzerSettings.psd1 |
 | Documentation | `docs-writer` | docs/cmdlets/ |

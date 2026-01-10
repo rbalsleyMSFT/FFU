@@ -120,13 +120,37 @@ function New-VMwareVMX {
         "uefi.secureBoot.enabled = `"$($EnableSecureBoot.ToString().ToUpper())`""
     )
 
-    # Virtual TPM for Windows 11
+    # Virtual TPM configuration
+    # NOTE: VMware Workstation vTPM requires VM encryption to work properly.
+    # The "managedvm.autoAddVTPM = software" experimental feature does NOT work
+    # with vmrun.exe automation - it causes "operation was canceled" and
+    # "Virtual TPM Initialization failed" errors.
+    #
+    # For FFU builds, TPM is not required during image capture. The final FFU
+    # can be deployed to physical hardware with real TPM, and all TPM-dependent
+    # features (BitLocker, Windows Hello) will work on the target device.
+    #
+    # FUTURE: To enable encrypted VM + vTPM support, implement:
+    # 1. Encrypt VM using VMware encryption API
+    # 2. Add vtpm.present = "TRUE" (not managedvm.autoAddVTPM)
+    # 3. Use "vmrun -vp <password>" to start encrypted VMs
+    # See: https://communities.vmware.com/t5/VMware-Workstation-Pro/Windows-11-and-vmrun/td-p/2897971
     if ($EnableTPM) {
+        WriteLog "WARNING: vTPM requested but VMware vTPM requires VM encryption which breaks vmrun automation"
+        WriteLog "Disabling vTPM for VMware VM - TPM features will work on target hardware after FFU deployment"
         $vmxLines += @(
             '',
-            '# Virtual TPM (required for Windows 11)',
-            'vtpm.present = "TRUE"',
-            'managedvm.autoAddVTPM = "software"'
+            '# Virtual TPM - DISABLED for VMware automation compatibility',
+            '# VMware vTPM requires VM encryption which breaks vmrun.exe',
+            '# TPM features will work on target hardware after FFU deployment',
+            'vtpm.present = "FALSE"'
+        )
+    }
+    else {
+        $vmxLines += @(
+            '',
+            '# Virtual TPM disabled per configuration',
+            'vtpm.present = "FALSE"'
         )
     }
 
@@ -220,7 +244,10 @@ function New-VMwareVMX {
         'softPowerOff = "TRUE"',
         '',
         '# Display',
-        'svga.graphicsMemoryKB = "8388608"',
+        '# IMPORTANT: Disable 3D acceleration for headless/nogui VM operation',
+        '# vmrun start with "nogui" fails with "The operation was canceled" if 3D is enabled',
+        'mks.enable3d = "FALSE"',
+        'svga.vramSize = "8388608"',
         'svga.autodetect = "TRUE"',
         'svga.present = "TRUE"',
         '',

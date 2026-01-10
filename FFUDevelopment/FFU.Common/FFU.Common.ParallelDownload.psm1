@@ -263,7 +263,7 @@ function Start-ParallelDownloadsPS7 {
             $result.DurationSeconds = $stopwatch.Elapsed.TotalSeconds
         }
 
-        return $result
+        $result
 
     } -ThrottleLimit $Config.MaxConcurrentDownloads -AsJob
 
@@ -294,7 +294,7 @@ function Start-ParallelDownloadsPS7 {
         $jobResults = $job | Receive-Job -Wait
         Remove-Job $job -Force
 
-        return $jobResults
+        $jobResults
     }
     else {
         return @{
@@ -439,7 +439,7 @@ function Start-ParallelDownloadsRunspacePool {
             $result.DurationSeconds = $stopwatch.Elapsed.TotalSeconds
         }
 
-        return $result
+        $result
     }
 
     # Start a runspace job for each download
@@ -524,7 +524,7 @@ function Start-ParallelDownloadsRunspacePool {
         $runspacePool.Close()
         $runspacePool.Dispose()
 
-        return $allResults.ToArray()
+        $allResults.ToArray()
     }
     else {
         return @{
@@ -617,7 +617,7 @@ function New-KBDownloadItems {
     }
 
     WriteLog "Created $($items.Count) download items from $($Updates.Count) updates"
-    return $items.ToArray()
+    $items.ToArray()
 }
 
 function New-DownloadItem {
@@ -683,7 +683,7 @@ function New-DownloadItem {
     $item.DisplayName = if ([string]::IsNullOrEmpty($DisplayName)) { $Id } else { $DisplayName }
     $item.Metadata = $Metadata
 
-    return $item
+    $item
 }
 
 function New-ParallelDownloadConfig {
@@ -741,7 +741,7 @@ function New-ParallelDownloadConfig {
     $config.ContinueOnError = $ContinueOnError
     $config.ProgressCallback = $ProgressCallback
 
-    return $config
+    $config
 }
 
 function New-GenericDownloadItem {

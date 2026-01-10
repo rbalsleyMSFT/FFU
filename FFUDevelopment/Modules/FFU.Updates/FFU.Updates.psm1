@@ -278,7 +278,9 @@ function Get-WindowsESD {
     WriteLog "Extracting Products XML from cab"
     $xmlFilePath = Join-Path $TempPath "products.xml"
     try {
-        Invoke-Process Expand "-F:*.xml $cabFilePath $xmlFilePath" -ErrorAction Stop | Out-Null
+        # Use full path to expand.exe to avoid conflicts with Unix 'expand' command in hybrid environments
+        $expandExe = Join-Path $env:SystemRoot 'System32\expand.exe'
+        Invoke-Process $expandExe "-F:*.xml $cabFilePath $xmlFilePath" -ErrorAction Stop | Out-Null
         WriteLog "Products XML extracted"
     }
     catch {

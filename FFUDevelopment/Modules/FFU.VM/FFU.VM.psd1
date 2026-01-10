@@ -4,7 +4,7 @@
 
 @{
     RootModule = 'FFU.VM.psm1'
-    ModuleVersion = '1.0.2'
+    ModuleVersion = '1.0.4'
     GUID = 'c8f3a942-7e6d-4c1a-9b85-1f4e8d2c5a76'
     Author = 'FFU Builder Team'
     CompanyName = 'Community'
@@ -12,7 +12,8 @@
     Description = 'Hyper-V virtual machine lifecycle management module for FFU Builder. Provides VM creation with TPM/HGS configuration, comprehensive cleanup, and environment validation for FFU build operations.'
     PowerShellVersion = '7.0'
     RequiredModules = @(
-        @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
+        @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'},
+        @{ModuleName = 'FFU.Hypervisor'; ModuleVersion = '1.1.10'}
     )
     FunctionsToExport = @(
         'Get-LocalUserAccount',
@@ -22,6 +23,7 @@
         'Set-LocalUserAccountExpiry',
         'New-FFUVM',
         'Remove-FFUVM',
+        'Remove-FFUBuildArtifacts',
         'Get-FFUEnvironment',
         'Set-CaptureFFU',
         'Remove-FFUUserShare',
@@ -37,6 +39,16 @@
             LicenseUri = 'https://github.com/Schweinehund/FFU/blob/feature/improvements-and-fixes/LICENSE'
             ProjectUri = 'https://github.com/Schweinehund/FFU'
             ReleaseNotes = @'
+v1.0.4: Fix [VMState] type not found error
+- Fixed Get-FFUEnvironment using [VMState]::Running which caused "Unable to find type" error
+- Now uses Test-VMStateRunning factory function from FFU.Hypervisor module
+- Added FFU.Hypervisor as required module dependency
+
+v1.0.3: Hypervisor abstraction integration
+- Added Remove-FFUBuildArtifacts function for hypervisor-agnostic cleanup of mounted images, mount folders, and mountpoints
+- Updated Get-FFUEnvironment with optional HypervisorProvider parameter for multi-hypervisor support
+- Get-FFUEnvironment now uses provider when available, falls back to Hyper-V cmdlets
+
 v1.0.2: Phase 2 Reliability improvements
 - Added comprehensive error handling with specific exception types (VirtualizationException, ItemNotFoundException, IOException, COMException, UnauthorizedAccessException)
 - Added default values to ShareName parameters to prevent empty string binding errors

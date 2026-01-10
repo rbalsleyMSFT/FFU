@@ -229,6 +229,21 @@ function Start-VMrestService {
 <#
 .SYNOPSIS
     Tests if vmrest endpoint is accessible
+
+.DESCRIPTION
+    Tests if vmrest is listening on the specified port. This function uses a two-step approach:
+    1. TCP connection test to verify vmrest is listening
+    2. HTTP request that accepts both success (200) AND authentication failure (401) as "vmrest is running"
+
+    A 401 Unauthorized response means vmrest IS running and responding, just needs credentials.
+    Authentication is handled by subsequent API calls, not during startup validation.
+
+.PARAMETER Port
+    The port to test (default 8697)
+
+.PARAMETER Credential
+    Optional credential for authenticated test. If not provided, function will still
+    return $true for 401 responses since that confirms vmrest is running.
 #>
 function Test-VMrestEndpoint {
     [CmdletBinding()]
@@ -238,7 +253,23 @@ function Test-VMrestEndpoint {
     )
 
     try {
+        # Step 1: Quick TCP connection test
+        WriteLog "Test-VMrestEndpoint: Testing TCP connection to 127.0.0.1:$Port..."
+        $tcpClient = New-Object System.Net.Sockets.TcpClient
+        $connectTask = $tcpClient.ConnectAsync('127.0.0.1', $Port)
+        $connected = $connectTask.Wait(2000) # 2 second timeout
+        $tcpClient.Close()
+        $tcpClient.Dispose()
+
+        if (-not $connected) {
+            WriteLog "Test-VMrestEndpoint: TCP connection FAILED - port not listening"
+            return $false
+        }
+        WriteLog "Test-VMrestEndpoint: TCP connection SUCCESS - port is listening"
+
+        # Step 2: HTTP request - accept both 200 OK and 401 Unauthorized as "vmrest is running"
         $uri = "http://127.0.0.1:$Port/api/vms"
+        WriteLog "Test-VMrestEndpoint: Testing HTTP endpoint $uri..."
 
         $params = @{
             Uri = $uri
@@ -247,14 +278,49 @@ function Test-VMrestEndpoint {
             ErrorAction = 'Stop'
         }
 
+        # Use explicit Basic auth header if credential provided
         if ($Credential) {
-            $params['Credential'] = $Credential
+            $authHeader = Get-BasicAuthHeader -Credential $Credential
+            $params['Headers'] = @{ Authorization = $authHeader }
+            WriteLog "Test-VMrestEndpoint: Using provided credentials"
+        } else {
+            WriteLog "Test-VMrestEndpoint: No credentials provided (will accept 401 as success)"
         }
 
         $null = Invoke-RestMethod @params
+        WriteLog "Test-VMrestEndpoint: HTTP request SUCCESS (200 OK)"
         return $true
     }
     catch {
+        # PowerShell 7 throws HttpResponseException, PowerShell 5.1 throws WebException
+        # Check for 401 in either case - that means vmrest IS running, just needs auth
+        $exceptionType = $_.Exception.GetType().Name
+        $exceptionMessage = $_.Exception.Message
+        WriteLog "Test-VMrestEndpoint: Exception caught - $exceptionType : $exceptionMessage"
+
+        # Check for 401 Unauthorized in the exception message (works for both PS5 and PS7)
+        if ($exceptionMessage -match '401' -or $exceptionMessage -match 'Unauthorized') {
+            WriteLog "Test-VMrestEndpoint: 401 Unauthorized detected - vmrest IS running (needs auth)"
+            return $true
+        }
+
+        # For WebException (PS5.1), check the Response property
+        if ($_.Exception -is [System.Net.WebException]) {
+            $webException = $_.Exception
+            if ($webException.Response) {
+                $statusCode = [int]$webException.Response.StatusCode
+                WriteLog "Test-VMrestEndpoint: WebException HTTP Status Code = $statusCode"
+                if ($statusCode -eq 401) {
+                    WriteLog "Test-VMrestEndpoint: 401 via WebException.Response - vmrest IS running"
+                    return $true
+                }
+            }
+        }
+
+        # For HttpResponseException (PS7), the status code is in the message
+        # Already checked above via message matching
+
+        WriteLog "Test-VMrestEndpoint: Returning FALSE - not a 401 response"
         return $false
     }
 }
@@ -269,13 +335,22 @@ function Test-VMrestCredentialsConfigured {
         [string]$VMrestPath
     )
 
-    # vmrest stores credentials in ~/.vmrestCfg on Windows
-    $configPath = Join-Path $env:USERPROFILE '.vmrestCfg'
+    # vmrest stores credentials in user profile
+    # VMware 17.x uses 'vmrest.cfg' (no leading dot)
+    # Older versions may use '.vmrestCfg' (with leading dot)
+    $configPaths = @(
+        (Join-Path $env:USERPROFILE 'vmrest.cfg'),      # VMware 17.x
+        (Join-Path $env:USERPROFILE '.vmrestCfg')       # Legacy/older versions
+    )
 
-    if (Test-Path $configPath) {
-        $content = Get-Content $configPath -Raw -ErrorAction SilentlyContinue
-        # Check if credentials section exists
-        return ($content -match 'username' -and $content -match 'password')
+    foreach ($configPath in $configPaths) {
+        if (Test-Path $configPath) {
+            $content = Get-Content $configPath -Raw -ErrorAction SilentlyContinue
+            # Check if credentials section exists
+            if ($content -match 'username' -and $content -match 'password') {
+                return $true
+            }
+        }
     }
 
     return $false
@@ -331,4 +406,53 @@ function Get-VMrestServiceStatus {
     }
 
     return $result
+}
+
+<#
+.SYNOPSIS
+    Generates a Basic authentication header from a PSCredential
+
+.DESCRIPTION
+    Creates a properly formatted Basic authentication header string for use
+    with vmrest REST API calls. PowerShell's -Credential parameter doesn't
+    work correctly with vmrest, so explicit Basic auth headers are required.
+
+.PARAMETER Credential
+    PSCredential object containing username and password.
+
+.OUTPUTS
+    [string] The formatted Basic auth header value (e.g., "Basic dXNlcjpwYXNz")
+
+.EXAMPLE
+    $cred = Get-Credential
+    $header = Get-BasicAuthHeader -Credential $cred
+    Invoke-RestMethod -Uri "http://localhost:8697/api/vms" -Headers @{ Authorization = $header }
+
+.NOTES
+    This function properly handles SecureString conversion and cleanup.
+#>
+function Get-BasicAuthHeader {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCredential]$Credential
+    )
+
+    $username = $Credential.UserName
+    $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Credential.Password)
+    try {
+        $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+        $pair = "${username}:${password}"
+        $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+        $base64 = [System.Convert]::ToBase64String($bytes)
+        return "Basic $base64"
+    }
+    finally {
+        # Cleanup sensitive data from memory
+        if ($BSTR -ne [IntPtr]::Zero) {
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+        }
+        $password = $null
+    }
 }

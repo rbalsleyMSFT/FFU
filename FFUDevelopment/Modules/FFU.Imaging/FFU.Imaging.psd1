@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.1'
+    ModuleVersion = '1.0.2'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -39,6 +39,7 @@
         'Get-WimFromISO',
         'Get-Index',
         'New-ScratchVhdx',
+        'New-ScratchVhd',
         'New-SystemPartition',
         'New-MSRPartition',
         'New-OSPartition',
@@ -46,6 +47,7 @@
         'Add-BootFiles',
         'Enable-WindowsFeaturesByName',
         'Dismount-ScratchVhdx',
+        'Dismount-ScratchVhd',
         'Optimize-FFUCaptureDrive',
         'Get-WindowsVersionInfo',
         'New-FFU',
@@ -77,6 +79,13 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.2 - VMware VHD support
+- Added New-ScratchVhd function for diskpart-based VHD creation (no Hyper-V dependency)
+- Added Dismount-ScratchVhd function for diskpart-based VHD dismount
+- VHD format is compatible with VMware Workstation (unlike VHDX which VMware cannot read)
+- Comprehensive logging for troubleshooting disk operations
+- Returns CIM disk instance compatible with existing partition functions
+
 v1.0.1 - Fix missing Get-WindowsVersionInfo function
 - Added Get-WindowsVersionInfo function that was lost during modularization
 - Function reads Windows version from mounted VHDX registry for FFU filename generation

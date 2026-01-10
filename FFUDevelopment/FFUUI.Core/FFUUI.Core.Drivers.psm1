@@ -70,7 +70,7 @@ function Get-ModelsForMake {
         }
     }
 
-    return $standardizedModels.ToArray()
+    $standardizedModels.ToArray()
 }
 
 # Helper function to convert raw driver objects to a standardized format

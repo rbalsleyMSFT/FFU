@@ -98,7 +98,7 @@ function Get-HPDriversModelList {
     }
 
     # Sort the list alphabetically by Model name before returning
-    return $modelList | Sort-Object -Property Model
+    $modelList | Sort-Object -Property Model
 }
 # Function to download and extract drivers for a specific HP model (Designed for ForEach-Object -Parallel)
 function Save-HPDriversTask {
@@ -168,7 +168,8 @@ function Save-HPDriversTask {
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $existingDriver.Status }
             }
 
-            return $existingDriver
+            $existingDriver
+            return
         }
 
         # If folder does not exist, proceed with download and extraction
@@ -228,7 +229,8 @@ function Save-HPDriversTask {
                 ($ReleaseToSearch -eq 10 -and ($null -eq $_.IsWindows11 -or $_.IsWindows11 -notcontains 'true'))
             }
 
-            if ($null -eq $osNodesForRelease) { return $null } 
+            if ($null -eq $osNodesForRelease) { $null
+            return } 
 
             foreach ($version in $VersionsToSearch) {
                 foreach ($osNode in $osNodesForRelease) {
@@ -238,7 +240,8 @@ function Save-HPDriversTask {
                     }
                 }
             }
-            return $null 
+            $null
+            return 
         }
 
         # 1. Attempt Exact Match (Requested Release and Version)

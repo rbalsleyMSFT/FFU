@@ -2,129 +2,54 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Specialized Agent Usage Policy
+## Specialized Agents
 
-**IMPORTANT:** This project has specialized agents that MUST be used for specific tasks:
+**Invoke with:** `Task tool with subagent_type="<agent-name>"`
 
-### powershell-architect Agent
-**When to use:**
-- Architecture evaluation and code quality analysis
-- Identifying design patterns and anti-patterns
-- PowerShell best practices and module design
-- Performance optimization recommendations
-- Refactoring and modularization guidance
-- Security vulnerability assessment
-- When user explicitly requests architecture review or evaluation
+| Agent | Use For |
+|-------|---------|
+| `powershell-architect` | Architecture review, code quality, PowerShell best practices, refactoring |
+| `intune-troubleshooter` | Intune/MDM issues, enrollment failures, policy deployment, compliance |
+| `autopilot-deployment-expert` | Autopilot deployment, ESP failures, Azure AD Join, diagnostics |
+| `pester-test-developer` | Pester 5.x tests, coverage analysis, mocking, test debugging |
+| `verify-app` | Application verification, Pester execution, UI validation, change verification |
+| `ffubuilder-pm` | Pre/post implementation checklist (invoke with `general-purpose` subagent) |
 
-**How to invoke:**
-```
-Use Task tool with subagent_type="powershell-architect"
-```
+**Rule:** Proactively invoke agents when user problems match their expertise.
 
-### intune-troubleshooter Agent
-**When to use:**
-- Microsoft Intune device management issues
-- MDM enrollment failures or errors
-- Policy deployment and compliance problems
-- Application installation issues via Intune
-- Device configuration profile troubleshooting
-- Conditional access and authentication issues
-- Intune log analysis and diagnostics
-- When user mentions Intune, MDM, or mobile device management errors
-
-**How to invoke:**
-```
-Use Task tool with subagent_type="intune-troubleshooter"
-```
-
-### autopilot-deployment-expert Agent
-**When to use:**
-- Windows Autopilot deployment issues
-- Enrollment Status Page (ESP) failures
-- Autopilot device registration problems
-- Azure AD Join or Hybrid Azure AD Join issues
-- White Glove (pre-provisioning) scenarios
-- AutopilotDiagnostics.zip log analysis
-- Network/proxy issues during Autopilot
-- When user mentions Autopilot, ESP, or device provisioning errors
-
-**How to invoke:**
-```
-Use Task tool with subagent_type="autopilot-deployment-expert"
-```
-
-### pester-test-developer Agent
-**When to use:**
-- Creating Pester 5.x unit tests for FFU Builder modules
-- Running test suites with code coverage analysis
-- Debugging failing tests
-- Adding mocking to tests for external dependencies
-- Improving test coverage for modules
-- Setting up CI/CD test integration
-- When user asks to create, run, or maintain Pester tests
-
-**How to invoke:**
-```
-Use Task tool with subagent_type="pester-test-developer"
-```
-
-**Test Structure:**
-```
-Tests/Unit/                    # Pester unit tests
-├── Invoke-PesterTests.ps1     # Test runner
-├── FFU.Core.Tests.ps1         # Module tests
-└── _Template.Tests.ps1        # Template for new tests
-```
-
-**Running Tests:**
+### Testing Quick Reference
 ```powershell
-# All tests
-.\Tests\Unit\Invoke-PesterTests.ps1
-
-# Specific module
-.\Tests\Unit\Invoke-PesterTests.ps1 -Module 'FFU.Core'
-
-# With coverage
-.\Tests\Unit\Invoke-PesterTests.ps1 -EnableCodeCoverage
+.\Tests\Unit\Invoke-PesterTests.ps1                          # All tests
+.\Tests\Unit\Invoke-PesterTests.ps1 -Module 'FFU.Core'       # Specific module
+.\Tests\Unit\Invoke-PesterTests.ps1 -EnableCodeCoverage      # With coverage
 ```
 
-### ffubuilder-pm Agent (Project Manager)
-**When to use - MANDATORY for all code changes:**
-- **Before starting any code modification** - Get checklist of required steps
-- **After completing code changes** - Verify all steps were followed
-- Ensuring version numbers are updated in module manifests
-- Verifying Pester tests are created for new/modified functionality
-- Checking that appropriate subagents were used for implementation
-- Validating CLAUDE.md is updated if architecture changes
-- Reviewing that error handling patterns are followed
-- Confirming cleanup mechanisms are registered for new resources
-- Ensuring release notes are added to module manifests
+### PM Checklist (for all code changes)
+See [docs/PM_CHECKLIST.md](docs/PM_CHECKLIST.md) for full checklist. Key items:
+1. Version updated in .psd1 manifest
+2. Pester tests created/updated
+3. Error handling follows patterns (try/catch)
+4. CLAUDE.md updated if architecture changed
+5. Keep CLAUDE.md under 1000 lines (archive to `docs/VERSION_ARCHIVE.md`)
 
-**How to invoke:**
+### Mandatory Verification (BLOCKING)
+
+**Rule:** After ANY PowerShell code changes, invoke `verify-app` before proceeding to code review.
+
 ```
-Use Task tool with subagent_type="general-purpose" with prompt requesting FFUBuilder PM checklist
+Invoke: Task tool with subagent_type="general-purpose"
+Prompt: "Act as verify-app agent (read .claude/agents/verify-app.md). Run full regression verification."
 ```
 
-**Checklist the PM agent enforces:**
-1. ✅ Version number updated in .psd1 manifest
-2. ✅ Release notes added to manifest
-3. ✅ Pester tests created/updated for changes
-4. ✅ Error handling follows project patterns (try/catch with specific exceptions)
-5. ✅ Cleanup registration added for new resources (Register-*Cleanup)
-6. ✅ Appropriate subagent used (powershell-architect for code, pester-test-developer for tests)
-7. ✅ CLAUDE.md updated if architecture/patterns changed
-8. ✅ All tests pass after changes
-9. ✅ **CLAUDE.md Maintenance** (triggered when version table exceeds 10 entries OR file exceeds 1000 lines):
-   - Archive oldest versions to `docs/VERSION_ARCHIVE.md`
-   - Archive detailed fix documentation to `docs/FIXED_ISSUES_ARCHIVE.md`
-   - Keep only last 10 versions in Version History table
-   - Keep only last 10 entries in Fixed Issues table
-   - Target: CLAUDE.md should stay under 1000 lines
-   - See [FIXED_ISSUES_ARCHIVE.md](docs/FIXED_ISSUES_ARCHIVE.md) for archived content
+**Verification is BLOCKING** - implementation cannot continue until:
+- All Pester tests pass (failures halt progress)
+- No new PSScriptAnalyzer errors
+- All modules import successfully
+- Code coverage maintained or improved
 
-**CRITICAL:** This agent should be consulted at the START and END of every code modification task.
+**HALT CONDITIONS:** If verification fails, return to implementation and fix issues before proceeding.
 
-**General Rule:** When user describes a problem that falls within an agent's expertise area, invoke that agent proactively rather than attempting to solve it directly. These agents have specialized knowledge and diagnostic capabilities beyond general assistance.
+See `.claude/commands/implement.md` Phase 4.3 for full workflow integration.
 
 ## Project Overview
 
@@ -215,21 +140,15 @@ Update-FFUBuilderVersion -FFUDevelopmentPath "C:\FFUDevelopment" -BumpType Patch
 
 | Version | Date | Type | Description |
 |---------|------|------|-------------|
-| 1.6.0 | 2026-01-07 | MINOR | VMware Workstation Pro integration - UI hypervisor selection dropdown, config schema support, auto-detection of available hypervisors |
-| 1.5.0 | 2026-01-07 | MINOR | Full VMware provider implementation - REST API integration, VM lifecycle, disk operations via diskpart (no Hyper-V dependency) |
-| 1.4.0 | 2026-01-06 | MINOR | FFU.Hypervisor module foundation - Provider pattern, IHypervisorProvider interface, HyperVProvider, VMConfiguration/VMInfo classes |
-| 1.3.12 | 2025-12-17 | PATCH | WimMount auto-repair in preflight - Test-FFUWimMount now uses `fltmc filters` as primary check, auto-repairs by recreating registry entries and starting service when filter not loaded; fails with detailed diagnostics if repair unsuccessful |
-| 1.3.11 | 2025-12-15 | PATCH | WIMMount just-in-time validation - New-WinPEMediaNative now calls Test-FFUWimMount before Mount-WindowsImage; fixes misleading documentation that native cmdlets avoid WIMMount issues (they don't - both ADK and native require WIMMount service) |
-| 1.3.10 | 2025-12-15 | PATCH | FFU.Common.Logging signature compatibility fix - Added -Source and -Data parameters to Write-FFUError/Warning/Critical for compatibility when FFU.Messaging functions are overwritten by FFU.Common -Force import |
-| 1.3.9 | 2025-12-15 | PATCH | Enhanced WIM mount error handling - New Invoke-WimMountWithErrorHandling function in FFU.Core detects error 0x800704db and provides clear remediation guidance with DISM log path |
-| 1.3.8 | 2025-12-15 | PATCH | WimMount pre-flight now BLOCKING - Reverted v1.3.6 change; both ADK dism.exe AND PowerShell Mount-WindowsImage require WIMMount service; builds now fail fast with clear remediation guidance instead of cryptic errors mid-build |
-| 1.3.7 | 2025-12-13 | MINOR | Native WinPE creation - New-WinPEMediaNative function replaces copype.cmd with native Mount-WindowsImage cmdlet, fixing error 0x800704db; New-PEMedia now uses native method by default |
-| 1.3.6 | 2025-12-12 | PATCH | **SUPERSEDED by v1.3.8** - WimMount warning fix was incorrect; native DISM cmdlets DO require WIMMount service |
-| 1.3.5 | 2025-12-11 | PATCH | Native DISM fix - Replace ADK dism.exe with PowerShell cmdlets (Mount-WindowsImage/Dismount-WindowsImage) in ApplyFFU.ps1 to avoid WIMMount filter driver errors |
-| 1.3.4 | 2025-12-11 | PATCH | Defense-in-depth fix for log monitoring - Restore messaging context after FFU.Common -Force import |
-| 1.3.3 | 2025-12-11 | PATCH | UI Monitor tab fix - Integrate WriteLog with messaging queue for real-time UI updates |
-| 1.3.2 | 2025-12-11 | PATCH | DISM WIM mount error 0x800704DB pre-flight validation with Test-FFUWimMount remediation |
-| 1.3.1 | 2025-12-11 | PATCH | Config schema validation fix - Added AdditionalFFUFiles property and 7 deprecated properties (AppsPath, CopyOfficeConfigXML, DownloadDrivers, InstallWingetApps, OfficePath, Threads, Verbose) with backward compatibility warnings |
+| 1.6.0 | 2026-01-07 | MINOR | VMware Workstation Pro integration - UI hypervisor selection, config schema, auto-detection |
+| 1.5.0 | 2026-01-07 | MINOR | Full VMware provider - REST API, VM lifecycle, diskpart-based disk ops |
+| 1.4.0 | 2026-01-06 | MINOR | FFU.Hypervisor module - Provider pattern, IHypervisorProvider interface |
+| 1.3.12 | 2025-12-17 | PATCH | WimMount auto-repair - `fltmc filters` check, registry repair, service restart |
+| 1.3.11 | 2025-12-15 | PATCH | WIMMount JIT validation in New-WinPEMediaNative |
+| 1.3.10 | 2025-12-15 | PATCH | FFU.Common.Logging signature compatibility fix |
+| 1.3.9 | 2025-12-15 | PATCH | Invoke-WimMountWithErrorHandling with 0x800704db detection |
+| 1.3.8 | 2025-12-15 | PATCH | WimMount pre-flight now BLOCKING with remediation guidance |
+| 1.3.7 | 2025-12-13 | MINOR | Native WinPE creation - New-WinPEMediaNative replaces copype.cmd |
 
 > **Note:** Older versions archived in [docs/VERSION_ARCHIVE.md](docs/VERSION_ARCHIVE.md). See `version.json` for complete history.
 
@@ -352,92 +271,23 @@ RequiredModules = @(
 Invoke-Pester -Path 'Tests/Unit/Module.Dependencies.Tests.ps1' -Output Detailed
 ```
 
-### Module Architecture
+### Module Summary
 
-**FFU.Core Module** (FFUDevelopment/Modules/FFU.Core/FFU.Core.psm1)
-- **Purpose:** Core utility module providing common configuration management, logging, session tracking, error handling, cleanup registration, and secure credential management
-- **Version:** 1.0.11
-- **Functions (39 total):**
-  - **Configuration & Utilities:** `Get-Parameters`, `Write-VariableValues`, `Get-ChildProcesses`, `Test-Url`, `Get-PrivateProfileString`, `Get-PrivateProfileSection`, `Get-ShortenedWindowsSKU`, `New-FFUFileName`, `Export-ConfigFile`
-  - **Session Management:** `New-RunSession`, `Get-CurrentRunManifest`, `Save-RunManifest`, `Set-DownloadInProgress`, `Clear-DownloadInProgress`, `Remove-InProgressItems`, `Clear-CurrentRunDownloads`, `Restore-RunJsonBackups`
-  - **Error Handling (v1.0.5):** `Invoke-WithErrorHandling`, `Test-ExternalCommandSuccess`, `Invoke-WithCleanup`
-  - **Cleanup Registration (v1.0.6):** `Register-CleanupAction`, `Unregister-CleanupAction`, `Invoke-FailureCleanup`, `Clear-CleanupRegistry`, `Get-CleanupRegistry`
-  - **Specialized Cleanup Helpers:** `Register-VMCleanup`, `Register-VHDXCleanup`, `Register-DISMMountCleanup`, `Register-ISOCleanup`, `Register-TempFileCleanup`, `Register-NetworkShareCleanup`, `Register-UserAccountCleanup`
-  - **Secure Credential Management (v1.0.7):** `New-SecureRandomPassword`, `ConvertFrom-SecureStringToPlainText`, `Clear-PlainTextPassword`, `Remove-SecureStringFromMemory`
-  - **Configuration Validation (v1.0.10):** `Test-FFUConfiguration`, `Get-FFUConfigurationSchema`
-- **Deprecated Aliases (v1.0.11):** `LogVariableValues` -> `Write-VariableValues`, `Mark-DownloadInProgress` -> `Set-DownloadInProgress`, `Cleanup-CurrentRunDownloads` -> `Clear-CurrentRunDownloads`
-- **Dependencies:** FFU.Constants module (v1.0.9+) for centralized configuration values
-- **Security Features:** Cryptographically secure password generation using RNGCryptoServiceProvider, SecureString-first design, proper memory cleanup
-- **PowerShell Best Practices (v1.0.11):** All exported functions use approved verbs; deprecated aliases preserve backward compatibility
+| Module | Purpose | Key Functions |
+|--------|---------|---------------|
+| FFU.Core | Configuration, logging, error handling, credentials | 39 functions - see [MODULE_REFERENCE.md](docs/MODULE_REFERENCE.md) |
+| FFU.VM | Hyper-V VM lifecycle | `New-FFUVM`, `Remove-FFUVM`, `Get-FFUEnvironment` |
+| FFU.Hypervisor | Multi-platform hypervisor abstraction | Provider pattern for Hyper-V/VMware |
+| FFU.Apps | Application management | Office, Apps ISO, cleanup |
+| FFU.Updates | Windows Update handling | KB downloads, MSU processing |
+| FFU.Messaging | Thread-safe UI communication | ConcurrentQueue-based messaging |
+| FFU.ADK | Windows ADK management | Validation, installation |
+| FFU.Media | WinPE media creation | Native WinPE method |
+| FFU.Imaging | DISM/FFU operations | Partitioning, imaging |
+| FFU.Drivers | OEM driver management | Dell, HP, Lenovo, Microsoft |
+| FFU.Preflight | Pre-flight validation | Environment checks, WIMMount |
 
-**FFU.VM Module** (FFUDevelopment/Modules/FFU.VM/FFU.VM.psm1)
-- **Purpose:** Hyper-V virtual machine lifecycle management
-- **Functions:**
-  - `New-FFUVM`: Creates and configures Generation 2 VMs with TPM, memory, processors, and boot devices
-  - `Remove-FFUVM`: Cleans up VMs, HGS guardians, certificates, mounted images, and VHDX files
-  - `Get-FFUEnvironment`: Comprehensive environment cleanup for dirty state recovery
-- **Dependencies:** FFU.Core module for logging and common variables
-- **Requirements:** Administrator privileges, Hyper-V feature enabled
-
-**FFU.Hypervisor Module** (FFUDevelopment/Modules/FFU.Hypervisor/FFU.Hypervisor.psm1)
-- **Purpose:** Hypervisor abstraction layer supporting multiple VM platforms (v1.6.0)
-- **Version:** 1.1.0
-- **Classes:**
-  - `IHypervisorProvider`: Base interface for hypervisor providers
-  - `HyperVProvider`: Microsoft Hyper-V implementation
-  - `VMwareProvider`: VMware Workstation Pro implementation
-  - `VMConfiguration`: VM configuration settings
-  - `VMInfo`: VM state information
-  - `VMState`: Enum for VM power states
-- **Public Functions:**
-  - `Get-HypervisorProvider`: Factory function to get provider by type (HyperV, VMware, Auto)
-  - `Test-HypervisorAvailable`: Check if hypervisor is available
-  - `Get-AvailableHypervisors`: List all supported hypervisors and their availability
-  - `New-HypervisorVM`, `Start-HypervisorVM`, `Stop-HypervisorVM`, `Remove-HypervisorVM`: VM lifecycle
-  - `New-HypervisorVirtualDisk`, `Mount-HypervisorVirtualDisk`, `Dismount-HypervisorVirtualDisk`: Disk operations
-- **Private Functions (VMware):**
-  - `Start-VMrestService`, `Stop-VMrestService`, `Test-VMrestEndpoint`: vmrest.exe management
-  - `Invoke-VMwareRestMethod`: REST API wrapper
-  - `New-VMwareVMX`, `Update-VMwareVMX`, `Get-VMwareVMXSettings`: VMX file management
-  - `New-VHDWithDiskpart`, `Mount-VHDWithDiskpart`, `Dismount-VHDWithDiskpart`: VHD ops without Hyper-V
-- **Test Coverage:** 101 Pester tests (FFU.Hypervisor.Tests.ps1)
-- **Documentation:** See [docs/VMWARE_WORKSTATION_GUIDE.md](docs/VMWARE_WORKSTATION_GUIDE.md)
-
-**FFU.Apps Module** (FFUDevelopment/Modules/FFU.Apps/FFU.Apps.psm1)
-- **Purpose:** Application installation and management for FFU Builder
-- **Functions:**
-  - `Get-ODTURL`: Retrieves the latest Office Deployment Tool download URL from Microsoft
-  - `Get-Office`: Downloads and configures Office/Microsoft 365 Apps for deployment
-  - `New-AppsISO`: Creates ISO file from applications folder for VM deployment
-  - `Remove-Apps`: Cleans up application downloads, Office installers, and temporary files
-  - `Remove-DisabledArtifacts`: Removes downloaded artifacts for disabled features (Office, Defender, MSRT, OneDrive, Edge)
-- **Dependencies:** FFU.Core module for logging, process execution, and download tracking
-- **Requirements:** Internet access for Office downloads, ADK for ISO creation
-
-**FFU.Updates Module** (FFUDevelopment/Modules/FFU.Updates/FFU.Updates.psm1)
-- **Purpose:** Windows Update catalog parsing, MSU package download, and DISM servicing
-- **Functions:**
-  - `Get-ProductsCab`: Downloads products.cab from Windows Update service for ESD file discovery
-  - `Get-WindowsESD`: Downloads Windows ESD files from Microsoft servers
-  - `Get-KBLink`: Searches Microsoft Update Catalog and retrieves download links
-  - `Get-UpdateFileInfo`: Gathers update file information for architecture-specific packages
-  - `Save-KB`: Downloads KB updates from Microsoft Update Catalog with architecture detection
-  - `Test-MountedImageDiskSpace`: Validates disk space for MSU extraction (3x package size + 5GB safety)
-  - `Add-WindowsPackageWithRetry`: Applies packages with automatic retry logic (2 retries, 30s delays)
-  - `Add-WindowsPackageWithUnattend`: Handles MSU packages with unattend.xml extraction
-- **Dependencies:** FFU.Core module for logging, BITS transfers, and download tracking
-- **Improvements:** Enhanced MSU handling with disk space validation, retry logic, and unattend.xml extraction
-
-**FFU.Messaging Module** (FFUDevelopment/Modules/FFU.Messaging/FFU.Messaging.psm1)
-- **Purpose:** Thread-safe messaging system for UI/background job communication (Issue #14)
-- **Functions:**
-  - Context management: `New-FFUMessagingContext`, `Test-FFUMessagingContext`, `Close-FFUMessagingContext`
-  - Message writing: `Write-FFUMessage`, `Write-FFUProgress`, `Write-FFUInfo`, `Write-FFUSuccess`, `Write-FFUWarning`, `Write-FFUError`, `Write-FFUDebug`
-  - Message reading: `Read-FFUMessages`, `Peek-FFUMessage`, `Get-FFUMessageCount`
-  - Build state: `Set-FFUBuildState`, `Request-FFUCancellation`, `Test-FFUCancellationRequested`
-- **Technology:** ConcurrentQueue<T> for lock-free messaging, synchronized hashtable for state
-- **Performance:** ~12,000+ messages/second throughput, 50ms UI polling interval (20x faster than file-based)
-- **Design:** Dual output (queue for UI + file for persistence), backward compatible with file-based fallback
+> **Detailed Reference:** See [docs/MODULE_REFERENCE.md](docs/MODULE_REFERENCE.md) for complete function lists and parameters.
 
 ### Key Design Patterns
 
@@ -505,6 +355,22 @@ Invoke-ScriptAnalyzer -Path ".\FFU.Common" -Recurse -Severity Warning,Error
 Invoke-ScriptAnalyzer -Path ".\BuildFFUVM.ps1" -Settings PSGallery
 ```
 
+## PowerShell Style Standards
+
+All PowerShell code in this project follows the [PoshCode Practice and Style Guide](https://github.com/PoshCode/PowerShellPracticeAndStyle).
+
+**Key Requirements:**
+- One True Brace Style (OTBS) - opening brace at end of line
+- Full cmdlet names (no aliases)
+- Explicit parameter names (`-Path $x` not `$x`)
+- 4-space indentation, 115 char max lines
+- `[CmdletBinding()]` and `[OutputType()]` on all functions
+
+**Validation:**
+```powershell
+Invoke-ScriptAnalyzer -Path .\FFUDevelopment -Recurse -ReportSummary
+```
+
 ### Creating USB Deployment Media
 
 ```powershell
@@ -512,282 +378,18 @@ Invoke-ScriptAnalyzer -Path ".\BuildFFUVM.ps1" -Settings PSGallery
 .\USBImagingToolCreator.ps1 -FFUPath "C:\FFUDevelopment\FFU\MyImage.ffu"
 ```
 
-## Important Implementation Notes
+## Implementation Patterns
 
-### Type Safety (Issue #324 Fix)
+> **Detailed Patterns:** See [docs/IMPLEMENTATION_PATTERNS.md](docs/IMPLEMENTATION_PATTERNS.md) for complete examples.
 
-When working with path parameters, **never** pass boolean values or strings like "False". Always use strongly-typed path validation:
+### Essential Patterns (Quick Reference)
 
-```powershell
-# BAD - Will cause runtime errors
-$path = $false
-Expand-Archive -Path $path
-
-# GOOD - Use FFUPaths class validation
-$paths = [FFUPaths]::new()
-$expandedPath = $paths.ExpandPath($userInput)
-if ($expandedPath) {
-    Expand-Archive -Path $expandedPath
-}
-```
-
-### Proxy Support (Issue #327 Fix)
-
-All network operations must respect proxy configuration:
-
-```powershell
-# Detect and apply proxy settings
-$proxyConfig = [FFUNetworkConfiguration]::DetectProxySettings()
-
-# Use with BITS transfers
-Start-BitsTransferWithRetry -Source $url -Destination $dest -ProxyConfig $proxyConfig
-
-# Use with web requests
-$request = [System.Net.WebRequest]::Create($url)
-$proxyConfig.ApplyToWebRequest($request)
-```
-
-### Error Handling Pattern (v1.0.5)
-
-FFU Builder provides three standardized error handling functions in FFU.Core module:
-
-**1. Invoke-WithErrorHandling** - Retry wrapper with cleanup actions:
-```powershell
-# Wrap operations with automatic retry and logging
-$result = Invoke-WithErrorHandling -OperationName "Download Dell Drivers" `
-                    -MaxRetries 3 `
-                    -RetryDelaySeconds 5 `
-                    -CriticalOperation $true `
-                    -Operation {
-    Start-BitsTransfer -Source $driverUrl -Destination $driverPath
-} -CleanupAction {
-    # Cleanup logic on final failure
-    Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
-}
-```
-
-**2. Test-ExternalCommandSuccess** - Validate external command exit codes:
-```powershell
-# Standard command validation
-& oscdimg.exe $args
-if (-not (Test-ExternalCommandSuccess -CommandName "oscdimg")) {
-    throw "Failed to create ISO"
-}
-
-# Robocopy special handling (exit codes 0-7 are success)
-Robocopy.exe $source $dest /E /R:3
-if (-not (Test-ExternalCommandSuccess -CommandName "Robocopy copy files")) {
-    throw "Robocopy failed"
-}
-```
-
-**3. Invoke-WithCleanup** - Guaranteed cleanup in finally block:
-```powershell
-# Ensure cleanup runs regardless of success or failure
-Invoke-WithCleanup -OperationName "Apply drivers" -Operation {
-    Mount-WindowsImage -Path $mountPath -ImagePath $wimPath -Index 1
-    Add-WindowsDriver -Path $mountPath -Driver $driverPath -Recurse
-} -Cleanup {
-    Dismount-WindowsImage -Path $mountPath -Save
-}
-```
-
-**Critical Operations with Error Handling (v1.0.5):**
-- Disk partitioning (USB imaging) - try/catch with proper cleanup
-- Robocopy operations - exit code validation (0-7 success, 8+ failure)
-- Unattend.xml copy - source validation and -ErrorAction Stop
-- Optimize-Volume - non-fatal with warning on failure
-- New-FFUVM - VM and HGS Guardian cleanup on failure
-- DISM mount/dismount - retry with Cleanup-Mountpoints fallback
-- Update Catalog requests - 3 retries with exponential backoff
-
-### Constants and Magic Numbers
-
-Never use hardcoded values. Reference `FFUConstants` class:
-
-```powershell
-# BAD
-Start-Sleep -Seconds 15
-$registryPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
-
-# GOOD
-Start-Sleep -Milliseconds ([FFUConstants]::LOG_WAIT_TIMEOUT)
-$registryPath = [FFUConstants]::REGISTRY_FILESYSTEM
-```
-
-### Driver Provider Pattern
-
-When adding support for new OEM or modifying driver download logic:
-
-```powershell
-# Implement DriverProvider abstract class
-class NewOEMDriverProvider : DriverProvider {
-    [string] GetDriverCatalogUrl() {
-        return "https://oem-vendor.com/catalog.xml"
-    }
-
-    [PSCustomObject[]] ParseDriverCatalog([string]$Content) {
-        # OEM-specific XML/JSON parsing
-    }
-
-    [void] ExtractDriverPackage([string]$Package, [string]$Destination) {
-        # OEM-specific extraction (exe, cab, zip, etc.)
-    }
-}
-
-# Register in factory
-# See DriverProviderFactory class in FFU.Common\Drivers\
-```
-
-### ADK Pre-Flight Validation (New Feature)
-
-FFUBuilder automatically validates Windows ADK installation before creating WinPE media to prevent silent failures.
-
-**Automatic Validation:**
-When `-CreateCaptureMedia` or `-CreateDeploymentMedia` is enabled, the system performs comprehensive pre-flight checks:
-
-```powershell
-# Automatically triggered when creating WinPE media
-.\BuildFFUVM.ps1 -CreateCaptureMedia $true -UpdateADK $true
-```
-
-**What is validated:**
-- ADK installation (registry and file system)
-- Deployment Tools feature
-- Windows PE add-on
-- Critical executables (oscdimg.exe, copype.cmd, DandISetEnv.bat)
-- Architecture-specific boot files (etfsboot.com, Efisys.bin, Efisys_noprompt.bin)
-- ADK version currency (warning only)
-
-**Error handling:**
-- Clear error messages with specific missing components
-- Direct links to Microsoft download pages
-- Automatic installation when `-UpdateADK $true` is set
-- Detailed logging with severity levels (Info, Success, Warning, Error, Critical)
-
-**Manual validation:**
-```powershell
-# Explicitly validate ADK prerequisites
-$validation = Test-ADKPrerequisites -WindowsArch 'x64' -AutoInstall $false -ThrowOnFailure $false
-
-if (-not $validation.IsValid) {
-    Write-Host "ADK validation failed:"
-    $validation.Errors | ForEach-Object { Write-Host "  - $_" }
-}
-```
-
-**Common error resolution:**
-If ADK validation fails:
-1. Check error message for specific missing components
-2. Run with `-UpdateADK $true` for automatic installation
-3. Or manually install from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install
-   - Install "Windows ADK" with "Deployment Tools" feature
-   - Install "Windows PE add-on"
-
-### Configuration Schema Validation (New Feature - v1.2.5)
-
-FFUBuilder now includes JSON Schema validation for configuration files, providing:
-- IDE autocomplete when editing config files
-- Detection of typos in property names
-- Type validation (string, boolean, integer, object)
-- Enum validation for WindowsSKU, WindowsArch, Make, MediaType, etc.
-- Range validation for Memory, Disksize, Processors
-- Pattern validation for ShareName, Username, IP addresses
-- Unknown property detection
-
-**Schema Location:**
-- `FFUDevelopment/config/ffubuilder-config.schema.json`
-
-**Using the Schema in Config Files:**
-Add the `$schema` reference at the top of your config file for IDE support:
-```json
-{
-    "$schema": "./ffubuilder-config.schema.json",
-    "WindowsSKU": "Pro",
-    "WindowsRelease": 11,
-    ...
-}
-```
-
-**Programmatic Validation:**
-```powershell
-# Validate a config file
-$result = Test-FFUConfiguration -ConfigPath "C:\FFU\config\my-config.json"
-if ($result.IsValid) {
-    Write-Host "Configuration is valid"
-} else {
-    $result.Errors | ForEach-Object { Write-Error $_ }
-}
-
-# Validate with ThrowOnError for strict mode
-Test-FFUConfiguration -ConfigPath "config.json" -ThrowOnError
-
-# Validate a hashtable directly
-$config = @{
-    WindowsSKU = "Enterprise"
-    Memory = 8GB
-    Processors = 4
-}
-$result = Test-FFUConfiguration -ConfigObject $config
-
-# Get schema path
-$schemaPath = Get-FFUConfigurationSchema
-```
-
-**Validation Result Object:**
-```powershell
-@{
-    IsValid = $true/$false           # Overall validation status
-    Errors = @(...)                   # Array of error messages
-    Warnings = @(...)                 # Array of warning messages
-    Config = @{...}                   # Parsed configuration object
-}
-```
-
-**Validated Properties Include:**
-- **Enums:** WindowsSKU (22 values), WindowsArch (x86/x64/arm64), Make (Dell/HP/Lenovo/Microsoft), MediaType (consumer/business), LogicalSectorSizeBytes (512/4096), WindowsRelease (10/11/server versions), WindowsLang (38 locales)
-- **Ranges:** Memory (2GB-128GB), Disksize (25GB-2TB), Processors (1-64), MaxUSBDrives (0-100)
-- **Patterns:** ShareName, Username, FFUPrefix (alphanumeric), VMHostIPAddress (IPv4)
-- **Types:** 60+ properties with boolean, integer, string, object type validation
-
-### Pre-flight Validation
-
-Always validate configuration before starting builds:
-
-```powershell
-$config = [FFUConfiguration]::LoadAndValidate("config.json")
-$validator = [FFUPreflightValidator]::new($config)
-
-if (-not $validator.ValidateAll()) {
-    Write-Error "Pre-flight validation failed. Check errors above."
-    exit 1
-}
-
-# Proceed with build
-```
-
-### Logging Best Practices
-
-Use structured logging with context:
-
-```powershell
-# Basic logging
-Write-FFULog -Level Info -Message "Starting driver download"
-
-# Logging with context
-Write-FFULog -Level Warning -Message "Download retry required" -Context @{
-    URL = $driverUrl
-    Attempt = $retryCount
-    Error = $_.Exception.Message
-}
-
-# Success logging
-Write-FFULog -Level Success -Message "FFU build completed" -Context @{
-    FFUPath = $outputPath
-    SizeGB = $ffuSizeGB
-    Duration = $buildDuration
-}
-```
+**Error Handling:** Use `Invoke-WithErrorHandling`, `Test-ExternalCommandSuccess`, `Invoke-WithCleanup` from FFU.Core
+**Constants:** Never hardcode values - use `[FFUConstants]::CONSTANT_NAME`
+**Type Safety:** Never pass booleans as paths - use `[FFUPaths]::ExpandPath()`
+**Proxy Support:** Use `[FFUNetworkConfiguration]::DetectProxySettings()` for all network ops
+**Config Validation:** Use `Test-FFUConfiguration -ConfigPath "config.json"`
+**Pre-flight:** Always call `$validator.ValidateAll()` before builds
 
 ## Known Issues and Workarounds
 
@@ -843,144 +445,24 @@ For detailed fix documentation, see:
 
 ```
 FFUDevelopment/
-├── BuildFFUVM.ps1              # Core orchestrator (298 KB)
-├── BuildFFUVM_UI.ps1           # WPF UI launcher (36 KB)
-├── BuildFFUVM_UI.xaml          # UI definition (76 KB)
-├── Create-PEMedia.ps1          # WinPE media creator
-├── USBImagingToolCreator.ps1   # USB tool generator
-├── Modules/                    # PowerShell modules
-│   └── FFU.VM/                # Hyper-V VM management module
-│       └── FFU.VM.psm1        # VM lifecycle functions
-├── FFU.Common/                 # Business logic module
-│   ├── Classes/                # Type definitions
-│   │   ├── FFUConfiguration.ps1
-│   │   ├── FFUConstants.ps1
-│   │   ├── FFULogger.ps1
-│   │   ├── FFUNetworkConfiguration.ps1
-│   │   ├── FFUPaths.ps1
-│   │   └── FFUPreflightValidator.ps1
-│   └── Functions/              # Reusable functions
-│       ├── Invoke-FFUOperation.ps1
-│       └── Write-FFULog.ps1
+├── BuildFFUVM.ps1              # Core orchestrator
+├── BuildFFUVM_UI.ps1           # WPF UI launcher
+├── Modules/                    # 11 PowerShell modules (see Module Summary above)
+├── FFU.Common/                 # Business logic (Classes/, Functions/)
 ├── FFUUI.Core/                 # UI framework
-│   └── FFUBuildJobManager.ps1
-├── Drivers/
-│   └── Providers/              # OEM driver implementations
-│       ├── DriverProvider.ps1
-│       ├── DellDriverProvider.ps1
-│       ├── HPDriverProvider.ps1
-│       ├── LenovoDriverProvider.ps1
-│       └── MicrosoftDriverProvider.ps1
-├── Apps/                       # Application installers
-├── Autopilot/                  # Windows Autopilot configs
-├── PPKG/                       # Provisioning packages
-├── VM/                         # Hyper-V VM configurations
-├── Tests/                      # Pester test suites
-│   ├── Unit/
-│   ├── Integration/
-│   └── UI/
-└── Logs/                       # Runtime logs and telemetry
+├── Drivers/Providers/          # OEM driver implementations (Dell, HP, Lenovo, Microsoft)
+├── Tests/                      # Pester test suites (Unit/, Integration/, UI/)
+└── Logs/                       # Runtime logs
 ```
 
-## Debugging Tips
+## Quick References
 
-### Enable Verbose Logging
-
-```powershell
-$VerbosePreference = 'Continue'
-.\BuildFFUVM.ps1 -Verbose
-```
-
-### Monitor Background Job Progress
-
-```powershell
-# Get running jobs
-Get-Job | Where-Object { $_.Name -like "*FFU*" }
-
-# Receive job output in real-time
-Receive-Job -Name "FFUBuild" -Keep
-```
-
-### Inspect VM During Build
-
-```powershell
-# Connect to running build VM
-vmconnect.exe localhost "FFU_Build_VM"
-
-# Check VM state
-Get-VM -Name "FFU_Build_VM" | Select-Object Name, State, Uptime
-```
-
-### Analyze DISM Errors
-
-DISM logs are located in the mounted image:
-```powershell
-# After DISM failure, check logs
-Get-Content "C:\Windows\Logs\DISM\dism.log" -Tail 100
-```
-
-### Test Driver Download in Isolation
-
-```powershell
-# Test single OEM driver provider
-$provider = [DriverProviderFactory]::CreateProvider('Dell', $proxyConfig)
-$catalogUrl = $provider.GetDriverCatalogUrl()
-Invoke-WebRequest -Uri $catalogUrl -UseBasicParsing
-```
-
-## Common Customizations
-
-### Add New OEM Driver Support
-
-1. Create new provider class inheriting from `DriverProvider`
-2. Implement `GetDriverCatalogUrl()`, `ParseDriverCatalog()`, `ExtractDriverPackage()`
-3. Register in `DriverProviderFactory.CreateProvider()` switch statement
-4. Add integration tests in `Tests/Integration/Drivers/`
-
-### Modify VM Configuration Defaults
-
-Edit `FFUConstants` class:
-```powershell
-static [int] $DEFAULT_VM_MEMORY_GB = 16      # Increase for faster builds
-static [int] $DEFAULT_VM_PROCESSORS = 8      # Use more cores if available
-```
-
-### Add Custom WinPE Drivers
-
-Place drivers in `PEDrivers/` folder - they'll be automatically injected into boot media
-
-### Integrate Custom Applications
-
-Add WinGet package IDs to configuration JSON or use `Apps/` folder for MSI/EXE installers
-
-## Performance Optimization
-
-- **Parallel Windows Update Downloads:** KB updates download concurrently using `FFU.Common.ParallelDownload` module
-  - Configurable concurrency (default: 5 concurrent downloads)
-  - PowerShell 7+ uses `ForEach-Object -Parallel` with thread-safe collections
-  - PowerShell 5.1 uses `RunspacePool` for compatibility
-  - Automatic retry with exponential backoff (3 retries by default)
-  - Multi-method fallback per download: BITS → WebRequest → WebClient → curl.exe
-  - Progress callback support for UI integration
-  - Download summary with success/failure statistics
-- **Driver Downloads:** BITS background jobs with proxy support
-- **Incremental Builds:** Reuse existing VM if configuration unchanged (`-ReuseVM`)
-- **Local Driver Cache:** Downloaded drivers cached in `Drivers/` to avoid re-downloads
-- **VM Checkpoints:** Create checkpoints before risky operations for quick rollback
-
-## Security Considerations
-
-- Scripts require **Administrator privileges** for Hyper-V and DISM operations
-- Driver downloads verify **HTTPS certificates** (no self-signed certs)
-- **No credentials stored** in configuration files (use Windows Credential Manager)
-- Audit logs written to `Logs/` directory for compliance tracking
-- **Secure Credential Generation (v1.0.7):**
-  - Passwords generated using `RNGCryptoServiceProvider` for cryptographic randomness
-  - Passwords created directly as `SecureString` - never exist as complete plain text during generation
-  - Plain text only created when absolutely necessary (e.g., writing to WinPE scripts)
-  - Memory cleanup functions ensure credentials are disposed properly
-  - Temporary `ffu_user` account has automatic 4-hour expiry as a security failsafe
-
-## Module Extraction History
-
-For detailed module extraction history including FFU.Common.ParallelDownload and FFU.Drivers modules, see [docs/FIXED_ISSUES_ARCHIVE.md](docs/FIXED_ISSUES_ARCHIVE.md#module-extraction-history).
+| Topic | Location |
+|-------|----------|
+| Debugging tips | [docs/IMPLEMENTATION_PATTERNS.md](docs/IMPLEMENTATION_PATTERNS.md#debugging-tips) |
+| Customization guide | [docs/IMPLEMENTATION_PATTERNS.md](docs/IMPLEMENTATION_PATTERNS.md#common-customizations) |
+| Performance optimization | [docs/IMPLEMENTATION_PATTERNS.md](docs/IMPLEMENTATION_PATTERNS.md#performance-optimization) |
+| Security considerations | [docs/IMPLEMENTATION_PATTERNS.md](docs/IMPLEMENTATION_PATTERNS.md#security-considerations) |
+| Module details | [docs/MODULE_REFERENCE.md](docs/MODULE_REFERENCE.md) |
+| Fixed issues archive | [docs/FIXED_ISSUES_ARCHIVE.md](docs/FIXED_ISSUES_ARCHIVE.md) |
+| Version archive | [docs/VERSION_ARCHIVE.md](docs/VERSION_ARCHIVE.md) |

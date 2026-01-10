@@ -115,6 +115,8 @@ function Initialize-UIControls {
     $State.Controls.pnlVMwareSetup = $window.FindName('pnlVMwareSetup')
     $State.Controls.txtVMwareCredStatus = $window.FindName('txtVMwareCredStatus')
     $State.Controls.btnConfigureVMrest = $window.FindName('btnConfigureVMrest')
+    $State.Controls.pnlShowVMConsoleLabel = $window.FindName('pnlShowVMConsoleLabel')
+    $State.Controls.chkShowVMConsole = $window.FindName('chkShowVMConsole')
     $State.Controls.pnlVMSwitchLabel = $window.FindName('pnlVMSwitchLabel')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
     $State.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')

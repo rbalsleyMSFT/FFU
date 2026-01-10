@@ -370,7 +370,8 @@ function Invoke-FFUOperation {
             $result = & $Operation
 
             WriteLog "Operation completed successfully: $OperationName"
-            return $result
+            $result
+            return
         }
         catch {
             $lastError = $_
@@ -413,7 +414,8 @@ function Invoke-FFUOperation {
                         }
                     }
 
-                    return $null
+                    $null
+                    return
                 }
             }
 
@@ -469,20 +471,21 @@ function Invoke-SafeMethod {
 
     if ($null -eq $Object) {
         WriteLog "WARNING: Cannot invoke method '$MethodName' on null object. Returning default value."
-        return $DefaultValue
+        $DefaultValue
+        return
     }
 
     try {
         if ($Arguments -and $Arguments.Count -gt 0) {
-            return $Object.$MethodName.Invoke($Arguments)
+            $Object.$MethodName.Invoke($Arguments)
         }
         else {
-            return $Object.$MethodName.Invoke()
+            $Object.$MethodName.Invoke()
         }
     }
     catch [System.NullReferenceException] {
         WriteLog "ERROR: Null reference exception when invoking '$MethodName'. Object type: $($Object.GetType().FullName)"
-        return $DefaultValue
+        $DefaultValue
     }
     catch {
         WriteLog "ERROR: Error invoking method '$MethodName': $($_.Exception.Message)"
@@ -526,25 +529,26 @@ function Get-SafeProperty {
 
     if ($null -eq $Object) {
         WriteLog "WARNING: Cannot get property '$PropertyName' from null object. Returning default value."
-        return $DefaultValue
+        $DefaultValue
+        return
     }
 
     try {
         if ($Object.PSObject.Properties[$PropertyName]) {
-            return $Object.$PropertyName
+            $Object.$PropertyName
         }
         else {
             WriteLog "WARNING: Property '$PropertyName' does not exist on object of type $($Object.GetType().FullName). Returning default value."
-            return $DefaultValue
+            $DefaultValue
         }
     }
     catch [System.NullReferenceException] {
         WriteLog "ERROR: Null reference exception when accessing property '$PropertyName'. Object type: $($Object.GetType().FullName)"
-        return $DefaultValue
+        $DefaultValue
     }
     catch {
         WriteLog "ERROR: Error accessing property '$PropertyName': $($_.Exception.Message)"
-        return $DefaultValue
+        $DefaultValue
     }
 }
 

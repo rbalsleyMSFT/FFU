@@ -94,7 +94,7 @@ function New-PEMedia {
 
     If (Test-path -Path "$WinPEFFUPath") {
         WriteLog "Removing old WinPE path at $WinPEFFUPath"
-        Remove-Item -Path "$WinPEFFUPath" -Recurse -Force | out-null
+        Remove-Item -Path "$WinPEFFUPath" -Recurse -Force | Out-Null
     }
 
     WriteLog "Copying WinPE files to $WinPEFFUPath"
@@ -158,7 +158,7 @@ function New-PEMedia {
     }
     If ($Capture) {
         WriteLog "Copying $FFUDevelopmentPath\WinPECaptureFFUFiles\* to WinPE capture media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
+        Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
         WriteLog "Copy complete"
         #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
         #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null

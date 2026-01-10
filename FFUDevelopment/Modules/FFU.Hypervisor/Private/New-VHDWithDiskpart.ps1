@@ -426,7 +426,232 @@ $assignLetter
 
 <#
 .SYNOPSIS
-    Converts a VHD to VMDK format for VMware
+    Creates a new VMDK file using VMware's vmware-vdiskmanager
+
+.DESCRIPTION
+    Creates a VMDK virtual disk using vmware-vdiskmanager.exe.
+    This is the native VMware disk format and provides optimal performance
+    for VMware Workstation VMs.
+
+.PARAMETER Path
+    Full path for the new VMDK file
+
+.PARAMETER SizeGB
+    Size of the VMDK in gigabytes
+
+.PARAMETER Type
+    Disk type: 'Dynamic' (growable/thin) or 'Fixed' (preallocated/thick). Default Dynamic.
+
+.PARAMETER AdapterType
+    Virtual adapter type: 'lsilogic', 'buslogic', 'ide'. Default lsilogic.
+
+.PARAMETER VMwarePath
+    Optional path to VMware Workstation installation directory.
+    If not provided, auto-detects from registry/default paths.
+
+.OUTPUTS
+    [string] Path to the created VMDK file
+
+.EXAMPLE
+    $vmdkPath = New-VMDKWithVdiskmanager -Path 'C:\VMs\disk.vmdk' -SizeGB 128
+
+.EXAMPLE
+    $vmdkPath = New-VMDKWithVdiskmanager -Path 'C:\VMs\disk.vmdk' -SizeGB 256 -Type Fixed
+
+.NOTES
+    Module: FFU.Hypervisor
+    Version: 1.0.1
+
+    VMware vdiskmanager options:
+    -c : create disk
+    -s <size> : disk size (e.g., 128GB, 256MB)
+    -a <adapter> : adapter type (ide, buslogic, lsilogic)
+    -t <type> : disk type (0=single growable, 1=growable split, 2=preallocated, 3=preallocated split)
+#>
+function New-VMDKWithVdiskmanager {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [int]$SizeGB,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('Dynamic', 'Fixed')]
+        [string]$Type = 'Dynamic',
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('lsilogic', 'buslogic', 'ide')]
+        [string]$AdapterType = 'lsilogic',
+
+        [Parameter(Mandatory = $false)]
+        [string]$VMwarePath
+    )
+
+    # Ensure parent directory exists
+    $parentPath = Split-Path -Path $Path -Parent
+    if (-not (Test-Path $parentPath)) {
+        New-Item -Path $parentPath -ItemType Directory -Force | Out-Null
+    }
+
+    # Ensure .vmdk extension
+    if (-not $Path.EndsWith('.vmdk', [StringComparison]::OrdinalIgnoreCase)) {
+        $Path = "$Path.vmdk"
+    }
+
+    # Remove existing file if present
+    if (Test-Path $Path) {
+        WriteLog "Removing existing VMDK: $Path"
+        Remove-Item -Path $Path -Force
+        # Also remove any associated files (-flat.vmdk, -s*.vmdk)
+        $basePath = [System.IO.Path]::ChangeExtension($Path, $null).TrimEnd('.')
+        Get-ChildItem -Path $parentPath -Filter "$([System.IO.Path]::GetFileNameWithoutExtension($Path))*" -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+
+    # Find vmware-vdiskmanager
+    $vdiskManager = Get-VdiskmanagerPath -VMwarePath $VMwarePath
+
+    if (-not $vdiskManager) {
+        throw "vmware-vdiskmanager.exe not found. Please ensure VMware Workstation Pro is installed."
+    }
+
+    WriteLog "Found vmware-vdiskmanager: $vdiskManager"
+
+    # Determine disk type number
+    # Type 0: Single growable virtual disk (monolithic sparse) - RECOMMENDED for FFU
+    # Type 1: Growable virtual disk split into 2GB files (split sparse)
+    # Type 2: Preallocated virtual disk (monolithic flat)
+    # Type 3: Preallocated virtual disk split into 2GB files (split flat)
+    $diskTypeNum = if ($Type -eq 'Fixed') { 2 } else { 0 }
+
+    # Build arguments
+    $arguments = @(
+        '-c',                           # Create disk
+        '-s', "${SizeGB}GB",            # Size
+        '-a', $AdapterType,             # Adapter type
+        '-t', $diskTypeNum,             # Disk type
+        "`"$Path`""                     # Output path
+    )
+
+    $argString = $arguments -join ' '
+    WriteLog "Creating VMDK: $Path ($SizeGB GB, Type=$Type, Adapter=$AdapterType)"
+    WriteLog "Executing: vmware-vdiskmanager $argString"
+
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $vdiskManager
+        $psi.Arguments = $argString
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+
+        $process = [System.Diagnostics.Process]::Start($psi)
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+
+        if ($stdout) {
+            WriteLog "vdiskmanager stdout: $($stdout.Trim())"
+        }
+        if ($stderr) {
+            WriteLog "vdiskmanager stderr: $($stderr.Trim())"
+        }
+        WriteLog "vdiskmanager exit code: $($process.ExitCode)"
+
+        if ($process.ExitCode -ne 0) {
+            throw "vmware-vdiskmanager failed with exit code $($process.ExitCode): $stderr $stdout"
+        }
+
+        # Verify file was created
+        if (-not (Test-Path $Path)) {
+            throw "VMDK file was not created at $Path"
+        }
+
+        $fileSize = (Get-Item $Path).Length
+        WriteLog "VMDK created successfully: $Path (file size: $([math]::Round($fileSize/1MB, 2)) MB)"
+        return $Path
+    }
+    catch {
+        WriteLog "ERROR: Failed to create VMDK: $($_.Exception.Message)"
+        throw
+    }
+}
+
+<#
+.SYNOPSIS
+    Gets the path to vmware-vdiskmanager.exe
+
+.DESCRIPTION
+    Locates vmware-vdiskmanager.exe in the VMware Workstation installation directory.
+
+.PARAMETER VMwarePath
+    Optional path to VMware installation. If not provided, auto-detects.
+
+.OUTPUTS
+    [string] Full path to vmware-vdiskmanager.exe or $null if not found
+#>
+function Get-VdiskmanagerPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$VMwarePath
+    )
+
+    if ($VMwarePath) {
+        $vdiskManager = Join-Path $VMwarePath 'vmware-vdiskmanager.exe'
+        if (Test-Path $vdiskManager) {
+            return $vdiskManager
+        }
+    }
+
+    # Try registry first
+    $regPaths = @(
+        'HKLM:\SOFTWARE\VMware, Inc.\VMware Workstation',
+        'HKLM:\SOFTWARE\WOW6432Node\VMware, Inc.\VMware Workstation'
+    )
+
+    foreach ($regPath in $regPaths) {
+        if (Test-Path $regPath) {
+            $installPath = (Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue).InstallPath
+            if ($installPath) {
+                $vdiskManager = Join-Path $installPath 'vmware-vdiskmanager.exe'
+                if (Test-Path $vdiskManager) {
+                    return $vdiskManager
+                }
+            }
+        }
+    }
+
+    # Try default paths
+    $defaultPaths = @(
+        'C:\Program Files (x86)\VMware\VMware Workstation\vmware-vdiskmanager.exe',
+        'C:\Program Files\VMware\VMware Workstation\vmware-vdiskmanager.exe'
+    )
+
+    foreach ($path in $defaultPaths) {
+        if (Test-Path $path) {
+            return $path
+        }
+    }
+
+    return $null
+}
+
+<#
+.SYNOPSIS
+    Converts a VHD to VMDK format for VMware (DEPRECATED - Use New-VMDKWithVdiskmanager instead)
+
+.DESCRIPTION
+    This function is deprecated. VMware cannot boot from VHD files natively.
+    Instead of converting, create VMDK disks directly using New-VMDKWithVdiskmanager.
+
+    If you have an existing VHD that needs conversion, use qemu-img externally:
+    qemu-img convert -f vpc -O vmdk input.vhd output.vmdk
 #>
 function Convert-VHDToVMDK {
     [CmdletBinding()]
@@ -442,55 +667,10 @@ function Convert-VHDToVMDK {
         [string]$VMwarePath
     )
 
-    if (-not (Test-Path $VHDPath)) {
-        throw "VHD file not found: $VHDPath"
-    }
+    WriteLog "WARNING: Convert-VHDToVMDK is deprecated. VMware cannot boot from VHD files."
+    WriteLog "Use New-VMDKWithVdiskmanager to create native VMDK disks instead."
+    WriteLog "For existing VHD conversion, install qemu-img and run:"
+    WriteLog "  qemu-img convert -f vpc -O vmdk `"$VHDPath`" `"$VMDKPath`""
 
-    # Determine output path
-    if (-not $VMDKPath) {
-        $VMDKPath = [System.IO.Path]::ChangeExtension($VHDPath, '.vmdk')
-    }
-
-    # Find vmware-vdiskmanager
-    $vdiskManager = $null
-
-    if ($VMwarePath) {
-        $vdiskManager = Join-Path $VMwarePath 'vmware-vdiskmanager.exe'
-    }
-    else {
-        $searchPaths = @(
-            'C:\Program Files (x86)\VMware\VMware Workstation\vmware-vdiskmanager.exe',
-            'C:\Program Files\VMware\VMware Workstation\vmware-vdiskmanager.exe'
-        )
-
-        foreach ($path in $searchPaths) {
-            if (Test-Path $path) {
-                $vdiskManager = $path
-                break
-            }
-        }
-    }
-
-    if (-not $vdiskManager -or -not (Test-Path $vdiskManager)) {
-        throw "vmware-vdiskmanager.exe not found. Please ensure VMware Workstation Pro is installed."
-    }
-
-    try {
-        WriteLog "Converting VHD to VMDK: $VHDPath -> $VMDKPath"
-
-        # Use vdiskmanager to create VMDK from raw disk
-        # Note: This is a simplified approach - full conversion would require qemu-img or similar
-        # For FFU Builder, we can use VHD directly with VMware
-
-        # VMware can actually use VHD files directly if they're referenced correctly in VMX
-        # But for best performance, we should convert
-        # This is a placeholder for the conversion logic
-
-        WriteLog "Note: Using VHD directly with VMware. For optimal performance, consider converting to VMDK."
-        return $VHDPath
-    }
-    catch {
-        WriteLog "ERROR: Failed to convert VHD to VMDK: $($_.Exception.Message)"
-        throw
-    }
+    throw "VHD to VMDK conversion not supported. VMware requires native VMDK disks. Use New-VMDKWithVdiskmanager instead."
 }

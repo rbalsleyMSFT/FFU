@@ -51,7 +51,7 @@ function Initialize-DISMService {
         # Use Get-WindowsEdition which works with mounted image paths
         $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
         WriteLog "DISM service initialized. Image edition: $($dismInfo.Edition)"
-        return $true
+        $true
     }
     catch {
         WriteLog "WARNING: DISM service initialization check failed: $($_.Exception.Message)"
@@ -61,11 +61,11 @@ function Initialize-DISMService {
         try {
             $dismInfo = Get-WindowsEdition -Path $MountPath -ErrorAction Stop
             WriteLog "DISM service initialized after retry. Image edition: $($dismInfo.Edition)"
-            return $true
+            $true
         }
         catch {
             WriteLog "ERROR: DISM service failed to initialize after retry"
-            return $false
+            $false
         }
     }
 }
@@ -127,20 +127,22 @@ function Test-WimSourceAccessibility {
         $result.DriveRoot = Split-Path -Qualifier $WimPath
 
         # Check 1: Verify the drive/mount point exists
-        if (-not (Test-Path $result.DriveRoot)) {
+        if (-not (Test-Path -Path $result.DriveRoot)) {
             $result.ErrorMessage = "Drive $($result.DriveRoot) is not accessible - mount point may have been released"
-            return $result
+            $result
+            return
         }
 
         # Check 2: Verify the WIM file exists
-        if (-not (Test-Path $WimPath)) {
+        if (-not (Test-Path -Path $WimPath)) {
             $result.ErrorMessage = "WIM file not found at $WimPath - ISO may have been unmounted"
-            return $result
+            $result
+            return
         }
 
         # Check 3: Verify we can read the WIM file (not just that it exists)
         try {
-            $fileInfo = Get-Item $WimPath -ErrorAction Stop
+            $fileInfo = Get-Item -Path $WimPath -ErrorAction Stop
             $result.WimSizeBytes = $fileInfo.Length
 
             # Try to open the file for reading to verify it's truly accessible
@@ -153,12 +155,14 @@ function Test-WimSourceAccessibility {
 
             if ($bytesRead -eq 0 -and $fileInfo.Length -gt 0) {
                 $result.ErrorMessage = "WIM file exists but could not be read - possible access issue"
-                return $result
+                $result
+                return
             }
         }
         catch {
             $result.ErrorMessage = "Cannot read WIM file: $($_.Exception.Message)"
-            return $result
+            $result
+            return
         }
 
         # Check 4: If ISO path provided, verify ISO is still mounted
@@ -169,7 +173,8 @@ function Test-WimSourceAccessibility {
 
                 if (-not $diskImage.Attached) {
                     $result.ErrorMessage = "ISO at $ISOPath is no longer mounted"
-                    return $result
+                    $result
+                    return
                 }
 
                 # Verify the mounted ISO's drive letter matches the WIM's drive
@@ -184,17 +189,18 @@ function Test-WimSourceAccessibility {
             }
             catch {
                 $result.ErrorMessage = "Cannot verify ISO mount status: $($_.Exception.Message)"
-                return $result
+                $result
+                return
             }
         }
 
         # All checks passed
         $result.IsAccessible = $true
-        return $result
+        $result
     }
     catch {
         $result.ErrorMessage = "Unexpected error during WIM accessibility check: $($_.Exception.Message)"
-        return $result
+        $result
     }
 }
 
@@ -351,7 +357,8 @@ function Invoke-ExpandWindowsImageWithRetry {
 
             WriteLog "Expand-WindowsImage completed successfully"
             $success = $true
-            return $expandResult
+            $expandResult
+            return
         }
         catch {
             $lastError = $_.Exception.Message
@@ -439,7 +446,7 @@ function Get-WimFromISO {
     }
 
     # Check for install.wim or install.esd
-    $wimPath = (Get-ChildItem $sourcesFolder\install.* | Where-Object { $_.Name -match "install\.(wim|esd)" }).FullName
+    $wimPath = (Get-ChildItem -Path "$sourcesFolder\install.*" | Where-Object { $_.Name -match "install\.(wim|esd)" }).FullName
 
     if ($wimPath) {
         WriteLog "The path to the install file is: $wimPath"
@@ -448,7 +455,7 @@ function Get-WimFromISO {
         WriteLog "No install.wim or install.esd file found in: $sourcesFolder"
     }
 
-    return $wimPath
+    $wimPath
 }
 
 function Get-Index {
@@ -516,7 +523,8 @@ function Get-Index {
 
     # Return the index that matches exactly
     if ($matchingImageIndex) {
-        return $matchingImageIndex.ImageIndex
+        $matchingImageIndex.ImageIndex
+        return
     }
     else {
         # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
@@ -539,7 +547,8 @@ function Get-Index {
             $selectedImage = $relevantImageIndexes[$inputValue - 1]
 
             if ($selectedImage) {
-                return $selectedImage.ImageIndex
+                $selectedImage.ImageIndex
+                return
             }
             else {
                 Write-Host "Invalid selection, please try again."
@@ -564,10 +573,362 @@ function New-ScratchVhdx {
     $toReturn = $newVHDX | Mount-VHD -Passthru | Initialize-Disk -PassThru -PartitionStyle GPT
 
     #Remove auto-created partition so we can create the correct partition layout
-    remove-partition $toreturn.DiskNumber -PartitionNumber 1 -Confirm:$False
+    Remove-Partition -DiskNumber $toreturn.DiskNumber -PartitionNumber 1 -Confirm:$False
 
-    Writelog "Done."
-    return $toReturn
+    WriteLog "Done."
+    $toReturn
+}
+
+function New-ScratchVhd {
+    <#
+    .SYNOPSIS
+    Creates a new scratch VHD file using diskpart (no Hyper-V dependency)
+
+    .DESCRIPTION
+    Creates a VHD file using diskpart.exe instead of Hyper-V cmdlets. This allows
+    VMware Workstation builds to work without requiring Hyper-V to be installed.
+    The function creates, mounts, and initializes the VHD with GPT partition table,
+    then removes the auto-created partition to allow custom partition layout.
+
+    Returns a disk CIM instance compatible with New-ScratchVhdx output for
+    seamless integration with partition creation functions.
+
+    .PARAMETER VhdPath
+    Full path for the new VHD file
+
+    .PARAMETER SizeBytes
+    Size of the VHD in bytes (default: 50GB)
+
+    .PARAMETER Dynamic
+    Create dynamic (expandable) VHD instead of fixed size
+
+    .OUTPUTS
+    CimInstance - Disk object for the mounted and initialized VHD
+
+    .EXAMPLE
+    $disk = New-ScratchVhd -VhdPath "C:\VM\disk.vhd" -SizeBytes 128GB
+
+    .EXAMPLE
+    $disk = New-ScratchVhd -VhdPath "C:\VM\disk.vhd" -SizeBytes 64GB -Dynamic
+
+    .NOTES
+    This function uses diskpart.exe for VHD operations to avoid Hyper-V dependency.
+    Requires Administrator privileges.
+    #>
+    [CmdletBinding()]
+    [OutputType([CimInstance])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VhdPath,
+
+        [uint64]$SizeBytes = 50GB,
+
+        [switch]$Dynamic
+    )
+
+    WriteLog "=========================================="
+    WriteLog "New-ScratchVhd: Creating VHD for VMware"
+    WriteLog "=========================================="
+    WriteLog "VHD Path: $VhdPath"
+    WriteLog "Size: $([math]::Round($SizeBytes / 1GB, 2)) GB"
+    WriteLog "Type: $(if ($Dynamic) { 'Dynamic (expandable)' } else { 'Fixed' })"
+
+    # Ensure parent directory exists
+    $parentPath = Split-Path -Path $VhdPath -Parent
+    if (-not (Test-Path -Path $parentPath)) {
+        WriteLog "Creating parent directory: $parentPath"
+        New-Item -Path $parentPath -ItemType Directory -Force | Out-Null
+    }
+
+    # Ensure .vhd extension (not .vhdx)
+    if ($VhdPath -like "*.vhdx") {
+        WriteLog "WARNING: Path has .vhdx extension, changing to .vhd for VMware compatibility"
+        $VhdPath = $VhdPath -replace '\.vhdx$', '.vhd'
+        WriteLog "Updated path: $VhdPath"
+    }
+    if (-not $VhdPath.EndsWith('.vhd', [StringComparison]::OrdinalIgnoreCase)) {
+        $VhdPath = "$VhdPath.vhd"
+        WriteLog "Added .vhd extension: $VhdPath"
+    }
+
+    # Remove existing file if present
+    if (Test-Path -Path $VhdPath) {
+        WriteLog "Removing existing VHD file: $VhdPath"
+        Remove-Item -Path $VhdPath -Force
+    }
+
+    # Calculate size in MB for diskpart
+    $sizeMB = [math]::Floor($SizeBytes / 1MB)
+    WriteLog "Size in MB: $sizeMB"
+
+    # Determine VHD type
+    $vhdType = if ($Dynamic) { 'expandable' } else { 'fixed' }
+    WriteLog "VHD type for diskpart: $vhdType"
+
+    # Build diskpart script - CREATE ONLY, don't attach yet
+    $diskpartScript = @"
+create vdisk file="$VhdPath" maximum=$sizeMB type=$vhdType
+"@
+
+    # Write script to temp file
+    $scriptPath = Join-Path $env:TEMP "diskpart_scratch_$(Get-Random).txt"
+    WriteLog "Writing diskpart script to: $scriptPath"
+    $diskpartScript | Out-File -FilePath $scriptPath -Encoding ASCII
+
+    try {
+        # Step 1: Create VHD
+        WriteLog "Step 1/5: Creating VHD with diskpart..."
+        WriteLog "Diskpart command: create vdisk file=`"$VhdPath`" maximum=$sizeMB type=$vhdType"
+
+        $process = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$scriptPath`"" `
+                                 -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_stdout.txt" `
+                                 -RedirectStandardError "$env:TEMP\diskpart_stderr.txt"
+
+        $stdout = Get-Content "$env:TEMP\diskpart_stdout.txt" -Raw -ErrorAction SilentlyContinue
+        $stderr = Get-Content "$env:TEMP\diskpart_stderr.txt" -Raw -ErrorAction SilentlyContinue
+
+        if ($stdout) {
+            WriteLog "Diskpart output:"
+            $stdout -split "`n" | ForEach-Object { WriteLog "  $_" }
+        }
+        if ($stderr) {
+            WriteLog "Diskpart stderr: $stderr"
+        }
+
+        if ($process.ExitCode -ne 0) {
+            throw "diskpart create failed with exit code $($process.ExitCode)"
+        }
+
+        # Verify file was created
+        if (-not (Test-Path -Path $VhdPath)) {
+            throw "VHD file was not created at $VhdPath"
+        }
+
+        $vhdFileInfo = Get-Item -Path $VhdPath
+        WriteLog "VHD file created: $($vhdFileInfo.FullName) ($([math]::Round($vhdFileInfo.Length / 1MB, 2)) MB initial size)"
+
+        # Step 2: Attach VHD
+        WriteLog "Step 2/5: Attaching VHD with diskpart..."
+        $attachScript = @"
+select vdisk file="$VhdPath"
+attach vdisk
+"@
+        $attachScriptPath = Join-Path $env:TEMP "diskpart_attach_$(Get-Random).txt"
+        $attachScript | Out-File -FilePath $attachScriptPath -Encoding ASCII
+
+        $attachProcess = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$attachScriptPath`"" `
+                                       -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_attach_stdout.txt" `
+                                       -RedirectStandardError "$env:TEMP\diskpart_attach_stderr.txt"
+
+        $attachStdout = Get-Content "$env:TEMP\diskpart_attach_stdout.txt" -Raw -ErrorAction SilentlyContinue
+        if ($attachStdout) {
+            WriteLog "Attach output:"
+            $attachStdout -split "`n" | ForEach-Object { WriteLog "  $_" }
+        }
+
+        if ($attachProcess.ExitCode -ne 0) {
+            throw "diskpart attach failed with exit code $($attachProcess.ExitCode)"
+        }
+
+        Remove-Item -Path $attachScriptPath -Force -ErrorAction SilentlyContinue
+
+        # Wait for mount to complete and disk to be recognized
+        WriteLog "Waiting for disk enumeration..."
+        Start-Sleep -Seconds 3
+
+        # Step 3: Find the mounted disk
+        WriteLog "Step 3/5: Locating mounted VHD disk..."
+
+        # Look for the disk by location or by finding new "File Backed Virtual" disk
+        $disk = $null
+        $retryCount = 0
+        $maxRetries = 5
+
+        while (-not $disk -and $retryCount -lt $maxRetries) {
+            $retryCount++
+            WriteLog "  Disk enumeration attempt $retryCount of $maxRetries..."
+
+            # Method 1: Try to find by Location property
+            $disk = Get-Disk | Where-Object {
+                $_.Location -eq $VhdPath -or
+                ($_.BusType -eq 'File Backed Virtual' -and $_.PartitionStyle -eq 'RAW')
+            } | Select-Object -First 1
+
+            if (-not $disk) {
+                # Method 2: Check disk paths
+                $allDisks = Get-Disk | Where-Object { $_.BusType -eq 'File Backed Virtual' }
+                foreach ($d in $allDisks) {
+                    WriteLog "    Checking disk $($d.Number): BusType=$($d.BusType), Size=$([math]::Round($d.Size / 1GB, 2))GB, PartitionStyle=$($d.PartitionStyle)"
+                    # Match by expected size (within 1GB tolerance for fixed VHD overhead)
+                    if ([math]::Abs($d.Size - $SizeBytes) -lt 1GB) {
+                        $disk = $d
+                        WriteLog "    Found matching disk by size: Disk $($d.Number)"
+                        break
+                    }
+                }
+            }
+
+            if (-not $disk) {
+                WriteLog "    Disk not found yet, waiting..."
+                Start-Sleep -Seconds 2
+            }
+        }
+
+        if (-not $disk) {
+            WriteLog "ERROR: Could not find mounted VHD after $maxRetries attempts"
+            WriteLog "All disks:"
+            Get-Disk | ForEach-Object {
+                WriteLog "  Disk $($_.Number): BusType=$($_.BusType), Size=$([math]::Round($_.Size / 1GB, 2))GB, Location=$($_.Location)"
+            }
+            throw "Could not find mounted VHD disk"
+        }
+
+        WriteLog "Found VHD at Disk $($disk.Number)"
+        WriteLog "  Size: $([math]::Round($disk.Size / 1GB, 2)) GB"
+        WriteLog "  BusType: $($disk.BusType)"
+        WriteLog "  PartitionStyle: $($disk.PartitionStyle)"
+
+        # Step 4: Initialize disk with GPT
+        WriteLog "Step 4/5: Initializing disk with GPT..."
+
+        if ($disk.PartitionStyle -eq 'RAW') {
+            $disk = $disk | Initialize-Disk -PartitionStyle GPT -PassThru
+            WriteLog "Disk initialized with GPT partition style"
+        }
+        else {
+            WriteLog "Disk already initialized (PartitionStyle: $($disk.PartitionStyle))"
+        }
+
+        # Step 5: Remove auto-created partition
+        WriteLog "Step 5/5: Removing auto-created partition..."
+
+        $partitions = Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue
+        if ($partitions) {
+            WriteLog "Found $($partitions.Count) partition(s) to remove"
+            foreach ($partition in $partitions) {
+                WriteLog "  Removing partition $($partition.PartitionNumber) (Type: $($partition.Type), Size: $([math]::Round($partition.Size / 1MB, 2)) MB)"
+                Remove-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -Confirm:$false
+            }
+        }
+        else {
+            WriteLog "No partitions to remove (clean disk)"
+        }
+
+        # Refresh disk object after partition removal
+        $disk = Get-Disk -Number $disk.Number
+
+        WriteLog "=========================================="
+        WriteLog "New-ScratchVhd: VHD creation complete"
+        WriteLog "  Disk Number: $($disk.Number)"
+        WriteLog "  Size: $([math]::Round($disk.Size / 1GB, 2)) GB"
+        WriteLog "  PartitionStyle: $($disk.PartitionStyle)"
+        WriteLog "  Partitions: $((@(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)).Count)"
+        WriteLog "=========================================="
+
+        $disk
+    }
+    catch {
+        WriteLog "ERROR: Failed to create scratch VHD: $($_.Exception.Message)"
+
+        # Attempt cleanup on failure
+        WriteLog "Attempting cleanup..."
+        try {
+            # Detach if attached
+            $detachScript = @"
+select vdisk file="$VhdPath"
+detach vdisk
+"@
+            $detachPath = Join-Path $env:TEMP "diskpart_detach_$(Get-Random).txt"
+            $detachScript | Out-File -FilePath $detachPath -Encoding ASCII
+            & diskpart /s $detachPath 2>&1 | Out-Null
+            Remove-Item -Path $detachPath -Force -ErrorAction SilentlyContinue
+
+            # Remove VHD file
+            if (Test-Path -Path $VhdPath) {
+                Start-Sleep -Seconds 2
+                Remove-Item -Path $VhdPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+        catch {
+            WriteLog "WARNING: Cleanup failed: $($_.Exception.Message)"
+        }
+
+        throw
+    }
+    finally {
+        # Clean up temp files
+        Remove-Item -Path $scriptPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_stdout.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_stderr.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_attach_stdout.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_attach_stderr.txt" -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Dismount-ScratchVhd {
+    <#
+    .SYNOPSIS
+    Dismounts a VHD file using diskpart (no Hyper-V dependency)
+
+    .DESCRIPTION
+    Dismounts/detaches a VHD file using diskpart.exe instead of Hyper-V cmdlets.
+    This function is the counterpart to New-ScratchVhd for VMware builds.
+
+    .PARAMETER VhdPath
+    Path to the VHD file to dismount
+
+    .EXAMPLE
+    Dismount-ScratchVhd -VhdPath "C:\VM\disk.vhd"
+
+    .NOTES
+    Safe to call even if VHD is not mounted - will log warning but not error.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VhdPath
+    )
+
+    WriteLog "Dismounting VHD: $VhdPath"
+
+    if (-not (Test-Path -Path $VhdPath)) {
+        WriteLog "WARNING: VHD file not found, skipping dismount: $VhdPath"
+        return
+    }
+
+    $diskpartScript = @"
+select vdisk file="$VhdPath"
+detach vdisk
+"@
+
+    $scriptPath = Join-Path $env:TEMP "diskpart_dismount_$(Get-Random).txt"
+    $diskpartScript | Out-File -FilePath $scriptPath -Encoding ASCII
+
+    try {
+        WriteLog "Detaching VHD with diskpart..."
+        $process = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$scriptPath`"" `
+                                 -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_dismount_stdout.txt"
+
+        $stdout = Get-Content "$env:TEMP\diskpart_dismount_stdout.txt" -Raw -ErrorAction SilentlyContinue
+        if ($stdout) {
+            WriteLog "Diskpart output:"
+            $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { WriteLog "  $_" }
+        }
+
+        if ($process.ExitCode -ne 0) {
+            WriteLog "WARNING: diskpart detach returned non-zero exit code: $($process.ExitCode)"
+        }
+        else {
+            WriteLog "VHD dismounted successfully"
+        }
+    }
+    catch {
+        WriteLog "WARNING: Failed to dismount VHD: $($_.Exception.Message)"
+    }
+    finally {
+        Remove-Item -Path $scriptPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_dismount_stdout.txt" -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function New-SystemPartition {
@@ -583,7 +944,7 @@ function New-SystemPartition {
     $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System"
 
     WriteLog 'Done.'
-    return $sysPartition.DriveLetter
+    $sysPartition.DriveLetter
 }
 
 function New-MSRPartition {
@@ -599,7 +960,7 @@ function New-MSRPartition {
 
     WriteLog "Done."
 
-    return $toReturn
+    $toReturn
 }
 
 function New-OSPartition {
@@ -697,7 +1058,7 @@ function New-OSPartition {
 
     # Server 2019 is missing the Windows Overlay Filter (wof.sys), likely other Server SKUs are missing it as well.
     # Script will error if trying to use the -compact switch on Server OSes
-    if ((Get-CimInstance Win32_OperatingSystem).Caption -match "Server") {
+    if ((Get-CimInstance -ClassName Win32_OperatingSystem).Caption -match "Server") {
         WriteLog "Server OS detected - using standard expansion (no CompactOS)"
         $expandResult = Invoke-ExpandWindowsImageWithRetry @expandParams
         WriteLog $expandResult
@@ -714,7 +1075,7 @@ function New-OSPartition {
     }
 
     WriteLog 'Done'
-    return $osPartition
+    $osPartition
 }
 
 function New-RecoveryPartition {
@@ -736,7 +1097,7 @@ function New-RecoveryPartition {
         $calculatedRecoverySize = $RecoveryPartitionSize
     }
     else {
-        $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim" -Attributes Hidden -ErrorAction SilentlyContinue
+        $winReWim = Get-ChildItem -Path "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim" -Attributes Hidden -ErrorAction SilentlyContinue
 
         if (($null -ne $winReWim) -and ($winReWim.Count -eq 1)) {
             # Wim size + 100MB is minimum WinRE partition size.
@@ -770,7 +1131,7 @@ function New-RecoveryPartition {
         }
     }
 
-    return $recoveryPartition
+    $recoveryPartition
 }
 
 function Add-BootFiles {
@@ -838,7 +1199,7 @@ function Dismount-ScratchVhdx {
         [string]$VhdxPath
     )
 
-    if (Test-Path $VhdxPath) {
+    if (Test-Path -Path $VhdxPath) {
         WriteLog "Dismounting scratch VHDX..."
         Dismount-VHD -Path $VhdxPath
         WriteLog "Done."
@@ -982,7 +1343,7 @@ function Get-WindowsVersionInfo {
     WriteLog 'Sleep 60 seconds to allow registry to completely unload'
     Start-Sleep 60
 
-    return @{
+    @{
         DisplayVersion = $DisplayVersion
         BuildDate      = $BuildDate
         Name           = $Name
@@ -1536,7 +1897,7 @@ function Start-RequiredServicesForDISM {
         WriteLog 'WARNING: Some required services are unavailable. DISM operations may fail.'
     }
 
-    return $allServicesOk
+    $allServicesOk
 }
 
 function Invoke-FFUOptimizeWithScratchDir {
@@ -1638,7 +1999,7 @@ function Invoke-FFUOptimizeWithScratchDir {
 
     # Step 3: Clean and recreate scratch directory
     WriteLog "Step 3/6: Preparing scratch directory..."
-    if (Test-Path $scratchDir) {
+    if (Test-Path -Path $scratchDir) {
         WriteLog "Cleaning existing scratch directory..."
         # Dismount any VHDs that might be in the scratch directory
         $scratchVhds = Get-ChildItem -Path $scratchDir -Filter "*.vhd*" -ErrorAction SilentlyContinue
@@ -1656,11 +2017,11 @@ function Invoke-FFUOptimizeWithScratchDir {
 
     # Step 4: Verify FFU file exists and is not locked
     WriteLog "Step 4/6: Verifying FFU file accessibility..."
-    if (-not (Test-Path $FFUFile)) {
+    if (-not (Test-Path -Path $FFUFile)) {
         throw "FFU file not found: $FFUFile"
     }
 
-    $ffuFileInfo = Get-Item $FFUFile
+    $ffuFileInfo = Get-Item -Path $FFUFile
     WriteLog "FFU file size: $([math]::Round($ffuFileInfo.Length / 1GB, 2)) GB"
 
     try {
@@ -1808,7 +2169,7 @@ function Invoke-FFUOptimizeWithScratchDir {
         throw "FFU optimization failed after $MaxRetries attempts. Last error: $lastError"
     }
 
-    return $true
+    $true
 }
 
 # Export module members
@@ -1819,6 +2180,7 @@ Export-ModuleMember -Function @(
     'Get-WimFromISO',
     'Get-Index',
     'New-ScratchVhdx',
+    'New-ScratchVhd',
     'New-SystemPartition',
     'New-MSRPartition',
     'New-OSPartition',
@@ -1826,6 +2188,7 @@ Export-ModuleMember -Function @(
     'Add-BootFiles',
     'Enable-WindowsFeaturesByName',
     'Dismount-ScratchVhdx',
+    'Dismount-ScratchVhd',
     'Optimize-FFUCaptureDrive',
     'Get-WindowsVersionInfo',
     'New-FFU',

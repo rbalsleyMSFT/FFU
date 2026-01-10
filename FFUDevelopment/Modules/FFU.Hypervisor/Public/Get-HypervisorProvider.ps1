@@ -9,12 +9,19 @@
 .PARAMETER Type
     The type of hypervisor provider to return:
     - 'HyperV': Microsoft Hyper-V provider
-    - 'VMware': VMware Workstation Pro provider (not yet implemented)
+    - 'VMware': VMware Workstation Pro provider
     - 'Auto': Automatically detect and return the best available provider
 
 .PARAMETER Validate
     If specified, validates that the provider is available before returning it.
     Throws an error if the requested provider is not available.
+
+.PARAMETER Credential
+    Optional PSCredential for VMware REST API authentication.
+    Required for VMware provider to make authenticated API calls.
+
+.PARAMETER Port
+    Optional port number for VMware REST API (default: 8697).
 
 .EXAMPLE
     $provider = Get-HypervisorProvider -Type 'HyperV'
@@ -24,12 +31,17 @@
     $provider = Get-HypervisorProvider -Type 'Auto' -Validate
     # Returns the first available provider
 
+.EXAMPLE
+    $cred = Get-Credential
+    $provider = Get-HypervisorProvider -Type 'VMware' -Credential $cred
+    # Returns VMware provider with credentials for API authentication
+
 .OUTPUTS
     IHypervisorProvider
 
 .NOTES
     Module: FFU.Hypervisor
-    Version: 1.0.0
+    Version: 1.1.0
 #>
 function Get-HypervisorProvider {
     [CmdletBinding()]
@@ -40,7 +52,13 @@ function Get-HypervisorProvider {
         [string]$Type = 'Auto',
 
         [Parameter(Mandatory = $false)]
-        [switch]$Validate
+        [switch]$Validate,
+
+        [Parameter(Mandatory = $false)]
+        [PSCredential]$Credential,
+
+        [Parameter(Mandatory = $false)]
+        [int]$Port = 8697
     )
 
     process {
@@ -51,7 +69,10 @@ function Get-HypervisorProvider {
                 $provider = [HyperVProvider]::new()
             }
             'VMware' {
-                $provider = [VMwareProvider]::new()
+                $provider = [VMwareProvider]::new($Port)
+                if ($Credential) {
+                    $provider.SetCredential($Credential)
+                }
             }
             'Auto' {
                 # Try providers in order of preference: Hyper-V first, then VMware
@@ -62,8 +83,11 @@ function Get-HypervisorProvider {
                 }
                 else {
                     # Try VMware if Hyper-V is not available
-                    $vmware = [VMwareProvider]::new()
+                    $vmware = [VMwareProvider]::new($Port)
                     if ($vmware.TestAvailable()) {
+                        if ($Credential) {
+                            $vmware.SetCredential($Credential)
+                        }
                         $provider = $vmware
                         WriteLog "Auto-detected hypervisor: VMware Workstation"
                     }

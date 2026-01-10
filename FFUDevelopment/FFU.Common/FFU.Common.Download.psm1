@@ -124,7 +124,8 @@ function Start-ResilientDownload {
                     $result = Invoke-BITSDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using BITS"
-                        return $true
+                        $true
+                        return
                     }
                 }
 
@@ -132,7 +133,8 @@ function Start-ResilientDownload {
                     $result = Invoke-WebRequestDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using Invoke-WebRequest"
-                        return $true
+                        $true
+                        return
                     }
                 }
 
@@ -140,7 +142,8 @@ function Start-ResilientDownload {
                     $result = Invoke-WebClientDownload -Source $Source -Destination $Destination -Retries $Retries -Credential $Credential -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using WebClient"
-                        return $true
+                        $true
+                        return
                     }
                 }
 
@@ -148,7 +151,8 @@ function Start-ResilientDownload {
                     $result = Invoke-CurlDownload -Source $Source -Destination $Destination -Retries $Retries -ProxyConfig $ProxyConfig
                     if ($result) {
                         WriteLog "SUCCESS: Downloaded using curl"
-                        return $true
+                        $true
+                        return
                     }
                 }
             }
@@ -197,7 +201,8 @@ function Invoke-BITSDownload {
     # Check if BITS is available
     if (-not (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue)) {
         WriteLog "BITS cmdlet not available, skipping"
-        return $false
+        $false
+                return
     }
 
     $attempt = 0
@@ -248,14 +253,16 @@ function Invoke-BITSDownload {
             $ProgressPreference = $OriginalProgressPreference
 
             # Verify file was created
-            if (Test-Path $Destination) {
-                $fileSize = (Get-Item $Destination).Length
+            if (Test-Path -Path $Destination) {
+                $fileSize = (Get-Item -Path $Destination).Length
                 WriteLog "BITS download successful ($fileSize bytes)"
-                return $true
+                $true
+                        return
             }
             else {
                 WriteLog "BITS reported success but file not found"
-                return $false
+                $false
+                return
             }
         }
         catch {
@@ -265,7 +272,8 @@ function Invoke-BITSDownload {
             if ($errorCode -eq 0x800704DD -or $errorCode -eq -2147023651) {
                 WriteLog "BITS authentication error 0x800704DD detected - network credentials not available"
                 WriteLog "Skipping BITS and falling back to alternate download methods"
-                return $false  # Don't retry BITS, move to next method
+                $false
+                return  # Don't retry BITS, move to next method
             }
 
             WriteLog "BITS attempt $attempt/$Retries failed: $($_.Exception.Message)"
@@ -278,7 +286,8 @@ function Invoke-BITSDownload {
         }
     }
 
-    return $false
+    $false
+                return
 }
 
 function Invoke-WebRequestDownload {
@@ -339,14 +348,16 @@ function Invoke-WebRequestDownload {
             $ProgressPreference = $OriginalProgressPreference
 
             # Verify file was created
-            if (Test-Path $Destination) {
-                $fileSize = (Get-Item $Destination).Length
+            if (Test-Path -Path $Destination) {
+                $fileSize = (Get-Item -Path $Destination).Length
                 WriteLog "Invoke-WebRequest download successful ($fileSize bytes)"
-                return $true
+                $true
+                        return
             }
             else {
                 WriteLog "Invoke-WebRequest completed but file not found"
-                return $false
+                $false
+                return
             }
         }
         catch {
@@ -360,7 +371,8 @@ function Invoke-WebRequestDownload {
         }
     }
 
-    return $false
+    $false
+                return
 }
 
 function Invoke-WebClientDownload {
@@ -420,14 +432,16 @@ function Invoke-WebClientDownload {
             $webClient.Dispose()
 
             # Verify file was created
-            if (Test-Path $Destination) {
-                $fileSize = (Get-Item $Destination).Length
+            if (Test-Path -Path $Destination) {
+                $fileSize = (Get-Item -Path $Destination).Length
                 WriteLog "WebClient download successful ($fileSize bytes)"
-                return $true
+                $true
+                        return
             }
             else {
                 WriteLog "WebClient completed but file not found"
-                return $false
+                $false
+                return
             }
         }
         catch {
@@ -445,7 +459,8 @@ function Invoke-WebClientDownload {
         }
     }
 
-    return $false
+    $false
+                return
 }
 
 function Invoke-CurlDownload {
@@ -465,7 +480,8 @@ function Invoke-CurlDownload {
     $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
     if (-not $curlPath) {
         WriteLog "curl.exe not found in PATH, skipping"
-        return $false
+        $false
+                return
     }
 
     $attempt = 0
@@ -515,14 +531,16 @@ function Invoke-CurlDownload {
 
             if ($process.ExitCode -eq 0) {
                 # Verify file was created
-                if (Test-Path $Destination) {
-                    $fileSize = (Get-Item $Destination).Length
+                if (Test-Path -Path $Destination) {
+                    $fileSize = (Get-Item -Path $Destination).Length
                     WriteLog "curl download successful ($fileSize bytes)"
-                    return $true
+                    $true
+                        return
                 }
                 else {
                     WriteLog "curl reported success but file not found"
-                    return $false
+                    $false
+                return
                 }
             }
             else {
@@ -546,7 +564,8 @@ function Invoke-CurlDownload {
         }
     }
 
-    return $false
+    $false
+                return
 }
 
 # Export functions

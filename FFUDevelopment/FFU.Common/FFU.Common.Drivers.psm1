@@ -50,7 +50,8 @@ function Compress-DriverFolderToWim {
         }
         catch {
             WriteLog "Failed to create destination directory '$destinationDir': $($_.Exception.Message)"
-            return $false # Indicate failure
+            $false # Indicate failure
+            return
         }
     }
 
@@ -58,16 +59,16 @@ function Compress-DriverFolderToWim {
         try {
             # Construct arguments for dism.exe
             $dismArgs = "/Capture-Image /ImageFile:`"$DestinationWimPath`" /CaptureDir:`"$SourceFolderPath`" /Name:`"$WimName`" /Description:`"$WimDescription`" /Compress:Max /CheckIntegrity /Quiet"
-            
+
             WriteLog "Executing dism.exe via Invoke-Process with arguments:"
             WriteLog "dism.exe $dismArgs"
 
             # Call Invoke-Process (assumed to be available from FFUUI.Core.psm1 or another imported module)
             # Invoke-Process is expected to throw an exception for non-zero exit codes.
             Invoke-Process -FilePath "dism.exe" -ArgumentList $dismArgs -Wait $true
-            
+
             WriteLog "Successfully compressed '$SourceFolderPath' to '$DestinationWimPath' using dism.exe."
-            
+
             # Remove the source folder after successful compression
             if ($PreserveSource) {
                 WriteLog "Preserving source driver folder for deferred WinPE driver harvesting: $SourceFolderPath"
@@ -94,7 +95,7 @@ function Compress-DriverFolderToWim {
                 }
             }
 
-            return $true # Indicate success
+            $true # Indicate success
         }
         catch {
             WriteLog "Failed to compress folder '$SourceFolderPath' to WIM '$DestinationWimPath' using dism.exe."
@@ -104,12 +105,12 @@ function Compress-DriverFolderToWim {
                 $dismLogPath = $matches[1].Trim()
                 WriteLog "Check the DISM log for more details: $dismLogPath"
             }
-            return $false # Indicate failure
+            $false # Indicate failure
         }
     }
     else {
         WriteLog "Compression operation skipped due to -WhatIf."
-        return $false # Indicate skipped operation
+        $false # Indicate skipped operation
     }
 }
 
@@ -264,7 +265,7 @@ function Test-ExistingDriver {
     }
 
     # If neither WIM nor a valid folder exists, return null
-    return $null
+    $null
 }
 function Get-LenovoPSREFToken {
 
@@ -304,7 +305,7 @@ function Get-LenovoPSREFToken {
             $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
             $listener.Start()
             $endpoint = [System.Net.IPEndPoint]$listener.LocalEndpoint
-            return $endpoint.Port
+            $endpoint.Port
         }
         finally {
             if ($null -ne $listener) {
@@ -335,7 +336,8 @@ function Get-LenovoPSREFToken {
 
                     $target = $pageTargets | Select-Object -First 1
                     if ($null -ne $target) {
-                        return $target
+                        $target
+                        return
                     }
 
                     WriteLog "DevTools endpoint on port $Port returned targets but no page matched the criteria (attempt $attempt of $MaxAttempts)."
@@ -458,7 +460,8 @@ function Get-LenovoPSREFToken {
 
                         $serializedMessage = $message | ConvertTo-Json -Compress -Depth 5
                         WriteLog "DevTools response for command id $CommandId lacked result data. Message: $serializedMessage"
-                        return $null
+                        $null
+                        return
                     }
 
                     if ($message.PSObject.Properties['method']) {
@@ -616,7 +619,7 @@ function Get-LenovoPSREFToken {
         }
     }
 
-    return $token
+    $token
 }
 
 

@@ -12,7 +12,7 @@
 RootModule = 'FFUUI.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.5'
+ModuleVersion = '0.0.7'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -119,6 +119,17 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.7: ShowVMConsole option for VMware
+- Added "Show VM Console" checkbox in VM Settings (VMware only)
+- Allows viewing Windows installation progress during build
+- Config save/load support for ShowVMConsole setting
+- Auto-hides when Hyper-V selected (use Hyper-V Manager for console)
+
+v0.0.6: Fix vmrest.cfg filename detection
+- VMware 17.x uses 'vmrest.cfg' (no leading dot), not '.vmrestCfg'
+- UI now checks both filename variants for credential detection
+- Fixes "Not configured" status showing even after credentials are set up
+
 v0.0.5: Enterprise account support for VMware credentials
 - Removed elevation from credential setup button (was causing issues with separate admin accounts)
 - Status now shows "Configured (current user)" to clarify per-profile storage

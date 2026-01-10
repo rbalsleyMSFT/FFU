@@ -850,7 +850,8 @@ function Invoke-BrowseAction {
                 $dialog.InitialDirectory = $InitialDirectory
             }
             if ($dialog.ShowDialog()) {
-                return $dialog.FileName
+                $dialog.FileName
+                return
             }
         }
         'SaveFile' {
@@ -868,11 +869,12 @@ function Invoke-BrowseAction {
                 $dialog.DefaultExt = $DefaultExt
             }
             if ($dialog.ShowDialog()) {
-                return $dialog.FileName
+                $dialog.FileName
+                return
             }
         }
     }
-    return $null
+    $null
 }
 
 function Clear-ListViewContent {
@@ -1000,11 +1002,20 @@ function Update-HypervisorStatus {
         WriteLog "Update-HypervisorStatus: Checking availability for '$hypervisorType'..."
 
         # Check VMware REST API credentials status
+        # VMware 17.x uses 'vmrest.cfg', older versions use '.vmrestCfg'
         $vmrestCredentialsConfigured = $false
-        $vmrestConfigPath = Join-Path $env:USERPROFILE '.vmrestCfg'
-        if (Test-Path $vmrestConfigPath) {
-            $content = Get-Content $vmrestConfigPath -Raw -ErrorAction SilentlyContinue
-            $vmrestCredentialsConfigured = ($content -match 'username' -and $content -match 'password')
+        $vmrestConfigPaths = @(
+            (Join-Path $env:USERPROFILE 'vmrest.cfg'),      # VMware 17.x
+            (Join-Path $env:USERPROFILE '.vmrestCfg')       # Legacy/older versions
+        )
+        foreach ($vmrestConfigPath in $vmrestConfigPaths) {
+            if (Test-Path $vmrestConfigPath) {
+                $content = Get-Content $vmrestConfigPath -Raw -ErrorAction SilentlyContinue
+                if ($content -match 'username' -and $content -match 'password') {
+                    $vmrestCredentialsConfigured = $true
+                    break
+                }
+            }
         }
 
         # Try to import FFU.Hypervisor module for availability check
@@ -1108,7 +1119,7 @@ function Update-HypervisorStatus {
             $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
         }
 
-        # Show/hide VMware specific controls (REST API setup is VMware only)
+        # Show/hide VMware specific controls (REST API setup and ShowVMConsole are VMware only)
         $showVMwareControls = ($hypervisorType -eq 'VMware')
         $vmwareVisibility = if ($showVMwareControls) { 'Visible' } else { 'Collapsed' }
 
@@ -1117,6 +1128,16 @@ function Update-HypervisorStatus {
         }
         if ($null -ne $vmwareSetupPanel) {
             $vmwareSetupPanel.Visibility = $vmwareVisibility
+        }
+
+        # Show/hide ShowVMConsole option (VMware only - Hyper-V uses Hyper-V Manager for console)
+        $showVMConsoleLabel = $State.Controls.pnlShowVMConsoleLabel
+        $showVMConsoleChk = $State.Controls.chkShowVMConsole
+        if ($null -ne $showVMConsoleLabel) {
+            $showVMConsoleLabel.Visibility = $vmwareVisibility
+        }
+        if ($null -ne $showVMConsoleChk) {
+            $showVMConsoleChk.Visibility = $vmwareVisibility
         }
 
         # Update VMware credential status text
@@ -1136,7 +1157,7 @@ function Update-HypervisorStatus {
             }
         }
 
-        WriteLog "Update-HypervisorStatus: Status updated to '$($statusText.Text)', Hyper-V visibility: $hyperVVisibility, VMware visibility: $vmwareVisibility"
+        WriteLog "Update-HypervisorStatus: Status updated to '$($statusText.Text)', Hyper-V controls: $hyperVVisibility, VMware controls: $vmwareVisibility"
     }
     catch {
         WriteLog "Update-HypervisorStatus: Unexpected error: $($_.Exception.Message)"

@@ -10,6 +10,12 @@ This file contains archived version history for FFU Builder. For the most recent
 
 | Version | Date | Type | Description |
 |---------|------|------|-------------|
+| 1.3.6 | 2025-12-12 | PATCH | **SUPERSEDED by v1.3.8** - WimMount warning fix was incorrect; native DISM cmdlets DO require WIMMount service |
+| 1.3.5 | 2025-12-11 | PATCH | Native DISM fix - Replace ADK dism.exe with PowerShell cmdlets (Mount-WindowsImage/Dismount-WindowsImage) in ApplyFFU.ps1 to avoid WIMMount filter driver errors |
+| 1.3.4 | 2025-12-11 | PATCH | Defense-in-depth fix for log monitoring - Restore messaging context after FFU.Common -Force import |
+| 1.3.3 | 2025-12-11 | PATCH | UI Monitor tab fix - Integrate WriteLog with messaging queue for real-time UI updates |
+| 1.3.2 | 2025-12-11 | PATCH | DISM WIM mount error 0x800704DB pre-flight validation with Test-FFUWimMount remediation |
+| 1.3.1 | 2025-12-11 | PATCH | Config schema validation fix - Added AdditionalFFUFiles property and 7 deprecated properties (AppsPath, CopyOfficeConfigXML, DownloadDrivers, InstallWingetApps, OfficePath, Threads, Verbose) with backward compatibility warnings |
 | 1.2.7 | 2025-12-10 | PATCH | Module loading failure fix - Early PSModulePath setup and defensive error handlers |
 | 1.2.0 | 2025-12-09 | MINOR | Centralized versioning with version.json, module version display in About dialog |
 | 1.1.0 | 2025-12-08 | MINOR | Parallel Windows Update downloads - concurrent KB downloads with PS7/PS5.1 support and multi-method fallback |
