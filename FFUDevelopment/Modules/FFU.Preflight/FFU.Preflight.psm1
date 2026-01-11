@@ -133,7 +133,11 @@ function Get-FFURequirements {
         [hashtable]$Features,
 
         [Parameter()]
-        [int]$VHDXSizeGB = 50
+        [int]$VHDXSizeGB = 50,
+
+        [Parameter()]
+        [ValidateSet('HyperV', 'VMware', 'Auto')]
+        [string]$HypervisorType = 'HyperV'
     )
 
     $requiredGB = 0
@@ -146,8 +150,8 @@ function Get-FFURequirements {
     $requiredGB += 10           # Scratch space
     $breakdown['Scratch space'] = 10
 
-    # CreateVM requires Hyper-V
-    if ($Features.CreateVM) {
+    # CreateVM requires Hyper-V only when using HyperV hypervisor (VMware uses its own hypervisor)
+    if ($Features.CreateVM -and $HypervisorType -eq 'HyperV') {
         $requiredFeatures.Add('Hyper-V')
     }
 
@@ -204,7 +208,7 @@ function Get-FFURequirements {
         NeedsADK            = ($Features.CreateCaptureMedia -or $Features.CreateDeploymentMedia -or
                               $Features.OptimizeFFU)
         NeedsWinPE          = ($Features.CreateCaptureMedia -or $Features.CreateDeploymentMedia)
-        NeedsHyperV         = ($Features.CreateVM -eq $true)
+        NeedsHyperV         = ($Features.CreateVM -eq $true -and $HypervisorType -eq 'HyperV')
     }
 }
 
@@ -1920,7 +1924,11 @@ function Invoke-FFUPreflight {
         [switch]$SkipCleanup,
 
         [Parameter()]
-        [switch]$WarningsAsErrors
+        [switch]$WarningsAsErrors,
+
+        [Parameter()]
+        [ValidateSet('HyperV', 'VMware', 'Auto')]
+        [string]$HypervisorType = 'HyperV'
     )
 
     $overallStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -1944,8 +1952,8 @@ function Invoke-FFUPreflight {
         RequiredFeatures     = @()
     }
 
-    # Calculate requirements
-    $requirements = Get-FFURequirements -Features $Features -VHDXSizeGB $VHDXSizeGB
+    # Calculate requirements (pass HypervisorType to determine if Hyper-V is needed)
+    $requirements = Get-FFURequirements -Features $Features -VHDXSizeGB $VHDXSizeGB -HypervisorType $HypervisorType
     $result.RequiredDiskSpaceGB = $requirements.RequiredDiskSpaceGB
     $result.RequiredFeatures = $requirements.RequiredFeatures
 
@@ -1985,7 +1993,7 @@ function Invoke-FFUPreflight {
         $result.RemediationSteps.Add($psResult.Remediation)
     }
 
-    # Hyper-V check (only if CreateVM is enabled)
+    # Hyper-V check (only if using Hyper-V hypervisor and CreateVM is enabled)
     if ($requirements.NeedsHyperV) {
         Write-Host "  Checking Hyper-V feature..." -NoNewline
         $hvResult = Test-FFUHyperV
@@ -1999,6 +2007,12 @@ function Invoke-FFUPreflight {
             $result.Errors.Add("Hyper-V: $($hvResult.Message)")
             $result.RemediationSteps.Add($hvResult.Remediation)
         }
+    }
+    elseif ($HypervisorType -eq 'VMware') {
+        Write-Host "  Checking Hyper-V feature..." -NoNewline
+        Write-Host " SKIPPED (using VMware)" -ForegroundColor DarkGray
+        $result.Tier1Results['HyperV'] = New-FFUCheckResult -CheckName 'HyperV' -Status 'Skipped' `
+            -Message 'Hyper-V check skipped (VMware hypervisor selected)'
     }
     else {
         Write-Host "  Hyper-V check..." -NoNewline

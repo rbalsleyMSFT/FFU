@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.6.28",
+    "version": "1.6.29",
     "buildDate": "2026-01-11",
 
     "versioningPolicy": {
@@ -79,9 +79,9 @@
             "description": "Thread-safe messaging for UI/background job communication"
         },
         "FFU.Preflight": {
-            "version": "1.0.4",
+            "version": "1.0.5",
             "path": "Modules/FFU.Preflight/FFU.Preflight.psd1",
-            "description": "Comprehensive pre-flight validation with tiered checks, WIM mount auto-repair via fltmc filters detection, and remediation guidance"
+            "description": "Comprehensive pre-flight validation with tiered checks, hypervisor-aware validation (HyperV/VMware), WIM mount auto-repair, and remediation guidance"
         },
         "FFU.Hypervisor": {
             "version": "1.1.16",

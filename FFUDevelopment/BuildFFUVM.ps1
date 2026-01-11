@@ -1693,7 +1693,8 @@ if (-not $Cleanup) {
         -FFUDevelopmentPath $FFUDevelopmentPath `
         -VHDXSizeGB $preflightVHDXSize `
         -WindowsArch $WindowsArch `
-        -ConfigFile $ConfigFile
+        -ConfigFile $ConfigFile `
+        -HypervisorType $HypervisorType
 
     # Check for blocking errors
     if (-not $preflightResult.IsValid) {
@@ -2045,16 +2046,20 @@ if ($InstallApps) {
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
 }
-if (($InstallApps -and ($VMSwitchName -eq ''))) {
-    throw "If variable InstallApps is set to `$true, VMSwitchName must also be set to capture the FFU. Please set -VMSwitchName and try again."
+
+# VMSwitchName is only required for Hyper-V (VMware uses its own network configuration)
+if ($InstallApps -and ($HypervisorType -eq 'HyperV') -and ($VMSwitchName -eq '')) {
+    throw "If variable InstallApps is set to `$true with Hyper-V, VMSwitchName must also be set to capture the FFU. Please set -VMSwitchName and try again."
 }
 
+# VMHostIPAddress is required for all hypervisors when InstallApps is true (needed for FFU capture network share)
 if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
     throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU. Please set -VMHostIPAddress and try again."
 }
 
-if (($VMHostIPAddress) -and ($VMSwitchName)) {
-    WriteLog "Validating -VMSwitchName $VMSwitchName and -VMHostIPAddress $VMHostIPAddress"
+# Hyper-V specific: Validate VMSwitch exists and IP address matches
+if (($HypervisorType -eq 'HyperV') -and ($VMHostIPAddress) -and ($VMSwitchName)) {
+    WriteLog "Validating -VMSwitchName $VMSwitchName and -VMHostIPAddress $VMHostIPAddress (Hyper-V)"
     #Check $VMSwitchName by using Get-VMSwitch
     $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
     if (-not $VMSwitch) {
@@ -2084,6 +2089,12 @@ if (($VMHostIPAddress) -and ($VMSwitchName)) {
         }
     }
     WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
+}
+elseif (($HypervisorType -eq 'VMware') -and ($VMHostIPAddress)) {
+    # VMware uses bridged/NAT networking configured via VMwareSettings, not Hyper-V virtual switches
+    WriteLog "VMware hypervisor selected - skipping Hyper-V VMSwitch validation"
+    WriteLog "VMHostIPAddress: $VMHostIPAddress (will be used for FFU capture network share)"
+    WriteLog "VMware network type is configured via VMwareSettings.DefaultNetworkType (default: bridged)"
 }
 
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
