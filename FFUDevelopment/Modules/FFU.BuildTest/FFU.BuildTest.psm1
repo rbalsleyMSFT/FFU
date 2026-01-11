@@ -170,10 +170,17 @@ function Start-FFUBuildListener {
                     }
 
                     try {
+                        # Convert PSCustomObject to hashtable for splatting
+                        $params = @{}
+                        if ($command.Parameters) {
+                            $command.Parameters.PSObject.Properties | ForEach-Object {
+                                $params[$_.Name] = $_.Value
+                            }
+                        }
+
                         switch ($command.Action) {
                             'BuildVerification' {
                                 # Run full build verification
-                                $params = $command.Parameters
                                 $verifyResult = Invoke-FFUBuildVerification @params
                                 $result.Success = $verifyResult.OverallStatus -eq 'PASS'
                                 $result.Output = $verifyResult | ConvertTo-Json -Depth 10
@@ -181,7 +188,6 @@ function Start-FFUBuildListener {
                             }
                             'TestBuild' {
                                 # Run test build only
-                                $params = $command.Parameters
                                 $buildResult = Invoke-FFUTestBuild @params
                                 $result.Success = $buildResult.Success
                                 $result.Output = $buildResult | ConvertTo-Json -Depth 10
@@ -189,7 +195,6 @@ function Start-FFUBuildListener {
                             }
                             'CopyToTestDrive' {
                                 # Copy FFUDevelopment to test drive
-                                $params = $command.Parameters
                                 $targetPath = Copy-FFUDevelopmentToTestDrive @params
                                 $result.Success = $true
                                 $result.Output = $targetPath
@@ -197,7 +202,6 @@ function Start-FFUBuildListener {
                             }
                             'ValidateOutput' {
                                 # Validate build output
-                                $params = $command.Parameters
                                 $validation = Test-FFUBuildOutput @params
                                 $result.Success = $validation.OverallStatus -eq 'PASS'
                                 $result.Output = $validation | ConvertTo-Json -Depth 10

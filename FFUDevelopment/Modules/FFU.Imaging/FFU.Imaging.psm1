@@ -1182,11 +1182,18 @@ function New-SystemPartition {
     $diskNumber = if ($VhdxDisk.DiskNumber) { $VhdxDisk.DiskNumber } else { $VhdxDisk.Number }
     WriteLog "  Using disk number: $diskNumber"
 
-    $sysPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'S' -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden
+    # Create partition WITHOUT drive letter to prevent Windows Explorer format prompt race condition
+    # The format dialog appears when Explorer detects a new drive letter before Format-Volume completes
+    $sysPartition = New-Partition -DiskNumber $diskNumber -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden
+
+    # Format the partition BEFORE assigning drive letter
     $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System"
 
+    # Now assign the drive letter after formatting is complete
+    $sysPartition | Set-Partition -NewDriveLetter 'S'
+
     WriteLog 'Done.'
-    $sysPartition.DriveLetter
+    'S'  # Return the drive letter
 }
 
 function New-MSRPartition {
@@ -1280,24 +1287,34 @@ function New-OSPartition {
     $diskNumber = if ($VhdxDisk.DiskNumber) { $VhdxDisk.DiskNumber } else { $VhdxDisk.Number }
     WriteLog "  Using disk number: $diskNumber"
 
+    # Create partition WITHOUT drive letter to prevent Windows Explorer format prompt race condition
+    # The format dialog appears when Explorer detects a new drive letter before Format-Volume completes
     if ($OSPartitionSize -gt 0) {
-        $osPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'W' -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        $osPartition = New-Partition -DiskNumber $diskNumber -Size $OSPartitionSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
     }
     else {
-        $osPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'W' -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        $osPartition = New-Partition -DiskNumber $diskNumber -UseMaximumSize -GptType "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
     }
 
+    # Format the partition BEFORE assigning drive letter
     $osPartition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel "Windows"
-    WriteLog 'Done'
-    Writelog "OS partition at drive $($osPartition.DriveLetter):"
 
-    WriteLog "Writing Windows at $WimPath to OS partition at drive $($osPartition.DriveLetter):..."
+    # Now assign the drive letter after formatting is complete
+    $osPartition | Set-Partition -NewDriveLetter 'W'
+
+    # Re-fetch the partition to get updated object with DriveLetter property set
+    $osPartition = Get-Partition -DriveLetter 'W'
+
+    WriteLog 'Done'
+    WriteLog "OS partition at drive W:"
+
+    WriteLog "Writing Windows at $WimPath to OS partition at drive W:..."
 
     # Build parameters for Invoke-ExpandWindowsImageWithRetry
     $expandParams = @{
         ImagePath = $WimPath
         Index = $WimIndex
-        ApplyPath = "$($osPartition.DriveLetter):\"
+        ApplyPath = "W:\"
     }
 
     # Add ISOPath if provided (enables re-mount on failure)
@@ -1372,10 +1389,19 @@ function New-RecoveryPartition {
                 WriteLog "OS partition shrunk by $calculatedRecoverySize bytes for Recovery partition."
             }
 
-            $recoveryPartition = New-Partition -DiskNumber $diskNumber -DriveLetter 'R' -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}" `
-            | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery'
+            # Create partition WITHOUT drive letter to prevent Windows Explorer format prompt race condition
+            $recoveryPartition = New-Partition -DiskNumber $diskNumber -UseMaximumSize -GptType "{de94bba4-06d1-4d40-a16a-bfd50179d6ac}"
 
-            WriteLog "Done. Recovery partition at drive $($recoveryPartition.DriveLetter):"
+            # Format the partition BEFORE assigning drive letter
+            $recoveryPartition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery'
+
+            # Now assign the drive letter after formatting is complete
+            $recoveryPartition | Set-Partition -NewDriveLetter 'R'
+
+            # Re-fetch the partition to get updated object with DriveLetter property set
+            $recoveryPartition = Get-Partition -DriveLetter 'R'
+
+            WriteLog "Done. Recovery partition at drive R:"
         }
         else {
             WriteLog "No WinRE.WIM found in the OS partition under \Windows\System32\Recovery."

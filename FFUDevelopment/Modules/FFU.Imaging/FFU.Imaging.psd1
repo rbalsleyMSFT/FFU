@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.4'
+    ModuleVersion = '1.0.5'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -79,6 +79,12 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.5 - Fix Windows Explorer format prompt race condition
+- Modified New-SystemPartition, New-OSPartition, New-RecoveryPartition to create partitions WITHOUT drive letters
+- Partitions are now formatted BEFORE drive letters are assigned, preventing Explorer from detecting raw partitions
+- Re-fetch partition objects after drive letter assignment to ensure DriveLetter property is set correctly
+- Eliminates "Format Disk" dialog popups that could block automated builds
+
 v1.0.4 - Full diskpart fallback for all disk operations
 - Updated partition functions to accept both CimInstance and PSCustomObject (from diskpart fallback)
 - New-SystemPartition, New-MSRPartition, New-OSPartition, New-RecoveryPartition now use -DiskNumber parameter
