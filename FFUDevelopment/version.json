@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.6.29",
+    "version": "1.6.30",
     "buildDate": "2026-01-11",
 
     "versioningPolicy": {
@@ -84,9 +84,9 @@
             "description": "Comprehensive pre-flight validation with tiered checks, hypervisor-aware validation (HyperV/VMware), WIM mount auto-repair, and remediation guidance"
         },
         "FFU.Hypervisor": {
-            "version": "1.1.16",
+            "version": "1.1.17",
             "path": "Modules/FFU.Hypervisor/FFU.Hypervisor.psd1",
-            "description": "Hypervisor abstraction layer - diskpart fallback for disk operations when Get-Disk fails"
+            "description": "Hypervisor abstraction layer - diskpart fallback, ulm.disableMitigations for Hyper-V hosts"
         },
         "FFU.BuildTest": {
             "version": "1.1.0",
