@@ -448,6 +448,11 @@
             "pattern": "^$|^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$",
             "description": "IP address of the Hyper-V host for FFU capture. Required if InstallApps is set to true."
         },
+        "ShowVMConsole": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, displays the VM window during the build process (VMware only). When false (default), the VM runs in headless mode for automation. Hyper-V uses Hyper-V Manager for console access."
+        },
         "VMLocation": {
             "type": "string",
             "default": "",

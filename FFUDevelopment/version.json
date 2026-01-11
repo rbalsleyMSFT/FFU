@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.6.27",
-    "buildDate": "2026-01-10",
+    "version": "1.6.28",
+    "buildDate": "2026-01-11",
 
     "versioningPolicy": {
         "scheme": "SemVer",
