@@ -221,11 +221,19 @@ function Get-Application {
             WriteLog "$AppName moved to $NewAppPath"
             $result = 0  # Success for UWP app
         }
-        # If app is in Win32 folder, add the silent install command to the WinGetWin32Apps.json file
+        # If app is in Win32 folder, add dependency entries (if any) and then add the parent silent install command
         elseif ($appFolderPath -match 'Win32') {
             if (-not $SkipWin32Json) {
-                WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
-                $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath -SubFolder $subFolderForCommand
+                # Add dependency install commands first (de-duped). Fail if any dependency cannot be processed.
+                $depResult = Add-Win32DependencySilentInstallCommands -ParentAppName $AppName -ParentAppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath -SubFolder $subFolderForCommand
+                if ($depResult -ne 0) {
+                    WriteLog "Dependency processing failed for '$AppName'. The app will not be added to WinGetWin32Apps.json."
+                    $result = 5
+                }
+                else {
+                    WriteLog "$AppName is a Win32 app. Adding silent install command to $OrchestrationPath\WinGetWin32Apps.json"
+                    $result = Add-Win32SilentInstallCommand -AppFolder $AppName -AppFolderPath $appFolderPath -OrchestrationPath $OrchestrationPath -SubFolder $subFolderForCommand
+                }
             }
             else {
                 WriteLog "$AppName is a Win32 app. Skipping WinGetWin32Apps.json generation (UI mode)."
@@ -448,13 +456,43 @@ function Start-WingetAppDownloadTask {
                         $archFolders = Get-ChildItem -Path $appFolder -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('x86', 'x64', 'arm64') }
                         if ($archFolders) {
                             foreach ($archFolder in $archFolders) {
+                                # Add dependencies first (fail if dependencies cannot be processed)
+                                $depResult = Add-Win32DependencySilentInstallCommands -ParentAppName $sanitizedAppName -ParentAppFolderPath $archFolder.FullName -OrchestrationPath $OrchestrationPath -SubFolder $archFolder.Name
+                                if ($depResult -ne 0) {
+                                    $status = "Error: Dependency manifests could not be processed for $sanitizedAppName ($($archFolder.Name))"
+                                    WriteLog $status
+                                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 5 }
+                                }
+
                                 WriteLog "Adding silent install command for pre-downloaded $sanitizedAppName ($($archFolder.Name)) to $OrchestrationPath\WinGetWin32Apps.json"
-                                Add-Win32SilentInstallCommand -AppFolder $sanitizedAppName -AppFolderPath $archFolder.FullName -OrchestrationPath $OrchestrationPath -SubFolder $archFolder.Name | Out-Null
+                                $addResult = Add-Win32SilentInstallCommand -AppFolder $sanitizedAppName -AppFolderPath $archFolder.FullName -OrchestrationPath $OrchestrationPath -SubFolder $archFolder.Name -SkipRemoveOnFailure
+                                if ($addResult -ne 0) {
+                                    $status = "Error: Failed to generate silent install command for $sanitizedAppName ($($archFolder.Name))"
+                                    WriteLog $status
+                                    Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                                    return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = $addResult }
+                                }
                             }
                         }
                         else {
+                            # Add dependencies first (fail if dependencies cannot be processed)
+                            $depResult = Add-Win32DependencySilentInstallCommands -ParentAppName $sanitizedAppName -ParentAppFolderPath $appFolder -OrchestrationPath $OrchestrationPath
+                            if ($depResult -ne 0) {
+                                $status = "Error: Dependency manifests could not be processed for $sanitizedAppName"
+                                WriteLog $status
+                                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                                return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = 5 }
+                            }
+
                             WriteLog "Adding silent install command for pre-downloaded $sanitizedAppName to $OrchestrationPath\WinGetWin32Apps.json"
-                            Add-Win32SilentInstallCommand -AppFolder $sanitizedAppName -AppFolderPath $appFolder -OrchestrationPath $OrchestrationPath | Out-Null
+                            $addResult = Add-Win32SilentInstallCommand -AppFolder $sanitizedAppName -AppFolderPath $appFolder -OrchestrationPath $OrchestrationPath -SkipRemoveOnFailure
+                            if ($addResult -ne 0) {
+                                $status = "Error: Failed to generate silent install command for $sanitizedAppName"
+                                WriteLog $status
+                                Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $appId -Status $status
+                                return [PSCustomObject]@{ Id = $appId; Status = $status; ResultCode = $addResult }
+                            }
                         }
                     }
                     else {
@@ -581,14 +619,14 @@ function Start-WingetAppDownloadTask {
                 # Call Get-Application to perform the actual download
                 # Pass SkipWin32Json based on caller context (UI mode skips, CLI mode creates)
                 $getAppParams = @{
-                    AppName          = $appName
-                    AppId            = $appId
-                    Source           = $source
-                    AppsPath         = $AppsPath
-                    ApplicationArch  = $ApplicationItemData.Architecture
-                    WindowsArch      = $WindowsArch
+                    AppName           = $appName
+                    AppId             = $appId
+                    Source            = $source
+                    AppsPath          = $AppsPath
+                    ApplicationArch   = $ApplicationItemData.Architecture
+                    WindowsArch       = $WindowsArch
                     OrchestrationPath = $OrchestrationPath
-                    ErrorAction      = 'Stop'
+                    ErrorAction       = 'Stop'
                 }
                 if ($SkipWin32Json) {
                     $getAppParams['SkipWin32Json'] = $true
@@ -602,6 +640,8 @@ function Start-WingetAppDownloadTask {
                     2 { $status = "Silent install switch could not be found. Did not download." }
                     3 { $status = "Error: Publisher does not support download" }
                     4 { $status = "Skipped: Use 'msstore' source instead." }
+                    5 { $status = "Error: Dependency manifest processing failed. Remove app or use BYO." }
+                    6 { $status = "Error: Could not resolve installer from YAML. Remove app or use BYO." }
                     default { $status = "Downloaded with status: $resultCode" }
                 }
 
@@ -774,16 +814,16 @@ function Get-Apps {
         $overrideMap = @{}
         foreach ($app in $apps.apps) {
             if ($app.source -in @('winget', 'msstore')) {
-                $hasCmd    = ($app.PSObject.Properties['CommandLine'] -and -not [string]::IsNullOrWhiteSpace($app.CommandLine))
-                $hasArgs   = ($app.PSObject.Properties['Arguments'] -and -not [string]::IsNullOrWhiteSpace($app.Arguments))
-                $hasAdd    = ($app.PSObject.Properties['AdditionalExitCodes'] -and -not [string]::IsNullOrWhiteSpace($app.AdditionalExitCodes))
+                $hasCmd = ($app.PSObject.Properties['CommandLine'] -and -not [string]::IsNullOrWhiteSpace($app.CommandLine))
+                $hasArgs = ($app.PSObject.Properties['Arguments'] -and -not [string]::IsNullOrWhiteSpace($app.Arguments))
+                $hasAdd = ($app.PSObject.Properties['AdditionalExitCodes'] -and -not [string]::IsNullOrWhiteSpace($app.AdditionalExitCodes))
                 $hasIgnore = ($app.PSObject.Properties['IgnoreNonZeroExitCodes'])
                 if ($hasCmd -or $hasArgs -or $hasAdd -or $hasIgnore) {
                     $overrideMap[$app.name] = @{
-                        CommandLine             = if ($hasCmd) { $app.CommandLine } else { $null }
-                        Arguments               = if ($hasArgs) { $app.Arguments } else { $null }
-                        AdditionalExitCodes     = if ($hasAdd) { $app.AdditionalExitCodes } else { $null }
-                        IgnoreNonZeroExitCodes  = if ($hasIgnore) { [bool]$app.IgnoreNonZeroExitCodes } else { $null }
+                        CommandLine            = if ($hasCmd) { $app.CommandLine } else { $null }
+                        Arguments              = if ($hasArgs) { $app.Arguments } else { $null }
+                        AdditionalExitCodes    = if ($hasAdd) { $app.AdditionalExitCodes } else { $null }
+                        IgnoreNonZeroExitCodes = if ($hasIgnore) { [bool]$app.IgnoreNonZeroExitCodes } else { $null }
                     }
                 }
             }
@@ -837,108 +877,124 @@ function Get-Apps {
             }
         }
     }
-        catch {
-            WriteLog "Failed to apply AppList.json command overrides: $($_.Exception.Message)"
-        }
+    catch {
+        WriteLog "Failed to apply AppList.json command overrides: $($_.Exception.Message)"
+    }
     
-        # Post-processing: Ensure WinGetWin32Apps.json ordering matches AppList.json
-        # Parallel downloads can append entries in completion order. We reorder and re-prioritize
-        # so install order matches the ordering specified in AppList.json.
-        try {
-            $winGetWin32Path = Join-Path -Path $OrchestrationPath -ChildPath 'WinGetWin32Apps.json'
-            if (Test-Path -Path $winGetWin32Path) {
-                # Build desired order map from AppList.json (winget entries only)
-                $desiredOrderMap = @{}
-                $orderIndex = 0
-                foreach ($app in ($apps.apps | Where-Object { $_.source -eq 'winget' })) {
-                    if (-not [string]::IsNullOrWhiteSpace($app.name) -and -not $desiredOrderMap.ContainsKey($app.name)) {
-                        $desiredOrderMap[$app.name] = $orderIndex
-                        $orderIndex++
-                    }
+    # Post-processing: Ensure WinGetWin32Apps.json ordering matches AppList.json
+    # Parallel downloads can append entries in completion order. We reorder and re-prioritize
+    # so install order matches the ordering specified in AppList.json.
+    try {
+        $winGetWin32Path = Join-Path -Path $OrchestrationPath -ChildPath 'WinGetWin32Apps.json'
+        if (Test-Path -Path $winGetWin32Path) {
+            # Build desired order map from AppList.json (winget entries only)
+            $desiredOrderMap = @{}
+            $orderIndex = 0
+            foreach ($app in ($apps.apps | Where-Object { $_.source -eq 'winget' })) {
+                if (-not [string]::IsNullOrWhiteSpace($app.name) -and -not $desiredOrderMap.ContainsKey($app.name)) {
+                    $desiredOrderMap[$app.name] = $orderIndex
+                    $orderIndex++
                 }
+            }
     
-                # Only attempt reordering when we have a meaningful order map
-                if ($desiredOrderMap.Count -gt 0) {
-                    # Lock WinGetWin32Apps.json to serialize reads/writes
-                    $mutexName = Get-WinGetWin32AppsJsonMutexName -WinGetWin32AppsJsonPath $winGetWin32Path
-                    Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
-                        # Load existing WinGetWin32Apps.json content
-                        [array]$currentAppsData = Get-Content -Path $winGetWin32Path -Raw | ConvertFrom-Json
-                        if ($null -eq $currentAppsData) {
-                            $currentAppsData = @()
+            # Only attempt reordering when we have a meaningful order map
+            if ($desiredOrderMap.Count -gt 0) {
+                # Lock WinGetWin32Apps.json to serialize reads/writes
+                $mutexName = Get-WinGetWin32AppsJsonMutexName -WinGetWin32AppsJsonPath $winGetWin32Path
+                Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
+                    # Load existing WinGetWin32Apps.json content
+                    [array]$currentAppsData = Get-Content -Path $winGetWin32Path -Raw | ConvertFrom-Json
+                    if ($null -eq $currentAppsData) {
+                        $currentAppsData = @()
+                    }
+    
+                    # Only reorder when there is more than one entry
+                    if ($currentAppsData.Count -gt 1) {
+                        # Capture original order for change detection
+                        $originalNames = @($currentAppsData | ForEach-Object { $_.Name })
+    
+                        # Build sortable records that preserve stable ordering for ties
+                        $indexed = @()
+                        for ($i = 0; $i -lt $currentAppsData.Count; $i++) {
+                            $entry = $currentAppsData[$i]
+    
+                            # If this is a dependency entry, order it with (and before) its parent app
+                            $dependencyFor = $null
+                            if ($entry.PSObject.Properties['DependencyFor']) {
+                                $dependencyFor = $entry.DependencyFor
+                            }
+    
+                            # Normalize entry names like "Foo (x64)" back to "Foo" for ordering
+                            $baseName = $entry.Name
+                            if (-not [string]::IsNullOrWhiteSpace($dependencyFor)) {
+                                $baseName = $dependencyFor
+                            }
+                            if (-not [string]::IsNullOrWhiteSpace($baseName)) {
+                                $baseName = ($baseName -replace '\s+\((x86|x64|arm64)\)$', '')
+                            }
+    
+                            # Determine desired order; unknown entries are pushed to the end
+                            $orderKey = [int]::MaxValue
+                            if (-not [string]::IsNullOrWhiteSpace($baseName) -and $desiredOrderMap.ContainsKey($baseName)) {
+                                $orderKey = [int]$desiredOrderMap[$baseName]
+                            }
+    
+                            # Dependencies must install before the parent app within the same OrderKey
+                            $isDependency = 1
+                            if (-not [string]::IsNullOrWhiteSpace($dependencyFor)) {
+                                $isDependency = 0
+                            }
+    
+                            $indexed += [PSCustomObject]@{
+                                OrderKey      = $orderKey
+                                IsDependency  = $isDependency
+                                OriginalIndex = $i
+                                App           = $entry
+                            }
                         }
     
-                        # Only reorder when there is more than one entry
-                        if ($currentAppsData.Count -gt 1) {
-                            # Capture original order for change detection
-                            $originalNames = @($currentAppsData | ForEach-Object { $_.Name })
+                        # Sort by desired AppList.json order, dependencies first, stable within same group using OriginalIndex
+                        $sorted = $indexed | Sort-Object -Property OrderKey, IsDependency, OriginalIndex
+                        $reorderedApps = @($sorted | ForEach-Object { $_.App })
     
-                            # Build sortable records that preserve stable ordering for ties
-                            $indexed = @()
-                            for ($i = 0; $i -lt $currentAppsData.Count; $i++) {
-                                $entry = $currentAppsData[$i]
-    
-                                # Normalize entry names like "Foo (x64)" back to "Foo" for ordering
-                                $baseName = $entry.Name
-                                if (-not [string]::IsNullOrWhiteSpace($baseName)) {
-                                    $baseName = ($baseName -replace '\s+\((x86|x64|arm64)\)$', '')
-                                }
-    
-                                # Determine desired order; unknown entries are pushed to the end
-                                $orderKey = [int]::MaxValue
-                                if (-not [string]::IsNullOrWhiteSpace($baseName) -and $desiredOrderMap.ContainsKey($baseName)) {
-                                    $orderKey = [int]$desiredOrderMap[$baseName]
-                                }
-    
-                                $indexed += [PSCustomObject]@{
-                                    OrderKey      = $orderKey
-                                    OriginalIndex = $i
-                                    App           = $entry
-                                }
+                        # Detect whether priority needs to be rewritten (even if order is unchanged)
+                        $priorityNeedsUpdate = $false
+                        for ($p = 0; $p -lt $reorderedApps.Count; $p++) {
+                            if ($reorderedApps[$p].PSObject.Properties['Priority'] -and $reorderedApps[$p].Priority -eq ($p + 1)) {
+                                continue
                             }
+                            $priorityNeedsUpdate = $true
+                            break
+                        }
     
-                            # Sort by desired AppList.json order, stable within same app using OriginalIndex
-                            $sorted = $indexed | Sort-Object -Property OrderKey, OriginalIndex
-                            $reorderedApps = @($sorted | ForEach-Object { $_.App })
+                        # Detect whether the array order actually changed
+                        $sortedNames = @($reorderedApps | ForEach-Object { $_.Name })
+                        $orderNeedsUpdate = (($originalNames -join "`n") -ne ($sortedNames -join "`n"))
     
-                            # Detect whether priority needs to be rewritten (even if order is unchanged)
-                            $priorityNeedsUpdate = $false
+                        if ($orderNeedsUpdate -or $priorityNeedsUpdate) {
+                            # Re-assign priority sequentially to match the ordering
                             for ($p = 0; $p -lt $reorderedApps.Count; $p++) {
-                                if ($reorderedApps[$p].PSObject.Properties['Priority'] -and $reorderedApps[$p].Priority -eq ($p + 1)) {
-                                    continue
-                                }
-                                $priorityNeedsUpdate = $true
-                                break
+                                $reorderedApps[$p].Priority = $p + 1
                             }
     
-                            # Detect whether the array order actually changed
-                            $sortedNames = @($reorderedApps | ForEach-Object { $_.Name })
-                            $orderNeedsUpdate = (($originalNames -join "`n") -ne ($sortedNames -join "`n"))
-    
-                            if ($orderNeedsUpdate -or $priorityNeedsUpdate) {
-                                # Re-assign priority sequentially to match the ordering
-                                for ($p = 0; $p -lt $reorderedApps.Count; $p++) {
-                                    $reorderedApps[$p].Priority = $p + 1
-                                }
-    
-                                # Write updated JSON content atomically
-                                $jsonText = $reorderedApps | ConvertTo-Json -Depth 10
-                                Set-FileContentAtomic -Path $winGetWin32Path -Content $jsonText
-                                WriteLog "Reordered and re-prioritized WinGetWin32Apps.json to match AppList.json ordering."
-                            }
-                            else {
-                                WriteLog "WinGetWin32Apps.json is already ordered to match AppList.json; no reorder needed."
-                            }
+                            # Write updated JSON content atomically
+                            $jsonText = $reorderedApps | ConvertTo-Json -Depth 10
+                            Set-FileContentAtomic -Path $winGetWin32Path -Content $jsonText
+                            WriteLog "Reordered and re-prioritized WinGetWin32Apps.json to match AppList.json ordering."
+                        }
+                        else {
+                            WriteLog "WinGetWin32Apps.json is already ordered to match AppList.json; no reorder needed."
                         }
                     }
                 }
             }
         }
-        catch {
-            WriteLog "Failed to reorder WinGetWin32Apps.json: $($_.Exception.Message)"
-        }
     }
-    function Install-WinGet {
+    catch {
+        WriteLog "Failed to reorder WinGetWin32Apps.json: $($_.Exception.Message)"
+    }
+}
+function Install-WinGet {
     param (
         [string]$Architecture
     )
@@ -1100,38 +1156,165 @@ function Set-FileContentAtomic {
         Move-Item -Path $tempPath -Destination $Path -Force
     }
 }
-
-function Add-Win32SilentInstallCommand {
-    param (
-        [string]$AppFolder,
-        [string]$AppFolderPath,
+    
+function Get-WinGetYamlScalarValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$YamlText,
+        [Parameter(Mandatory = $true)]
+        [string]$Key
+    )
+    
+    # Extract a simple "Key: Value" scalar from a Winget YAML file
+    $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Multiline
+    $pattern = "^\s*$Key\s*:\s*(?<val>.+?)\s*$"
+    $m = [regex]::Match($YamlText, $pattern, $regexOptions)
+    if (-not $m.Success) {
+        return $null
+    }
+    
+    $value = $m.Groups['val'].Value.Trim()
+    $value = $value.Trim("'").Trim('"')
+    return $value
+}
+    
+function Add-Win32DependencySilentInstallCommands {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ParentAppName,
+        [Parameter(Mandatory = $true)]
+        [string]$ParentAppFolderPath,
         [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath,
         [string]$SubFolder
     )
+    
+    # Discover WinGet dependency manifests under the downloaded Win32 app folder
+    $dependenciesFolderPath = Join-Path -Path $ParentAppFolderPath -ChildPath 'Dependencies'
+    if (-not (Test-Path -Path $dependenciesFolderPath -PathType Container)) {
+        return 0
+    }
+    
+    WriteLog "Dependencies folder detected for '$ParentAppName': $dependenciesFolderPath"
+    
+    # Require YAML manifests to generate silent install commands
+    $dependencyYamlFiles = Get-ChildItem -Path $dependenciesFolderPath -Filter "*.yaml" -File -ErrorAction SilentlyContinue
+    if (-not $dependencyYamlFiles -or $dependencyYamlFiles.Count -eq 0) {
+        WriteLog "Dependencies folder exists for '$ParentAppName' but no .yaml files were found. Cannot generate dependency install commands."
+        return 5
+    }
+    
+    # Build the VM install base path for dependency payloads (matches D:\win32 layout)
+    $vmBasePath = "D:\win32\$ParentAppName"
+    if (-not [string]::IsNullOrEmpty($SubFolder)) {
+        $vmBasePath = "$vmBasePath\$SubFolder"
+    }
+    $vmDependenciesBasePath = "$vmBasePath\Dependencies"
+    
+    # Process each dependency manifest and add it to WinGetWin32Apps.json
+    foreach ($yamlFile in $dependencyYamlFiles) {
+        WriteLog "Processing dependency manifest '$($yamlFile.Name)' for '$ParentAppName'"
+        try {
+            $yamlText = Get-Content -Path $yamlFile.FullName -Raw -ErrorAction Stop
+    
+            $packageIdentifier = Get-WinGetYamlScalarValue -YamlText $yamlText -Key 'PackageIdentifier'
+            $packageName = Get-WinGetYamlScalarValue -YamlText $yamlText -Key 'PackageName'
+    
+            if ([string]::IsNullOrWhiteSpace($packageIdentifier)) {
+                $packageIdentifier = $yamlFile.BaseName
+            }
+            if ([string]::IsNullOrWhiteSpace($packageName)) {
+                $packageName = $yamlFile.BaseName
+            }
+    
+            # Add dependency entry (de-duped) and ensure it sorts before the parent app
+            $depResult = Add-Win32SilentInstallCommand -AppFolder $packageName -AppFolderPath $dependenciesFolderPath -OrchestrationPath $OrchestrationPath -YamlFilePath $yamlFile.FullName -BasePathOverride $vmDependenciesBasePath -PackageIdentifier $packageIdentifier -DependencyFor $ParentAppName -SkipRemoveOnFailure
+            if ($depResult -ne 0) {
+                WriteLog "Failed to generate dependency install command for '$packageName' (PackageIdentifier='$packageIdentifier') under '$ParentAppName'."
+                return 5
+            }
+        }
+        catch {
+            WriteLog "Failed to process dependency YAML '$($yamlFile.FullName)': $($_.Exception.Message)"
+            return 5
+        }
+    }
+    
+    return 0
+}
+    
+function Add-Win32SilentInstallCommand {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$AppFolder,
+        [Parameter(Mandatory = $true)]
+        [string]$AppFolderPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath,
+        [string]$SubFolder,
+        [string]$YamlFilePath,
+        [string]$BasePathOverride,
+        [string]$PackageIdentifier,
+        [string]$DependencyFor,
+        [switch]$SkipRemoveOnFailure
+    )
+    
     $appName = $AppFolder
-
-    # Discover installer candidates (top-level files as before)
+    $appFolderPath = $AppFolderPath
+    
+    # Discover installer candidates (top-level files only)
     $installerCandidates = Get-ChildItem -Path "$appFolderPath\*" -Include "*.exe", "*.msi" -File -ErrorAction SilentlyContinue
     if (-not $installerCandidates) {
         WriteLog "No win32 app installers were found. Skipping the inclusion of $AppFolder"
-        Remove-Item -Path $AppFolderPath -Recurse -Force
+    
+        # Avoid removing shared folders (ex: Dependencies) or pre-downloaded content when requested
+        if (-not $SkipRemoveOnFailure) {
+            Remove-Item -Path $AppFolderPath -Recurse -Force
+        }
+    
         return 1
     }
+    
+    # Read the exported WinGet YAML (explicit file if provided; otherwise pick the first YAML found)
+    $yamlFile = $null
+    if (-not [string]::IsNullOrWhiteSpace($YamlFilePath)) {
+        $yamlFile = Get-Item -LiteralPath $YamlFilePath -ErrorAction Stop
+    }
+    else {
+        $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop | Select-Object -First 1
+    }
+    $yamlText = Get-Content -Path $yamlFile.FullName -Raw
 
-    # Read the exported WinGet YAML
-    $yamlFile = Get-ChildItem -Path "$appFolderPath\*" -Include "*.yaml" -File -ErrorAction Stop
-    $yamlText = Get-Content -Path $yamlFile -Raw
+    # When multiple installers exist in the folder (common for Dependencies), do NOT guess.
+    # WinGet exports use the same basename for installer and YAML, so select the installer by YAML basename.
+    if ($installerCandidates.Count -gt 1) {
+        $expectedInstallerBaseName = $yamlFile.BaseName
+        $matchedInstallers = $installerCandidates | Where-Object { $_.BaseName -ieq $expectedInstallerBaseName }
 
+        if ($matchedInstallers -and $matchedInstallers.Count -gt 0) {
+            $installerCandidates = $matchedInstallers
+        }
+        else {
+            WriteLog "Multiple installers found but none matched YAML basename '$expectedInstallerBaseName' in '$appFolderPath'."
+            if (-not $SkipRemoveOnFailure) {
+                Remove-Item -Path $appFolderPath -Recurse -Force
+            }
+            return 6
+        }
+    }
+    
     # Attempt to resolve the correct installer from YAML NestedInstallerFiles within the matching Architecture block
     $desiredArch = if (-not [string]::IsNullOrEmpty($SubFolder)) { $SubFolder } else { $null }
     $relativeFromYaml = $null
     $blockSilent = $null
-
+    
     $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
     $pattern = '-\s+Architecture:\s*(?<arch>\S+)[\s\S]*?NestedInstallerFiles:\s*-\s*RelativeFilePath:\s*(?<path>.+?)\r?\n'
     $yamlMatches = [regex]::Matches($yamlText, $pattern, $regexOptions)
-
+    
     $selectedMatch = $null
     if ($yamlMatches.Count -gt 0) {
         if ($desiredArch) {
@@ -1145,11 +1328,11 @@ function Add-Win32SilentInstallCommand {
         if (-not $selectedMatch) {
             $selectedMatch = $yamlMatches[0]
         }
-
+    
         $pathValue = $selectedMatch.Groups['path'].Value.Trim()
         $pathValue = $pathValue.Trim("'").Trim('"')
         $relativeFromYaml = $pathValue
-
+    
         # Extract a Silent switch from within the same installer block if present
         $startIndex = $selectedMatch.Index
         $nextIndex = -1
@@ -1170,7 +1353,7 @@ function Add-Win32SilentInstallCommand {
             $blockSilent = $blockSilentMatch.Groups[1].Value.Trim().Trim("'").Trim('"')
         }
     }
-
+    
     # Resolve Silent switch (prefer block-level, fallback to first Silent in file)
     $silentInstallSwitch = $blockSilent
     if ([string]::IsNullOrEmpty($silentInstallSwitch)) {
@@ -1179,14 +1362,19 @@ function Add-Win32SilentInstallCommand {
     }
     if (-not $silentInstallSwitch) {
         WriteLog "Silent install switch for $appName could not be found. Skipping the inclusion of $appName."
-        Remove-Item -Path $appFolderPath -Recurse -Force
+    
+        # Avoid removing shared folders (ex: Dependencies) or pre-downloaded content when requested
+        if (-not $SkipRemoveOnFailure) {
+            Remove-Item -Path $appFolderPath -Recurse -Force
+        }
+    
         return 2
     }
-
+    
     # Choose final installer path and extension
     $resolvedRelativePath = $null
     $installerExt = $null
-
+    
     if ($installerCandidates.Count -eq 1 -and -not $relativeFromYaml) {
         # Single installer – keep current behavior
         $resolvedRelativePath = $installerCandidates[0].Name
@@ -1223,20 +1411,28 @@ function Add-Win32SilentInstallCommand {
                     WriteLog "Multiple installers found. YAML not used. Falling back to single EXE: $resolvedRelativePath"
                 }
                 else {
-                    $first = $installerCandidates | Select-Object -First 1
-                    $resolvedRelativePath = $first.Name
-                    $installerExt = $first.Extension
-                    WriteLog "Multiple installers found and ambiguous. Selecting the first candidate: $resolvedRelativePath"
+                    WriteLog "Multiple installers found and ambiguous for '$appName' in '$appFolderPath'."
+                    if (-not $SkipRemoveOnFailure) {
+                        Remove-Item -Path $appFolderPath -Recurse -Force
+                    }
+                    return 6
                 }
             }
         }
     }
-
-    $basePath = "D:\win32\$AppFolder"
-    if (-not [string]::IsNullOrEmpty($SubFolder)) {
-        $basePath = "$basePath\$SubFolder"
+    
+    # Build the VM install base path (matches D:\win32 layout)
+    $basePath = $null
+    if (-not [string]::IsNullOrWhiteSpace($BasePathOverride)) {
+        $basePath = $BasePathOverride
     }
-
+    else {
+        $basePath = "D:\win32\$AppFolder"
+        if (-not [string]::IsNullOrEmpty($SubFolder)) {
+            $basePath = "$basePath\$SubFolder"
+        }
+    }
+    
     # Build final command/arguments
     if ($installerExt -ieq ".exe") {
         $silentInstallCommand = "$basePath\$resolvedRelativePath"
@@ -1249,13 +1445,13 @@ function Add-Win32SilentInstallCommand {
         # Default path usage if extension could not be inferred
         $silentInstallCommand = "$basePath\$resolvedRelativePath"
     }
-
+    
     # Path to the JSON file
     $wingetWin32AppsJson = "$OrchestrationPath\WinGetWin32Apps.json"
-
+    
     # Serialize access to WinGetWin32Apps.json to prevent corruption when multiple apps are processed in parallel
     $mutexName = Get-WinGetWin32AppsJsonMutexName -WinGetWin32AppsJsonPath $wingetWin32AppsJson
-    Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
+    $addOutcome = Invoke-WithNamedMutex -MutexName $mutexName -TimeoutSeconds 60 -ScriptBlock {
         # Initialize or load existing JSON data
         $appsData = @()
         if (Test-Path -Path $wingetWin32AppsJson) {
@@ -1276,31 +1472,82 @@ function Add-Win32SilentInstallCommand {
                 catch {
                     WriteLog "WinGetWin32Apps.json could not be parsed and backup failed: $($_.Exception.Message). Rebuilding anyway."
                 }
-
+    
                 $appsData = @()
             }
         }
-
+    
+        # De-dupe dependencies and repeated entries across apps by PackageIdentifier first, then by command+args
+        $isDuplicate = $false
+        if (-not [string]::IsNullOrWhiteSpace($PackageIdentifier)) {
+            $existingById = $appsData | Where-Object { $_.PSObject.Properties['PackageIdentifier'] -and $_.PackageIdentifier -eq $PackageIdentifier } | Select-Object -First 1
+            if ($existingById) {
+                $isDuplicate = $true
+            }
+        }
+    
+        if (-not $isDuplicate) {
+            $existingByCommand = $appsData | Where-Object {
+                $_.PSObject.Properties['CommandLine'] -and $_.PSObject.Properties['Arguments'] -and
+                $_.CommandLine -eq $silentInstallCommand -and $_.Arguments -eq $silentInstallSwitch
+            } | Select-Object -First 1
+            if ($existingByCommand) {
+                $isDuplicate = $true
+            }
+        }
+    
+        if ($isDuplicate) {
+            WriteLog "Skipping duplicate Win32 install entry: Name='$appName' PackageIdentifier='$PackageIdentifier'"
+            return @{
+                Added  = $false
+                Reason = 'Duplicate'
+            }
+        }
+    
         # Calculate next priority (always set, even if the file exists but is empty)
         $highestPriority = if ($appsData.Count -gt 0) { $appsData.Count + 1 } else { 1 }
-
+    
         # Create new app entry
+        $entryName = $appName
+        if ([string]::IsNullOrWhiteSpace($DependencyFor)) {
+            if (-not [string]::IsNullOrEmpty($SubFolder)) {
+                $entryName = "$appName ($SubFolder)"
+            }
+        }
+    
         $newApp = [PSCustomObject]@{
             Priority    = $highestPriority
-            Name        = if (-not [string]::IsNullOrEmpty($SubFolder)) { "$appName ($SubFolder)" } else { $appName }
+            Name        = $entryName
             CommandLine = $silentInstallCommand
             Arguments   = $silentInstallSwitch
         }
-
+    
+        # Add metadata for dependency ordering and dedupe tracking (ignored by installer script)
+        if (-not [string]::IsNullOrWhiteSpace($DependencyFor)) {
+            $newApp | Add-Member -NotePropertyName DependencyFor -NotePropertyValue $DependencyFor -Force
+        }
+        if (-not [string]::IsNullOrWhiteSpace($PackageIdentifier)) {
+            $newApp | Add-Member -NotePropertyName PackageIdentifier -NotePropertyValue $PackageIdentifier -Force
+        }
+    
         # Write the updated JSON file using a temp+rename to reduce partial-write risk
         $appsData += $newApp
         $jsonText = $appsData | ConvertTo-Json -Depth 10
         Set-FileContentAtomic -Path $wingetWin32AppsJson -Content $jsonText
+    
+        return @{
+            Added    = $true
+            App      = $newApp
+            Priority = $highestPriority
+        }
     }
-
-    WriteLog "Added $($newApp.Name) to WinGetWin32Apps.json with priority $highestPriority"
-
-    # Return 0 for success
+    
+    if ($addOutcome -and $addOutcome.Added) {
+        WriteLog "Added $($addOutcome.App.Name) to WinGetWin32Apps.json with priority $($addOutcome.Priority)"
+        return 0
+    }
+    
+    # Duplicate (or unexpected no-op) treated as success
     return 0
 }
 
