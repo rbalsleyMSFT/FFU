@@ -1,5 +1,31 @@
 # Change Log
 
+# 2601.1 UI Preview
+
+## What's Changed
+
+### Improved WinPE driver copy reliability and logging
+
+Fixed a bug where some drivers weren't being copied into WinPE media when using **Use Drivers Folder as PE Drivers Source** option (`UseDriversAsPEDrivers` parameter)
+
+### Improved driver injection for long driver folder paths
+
+In some cases some drivers weren't being copied to the FFU or WinPE deployment media due to long paths. This required some significant refactoring. [See this post](https://github.com/rbalsleyMSFT/FFU/discussions/375) for more details on the changes that were made and the reasoning behind them.
+
+### Fixed an issue with WingetWin32Apps.Json file corruption during parallel app updates
+
+A code refactor that was done to consolidate some of the winget application download work that both the UI and BuildFFUVM.ps1 script caused an issue where parallel writes to the WingetWin32Apps.json file was causing the file to corrupt, resulting in apps not installing as expected.
+
+### Winget App installs now follow Applist.json order
+
+Winget application installs were installing in an indeterministic way when the WingetWin32Apps.json file was created. The order will now follow the order listed in the AppList.json file.
+
+### Support added for Winget Win32 app dependency handling
+
+Some apps (Camtasia) require dependency apps to be installed first. Winget will download said dependency apps. Dependent applications will now install before the calling application. There is also deduplication support added in the event multiple applications have the same dependencies.
+
+**Full Changelog**: [https://github.com/rbalsleyMSFT/FFU/compare/v2512.1Preview...v2601.1Preview](https://github.com/rbalsleyMSFT/FFU/compare/v2512.1Preview...v2601.1Preview)
+
 # 2512.1 UI Preview
 
 ## What's Changed
