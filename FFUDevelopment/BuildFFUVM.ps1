@@ -21,6 +21,9 @@ Path to a JSON file containing a list of applications to install using WinGet. D
 .PARAMETER AppsScriptVariables
 When passed a hashtable, the script will alter the $FFUDevelopmentPath\Apps\InstallAppsandSysprep.cmd file to set variables with the hashtable keys as variable names and the hashtable values their content.
 
+.PARAMETER BackupConfig
+When set to $true, will exporting JSON config to each Deploy partition \config\BackupFFUConfig.json
+
 .PARAMETER BuildUSBDrive
 When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. 
 
@@ -391,6 +394,7 @@ param(
     [Parameter(Mandatory = $false)]
     [ValidateScript({ $_ -eq $null -or (Test-Path $_) })]
     [string]$ConfigFile,
+    [bool]$BackupConfig,
     [Parameter(Mandatory = $false)]
     [string]$ExportConfigFile,
     [bool]$UpdateADK = $true    
@@ -4152,7 +4156,10 @@ function Export-ConfigFile{
     [CmdletBinding()]
     param (
         [Parameter()]
-        $paramNames
+        $paramNames,
+
+        [Parameter()]
+        [string]$ExportConfigFile
     )
     $filteredParamNames = Get-Parameters -ParamNames $paramNames
     
@@ -4224,7 +4231,7 @@ if($ExportConfigFile){
     # Get the parameter names from the script and exclude ExportConfigFile
     $paramNames = $MyInvocation.MyCommand.Parameters.Keys | Where-Object {$_ -ne 'ExportConfigFile'}
     try{
-        Export-ConfigFile($paramNames)
+        Export-ConfigFile($paramNames) -ExportConfigFile $ExportConfigFile
         WriteLog "Config file exported to $ExportConfigFile"
     }
     catch{
@@ -5451,9 +5458,40 @@ If ($BuildUSBDrive) {
             New-DeploymentUSB -CopyFFU
         }
         else {
-            WriteLog "$BuildUSBDrive set to true, however unable to find $DeployISO. USB drive not built."
+            WriteLog "BuildUSBDrive set to true, however unable to find $DeployISO. USB drive not built."
         }
-        
+
+        # Check for BackupConfig Set to True
+        if ($BackupConfig) {
+            WriteLog 'BackupConfig is $true. Exporting JSON config to each Deploy partition.'
+
+            # Gather all volumes labeled 'Deploy' with a drive letter
+            $deployVolumes = Get-CimInstance -ClassName Win32_Volume `
+                            -Filter "Label='Deploy' AND DriveLetter IS NOT NULL"
+
+            if ($deployVolumes) {
+                foreach ($volume in $deployVolumes) {
+                    $deployPartitionDriveLetter = $volume.DriveLetter + '\\'
+
+                    WriteLog "Creating \\config folder on $deployPartitionDriveLetter"
+                    $configFolder = Join-Path $deployPartitionDriveLetter 'config'
+                    New-Item -Path $configFolder -ItemType Directory -Force | Out-Null
+
+                    # Decide on a name for the backup JSON file
+                    $backupConfigFile = Join-Path $configFolder 'FFUConfigBackup.json'
+
+                    WriteLog "Backing up config to $backupConfigFile"
+
+                    $paramNames = $MyInvocation.MyCommand.Parameters.Keys
+                    Export-ConfigFile($paramNames) -ExportConfigFile $backupConfigFile
+
+                    WriteLog "Config successfully exported to $backupConfigFile"
+                }
+            }
+            else {
+                WriteLog 'No Deploy volumes found for config backup.'
+            }
+        }
     }
     catch {
         Write-Host 'Building USB deployment drive failed'
