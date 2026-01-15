@@ -3049,7 +3049,13 @@ function New-FFUVM {
     & vmconnect localhost "$VMName"
 
     #Start VM
-    Start-VM -Name $VMName
+    try{
+        Start-VM -Name $VMName -ErrorAction Stop
+    }
+    catch{
+        WriteLog "Error starting VM: $_"
+        throw $_
+    }
 
     return $VM
 }
