@@ -1,0 +1,121 @@
+# Requirements: FFU Builder Improvement Initiative
+
+**Defined:** 2026-01-17
+**Core Value:** Improve codebase quality, reliability, and maintainability
+
+## v1 Requirements
+
+Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
+
+### Tech Debt
+
+- [ ] **DEBT-01**: Remove deprecated static path properties from FFU.Constants (lines 256-277)
+- [ ] **DEBT-02**: Audit -ErrorAction SilentlyContinue usage (336 occurrences) and replace with proper error handling where appropriate
+- [ ] **DEBT-03**: Replace Write-Host with Write-Output/Write-Verbose/WriteLog in production modules (50+ occurrences)
+- [ ] **DEBT-04**: Remove legacy logStreamReader field from BuildFFUVM_UI.ps1 (line 67)
+- [ ] **DEBT-05**: Document BuildFFUVM.ps1 param block coupling with FFU.Constants
+
+### Bug Fixes
+
+- [ ] **BUG-01**: Fix Issue #327 - Corporate proxy failures with Netskope/zScaler SSL inspection
+- [ ] **BUG-02**: Fix Issue #301 - Unattend.xml extraction from MSU packages fails with DISM
+- [ ] **BUG-03**: Fix Issue #298 - OS partition doesn't expand for large driver sets (>5GB)
+- [ ] **BUG-04**: Fix Dell chipset driver extraction hang (FFUUI.Core.Drivers.Dell.psm1 lines 556-579)
+
+### Security
+
+- [ ] **SEC-01**: Improve Lenovo PSREF token handling - reduce browser automation exposure
+- [ ] **SEC-02**: Use SecureString for temporary FFU capture user account password
+- [ ] **SEC-03**: Add integrity verification for Apps orchestration scripts before execution
+
+### Performance
+
+- [ ] **PERF-01**: Optimize VHD flush operations - reduce from triple-pass to verified single-pass
+- [ ] **PERF-02**: Replace Start-Sleep polling with event-driven synchronization (56+ instances)
+- [ ] **PERF-03**: Evaluate module decomposition for large files (BuildFFUVM.ps1, FFU.Core.psm1, FFU.Preflight.psm1)
+
+### Test Coverage
+
+- [ ] **TEST-01**: Add integration tests for VM creation (Hyper-V and VMware)
+- [ ] **TEST-02**: Add integration tests for driver injection workflow
+- [ ] **TEST-03**: Add integration tests for FFU capture process
+- [ ] **TEST-04**: Add unit tests for UI event handlers (FFUUI.Core.Handlers.psm1 - 0% coverage)
+- [ ] **TEST-05**: Add tests for error recovery paths and cleanup handlers
+- [ ] **TEST-06**: Add tests for VMware provider operations
+
+### Missing Features
+
+- [ ] **FEAT-01**: Implement graceful build cancellation with proper cleanup
+- [ ] **FEAT-02**: Implement build progress checkpoint/resume capability
+- [ ] **FEAT-03**: Implement configuration file migration between versions
+
+### Dependencies
+
+- [ ] **DEP-01**: Implement vmrun.exe fallback for vmxtoolkit module failures
+- [ ] **DEP-02**: Implement Lenovo catalog fallback using catalogv2.xml
+- [ ] **DEP-03**: Enhance ADK WIMMount detection with automatic recovery
+
+## v2 Requirements
+
+Deferred to future cycle. Lower priority or higher complexity.
+
+### Performance (Deferred)
+
+- **PERF-04**: Implement parallel USB drive imaging with ForEach-Object -Parallel
+- **PERF-05**: Add adaptive network throttling for driver downloads
+
+### Test Coverage (Deferred)
+
+- **TEST-07**: End-to-end build workflow tests (require actual VM infrastructure)
+- **TEST-08**: Multi-driver-vendor combination tests
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Architecture rewrite | Risk too high; incremental improvement preferred |
+| New OEM vendors | Current vendor coverage sufficient |
+| Web/mobile UI | Desktop tool; WPF adequate |
+| Real-time dashboard | Existing log monitoring works |
+| Cloud deployment | On-premises tool by design |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DEBT-01 | Phase 1 | Pending |
+| DEBT-02 | Phase 1 | Pending |
+| DEBT-03 | Phase 1 | Pending |
+| DEBT-04 | Phase 1 | Pending |
+| DEBT-05 | Phase 1 | Pending |
+| BUG-01 | Phase 2 | Pending |
+| BUG-02 | Phase 2 | Pending |
+| BUG-03 | Phase 2 | Pending |
+| BUG-04 | Phase 2 | Pending |
+| SEC-01 | Phase 3 | Pending |
+| SEC-02 | Phase 3 | Pending |
+| SEC-03 | Phase 3 | Pending |
+| PERF-01 | Phase 4 | Pending |
+| PERF-02 | Phase 4 | Pending |
+| PERF-03 | Phase 4 | Pending |
+| TEST-01 | Phase 5 | Pending |
+| TEST-02 | Phase 5 | Pending |
+| TEST-03 | Phase 5 | Pending |
+| TEST-04 | Phase 6 | Pending |
+| TEST-05 | Phase 6 | Pending |
+| TEST-06 | Phase 6 | Pending |
+| FEAT-01 | Phase 7 | Pending |
+| FEAT-02 | Phase 8 | Pending |
+| FEAT-03 | Phase 9 | Pending |
+| DEP-01 | Phase 10 | Pending |
+| DEP-02 | Phase 10 | Pending |
+| DEP-03 | Phase 10 | Pending |
+
+**Coverage:**
+- v1 requirements: 26 total
+- Mapped to phases: 26
+- Unmapped: 0 ✓
+
+---
+*Requirements defined: 2026-01-17*
+*Last updated: 2026-01-17 after initial definition*

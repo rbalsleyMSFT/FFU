@@ -1,0 +1,11 @@
+{
+  "mode": "yolo",
+  "depth": "comprehensive",
+  "parallelization": {
+    "enabled": true,
+    "max_concurrent_agents": 3,
+    "skip_checkpoints": true,
+    "min_plans_for_parallel": 2
+  },
+  "created": "2026-01-17"
+}

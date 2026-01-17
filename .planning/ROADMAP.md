@@ -1,0 +1,112 @@
+# Roadmap: FFU Builder Improvement Initiative
+
+**Created:** 2026-01-17
+**Phases:** 10
+**Target:** Comprehensive codebase improvement
+
+## Milestone: v1.8.0 - Codebase Health
+
+### Phase 1: Tech Debt Cleanup
+**Goal:** Remove deprecated code, improve code quality patterns
+**Requirements:** DEBT-01, DEBT-02, DEBT-03, DEBT-04, DEBT-05
+**Success Criteria:**
+1. FFU.Constants has no deprecated static path properties
+2. -ErrorAction SilentlyContinue reduced by 50%+ with proper error handling
+3. Write-Host replaced with proper output streams in production modules
+4. Legacy logStreamReader removed from UI
+5. Param block coupling documented in CLAUDE.md
+
+### Phase 2: Bug Fixes - Critical Issues
+**Goal:** Fix known bugs affecting corporate users and build reliability
+**Requirements:** BUG-01, BUG-02, BUG-03, BUG-04
+**Success Criteria:**
+1. Proxy detection and configuration works with Netskope/zScaler
+2. Unattend.xml extraction from MSU packages succeeds
+3. OS partition auto-expands for driver sets >5GB
+4. Dell chipset driver extraction completes without hang
+
+### Phase 3: Security Hardening
+**Goal:** Improve security posture for credential handling and script execution
+**Requirements:** SEC-01, SEC-02, SEC-03
+**Success Criteria:**
+1. Lenovo PSREF token cached securely with reduced browser automation
+2. FFU capture user password handled as SecureString throughout
+3. Apps orchestration scripts verified before execution
+
+### Phase 4: Performance Optimization
+**Goal:** Reduce unnecessary delays and improve build throughput
+**Requirements:** PERF-01, PERF-02, PERF-03
+**Success Criteria:**
+1. VHD flush time reduced by 50%+ while maintaining data integrity
+2. At least 20 Start-Sleep instances replaced with event-driven sync
+3. Module decomposition plan documented (or initial extraction done)
+
+### Phase 5: Integration Tests - Core Operations
+**Goal:** Add test coverage for VM and imaging operations
+**Requirements:** TEST-01, TEST-02, TEST-03
+**Success Criteria:**
+1. Integration tests exist for Hyper-V VM creation/removal
+2. Integration tests exist for driver injection workflow
+3. Integration tests exist for FFU capture (mock or conditional)
+
+### Phase 6: Integration Tests - UI and Error Handling
+**Goal:** Add test coverage for UI handlers and error recovery
+**Requirements:** TEST-04, TEST-05, TEST-06
+**Success Criteria:**
+1. Unit tests cover FFUUI.Core.Handlers.psm1 key functions
+2. Tests verify cleanup handlers are called on failure
+3. VMware provider has test coverage (mocked or conditional)
+
+### Phase 7: Feature - Build Cancellation
+**Goal:** Allow users to gracefully cancel in-progress builds
+**Requirements:** FEAT-01
+**Success Criteria:**
+1. Cancel button in UI triggers graceful build termination
+2. Cleanup handlers execute on cancellation
+3. VMs, shares, and user accounts cleaned up after cancel
+
+### Phase 8: Feature - Progress Checkpoint/Resume
+**Goal:** Allow builds to resume after interruption
+**Requirements:** FEAT-02
+**Success Criteria:**
+1. Build state checkpointed at major stages
+2. Resume from checkpoint detects existing state
+3. Partial builds can continue without full restart
+
+### Phase 9: Feature - Config Migration
+**Goal:** Automatically migrate config files between versions
+**Requirements:** FEAT-03
+**Success Criteria:**
+1. Config schema includes version field
+2. Migration functions transform old configs to new format
+3. User prompted to migrate on version mismatch
+
+### Phase 10: Dependency Resilience
+**Goal:** Add fallbacks for at-risk external dependencies
+**Requirements:** DEP-01, DEP-02, DEP-03
+**Success Criteria:**
+1. vmrun.exe fallback works when vmxtoolkit fails
+2. Lenovo catalogv2.xml fallback provides partial driver coverage
+3. ADK WIMMount auto-recovery handles more failure scenarios
+
+---
+
+## Phase Summary
+
+| # | Phase | Requirements | Est. Plans |
+|---|-------|--------------|------------|
+| 1 | Tech Debt Cleanup | 5 | 5-7 |
+| 2 | Bug Fixes - Critical | 4 | 4-6 |
+| 3 | Security Hardening | 3 | 3-4 |
+| 4 | Performance Optimization | 3 | 3-5 |
+| 5 | Integration Tests - Core | 3 | 3-4 |
+| 6 | Integration Tests - UI/Error | 3 | 3-4 |
+| 7 | Feature - Build Cancellation | 1 | 2-3 |
+| 8 | Feature - Progress Checkpoint | 1 | 3-4 |
+| 9 | Feature - Config Migration | 1 | 2-3 |
+| 10 | Dependency Resilience | 3 | 3-4 |
+
+**Total:** 26 requirements across 10 phases
+
+---
+*Roadmap created: 2026-01-17*
