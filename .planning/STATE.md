@@ -11,17 +11,17 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 1 of 10 (Tech Debt Cleanup)
-**Plan:** 3 of 5 complete
+**Plan:** 4 of 5 complete
 **Status:** In progress
-**Last activity:** 2026-01-18 - Completed 01-03-PLAN.md
+**Last activity:** 2026-01-18 - Completed 01-04-PLAN.md
 
-Progress: [######----] 60%
+Progress: [########--] 80%
 
 ## Progress
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1     | In Progress | 3/5 | 60% |
+| 1     | In Progress | 4/5 | 80% |
 | 2     | Pending | 0/? | 0% |
 | 3     | Pending | 0/? | 0% |
 | 4     | Pending | 0/? | 0% |
@@ -39,14 +39,15 @@ Progress: [######----] 60%
 | 01-01 | 1 | - | DEBT-04, DEBT-05 | Doc param coupling, remove logStreamReader | COMPLETE |
 | 01-02 | 1 | - | DEBT-01 | Remove deprecated FFU.Constants properties | COMPLETE |
 | 01-03 | 2 | 01-02 | DEBT-03 (partial) | Replace Write-Host in FFU.ADK, FFU.Core | COMPLETE |
-| 01-04 | 2 | - | DEBT-03 (partial) | Replace Write-Host in FFU.Preflight | Pending |
+| 01-04 | 2 | - | DEBT-03 (partial) | Replace Write-Host in FFU.Preflight | COMPLETE |
 | 01-05 | 2 | - | DEBT-02 | Audit SilentlyContinue (50%+ reduction) | Pending |
 
 **Wave 1:** Plans 01-01 (COMPLETE), 01-02 (COMPLETE)
-**Wave 2:** Plans 01-03 (COMPLETE), 01-04, 01-05 can run in parallel
+**Wave 2:** Plans 01-03 (COMPLETE), 01-04 (COMPLETE), 01-05 pending
 
 ## Recent Activity
 
+- 2026-01-18: Completed 01-04-PLAN.md (DEBT-03 partial - 2 Write-Host in FFU.Preflight examples replaced)
 - 2026-01-18: Completed 01-03-PLAN.md (DEBT-03 partial - Write-Host removed from FFU.ADK, FFU.Core)
 - 2026-01-17: Completed 01-02-PLAN.md (DEBT-01 - deprecated FFU.Constants properties removed)
 - 2026-01-18: Completed 01-01-PLAN.md (param coupling docs, logStreamReader removal)
@@ -67,6 +68,7 @@ Progress: [######----] 60%
 | Remove deprecated static path properties | 2026-01-17 | No external code references them; GetDefault*Dir() is the API |
 | Write-Verbose for diagnostics | 2026-01-18 | Write-Verbose is captured in background jobs when -Verbose is set |
 | WriteLog for production messages | 2026-01-18 | WriteLog writes to both file and messaging queue, visible in UI |
+| Research estimate correction | 2026-01-18 | FFU.Preflight had 2 Write-Host (not 91) - only in doc examples |
 
 ## Open Issues
 
@@ -79,9 +81,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-18
-**Stopped at:** Completed 01-03-PLAN.md
+**Stopped at:** Completed 01-04-PLAN.md
 **Resume file:** None
-**Next action:** Execute remaining Phase 1 plans (01-04, 01-05)
+**Next action:** Execute remaining Phase 1 plan (01-05)
 
 ---
 *State updated: 2026-01-18*
