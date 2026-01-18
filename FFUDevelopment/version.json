@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.6.30",
-    "buildDate": "2026-01-11",
+    "version": "1.7.21",
+    "buildDate": "2026-01-17",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -24,9 +24,9 @@
             "description": "Structured logging with levels, JSON output, session correlation"
         },
         "FFUUI.Core": {
-            "version": "0.0.7",
+            "version": "0.0.11",
             "path": "FFUUI.Core/FFUUI.Core.psd1",
-            "description": "WPF UI framework with hypervisor selection, VMware REST API credential setup, ShowVMConsole option"
+            "description": "WPF UI framework with VMware bridged network IP auto-detection and preservation, hypervisor selection, VM shutdown timeout setting"
         },
         "FFU.Core": {
             "version": "1.0.13",
@@ -34,9 +34,9 @@
             "description": "Core configuration, session tracking, credential security, schema validation, PowerShell best practices, WIM mount error handling"
         },
         "FFU.Constants": {
-            "version": "1.1.0",
+            "version": "1.1.1",
             "path": "Modules/FFU.Constants/FFU.Constants.psd1",
-            "description": "Centralized configuration constants with dynamic path resolution"
+            "description": "Centralized configuration constants with dynamic path resolution - deprecated static properties removed"
         },
         "FFU.ADK": {
             "version": "1.0.0",
@@ -49,29 +49,29 @@
             "description": "Application management and Office deployment"
         },
         "FFU.Drivers": {
-            "version": "1.0.2",
+            "version": "1.0.5",
             "path": "Modules/FFU.Drivers/FFU.Drivers.psd1",
-            "description": "OEM driver download and management"
+            "description": "OEM driver download - enhanced diagnostics, BITS fallback, proxy/firewall block detection"
         },
         "FFU.Imaging": {
-            "version": "1.0.5",
+            "version": "1.0.9",
             "path": "Modules/FFU.Imaging/FFU.Imaging.psd1",
-            "description": "DISM operations and FFU creation - fixed format prompt race condition by assigning drive letters after formatting"
+            "description": "DISM operations and FFU creation - VMware VHD flush fix ensures unattend.xml persists to disk"
         },
         "FFU.Media": {
-            "version": "1.2.0",
+            "version": "1.3.2",
             "path": "Modules/FFU.Media/FFU.Media.psd1",
-            "description": "WinPE media creation with just-in-time WIMMount validation (Test-FFUWimMount) before mount operations"
+            "description": "WinPE media creation - fixed empty VMwareDrivers folder detection, ForceVMwareDriverDownload support"
         },
         "FFU.Updates": {
-            "version": "1.0.1",
+            "version": "1.0.2",
             "path": "Modules/FFU.Updates/FFU.Updates.psd1",
-            "description": "Windows Update catalog and MSU handling"
+            "description": "Windows Update catalog and MSU handling - PowerShell 7 expand.exe fix"
         },
         "FFU.VM": {
-            "version": "1.0.4",
+            "version": "1.0.6",
             "path": "Modules/FFU.VM/FFU.VM.psd1",
-            "description": "VM lifecycle management - fixed [VMState] type error via factory functions"
+            "description": "VM lifecycle management for FFU Builder - Hyper-V and VMware support via FFU.Hypervisor"
         },
         "FFU.Messaging": {
             "version": "1.0.0",
@@ -79,14 +79,14 @@
             "description": "Thread-safe messaging for UI/background job communication"
         },
         "FFU.Preflight": {
-            "version": "1.0.5",
+            "version": "1.0.10",
             "path": "Modules/FFU.Preflight/FFU.Preflight.psd1",
-            "description": "Comprehensive pre-flight validation with tiered checks, hypervisor-aware validation (HyperV/VMware), WIM mount auto-repair, and remediation guidance"
+            "description": "Comprehensive pre-flight validation with VMware bridge configuration guidance, Hyper-V switch conflict detection, tiered checks, hypervisor-aware validation, WIM mount auto-repair"
         },
         "FFU.Hypervisor": {
-            "version": "1.1.17",
+            "version": "1.2.9",
             "path": "Modules/FFU.Hypervisor/FFU.Hypervisor.psd1",
-            "description": "Hypervisor abstraction layer - diskpart fallback, ulm.disableMitigations for Hyper-V hosts"
+            "description": "Hypervisor abstraction layer - FIX: VMware GUI mode StartVM returns 'Completed' status for capture boot"
         },
         "FFU.BuildTest": {
             "version": "1.1.0",
