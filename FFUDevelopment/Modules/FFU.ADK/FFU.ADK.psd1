@@ -7,7 +7,7 @@
     RootModule = 'FFU.ADK.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.1'
 
     # ID used to uniquely identify this module
     GUID = 'f24f0701-bcfc-489f-8111-1fbd89c61bdc'
@@ -70,9 +70,16 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.ADK v1.0.0
+# Release Notes - FFU.ADK v1.0.1
 
-## Initial Release
+## v1.0.1 - Background Job Compatibility
+- Replaced Write-Host with proper output streams for background job compatibility
+- Write-ADKValidationLog now uses Write-Verbose for diagnostic console output
+- ADK error templates now logged via WriteLog for UI Monitor tab visibility
+- Color-coded console output removed (not captured in background jobs)
+- Validation messages visible in UI when running builds from UI
+
+## v1.0.0 - Initial Release
 - Extracted ADK management functions from monolithic BuildFFUVM.ps1
 - 8 functions for complete ADK lifecycle management
 - Pre-flight validation prevents silent WinPE media creation failures

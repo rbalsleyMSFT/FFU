@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.13'
+    ModuleVersion = '1.0.14'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -115,7 +115,13 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.13
+# Release Notes - FFU.Core v1.0.14
+
+## v1.0.14 - Background Job Compatibility
+- Replaced Write-Host with Write-Verbose in Invoke-FailureCleanup safe logging helper
+- Cleanup messages now visible in background job context via -Verbose flag
+- Updated documentation examples to use Write-Output instead of Write-Host
+- Ensures proper output stream usage for UI integration
 
 ## v1.0.13 - WIM Mount Error Handling Enhancement
 - Added Invoke-WimMountWithErrorHandling: Wraps Mount-WindowsImage with enhanced error detection
