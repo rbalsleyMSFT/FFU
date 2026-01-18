@@ -248,36 +248,6 @@ class FFUConstants {
 
     #endregion
 
-    #region Static Path Properties (for backward compatibility)
-    # These are initialized by the static constructor and reference hardcoded values
-    # Code should prefer the Get* methods for dynamic resolution
-
-    # Base working directory for all FFU operations
-    # DEPRECATED: Use [FFUConstants]::GetDefaultWorkingDir() instead
-    static [string] $DEFAULT_WORKING_DIR = "C:\FFUDevelopment"
-
-    # VM storage location
-    # DEPRECATED: Use [FFUConstants]::GetDefaultVMDir() instead
-    static [string] $DEFAULT_VM_DIR = "C:\FFUDevelopment\VM"
-
-    # FFU capture output location
-    # DEPRECATED: Use [FFUConstants]::GetDefaultCaptureDir() instead
-    static [string] $DEFAULT_CAPTURE_DIR = "C:\FFUDevelopment\FFU"
-
-    # Driver storage location
-    # DEPRECATED: Use [FFUConstants]::GetDefaultDriversDir() instead
-    static [string] $DEFAULT_DRIVERS_DIR = "C:\FFUDevelopment\Drivers"
-
-    # Application installers location
-    # DEPRECATED: Use [FFUConstants]::GetDefaultAppsDir() instead
-    static [string] $DEFAULT_APPS_DIR = "C:\FFUDevelopment\Apps"
-
-    # Windows Update cache location
-    # DEPRECATED: Use [FFUConstants]::GetDefaultUpdatesDir() instead
-    static [string] $DEFAULT_UPDATES_DIR = "C:\FFUDevelopment\Updates"
-
-    #endregion
-
     #region ADK Paths (system-dependent, not project-relative)
 
     # Windows ADK Deployment Tools path
@@ -357,11 +327,11 @@ class FFUConstants {
     # Cumulative updates can take 5-8 minutes to install on shutdown
     static [int] $VM_SHUTDOWN_TIMEOUT = 600
 
-    # Default VM shutdown timeout for polling loop (20 minutes)
+    # Default VM shutdown timeout for polling loop (60 minutes)
     # Used when waiting for VM to shutdown during FFU capture
     # If exceeded, VM is force powered off
     # Can be overridden via VMShutdownTimeoutMinutes config parameter
-    static [int] $DefaultVMShutdownTimeoutMinutes = 20
+    static [int] $DefaultVMShutdownTimeoutMinutes = 60
 
     # DISM mount operation timeout (5 minutes)
     # Time to mount large VHDX/WIM files (10-20GB)
@@ -530,53 +500,6 @@ class FFUConstants {
     # Comprehensive validation before starting builds
     # Catches 90%+ of configuration issues early
     static [bool] $ENABLE_PREFLIGHT_CHECKS = $true
-
-    #endregion
-
-    #region Legacy Helper Methods (backward compatibility)
-
-    <#
-    .SYNOPSIS
-    Get working directory with environment variable override support
-
-    .DESCRIPTION
-    Returns the working directory, checking environment variable first
-    Allows users to override default path without code changes
-
-    DEPRECATED: Use GetDefaultWorkingDir() instead
-
-    .EXAMPLE
-    $workDir = [FFUConstants]::GetWorkingDirectory()
-    #>
-    static [string] GetWorkingDirectory() {
-        return [FFUConstants]::GetDefaultWorkingDir()
-    }
-
-    <#
-    .SYNOPSIS
-    Get VM directory with environment variable override support
-
-    DEPRECATED: Use GetDefaultVMDir() instead
-
-    .EXAMPLE
-    $vmDir = [FFUConstants]::GetVMDirectory()
-    #>
-    static [string] GetVMDirectory() {
-        return [FFUConstants]::GetDefaultVMDir()
-    }
-
-    <#
-    .SYNOPSIS
-    Get capture directory with environment variable override support
-
-    DEPRECATED: Use GetDefaultCaptureDir() instead
-
-    .EXAMPLE
-    $captureDir = [FFUConstants]::GetCaptureDirectory()
-    #>
-    static [string] GetCaptureDirectory() {
-        return [FFUConstants]::GetDefaultCaptureDir()
-    }
 
     #endregion
 }

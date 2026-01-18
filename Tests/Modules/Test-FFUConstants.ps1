@@ -6,11 +6,11 @@ Write-Host "=== Testing FFU.Constants Module ===" -ForegroundColor Green
 Write-Host "`n1. Module Loading:" -ForegroundColor Cyan
 Write-Host "   Constants module loaded successfully" -ForegroundColor Green
 
-# Test path constants
-Write-Host "`n2. Path Constants:" -ForegroundColor Cyan
-Write-Host "   DEFAULT_WORKING_DIR: $([FFUConstants]::DEFAULT_WORKING_DIR)"
-Write-Host "   DEFAULT_VM_DIR: $([FFUConstants]::DEFAULT_VM_DIR)"
-Write-Host "   DEFAULT_CAPTURE_DIR: $([FFUConstants]::DEFAULT_CAPTURE_DIR)"
+# Test path methods (dynamic resolution)
+Write-Host "`n2. Path Methods:" -ForegroundColor Cyan
+Write-Host "   GetDefaultWorkingDir(): $([FFUConstants]::GetDefaultWorkingDir())"
+Write-Host "   GetDefaultVMDir(): $([FFUConstants]::GetDefaultVMDir())"
+Write-Host "   GetDefaultCaptureDir(): $([FFUConstants]::GetDefaultCaptureDir())"
 
 # Test VM configuration constants
 Write-Host "`n3. VM Configuration:" -ForegroundColor Cyan
@@ -44,10 +44,10 @@ Write-Host "   MAX_COPYPE_RETRIES: $([FFUConstants]::MAX_COPYPE_RETRIES)"
 Write-Host "   MAX_PACKAGE_RETRIES: $([FFUConstants]::MAX_PACKAGE_RETRIES)"
 Write-Host "   RETRY_DELAY: $([FFUConstants]::RETRY_DELAY) seconds"
 
-# Test helper methods
-Write-Host "`n8. Helper Methods:" -ForegroundColor Cyan
-Write-Host "   GetWorkingDirectory(): $([FFUConstants]::GetWorkingDirectory())"
-Write-Host "   GetVMDirectory(): $([FFUConstants]::GetVMDirectory())"
-Write-Host "   GetCaptureDirectory(): $([FFUConstants]::GetCaptureDirectory())"
+# Test additional path methods
+Write-Host "`n8. Additional Path Methods:" -ForegroundColor Cyan
+Write-Host "   GetDefaultDriversDir(): $([FFUConstants]::GetDefaultDriversDir())"
+Write-Host "   GetDefaultAppsDir(): $([FFUConstants]::GetDefaultAppsDir())"
+Write-Host "   GetDefaultUpdatesDir(): $([FFUConstants]::GetDefaultUpdatesDir())"
 
 Write-Host "`n=== All Tests Passed ===" -ForegroundColor Green

@@ -217,55 +217,9 @@ if ($allValid) { 'Valid' } else { 'Invalid' }
         }
     }
 
-    Context "Backward Compatibility" {
+    Context "Non-Path Constants" {
 
-        It "GetWorkingDirectory legacy method should work" {
-            $result = Invoke-WithFFUConstants @'
-[FFUConstants]::ResetBasePath()
-$result = [FFUConstants]::GetWorkingDirectory()
-if ($result -like '*FFUDevelopment*') { 'Works' } else { $result }
-'@
-            $result | Should -Be 'Works'
-        }
-
-        It "GetVMDirectory legacy method should work" {
-            $result = Invoke-WithFFUConstants @'
-[FFUConstants]::ResetBasePath()
-$result = [FFUConstants]::GetVMDirectory()
-if ($result -like '*VM') { 'Works' } else { $result }
-'@
-            $result | Should -Be 'Works'
-        }
-
-        It "GetCaptureDirectory legacy method should work" {
-            $result = Invoke-WithFFUConstants @'
-[FFUConstants]::ResetBasePath()
-$result = [FFUConstants]::GetCaptureDirectory()
-if ($result -like '*FFU') { 'Works' } else { $result }
-'@
-            $result | Should -Be 'Works'
-        }
-
-        It "Legacy methods should call new methods internally" {
-            $result = Invoke-WithFFUConstants @'
-[FFUConstants]::ResetBasePath()
-$match1 = [FFUConstants]::GetWorkingDirectory() -eq [FFUConstants]::GetDefaultWorkingDir()
-$match2 = [FFUConstants]::GetVMDirectory() -eq [FFUConstants]::GetDefaultVMDir()
-$match3 = [FFUConstants]::GetCaptureDirectory() -eq [FFUConstants]::GetDefaultCaptureDir()
-if ($match1 -and $match2 -and $match3) { 'AllMatch' } else { 'Mismatch' }
-'@
-            $result | Should -Be 'AllMatch'
-        }
-
-        It "Static deprecated properties should still exist" {
-            $result = Invoke-WithFFUConstants @'
-$val = [FFUConstants]::DEFAULT_WORKING_DIR
-if ($val -eq 'C:\FFUDevelopment') { 'Exists' } else { 'Missing or wrong' }
-'@
-            $result | Should -Be 'Exists'
-        }
-
-        It "Non-path constants should be unchanged" {
+        It "VM configuration constants should be unchanged" {
             $result = Invoke-WithFFUConstants @'
 $mem = [FFUConstants]::DEFAULT_VM_MEMORY
 $proc = [FFUConstants]::DEFAULT_VM_PROCESSORS
@@ -339,10 +293,7 @@ $methods = @(
     'GetDefaultCaptureDir',
     'GetDefaultDriversDir',
     'GetDefaultAppsDir',
-    'GetDefaultUpdatesDir',
-    'GetWorkingDirectory',
-    'GetVMDirectory',
-    'GetCaptureDirectory'
+    'GetDefaultUpdatesDir'
 )
 $type = [FFUConstants]
 $allExist = $true
