@@ -7,7 +7,7 @@
     RootModule = 'FFU.Preflight.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.5'
+    ModuleVersion = '1.0.11'
 
     # ID used to uniquely identify this module
     GUID = 'a7e8b3f2-c4d5-4e6a-9b8c-1d2e3f4a5b6c'
@@ -49,6 +49,10 @@
         'Test-FFUNetwork',
         'Test-FFUConfigurationFile',
         'Test-FFUWimMount',
+        'Test-FFUVmxToolkit',
+        'Test-FFUHyperVSwitchConflict',
+        'Test-FFUVMwareDrivers',
+        'Test-FFUVMwareBridgeConfiguration',
         # Tier 3: Recommended (Warnings Only)
         'Test-FFUAntivirusExclusions',
         # Tier 4: Cleanup (Pre-Remediation)
@@ -81,7 +85,112 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Preflight v1.0.4
+# Release Notes - FFU.Preflight v1.0.11
+
+## v1.0.11 (2026-01-18)
+### Tech Debt: Replace Write-Host with Write-Information
+- **CHANGED**: Replaced 2 Write-Host calls in documentation examples with Write-Information
+- **SCOPE**: Example code in Test-FFUHyperVSwitchConflict and Test-FFUVMwareBridgeConfiguration
+- **REASON**: Consistency with module's proper output stream usage
+- **NOTE**: Module already uses Write-Information/Write-Warning/Write-Error throughout
+
+### Details
+- Research initially estimated 91 Write-Host occurrences, actual count was 2
+- Both occurrences were in comment-based help .EXAMPLE sections
+- Module production code was already correctly using proper output streams
+- Part of DEBT-03 tech debt cleanup initiative
+
+---
+
+## v1.0.10 (2026-01-16)
+### New Feature: VMware Bridge Configuration Guidance
+- **NEW**: Test-FFUVMwareBridgeConfiguration detects network adapter configuration
+- **WARNING-level** check (non-blocking) when using VMware hypervisor
+- Identifies recommended adapter for bridging (has internet, not VPN)
+- Detects problematic VPN adapters (GlobalProtect PANGP, Cisco AnyConnect, etc.)
+- Provides step-by-step Virtual Network Editor configuration guidance
+
+### Problem Addressed
+VMware auto-bridging may select wrong adapter (VPN or disconnected) causing
+Error 53 (network path not found) during FFU capture. No programmatic way
+to configure VMware bridging on Windows - requires manual Virtual Network Editor.
+
+### Details
+- Check only runs when HypervisorType is 'VMware'
+- Returns 'Passed' if suitable adapter found with no VPN adapters present
+- Returns 'Warning' if VPN adapters detected or netmap.conf missing
+- Returns 'Failed' if no adapter with internet connectivity found
+- Detailed remediation includes vmnetcfg.exe steps and adapter selection guidance
+
+---
+
+## v1.0.9 (2026-01-16)
+### New Feature: Hyper-V External Switch Conflict Detection for VMware
+- **NEW**: Test-FFUHyperVSwitchConflict detects External Hyper-V virtual switches
+- **BLOCKING** check when using VMware hypervisor
+- Prevents Error 53 (network path not found) during FFU capture
+
+### Root Cause Addressed
+When a Hyper-V External Virtual Switch exists, it bridges to a physical adapter
+(e.g., WiFi). VMware's auto-bridging then selects a different adapter (e.g.,
+disconnected Ethernet), resulting in network connectivity failure during capture.
+
+### Remediation
+- User must delete the External Hyper-V switch before using VMware
+- Clear guidance provided: Hyper-V Manager → Virtual Switch Manager → Remove
+- PowerShell command included: Remove-VMSwitch -Name '<name>' -Force
+
+### Details
+- Check only runs when HypervisorType is 'VMware'
+- Returns 'Skipped' for Hyper-V or Auto
+- Returns 'Passed' if Hyper-V not accessible (conflict impossible)
+- Returns 'Failed' with detailed remediation if External switch exists
+
+---
+
+## v1.0.8 (2026-01-13)
+### New Feature: VMware Network Driver Validation
+- **NEW**: Test-FFUVMwareDrivers validates Intel e1000e drivers for WinPE capture
+- Only runs when HypervisorType is 'VMware'
+- Checks VMwareDrivers folder for network driver INF files
+- Informational check - drivers auto-download during build if missing
+- Provides remediation guidance if folder exists but is empty
+
+### Details
+- Returns 'Passed' if folder missing (auto-download will occur)
+- Returns 'Warning' if folder exists but empty (user action needed)
+- Returns 'Passed' with details if drivers present
+- Integrated into Tier 2 feature-dependent checks
+
+---
+
+## v1.0.7 (2026-01-12)
+### New Feature: vmxtoolkit Pre-flight Check for VMware
+- **NEW**: Test-FFUVmxToolkit validates vmxtoolkit PowerShell module availability
+- Auto-remediation: Attempts to install from PSGallery when not found
+- Integrated into Invoke-FFUPreflight (runs when HypervisorType is VMware)
+- vmxtoolkit provides PowerShell cmdlets wrapping vmrun.exe for VMware Workstation
+- Supports vmxtoolkit/vmrun architecture replacing vmrest REST API
+
+### Details
+- Check only runs when HypervisorType is set to 'VMware' or 'Auto-detect' resolves to VMware
+- Falls back gracefully to direct vmrun.exe if module installation fails
+- Module is optional but recommended for enhanced VMware operations
+
+---
+
+## v1.0.6 (2026-01-11)
+### CRITICAL FIX: Test-FFUWimMount Returns Multiple Results
+- **BUG**: Function was outputting multiple result objects to pipeline instead of one
+- **SYMPTOM**: Concatenated error messages like:
+  "WimMount filter is loaded and functional WimMount filter loaded after automatic repair WimMount filter not loaded (BLOCKING)"
+- **CAUSE**: Missing `return` statements after successful New-FFUCheckResult calls
+- **FIX**: Added `return` at:
+  1. Initial success path (WimMount filter already loaded)
+  2. Remediation success path (WimMount loaded after repair)
+- **IMPACT**: Function now returns exactly one result object as expected
+
+---
 
 ## v1.0.4 (2025-12-17)
 ### Enhanced WimMount Detection and Auto-Repair

@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.7.22",
+    "version": "1.7.23",
     "buildDate": "2026-01-18",
 
     "versioningPolicy": {
@@ -79,9 +79,9 @@
             "description": "Thread-safe messaging for UI/background job communication"
         },
         "FFU.Preflight": {
-            "version": "1.0.10",
+            "version": "1.0.11",
             "path": "Modules/FFU.Preflight/FFU.Preflight.psd1",
-            "description": "Comprehensive pre-flight validation with VMware bridge configuration guidance, Hyper-V switch conflict detection, tiered checks, hypervisor-aware validation, WIM mount auto-repair"
+            "description": "Comprehensive pre-flight validation with proper output streams (Write-Host removed from examples), VMware bridge guidance, Hyper-V switch conflict detection, tiered checks, WIM mount auto-repair"
         },
         "FFU.Hypervisor": {
             "version": "1.2.9",
