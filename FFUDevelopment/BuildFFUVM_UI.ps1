@@ -64,10 +64,9 @@ $script:uiState = [PSCustomObject]@{
         versionData                 = $null;
         vmSwitchMap                 = @{};
         logData                     = $null;
-        logStreamReader             = $null;  # Legacy: kept for backward compatibility
         pollTimer                   = $null;
         lastConfigFilePath          = $null;
-        messagingContext            = $null   # New: synchronized queue for real-time UI updates
+        messagingContext            = $null   # Synchronized queue for real-time UI updates
     };
     Flags              = @{
         installAppsForcedByUpdates        = $false;
@@ -232,13 +231,6 @@ $script:uiState.Controls.btnRun.Add_Click({
                     $script:uiState.Data.messagingContext = $null
                 }
 
-                # Close the log stream
-                if ($null -ne $script:uiState.Data.logStreamReader) {
-                    $script:uiState.Data.logStreamReader.Close()
-                    $script:uiState.Data.logStreamReader.Dispose()
-                    $script:uiState.Data.logStreamReader = $null
-                }
-
                 # Stop and remove the running build job
                 $jobToStop = $script:uiState.Data.currentBuildJob
                 $script:uiState.Data.currentBuildJob = $null
@@ -381,25 +373,9 @@ $script:uiState.Controls.btnRun.Add_Click({
                     WriteLog "WARNING: Cleanup job started using Start-Job (network credentials may not be available for BITS transfers)."
                 }
 
-                # Wait for log file to appear (or open immediately if it exists)
-                $logWaitTimeout = 60
-                $watch = [System.Diagnostics.Stopwatch]::StartNew()
-                while (-not (Test-Path $mainLogPath) -and $watch.Elapsed.TotalSeconds -lt $logWaitTimeout) {
-                    Start-Sleep -Milliseconds 250
-                }
-                $watch.Stop()
-
-                # Open log stream for cleanup (tail to end to avoid re-reading the whole file)
-                if (Test-Path $mainLogPath) {
-                    $fileStream = [System.IO.File]::Open($mainLogPath, 'Open', 'Read', 'ReadWrite')
-                    [void]$fileStream.Seek(0, [System.IO.SeekOrigin]::End)
-                    $script:uiState.Data.logStreamReader = [System.IO.StreamReader]::new($fileStream)
-                }
-                else {
-                    WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Monitor tab will not update during cleanup."
-                }
-
                 # Create a timer to poll the cleanup job
+                # Note: Cleanup runs without messagingContext, so no real-time log updates
+                # The log file is still written for post-mortem review
                 $script:uiState.Data.pollTimer = New-Object System.Windows.Threading.DispatcherTimer
                 $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromSeconds(1)
                 $script:uiState.Flags.isCleanupRunning = $true
@@ -407,17 +383,6 @@ $script:uiState.Controls.btnRun.Add_Click({
                 $script:uiState.Data.pollTimer.Add_Tick({
                         param($sender, $e)
                         $currentJob = $script:uiState.Data.currentBuildJob
-
-                        # Read new lines from log
-                        if ($null -ne $script:uiState.Data.logStreamReader) {
-                            while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
-                                $script:uiState.Data.logData.Add($line)
-                                if ($script:uiState.Flags.autoScrollLog) {
-                                    $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
-                                    $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
-                                }
-                            }
-                        }
 
                         if ($null -eq $currentJob -or $null -eq $script:uiState.Data.pollTimer) {
                             if ($null -ne $sender) { $sender.Stop() }
@@ -428,21 +393,6 @@ $script:uiState.Controls.btnRun.Add_Click({
                         if ($currentJob.State -in 'Completed', 'Failed', 'Stopped') {
                             if ($null -ne $sender) { $sender.Stop() }
                             $script:uiState.Data.pollTimer = $null
-
-                            if ($null -ne $script:uiState.Data.logStreamReader) {
-                                $lastLine = $null
-                                while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
-                                    $script:uiState.Data.logData.Add($line)
-                                    $lastLine = $line
-                                }
-                                if ($script:uiState.Flags.autoScrollLog -and $null -ne $lastLine) {
-                                    $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
-                                    $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
-                                }
-                                $script:uiState.Data.logStreamReader.Close()
-                                $script:uiState.Data.logStreamReader.Dispose()
-                                $script:uiState.Data.logStreamReader = $null
-                            }
 
                             $script:uiState.Controls.txtStatus.Text = "Build canceled. Environment cleaned."
                             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
@@ -476,18 +426,6 @@ $script:uiState.Controls.btnRun.Add_Click({
             if ($null -ne $script:uiState.Data.logData) {
                 $script:uiState.Data.logData.Clear()
                 $script:uiState.Flags.autoScrollLog = $true
-            }
-
-            # Close any existing StreamReader from previous builds to release file handle
-            if ($null -ne $script:uiState.Data.logStreamReader) {
-                try {
-                    $script:uiState.Data.logStreamReader.Close()
-                    $script:uiState.Data.logStreamReader.Dispose()
-                }
-                catch {
-                    # Ignore errors when closing stale reader
-                }
-                $script:uiState.Data.logStreamReader = $null
             }
 
             $progressBar = $script:uiState.Controls.pbOverallProgress
@@ -699,36 +637,18 @@ $script:uiState.Controls.btnRun.Add_Click({
                 WriteLog "WARNING: Build job started using Start-Job (network credentials may not be available for BITS transfers)."
             }
 
-            # Wait for the new log file to be created by the background job.
-            # With messaging context, file creation is less critical but still useful for persistence
-            $logWaitTimeout = 15 # seconds
-            $watch = [System.Diagnostics.Stopwatch]::StartNew()
-            while (-not (Test-Path $mainLogPath) -and $watch.Elapsed.TotalSeconds -lt $logWaitTimeout) {
-                Start-Sleep -Milliseconds 250
-            }
-            $watch.Stop()
-
-            # Open a stream reader to the main log file (fallback/backup for queue-based messaging)
-            if (Test-Path $mainLogPath) {
-                $fileStream = [System.IO.File]::Open($mainLogPath, 'Open', 'Read', 'ReadWrite')
-                $script:uiState.Data.logStreamReader = [System.IO.StreamReader]::new($fileStream)
-            }
-            else {
-                WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Using queue-only messaging."
-            }
-
             # ============================================================================
             # Create timer with 50ms interval for real-time UI updates via messaging queue
             # This is 20x faster than the previous 1-second file-polling approach
-            # Timer reads from ConcurrentQueue (lock-free) with file fallback
+            # Timer reads from ConcurrentQueue (lock-free)
             # ============================================================================
             $script:uiState.Data.pollTimer = New-Object System.Windows.Threading.DispatcherTimer
             $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromMilliseconds(50)
             
             # Add the Tick event handler
             # ============================================================================
-            # REAL-TIME UI UPDATES: Primary reads from synchronized queue, file as fallback
-            # Queue polling at 50ms provides near-instant UI feedback (vs 1s file polling)
+            # REAL-TIME UI UPDATES: Reads from synchronized queue (messagingContext)
+            # Queue polling at 50ms provides near-instant UI feedback
             # ============================================================================
             $script:uiState.Data.pollTimer.Add_Tick({
                     param($sender, $e)
@@ -763,28 +683,6 @@ $script:uiState.Controls.btnRun.Add_Click({
                         if ($messages.Count -gt 0 -and $script:uiState.Flags.autoScrollLog -and $lastLine) {
                             $script:uiState.Controls.lstLogOutput.ScrollIntoView($lastLine)
                             $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
-                        }
-                    }
-                    # FALLBACK: Read from log file stream (legacy support)
-                    elseif ($null -ne $script:uiState.Data.logStreamReader) {
-                        while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
-                            # Add the full line to the log view first to maintain consistency
-                            $script:uiState.Data.logData.Add($line)
-                            $lastLine = $line
-                            if ($script:uiState.Flags.autoScrollLog) {
-                                $script:uiState.Controls.lstLogOutput.ScrollIntoView($line)
-                                $script:uiState.Controls.lstLogOutput.SelectedIndex = $script:uiState.Controls.lstLogOutput.Items.Count - 1
-                            }
-
-                            # Now, check if it's a progress line and update the UI accordingly
-                            if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
-                                $percentage = [double]$matches[1]
-                                $message = $matches[2]
-
-                                # Update progress bar and status text
-                                $script:uiState.Controls.pbOverallProgress.Value = $percentage
-                                $script:uiState.Controls.txtStatus.Text = $message
-                            }
                         }
                     }
 
@@ -825,28 +723,6 @@ $script:uiState.Controls.btnRun.Add_Click({
                             # Close messaging context
                             Close-FFUMessagingContext -Context $msgContext
                             $script:uiState.Data.messagingContext = $null
-                        }
-
-                        # Final read of the log stream (fallback)
-                        if ($null -ne $script:uiState.Data.logStreamReader) {
-                            while ($null -ne ($line = $script:uiState.Data.logStreamReader.ReadLine())) {
-                                # Add the full line to the log view first
-                                $script:uiState.Data.logData.Add($line)
-                                $lastLine = $line
-
-                                # Now, check if it's a progress line and update the UI accordingly
-                                if ($line -match '\[PROGRESS\] (\d{1,3}) \| (.*)') {
-                                    $percentage = [double]$matches[1]
-                                    $message = $matches[2]
-
-                                    $script:uiState.Controls.pbOverallProgress.Value = $percentage
-                                    $script:uiState.Controls.txtStatus.Text = $message
-                                }
-                            }
-
-                            $script:uiState.Data.logStreamReader.Close()
-                            $script:uiState.Data.logStreamReader.Dispose()
-                            $script:uiState.Data.logStreamReader = $null
                         }
 
                         # Scroll to last line if auto-scroll enabled
@@ -975,13 +851,6 @@ $script:uiState.Controls.btnRun.Add_Click({
                 $script:uiState.Data.messagingContext = $null
             }
 
-            # Clean up stream reader if it was opened
-            if ($null -ne $script:uiState.Data.logStreamReader) {
-                $script:uiState.Data.logStreamReader.Close()
-                $script:uiState.Data.logStreamReader.Dispose()
-                $script:uiState.Data.logStreamReader = $null
-            }
-
             # Re-enable UI elements
             $script:uiState.Controls.txtStatus.Text = "FFU build failed to start."
             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
@@ -1025,13 +894,6 @@ $window.Add_Closed({
                 Request-FFUCancellation -Context $script:uiState.Data.messagingContext
                 Close-FFUMessagingContext -Context $script:uiState.Data.messagingContext
                 $script:uiState.Data.messagingContext = $null
-            }
-
-            # Close the log stream
-            if ($null -ne $script:uiState.Data.logStreamReader) {
-                $script:uiState.Data.logStreamReader.Close()
-                $script:uiState.Data.logStreamReader.Dispose()
-                $script:uiState.Data.logStreamReader = $null
             }
 
             # Stop and remove the job
