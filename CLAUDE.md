@@ -64,6 +64,22 @@ This fork focuses on addressing critical bugs (#327, #324, #319, #318, #301, #29
 
 ## Architecture
 
+### Param Block Coupling
+
+**Why this coupling exists:** PowerShell param blocks are evaluated at parse time, before any module imports execute. Using `[FFUConstants]::CONSTANT` in param defaults causes failure when scripts run in ThreadJob contexts with different working directories, because the module cannot be loaded during parse.
+
+**Coupled parameters in BuildFFUVM.ps1:**
+
+| Parameter | Default Value | FFU.Constants Property |
+|-----------|---------------|------------------------|
+| Memory | 4GB (4294967296) | DEFAULT_VM_MEMORY |
+| Disksize | 50GB (53687091200) | DEFAULT_VHDX_SIZE |
+| Processors | 4 | DEFAULT_VM_PROCESSORS |
+
+**Maintenance Note:** If you change values in `FFU.Constants.psm1`, you MUST also update the corresponding param defaults in `BuildFFUVM.ps1` (lines 7-18).
+
+Reference: BuildFFUVM.ps1 contains inline comments at lines 7-18 explaining this coupling.
+
 ## Workflow Requirements
 
 ### Mandatory Steps for Every Code Change
