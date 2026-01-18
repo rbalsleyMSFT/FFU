@@ -75,21 +75,13 @@ function Write-ADKValidationLog {
         }
     }
 
-    # Also write to console with color coding
-    $color = switch ($Severity) {
-        'Info'     { 'Gray' }
-        'Success'  { 'Green' }
-        'Warning'  { 'Yellow' }
-        'Error'    { 'Red' }
-        'Critical' { 'Red' }
-    }
+    # Also write to verbose output for diagnostics (console output removed for background job compatibility)
+    Write-Verbose $logMessage
 
-    Write-Host $logMessage -ForegroundColor $color
-
-    # Write context to console as well
+    # Write context to verbose as well
     if ($Context.Count -gt 0) {
         foreach ($key in $Context.Keys) {
-            Write-Host "    $key : $($Context[$key])" -ForegroundColor $color
+            Write-Verbose "    $key : $($Context[$key])"
         }
     }
 }
@@ -510,26 +502,26 @@ function Test-ADKPrerequisites {
         Write-ADKValidationLog -Severity Critical -Message "=== ADK pre-flight validation FAILED ==="
         Write-ADKValidationLog -Severity Error -Message "$($result.Errors.Count) error(s) detected"
 
-        # Display detailed error report based on failure type
+        # Display detailed error report based on failure type (logged for UI visibility)
         if (-not $result.ADKInstalled) {
-            Write-Host $script:ADKErrorMessageTemplates.ADKNotInstalled -ForegroundColor Red
+            WriteLog $script:ADKErrorMessageTemplates.ADKNotInstalled
         }
         elseif (-not $result.DeploymentToolsInstalled) {
             try {
                 $adkRegKey = Get-InstalledProgramRegKey -DisplayName "Windows Assessment and Deployment Kit"
                 $bundlePath = $adkRegKey.GetValue("BundleCachePath")
-                Write-Host ($script:ADKErrorMessageTemplates.DeploymentToolsMissing -f $bundlePath) -ForegroundColor Red
+                WriteLog ($script:ADKErrorMessageTemplates.DeploymentToolsMissing -f $bundlePath)
             }
             catch {
-                Write-Host ($script:ADKErrorMessageTemplates.DeploymentToolsMissing -f "<ADK installer path not found>") -ForegroundColor Red
+                WriteLog ($script:ADKErrorMessageTemplates.DeploymentToolsMissing -f "<ADK installer path not found>")
             }
         }
         elseif (-not $result.WinPEAddOnInstalled) {
-            Write-Host $script:ADKErrorMessageTemplates.WinPEMissing -ForegroundColor Red
+            WriteLog $script:ADKErrorMessageTemplates.WinPEMissing
         }
         elseif ($result.MissingFiles.Count -gt 0) {
             $missingFilesList = ($result.MissingFiles | ForEach-Object { "  - $_" }) -join "`n"
-            Write-Host ($script:ADKErrorMessageTemplates.MissingCriticalFiles -f $missingFilesList) -ForegroundColor Red
+            WriteLog ($script:ADKErrorMessageTemplates.MissingCriticalFiles -f $missingFilesList)
         }
 
         if ($ThrowOnFailure) {
