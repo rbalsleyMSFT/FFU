@@ -1217,10 +1217,10 @@ function Test-FFUWimMount {
         if ($details.WimMountFilterLoaded) {
             # WimMount is loaded - all good!
             $stopwatch.Stop()
-            New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
+            return (New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
                 -Message 'WimMount filter is loaded and functional' `
                 -Details $details `
-                -DurationMs $stopwatch.ElapsedMilliseconds
+                -DurationMs $stopwatch.ElapsedMilliseconds)
         }
 
         # WimMount not found in filters - gather diagnostic info before attempting repair
@@ -1388,10 +1388,10 @@ function Test-FFUWimMount {
                 $errors.Clear()
                 $stopwatch.Stop()
 
-                New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
+                return (New-FFUCheckResult -CheckName 'WimMount' -Status 'Passed' `
                     -Message 'WimMount filter loaded after automatic repair' `
                     -Details $details `
-                    -DurationMs $stopwatch.ElapsedMilliseconds
+                    -DurationMs $stopwatch.ElapsedMilliseconds)
             }
             else {
                 $details.RemediationActions.Add('Filter still not loaded after repair attempt')
@@ -1490,6 +1490,439 @@ If WimMount is not listed, run:
 
 Or contact support with the error details above.
 "@ `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+}
+
+function Test-FFUVmxToolkit {
+    <#
+    .SYNOPSIS
+    Checks if vmxtoolkit PowerShell module is installed for VMware Workstation operations.
+
+    .DESCRIPTION
+    Validates that the vmxtoolkit module is available, which provides PowerShell cmdlets
+    for managing VMware Workstation VMs. This check is only required when using VMware
+    as the hypervisor.
+
+    If AttemptRemediation is specified, will attempt to install vmxtoolkit from PSGallery.
+
+    .PARAMETER AttemptRemediation
+    If specified, attempts to install vmxtoolkit from PSGallery if not found
+
+    .EXAMPLE
+    $result = Test-FFUVmxToolkit
+    if ($result.Status -ne 'Passed') { Write-Warning $result.Remediation }
+
+    .EXAMPLE
+    $result = Test-FFUVmxToolkit -AttemptRemediation
+    # Will automatically install vmxtoolkit if missing
+
+    .OUTPUTS
+    FFUCheckResult object with status, message, and remediation steps
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter()]
+        [switch]$AttemptRemediation
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    try {
+        # Check if vmxtoolkit module is installed
+        $module = Get-Module -ListAvailable -Name 'vmxtoolkit' -ErrorAction SilentlyContinue
+
+        if ($module) {
+            $stopwatch.Stop()
+            return New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Passed' `
+                -Message "vmxtoolkit v$($module.Version) installed" `
+                -Details @{
+                    ModuleVersion = $module.Version.ToString()
+                    ModulePath = $module.ModuleBase
+                } `
+                -DurationMs $stopwatch.ElapsedMilliseconds
+        }
+
+        # Module not found - try remediation if requested
+        if ($AttemptRemediation) {
+            WriteLog "vmxtoolkit not found, attempting to install from PSGallery..."
+            try {
+                # Check if PSGallery is registered
+                $gallery = Get-PSRepository -Name 'PSGallery' -ErrorAction SilentlyContinue
+                if (-not $gallery) {
+                    Register-PSRepository -Default -ErrorAction SilentlyContinue
+                }
+
+                # Install vmxtoolkit for current user (no admin required)
+                Install-Module -Name 'vmxtoolkit' -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+
+                # Verify installation
+                $module = Get-Module -ListAvailable -Name 'vmxtoolkit' -ErrorAction SilentlyContinue
+                if ($module) {
+                    $stopwatch.Stop()
+                    return New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Passed' `
+                        -Message "vmxtoolkit v$($module.Version) installed via remediation" `
+                        -Details @{
+                            ModuleVersion = $module.Version.ToString()
+                            ModulePath = $module.ModuleBase
+                            RemediationAttempted = $true
+                            RemediationSuccess = $true
+                        } `
+                        -DurationMs $stopwatch.ElapsedMilliseconds
+                }
+            }
+            catch {
+                WriteLog "Failed to install vmxtoolkit: $($_.Exception.Message)"
+                # Fall through to failure
+            }
+        }
+
+        # Module not found (and remediation failed or not attempted)
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Failed' `
+            -Message 'vmxtoolkit PowerShell module not installed (required for VMware Workstation)' `
+            -Details @{
+                RemediationAttempted = $AttemptRemediation.IsPresent
+                RemediationSuccess = $false
+            } `
+            -Remediation @"
+Install vmxtoolkit from PowerShell Gallery:
+    Install-Module -Name vmxtoolkit -Scope CurrentUser -Force
+
+Or for system-wide installation (requires admin):
+    Install-Module -Name vmxtoolkit -Scope AllUsers -Force
+
+Manual download: https://www.powershellgallery.com/packages/vmxtoolkit
+"@ `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+    catch {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Failed' `
+            -Message "Error checking vmxtoolkit: $($_.Exception.Message)" `
+            -Remediation 'Install-Module -Name vmxtoolkit -Scope CurrentUser -Force' `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+}
+
+function Test-FFUHyperVSwitchConflict {
+    <#
+    .SYNOPSIS
+    Checks for Hyper-V External Virtual Switch conflicts when using VMware.
+
+    .DESCRIPTION
+    When using VMware Workstation Pro on a system with an existing Hyper-V External
+    Virtual Switch, VMware's auto-bridging may select the wrong network adapter.
+
+    The Hyper-V External switch bridges to a physical NIC (e.g., WiFi), causing
+    VMware to auto-bridge to a different NIC (e.g., disconnected Ethernet).
+    This results in Error 53 (network path not found) during FFU capture.
+
+    This check is only performed when HypervisorType is 'VMware'.
+
+    .PARAMETER HypervisorType
+    The hypervisor being used. Check only runs for 'VMware'.
+
+    .EXAMPLE
+    $result = Test-FFUHyperVSwitchConflict -HypervisorType 'VMware'
+    if ($result.Status -eq 'Failed') {
+        Write-Error $result.Message
+        Write-Information $result.Remediation
+    }
+
+    .OUTPUTS
+    FFUCheckResult object with status, message, and remediation steps
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('HyperV', 'VMware', 'Auto')]
+        [string]$HypervisorType = 'HyperV'
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    # Skip if not VMware
+    if ($HypervisorType -ne 'VMware') {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'HyperVSwitchConflict' -Status 'Skipped' `
+            -Message "Hyper-V switch conflict check skipped (HypervisorType: $HypervisorType)" `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+
+    try {
+        # Check for External Hyper-V switches
+        $externalSwitches = Get-VMSwitch -ErrorAction SilentlyContinue |
+            Where-Object { $_.SwitchType -eq 'External' }
+
+        $stopwatch.Stop()
+
+        if ($externalSwitches) {
+            # BLOCKING - External switch found
+            $switchNames = ($externalSwitches | ForEach-Object { $_.Name }) -join ', '
+            $remediation = @"
+Delete the Hyper-V External Virtual Switch before using VMware:
+
+1. Open Hyper-V Manager
+2. Go to Virtual Switch Manager (right panel)
+3. Select the switch: $switchNames
+4. Click 'Remove' and confirm
+
+Or run PowerShell (Admin):
+   Remove-VMSwitch -Name '$($externalSwitches[0].Name)' -Force
+
+WHY THIS IS REQUIRED:
+The External switch bridges to a physical adapter, causing VMware
+to auto-bridge to a different (possibly disconnected) adapter.
+This results in Error 53 (network path not found) during FFU capture.
+
+After removing the switch, VMware will correctly auto-bridge to
+your connected network adapter.
+"@
+            return New-FFUCheckResult -CheckName 'HyperVSwitchConflict' -Status 'Failed' `
+                -Message "External Hyper-V virtual switch detected: $switchNames. This conflicts with VMware bridged networking." `
+                -Remediation $remediation `
+                -Details @{
+                    Switches = @($externalSwitches | ForEach-Object { $_.Name })
+                    SwitchType = 'External'
+                    Count = $externalSwitches.Count
+                } `
+                -DurationMs $stopwatch.ElapsedMilliseconds
+        }
+
+        return New-FFUCheckResult -CheckName 'HyperVSwitchConflict' -Status 'Passed' `
+            -Message 'No External Hyper-V virtual switches found - VMware bridged networking will work correctly' `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+    catch {
+        $stopwatch.Stop()
+        # If we can't check (e.g., Hyper-V not installed), pass - the conflict can't exist
+        return New-FFUCheckResult -CheckName 'HyperVSwitchConflict' -Status 'Passed' `
+            -Message "Hyper-V switch check passed (Hyper-V not accessible: $($_.Exception.Message))" `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+}
+
+function Test-FFUVMwareBridgeConfiguration {
+    <#
+    .SYNOPSIS
+    Pre-flight check for VMware bridge network adapter configuration.
+
+    .DESCRIPTION
+    Validates that VMware Workstation Pro bridging will use the correct network
+    adapter during FFU builds. Detects the recommended adapter (with internet
+    connectivity) and warns about problematic adapters like GlobalProtect VPN.
+
+    Issues detected:
+    - GlobalProtect/PANGPS VPN adapters present (can cause VMware to bridge wrong)
+    - Multiple adapters with network connectivity (ambiguous auto-bridge selection)
+    - No netmap.conf file (VMware network not configured)
+
+    This check is WARNING-level, not blocking, because:
+    - VMware may auto-select the correct adapter
+    - User may have already configured bridging manually
+    - The issue only manifests during FFU capture, not VM creation
+
+    .PARAMETER HypervisorType
+    The hypervisor being used. Check only runs for 'VMware'.
+
+    .EXAMPLE
+    $result = Test-FFUVMwareBridgeConfiguration -HypervisorType 'VMware'
+    if ($result.Status -eq 'Warning') {
+        Write-Warning $result.Message
+        Write-Information $result.Remediation
+    }
+
+    .OUTPUTS
+    FFUCheckResult object with status, message, and remediation steps
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('HyperV', 'VMware', 'Auto')]
+        [string]$HypervisorType = 'HyperV'
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    # Skip if not VMware
+    if ($HypervisorType -ne 'VMware') {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VMwareBridgeConfig' -Status 'Skipped' `
+            -Message "VMware bridge configuration check skipped (HypervisorType: $HypervisorType)" `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+
+    # Patterns to exclude from bridging (VPN and problematic adapters)
+    $excludePatterns = @(
+        '*PANGP*',
+        '*GlobalProtect*',
+        '*Palo Alto*',
+        '*Cisco AnyConnect*',
+        '*Juniper*',
+        '*VPN*',
+        '*Tunnel*'
+    )
+
+    $details = @{
+        RecommendedAdapter     = $null
+        RecommendedAdapterGUID = $null
+        ProblematicAdapters    = @()
+        ConnectedAdapters      = @()
+        NetmapExists           = $false
+        VMnetBridgeBindCount   = 0
+    }
+
+    try {
+        # Check if netmap.conf exists (indicates user has configured networking)
+        $netmapPath = "C:\ProgramData\VMware\netmap.conf"
+        $details.NetmapExists = Test-Path $netmapPath
+
+        # Get adapters bound to VMnetBridge
+        $linkage = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\VMnetBridge\Linkage' -ErrorAction SilentlyContinue
+        if ($linkage -and $linkage.Bind) {
+            $details.VMnetBridgeBindCount = $linkage.Bind.Count
+        }
+
+        # Find adapters with internet connectivity
+        $gatewayConfigs = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null }
+
+        foreach ($config in $gatewayConfigs) {
+            $adapter = Get-NetAdapter -InterfaceAlias $config.InterfaceAlias -ErrorAction SilentlyContinue
+            if (-not $adapter) { continue }
+
+            $adapterInfo = @{
+                Name        = $adapter.Name
+                Description = $adapter.InterfaceDescription
+                GUID        = $adapter.InterfaceGuid
+                MAC         = $adapter.MacAddress
+                Status      = $adapter.Status
+                IPv4        = ($config.IPv4Address | Select-Object -First 1).IPAddress
+            }
+
+            # Check if it's a problematic adapter
+            $isProblematic = $false
+            foreach ($pattern in $excludePatterns) {
+                if ($adapter.InterfaceDescription -like $pattern -or $adapter.Name -like $pattern) {
+                    $isProblematic = $true
+                    $details.ProblematicAdapters += $adapterInfo
+                    break
+                }
+            }
+
+            if (-not $isProblematic) {
+                $details.ConnectedAdapters += $adapterInfo
+
+                # Test actual internet connectivity
+                if (-not $details.RecommendedAdapter) {
+                    $testResult = Test-NetConnection -ComputerName "8.8.8.8" -WarningAction SilentlyContinue
+                    if ($testResult.PingSucceeded) {
+                        $details.RecommendedAdapter = $adapterInfo.Description
+                        $details.RecommendedAdapterGUID = $adapterInfo.GUID
+                    }
+                }
+            }
+        }
+
+        $stopwatch.Stop()
+
+        # Determine result status and message
+        $issues = @()
+        $warnings = @()
+
+        # Check for problematic adapters
+        if ($details.ProblematicAdapters.Count -gt 0) {
+            $problematicNames = ($details.ProblematicAdapters | ForEach-Object { $_.Description }) -join ', '
+            $warnings += "VPN/problematic adapters detected: $problematicNames"
+        }
+
+        # Check if we found a recommended adapter
+        if (-not $details.RecommendedAdapter) {
+            $issues += "No suitable network adapter with internet connectivity found"
+        }
+
+        # Check if netmap.conf exists
+        if (-not $details.NetmapExists) {
+            $warnings += "VMware network not configured (netmap.conf not found)"
+        }
+
+        # Build result
+        if ($issues.Count -gt 0) {
+            # FAILED - No suitable adapter
+            $remediation = @"
+ISSUE: No network adapter with internet connectivity found.
+
+REQUIRED STEPS:
+1. Ensure your network adapter is connected and has internet access
+2. Check that your network adapter is not disabled
+3. Run 'Test-NetConnection -ComputerName 8.8.8.8' to verify connectivity
+"@
+            return New-FFUCheckResult -CheckName 'VMwareBridgeConfig' -Status 'Failed' `
+                -Message ($issues -join '; ') `
+                -Details $details `
+                -Remediation $remediation `
+                -DurationMs $stopwatch.ElapsedMilliseconds
+        }
+        elseif ($warnings.Count -gt 0) {
+            # WARNING - Potential bridge issues
+            $problematicList = if ($details.ProblematicAdapters.Count -gt 0) {
+                "`nProblematic adapters to EXCLUDE:`n" + ($details.ProblematicAdapters | ForEach-Object { "  - $($_.Description)" } | Out-String)
+            }
+            else { "" }
+
+            $remediation = @"
+RECOMMENDED: Configure VMware bridging to use the correct adapter.
+
+Your recommended adapter: $($details.RecommendedAdapter)
+$problematicList
+STEPS TO CONFIGURE:
+1. Open VMware Virtual Network Editor:
+   - Run: "C:\Program Files (x86)\VMware\VMware Workstation\vmnetcfg.exe"
+   - Or: In VMware Workstation, go to Edit > Virtual Network Editor
+
+2. Click 'Change Settings' (requires Administrator)
+
+3. Select 'VMnet0 (Bridged)' from the list
+
+4. Change 'Bridged to:' from 'Automatic' to:
+   '$($details.RecommendedAdapter)'
+
+5. (Optional) Click 'Automatic Settings' and UNCHECK any VPN adapters:
+   - PANGP Virtual Ethernet Adapter
+   - GlobalProtect adapters
+   - Any other VPN adapters
+
+6. Click 'Apply' and 'OK'
+
+WHY THIS IS NEEDED:
+VMware's auto-bridging may select a VPN adapter or disconnected adapter
+instead of your active network adapter. This causes Error 53 (network
+path not found) during FFU capture when the VM cannot reach the host's
+network share.
+"@
+            return New-FFUCheckResult -CheckName 'VMwareBridgeConfig' -Status 'Warning' `
+                -Message "VMware bridging may select wrong adapter. Recommended: $($details.RecommendedAdapter). $($warnings -join '; ')" `
+                -Details $details `
+                -Remediation $remediation `
+                -DurationMs $stopwatch.ElapsedMilliseconds
+        }
+        else {
+            # PASSED - All good
+            return New-FFUCheckResult -CheckName 'VMwareBridgeConfig' -Status 'Passed' `
+                -Message "VMware bridging configured. Recommended adapter: $($details.RecommendedAdapter)" `
+                -Details $details `
+                -DurationMs $stopwatch.ElapsedMilliseconds
+        }
+    }
+    catch {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VMwareBridgeConfig' -Status 'Warning' `
+            -Message "Could not verify VMware bridge configuration: $($_.Exception.Message)" `
+            -Details $details `
+            -Remediation 'Manually verify VMware bridging is configured to use your active network adapter.' `
             -DurationMs $stopwatch.ElapsedMilliseconds
     }
 }
@@ -1957,37 +2390,35 @@ function Invoke-FFUPreflight {
     $result.RequiredDiskSpaceGB = $requirements.RequiredDiskSpaceGB
     $result.RequiredFeatures = $requirements.RequiredFeatures
 
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "   FFU Pre-Flight Validation" -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
+    Write-Information "`n========================================"
+    Write-Information "   FFU Pre-Flight Validation"
+    Write-Information "========================================`n"
 
     #region Tier 1: Critical Validations
-    Write-Host "[Tier 1] Critical Validations" -ForegroundColor Yellow
-    Write-Host "-----------------------------" -ForegroundColor Yellow
+    Write-Information "[Tier 1] Critical Validations"
+    Write-Information "-----------------------------"
 
     # Administrator check
-    Write-Host "  Checking Administrator privileges..." -NoNewline
     $adminResult = Test-FFUAdministrator
     $result.Tier1Results['Administrator'] = $adminResult
     if ($adminResult.Status -eq 'Passed') {
-        Write-Host " PASSED" -ForegroundColor Green
+        Write-Information "  Checking Administrator privileges... PASSED"
     }
     else {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Information "  Checking Administrator privileges... FAILED"
         $result.IsValid = $false
         $result.Errors.Add("Administrator: $($adminResult.Message)")
         $result.RemediationSteps.Add($adminResult.Remediation)
     }
 
     # PowerShell version check
-    Write-Host "  Checking PowerShell version..." -NoNewline
     $psResult = Test-FFUPowerShellVersion
     $result.Tier1Results['PowerShellVersion'] = $psResult
     if ($psResult.Status -eq 'Passed') {
-        Write-Host " PASSED ($($psResult.Details.Version))" -ForegroundColor Green
+        Write-Information "  Checking PowerShell version... PASSED ($($psResult.Details.Version))"
     }
     else {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Information "  Checking PowerShell version... FAILED"
         $result.IsValid = $false
         $result.Errors.Add("PowerShell: $($psResult.Message)")
         $result.RemediationSteps.Add($psResult.Remediation)
@@ -1995,28 +2426,25 @@ function Invoke-FFUPreflight {
 
     # Hyper-V check (only if using Hyper-V hypervisor and CreateVM is enabled)
     if ($requirements.NeedsHyperV) {
-        Write-Host "  Checking Hyper-V feature..." -NoNewline
         $hvResult = Test-FFUHyperV
         $result.Tier1Results['HyperV'] = $hvResult
         if ($hvResult.Status -eq 'Passed') {
-            Write-Host " PASSED" -ForegroundColor Green
+            Write-Information "  Checking Hyper-V feature... PASSED"
         }
         else {
-            Write-Host " FAILED" -ForegroundColor Red
+            Write-Information "  Checking Hyper-V feature... FAILED"
             $result.IsValid = $false
             $result.Errors.Add("Hyper-V: $($hvResult.Message)")
             $result.RemediationSteps.Add($hvResult.Remediation)
         }
     }
     elseif ($HypervisorType -eq 'VMware') {
-        Write-Host "  Checking Hyper-V feature..." -NoNewline
-        Write-Host " SKIPPED (using VMware)" -ForegroundColor DarkGray
+        Write-Information "  Checking Hyper-V feature... SKIPPED (using VMware)"
         $result.Tier1Results['HyperV'] = New-FFUCheckResult -CheckName 'HyperV' -Status 'Skipped' `
             -Message 'Hyper-V check skipped (VMware hypervisor selected)'
     }
     else {
-        Write-Host "  Hyper-V check..." -NoNewline
-        Write-Host " SKIPPED (CreateVM not enabled)" -ForegroundColor DarkGray
+        Write-Information "  Hyper-V check... SKIPPED (CreateVM not enabled)"
         $result.Tier1Results['HyperV'] = New-FFUCheckResult -CheckName 'HyperV' -Status 'Skipped' `
             -Message 'Hyper-V check skipped (CreateVM not enabled)'
     }
@@ -2024,72 +2452,141 @@ function Invoke-FFUPreflight {
     #endregion Tier 1
 
     #region Tier 2: Feature-Dependent Validations
-    Write-Host "`n[Tier 2] Feature-Dependent Validations" -ForegroundColor Yellow
-    Write-Host "---------------------------------------" -ForegroundColor Yellow
+    Write-Information "`n[Tier 2] Feature-Dependent Validations"
+    Write-Information "---------------------------------------"
 
     # ADK check (only if needed)
     if ($requirements.NeedsADK) {
-        Write-Host "  Checking Windows ADK..." -NoNewline
         $adkResult = Test-FFUADK -RequireWinPE $requirements.NeedsWinPE -WindowsArch $WindowsArch
         $result.Tier2Results['ADK'] = $adkResult
         if ($adkResult.Status -eq 'Passed') {
-            Write-Host " PASSED" -ForegroundColor Green
+            Write-Information "  Checking Windows ADK... PASSED"
         }
         else {
-            Write-Host " FAILED" -ForegroundColor Red
+            Write-Information "  Checking Windows ADK... FAILED"
             $result.IsValid = $false
             $result.Errors.Add("ADK: $($adkResult.Message)")
             $result.RemediationSteps.Add($adkResult.Remediation)
         }
     }
     else {
-        Write-Host "  Windows ADK check..." -NoNewline
-        Write-Host " SKIPPED (not required)" -ForegroundColor DarkGray
+        Write-Information "  Windows ADK check... SKIPPED (not required)"
         $result.Tier2Results['ADK'] = New-FFUCheckResult -CheckName 'ADK' -Status 'Skipped' `
             -Message 'ADK check skipped (no features require ADK)'
     }
 
     # WIM mount capability check (only if WinPE or DISM operations are needed)
     if ($requirements.NeedsWinPE -or $requirements.NeedsADK) {
-        Write-Host "  Checking WIM mount capability..." -NoNewline
         $wimMountResult = Test-FFUWimMount -AttemptRemediation
         $result.Tier2Results['WimMount'] = $wimMountResult
         if ($wimMountResult.Status -eq 'Passed') {
             $msg = if ($wimMountResult.Details.RemediationAttempted) { ' (after remediation)' } else { '' }
-            Write-Host " PASSED$msg" -ForegroundColor Green
+            Write-Information "  Checking WIM mount capability... PASSED$msg"
         }
         elseif ($wimMountResult.Status -eq 'Failed') {
             # v1.3.8: WIMMount failures are BLOCKING - both ADK dism.exe AND PowerShell DISM cmdlets require WIMMount
-            Write-Host " FAILED (BLOCKING)" -ForegroundColor Red
+            Write-Information "  Checking WIM mount capability... FAILED (BLOCKING)"
             $result.IsValid = $false
             $result.Errors.Add("WimMount: $($wimMountResult.Message)")
             $result.RemediationSteps.Add($wimMountResult.Remediation)
         }
         else {
             # Unexpected status (Warning or other - should not happen in v1.3.8+)
-            Write-Host " $($wimMountResult.Status.ToUpper())" -ForegroundColor Yellow
+            Write-Warning "  Checking WIM mount capability... $($wimMountResult.Status.ToUpper())"
             $result.HasWarnings = $true
             $result.Warnings.Add("WimMount: $($wimMountResult.Message)")
         }
     }
     else {
-        Write-Host "  WIM mount check..." -NoNewline
-        Write-Host " SKIPPED (not required)" -ForegroundColor DarkGray
+        Write-Information "  WIM mount check... SKIPPED (not required)"
         $result.Tier2Results['WimMount'] = New-FFUCheckResult -CheckName 'WimMount' -Status 'Skipped' `
             -Message 'WIM mount check skipped (no features require DISM mount operations)'
     }
 
+    # vmxtoolkit check (only if using VMware hypervisor)
+    if ($HypervisorType -eq 'VMware') {
+        $vmxToolkitResult = Test-FFUVmxToolkit -AttemptRemediation
+        $result.Tier2Results['VmxToolkit'] = $vmxToolkitResult
+        if ($vmxToolkitResult.Status -eq 'Passed') {
+            $msg = if ($vmxToolkitResult.Details.RemediationAttempted) { ' (installed)' } else { '' }
+            Write-Information "  Checking vmxtoolkit module... PASSED$msg"
+        }
+        else {
+            Write-Information "  Checking vmxtoolkit module... FAILED"
+            $result.IsValid = $false
+            $result.Errors.Add("VmxToolkit: $($vmxToolkitResult.Message)")
+            $result.RemediationSteps.Add($vmxToolkitResult.Remediation)
+        }
+    }
+    else {
+        Write-Information "  vmxtoolkit check... SKIPPED (not using VMware)"
+        $result.Tier2Results['VmxToolkit'] = New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Skipped' `
+            -Message 'vmxtoolkit check skipped (not using VMware hypervisor)'
+    }
+
+    # Hyper-V switch conflict check (only if using VMware hypervisor)
+    if ($HypervisorType -eq 'VMware') {
+        $switchConflictResult = Test-FFUHyperVSwitchConflict -HypervisorType $HypervisorType
+        $result.Tier2Results['HyperVSwitchConflict'] = $switchConflictResult
+        if ($switchConflictResult.Status -eq 'Passed') {
+            Write-Information "  Checking for Hyper-V switch conflicts... PASSED"
+        }
+        elseif ($switchConflictResult.Status -eq 'Failed') {
+            Write-Information "  Checking for Hyper-V switch conflicts... FAILED"
+            $result.IsValid = $false
+            $result.Errors.Add("Hyper-V Switch Conflict: $($switchConflictResult.Message)")
+            if ($switchConflictResult.Remediation) {
+                $result.RemediationSteps.Add($switchConflictResult.Remediation)
+            }
+        }
+    }
+    else {
+        Write-Information "  Hyper-V switch conflict check... SKIPPED (not using VMware)"
+        $result.Tier2Results['HyperVSwitchConflict'] = New-FFUCheckResult -CheckName 'HyperVSwitchConflict' -Status 'Skipped' `
+            -Message 'Hyper-V switch conflict check skipped (not using VMware hypervisor)'
+    }
+
+    # VMware bridge configuration check (only if using VMware hypervisor)
+    if ($HypervisorType -eq 'VMware') {
+        $bridgeConfigResult = Test-FFUVMwareBridgeConfiguration -HypervisorType $HypervisorType
+        $result.Tier2Results['VMwareBridgeConfig'] = $bridgeConfigResult
+        if ($bridgeConfigResult.Status -eq 'Passed') {
+            Write-Information "  Checking VMware bridge configuration... PASSED"
+        }
+        elseif ($bridgeConfigResult.Status -eq 'Warning') {
+            Write-Warning "  Checking VMware bridge configuration... WARNING"
+            $result.HasWarnings = $true
+            $result.Warnings.Add("VMware Bridge: $($bridgeConfigResult.Message)")
+            # Store remediation for display (non-blocking warning)
+            if ($bridgeConfigResult.Remediation) {
+                $result.RemediationSteps.Add($bridgeConfigResult.Remediation)
+            }
+        }
+        elseif ($bridgeConfigResult.Status -eq 'Failed') {
+            Write-Information "  Checking VMware bridge configuration... FAILED"
+            $result.IsValid = $false
+            $result.Errors.Add("VMware Bridge: $($bridgeConfigResult.Message)")
+            if ($bridgeConfigResult.Remediation) {
+                $result.RemediationSteps.Add($bridgeConfigResult.Remediation)
+            }
+        }
+    }
+    else {
+        Write-Information "  VMware bridge configuration check... SKIPPED (not using VMware)"
+        $result.Tier2Results['VMwareBridgeConfig'] = New-FFUCheckResult -CheckName 'VMwareBridgeConfig' -Status 'Skipped' `
+            -Message 'VMware bridge configuration check skipped (not using VMware hypervisor)'
+    }
+
     # Disk space check
-    Write-Host "  Checking disk space..." -NoNewline
     $diskResult = Test-FFUDiskSpace -FFUDevelopmentPath $FFUDevelopmentPath `
                                     -Features $Features -VHDXSizeGB $VHDXSizeGB
     $result.Tier2Results['DiskSpace'] = $diskResult
     $result.AvailableDiskSpaceGB = $diskResult.Details.AvailableGB
     if ($diskResult.Status -eq 'Passed') {
-        Write-Host " PASSED ($($diskResult.Details.AvailableGB)GB free)" -ForegroundColor Green
+        Write-Information "  Checking disk space... PASSED ($($diskResult.Details.AvailableGB)GB free)"
     }
     else {
-        Write-Host " FAILED" -ForegroundColor Red
+        Write-Information "  Checking disk space... FAILED"
         $result.IsValid = $false
         $result.Errors.Add("DiskSpace: $($diskResult.Message)")
         $result.RemediationSteps.Add($diskResult.Remediation)
@@ -2097,14 +2594,13 @@ function Invoke-FFUPreflight {
 
     # Network check (only if needed)
     if ($requirements.NeedsNetwork) {
-        Write-Host "  Checking network connectivity..." -NoNewline
         $netResult = Test-FFUNetwork -Features $Features
         $result.Tier2Results['Network'] = $netResult
         if ($netResult.Status -eq 'Passed') {
-            Write-Host " PASSED" -ForegroundColor Green
+            Write-Information "  Checking network connectivity... PASSED"
         }
         elseif ($netResult.Status -eq 'Warning') {
-            Write-Host " WARNING" -ForegroundColor Yellow
+            Write-Warning "  Checking network connectivity... WARNING"
             $result.HasWarnings = $true
             $result.Warnings.Add("Network: $($netResult.Message)")
             if ($WarningsAsErrors) {
@@ -2113,40 +2609,37 @@ function Invoke-FFUPreflight {
             }
         }
         else {
-            Write-Host " FAILED" -ForegroundColor Red
+            Write-Information "  Checking network connectivity... FAILED"
             $result.IsValid = $false
             $result.Errors.Add("Network: $($netResult.Message)")
             $result.RemediationSteps.Add($netResult.Remediation)
         }
     }
     else {
-        Write-Host "  Network connectivity check..." -NoNewline
-        Write-Host " SKIPPED (not required)" -ForegroundColor DarkGray
+        Write-Information "  Network connectivity check... SKIPPED (not required)"
         $result.Tier2Results['Network'] = New-FFUCheckResult -CheckName 'Network' -Status 'Skipped' `
             -Message 'Network check skipped (no features require network)'
     }
 
     # Configuration file check
     if ($ConfigFile) {
-        Write-Host "  Validating configuration file..." -NoNewline
         $configResult = Test-FFUConfigurationFile -ConfigFilePath $ConfigFile
         $result.Tier2Results['Configuration'] = $configResult
         if ($configResult.Status -eq 'Passed') {
-            Write-Host " PASSED" -ForegroundColor Green
+            Write-Information "  Validating configuration file... PASSED"
         }
         elseif ($configResult.Status -eq 'Skipped') {
-            Write-Host " SKIPPED" -ForegroundColor DarkGray
+            Write-Information "  Validating configuration file... SKIPPED"
         }
         else {
-            Write-Host " FAILED" -ForegroundColor Red
+            Write-Information "  Validating configuration file... FAILED"
             $result.IsValid = $false
             $result.Errors.Add("Configuration: $($configResult.Message)")
             $result.RemediationSteps.Add($configResult.Remediation)
         }
     }
     else {
-        Write-Host "  Configuration file check..." -NoNewline
-        Write-Host " SKIPPED (no config file)" -ForegroundColor DarkGray
+        Write-Information "  Configuration file check... SKIPPED (no config file)"
         $result.Tier2Results['Configuration'] = New-FFUCheckResult -CheckName 'Configuration' -Status 'Skipped' `
             -Message 'Configuration check skipped (no config file specified)'
     }
@@ -2154,21 +2647,20 @@ function Invoke-FFUPreflight {
     #endregion Tier 2
 
     #region Tier 3: Recommended Validations
-    Write-Host "`n[Tier 3] Recommended Validations (Warnings)" -ForegroundColor Yellow
-    Write-Host "--------------------------------------------" -ForegroundColor Yellow
+    Write-Information "`n[Tier 3] Recommended Validations (Warnings)"
+    Write-Information "--------------------------------------------"
 
     # Antivirus exclusions check
-    Write-Host "  Checking antivirus exclusions..." -NoNewline
     $avResult = Test-FFUAntivirusExclusions -FFUDevelopmentPath $FFUDevelopmentPath
     $result.Tier3Results['AntivirusExclusions'] = $avResult
     if ($avResult.Status -eq 'Passed') {
-        Write-Host " PASSED" -ForegroundColor Green
+        Write-Information "  Checking antivirus exclusions... PASSED"
     }
     elseif ($avResult.Status -eq 'Skipped') {
-        Write-Host " SKIPPED" -ForegroundColor DarkGray
+        Write-Information "  Checking antivirus exclusions... SKIPPED"
     }
     elseif ($avResult.Status -eq 'Warning') {
-        Write-Host " WARNING" -ForegroundColor Yellow
+        Write-Warning "  Checking antivirus exclusions... WARNING"
         $result.HasWarnings = $true
         $result.Warnings.Add("Antivirus: $($avResult.Message)")
         if ($WarningsAsErrors) {
@@ -2182,10 +2674,9 @@ function Invoke-FFUPreflight {
 
     #region Tier 4: Cleanup Operations
     if (-not $SkipCleanup) {
-        Write-Host "`n[Tier 4] Pre-Build Cleanup" -ForegroundColor Yellow
-        Write-Host "--------------------------" -ForegroundColor Yellow
+        Write-Information "`n[Tier 4] Pre-Build Cleanup"
+        Write-Information "--------------------------"
 
-        Write-Host "  Performing DISM cleanup..." -NoNewline
         $cleanupResult = Invoke-FFUDISMCleanup -FFUDevelopmentPath $FFUDevelopmentPath
         $result.Tier4Results['DISMCleanup'] = $cleanupResult
         $result.CleanupPerformed = $cleanupResult.Details.CleanupActions
@@ -2196,23 +2687,22 @@ function Invoke-FFUPreflight {
                            $cleanupResult.Details.OrphanedVHDsCleaned +
                            $cleanupResult.Details.MountedImagesDismounted
             if ($cleanedCount -gt 0) {
-                Write-Host " DONE ($cleanedCount items cleaned)" -ForegroundColor Green
+                Write-Information "  Performing DISM cleanup... DONE ($cleanedCount items cleaned)"
             }
             else {
-                Write-Host " DONE (already clean)" -ForegroundColor Green
+                Write-Information "  Performing DISM cleanup... DONE (already clean)"
             }
         }
         else {
-            Write-Host " WARNING" -ForegroundColor Yellow
+            Write-Warning "  Performing DISM cleanup... WARNING"
             $result.HasWarnings = $true
             $result.Warnings.Add("Cleanup: $($cleanupResult.Message)")
         }
     }
     else {
-        Write-Host "`n[Tier 4] Pre-Build Cleanup" -ForegroundColor Yellow
-        Write-Host "--------------------------" -ForegroundColor Yellow
-        Write-Host "  DISM cleanup..." -NoNewline
-        Write-Host " SKIPPED (SkipCleanup specified)" -ForegroundColor DarkGray
+        Write-Information "`n[Tier 4] Pre-Build Cleanup"
+        Write-Information "--------------------------"
+        Write-Information "  DISM cleanup... SKIPPED (SkipCleanup specified)"
         $result.Tier4Results['DISMCleanup'] = New-FFUCheckResult -CheckName 'DISMCleanup' -Status 'Skipped' `
             -Message 'Cleanup skipped (SkipCleanup specified)'
     }
@@ -2224,32 +2714,146 @@ function Invoke-FFUPreflight {
     $result.ValidationDurationMs = $overallStopwatch.ElapsedMilliseconds
 
     # Print summary
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "   Validation Summary" -ForegroundColor Cyan
-    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Information "`n========================================"
+    Write-Information "   Validation Summary"
+    Write-Information "========================================"
 
     if ($result.IsValid) {
-        Write-Host "`n  STATUS: PASSED" -ForegroundColor Green
+        Write-Information "`n  STATUS: PASSED"
         if ($result.HasWarnings) {
-            Write-Host "  Warnings: $($result.Warnings.Count)" -ForegroundColor Yellow
+            Write-Warning "  Warnings: $($result.Warnings.Count)"
         }
     }
     else {
-        Write-Host "`n  STATUS: FAILED" -ForegroundColor Red
-        Write-Host "  Errors: $($result.Errors.Count)" -ForegroundColor Red
+        Write-Information "`n  STATUS: FAILED"
+        Write-Information "  Errors: $($result.Errors.Count)"
         if ($result.HasWarnings) {
-            Write-Host "  Warnings: $($result.Warnings.Count)" -ForegroundColor Yellow
+            Write-Warning "  Warnings: $($result.Warnings.Count)"
         }
     }
 
-    Write-Host "  Duration: $($result.ValidationDurationMs)ms" -ForegroundColor Gray
-    Write-Host "  Disk Space: $($result.AvailableDiskSpaceGB)GB available, $($result.RequiredDiskSpaceGB)GB required" -ForegroundColor Gray
-    Write-Host "`n========================================`n" -ForegroundColor Cyan
+    Write-Information "  Duration: $($result.ValidationDurationMs)ms"
+    Write-Information "  Disk Space: $($result.AvailableDiskSpaceGB)GB available, $($result.RequiredDiskSpaceGB)GB required"
+    Write-Information "`n========================================`n"
 
     $result
 }
 
 #endregion Main Orchestrator
+
+#region VMware Driver Validation
+
+function Test-FFUVMwareDrivers {
+    <#
+    .SYNOPSIS
+    Validates VMware network drivers are available for WinPE capture.
+
+    .DESCRIPTION
+    Checks if the VMwareDrivers folder exists and contains Intel e1000e drivers
+    needed for WinPE network connectivity when running FFU capture on VMware
+    Workstation Pro. VMware uses e1000e (Intel 82574L) emulated NICs by default,
+    which WinPE doesn't include drivers for.
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path where VMwareDrivers folder should be located.
+
+    .PARAMETER HypervisorType
+    The hypervisor type being used. Only performs validation when 'VMware'.
+
+    .OUTPUTS
+    [PSCustomObject] with Status, Message, Details, and Remediation properties.
+
+    .EXAMPLE
+    $result = Test-FFUVMwareDrivers -FFUDevelopmentPath "C:\FFU" -HypervisorType "VMware"
+    if ($result.Status -eq 'Warning') { Write-Warning $result.Message }
+
+    .NOTES
+    This is an informational check. If VMwareDrivers folder is missing, drivers
+    will be auto-downloaded during WinPE media creation (see FFU.Media module).
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('HyperV', 'VMware', 'Auto')]
+        [string]$HypervisorType = 'HyperV'
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    # Skip check for Hyper-V
+    if ($HypervisorType -ne 'VMware') {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VMwareDrivers' -Status 'Skipped' `
+            -Message "VMware driver check skipped (HypervisorType: $HypervisorType)" `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+
+    $vmwareDriversPath = Join-Path $FFUDevelopmentPath "VMwareDrivers"
+
+    # Check if VMwareDrivers folder exists
+    if (-not (Test-Path $vmwareDriversPath)) {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VMwareDrivers' -Status 'Passed' `
+            -Message "VMwareDrivers folder not present. Intel e1000e drivers will be auto-downloaded during build." `
+            -Details @{
+                ExpectedPath = $vmwareDriversPath
+                AutoDownload = $true
+            } `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+
+    # Check for INF files in the folder
+    $infFiles = Get-ChildItem -Path $vmwareDriversPath -Filter "*.inf" -Recurse -ErrorAction SilentlyContinue
+    if ($infFiles.Count -eq 0) {
+        $stopwatch.Stop()
+        return New-FFUCheckResult -CheckName 'VMwareDrivers' -Status 'Warning' `
+            -Message "VMwareDrivers folder exists but contains no driver files (*.inf)" `
+            -Details @{
+                Path = $vmwareDriversPath
+                InfCount = 0
+            } `
+            -Remediation @"
+Either:
+1. Delete the VMwareDrivers folder to trigger auto-download during build
+2. Manually add Intel e1000e driver INF files from:
+   https://www.intel.com/content/www/us/en/content-details/30080/intel-ethernet-adapter-complete-driver-pack.html
+"@ `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+
+    # Check for e1000e specifically
+    $e1000eInf = $infFiles | Where-Object { $_.Name -like "*e1000*" -or $_.Name -eq "e1000e.inf" }
+
+    $stopwatch.Stop()
+    if ($e1000eInf) {
+        return New-FFUCheckResult -CheckName 'VMwareDrivers' -Status 'Passed' `
+            -Message "VMwareDrivers folder ready with $($infFiles.Count) driver file(s) including e1000e" `
+            -Details @{
+                Path = $vmwareDriversPath
+                InfCount = $infFiles.Count
+                E1000eFound = $true
+                DriverFiles = ($infFiles | Select-Object -ExpandProperty Name) -join ', '
+            } `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+    else {
+        return New-FFUCheckResult -CheckName 'VMwareDrivers' -Status 'Passed' `
+            -Message "VMwareDrivers folder contains $($infFiles.Count) driver file(s)" `
+            -Details @{
+                Path = $vmwareDriversPath
+                InfCount = $infFiles.Count
+                E1000eFound = $false
+                DriverFiles = ($infFiles | Select-Object -ExpandProperty Name) -join ', '
+            } `
+            -DurationMs $stopwatch.ElapsedMilliseconds
+    }
+}
+
+#endregion VMware Driver Validation
 
 # Export all public functions
 Export-ModuleMember -Function @(
@@ -2265,6 +2869,10 @@ Export-ModuleMember -Function @(
     'Test-FFUNetwork',
     'Test-FFUConfigurationFile',
     'Test-FFUWimMount',
+    'Test-FFUVmxToolkit',
+    'Test-FFUHyperVSwitchConflict',
+    'Test-FFUVMwareDrivers',
+    'Test-FFUVMwareBridgeConfiguration',
     # Tier 3: Recommended (Warnings Only)
     'Test-FFUAntivirusExclusions',
     # Tier 4: Cleanup (Pre-Remediation)
