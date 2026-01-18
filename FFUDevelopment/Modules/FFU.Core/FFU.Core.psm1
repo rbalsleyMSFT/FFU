@@ -1839,7 +1839,7 @@ function Test-FFUConfiguration {
     .EXAMPLE
     $result = Test-FFUConfiguration -ConfigPath "C:\FFU\config\my-config.json"
     if ($result.IsValid) {
-        Write-Host "Configuration is valid"
+        Write-Output "Configuration is valid"
     } else {
         $result.Errors | ForEach-Object { Write-Error $_ }
     }
@@ -2146,7 +2146,7 @@ function Get-FFUConfigurationSchema {
 
     .EXAMPLE
     $schemaPath = Get-FFUConfigurationSchema
-    Write-Host "Schema located at: $schemaPath"
+    Write-Output "Schema located at: $schemaPath"
 
     .OUTPUTS
     System.String - Full path to the schema file
@@ -2306,13 +2306,13 @@ function Invoke-FailureCleanup {
         [string]$ResourceType = 'All'
     )
 
-    # Safe logging helper
+    # Safe logging helper (Write-Verbose fallback for background job compatibility)
     $log = {
         param([string]$Message)
         if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
             WriteLog $Message
         } else {
-            Write-Host $Message
+            Write-Verbose $Message
         }
     }
 
