@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.15'
+    ModuleVersion = '1.0.16'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -88,7 +88,9 @@
         # Script integrity verification (v1.0.15 - SEC-03)
         'Test-ScriptIntegrity',
         'New-OrchestrationHashManifest',
-        'Update-OrchestrationHashManifest'
+        'Update-OrchestrationHashManifest',
+        # Build cancellation helper (v1.0.16)
+        'Test-BuildCancellation'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
@@ -119,7 +121,17 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.15
+# Release Notes - FFU.Core v1.0.16
+
+## v1.0.16 - Build Cancellation Support
+- Added Test-BuildCancellation: Helper for checking cancellation at build phase boundaries
+- Returns $false for CLI mode (null MessagingContext) - no cancellation support
+- Calls Test-FFUCancellationRequested from FFU.Messaging when context available
+- Logs cancellation detection via WriteLog or Write-Verbose fallback
+- Sends warning to UI via Write-FFUWarning when available
+- Optional -InvokeCleanup switch triggers Invoke-FailureCleanup and sets state to Cancelled
+- Safe command availability checks for FFU.Messaging functions
+- 44 total functions now exported
 
 ## v1.0.15 - Script Integrity Verification (SEC-03)
 - Added Test-ScriptIntegrity: Verifies script files against SHA-256 hashes

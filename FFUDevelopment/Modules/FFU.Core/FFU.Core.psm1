@@ -3058,6 +3058,8 @@ Export-ModuleMember -Function @(
     'Test-ScriptIntegrity'
     'New-OrchestrationHashManifest'
     'Update-OrchestrationHashManifest'
+    # Build cancellation helper (v1.0.16)
+    'Test-BuildCancellation'
 )
 
 # Export backward compatibility aliases (deprecated - use new function names)
