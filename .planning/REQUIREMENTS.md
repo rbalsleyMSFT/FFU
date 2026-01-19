@@ -32,7 +32,7 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 
 - [ ] **PERF-01**: Optimize VHD flush operations - reduce from triple-pass to verified single-pass
 - [ ] **PERF-02**: Replace Start-Sleep polling with event-driven synchronization (56+ instances)
-- [ ] **PERF-03**: Evaluate module decomposition for large files (BuildFFUVM.ps1, FFU.Core.psm1, FFU.Preflight.psm1)
+- [x] **PERF-03**: Evaluate module decomposition for large files - DOCUMENTED (defer decomposition, see docs/MODULE_DECOMPOSITION.md)
 
 ### Test Coverage
 
@@ -97,7 +97,7 @@ Deferred to future cycle. Lower priority or higher complexity.
 | SEC-03 | Phase 3 | Complete |
 | PERF-01 | Phase 4 | Pending |
 | PERF-02 | Phase 4 | Pending |
-| PERF-03 | Phase 4 | Pending |
+| PERF-03 | Phase 4 | Complete (documented - defer) |
 | TEST-01 | Phase 5 | Pending |
 | TEST-02 | Phase 5 | Pending |
 | TEST-03 | Phase 5 | Pending |
@@ -118,4 +118,4 @@ Deferred to future cycle. Lower priority or higher complexity.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-19 - Phase 3 requirements (SEC-01 through SEC-03) marked Complete*
+*Last updated: 2026-01-19 - PERF-03 marked Complete (documented - defer decomposition)*
