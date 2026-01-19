@@ -1095,6 +1095,17 @@ function Add-WindowsPackageWithUnattend {
 
     Addresses Issue #301: Unattend.xml Extraction from MSU
 
+    BUG-02 FIX: Addresses Issue #301 - DISM unattend.xml extraction failures
+    Solution: Extract CAB from MSU and apply directly, bypassing DISM's MSU handler
+    This avoids the "An error occurred applying the Unattend.xml file" error that occurs
+    when DISM cannot properly extract unattend.xml from certain MSU packages.
+
+    The function implements a CAB extraction workaround:
+    1. Extract MSU contents using expand.exe
+    2. If unattend.xml found, copy to Windows\Panther for DISM processing
+    3. Apply CAB files directly (bypasses UUP/checkpoint update issues)
+    4. Clean up extraction artifacts in finally block
+
     .PARAMETER Path
     The path to the mounted Windows image
 
@@ -1103,6 +1114,13 @@ function Add-WindowsPackageWithUnattend {
 
     .EXAMPLE
     Add-WindowsPackageWithUnattend -Path "W:\" -PackagePath "C:\KB\kb5066835.msu"
+
+    .NOTES
+    Common failure scenarios and resolutions:
+    - File locked by antivirus: Add C:\FFUDevelopment to antivirus exclusions
+    - Disk space insufficient: Ensure 3x package size + 5GB free on mounted image
+    - expand.exe failure: Check Windows system integrity (sfc /scannow)
+    - DISM CAB failure: Reboot and retry, or check for corrupted Windows image
     #>
     [CmdletBinding()]
     param(
@@ -1145,7 +1163,11 @@ function Add-WindowsPackageWithUnattend {
         # Check disk space before extraction
         if (-not (Test-MountedImageDiskSpace -Path $Path -PackagePath $PackagePath)) {
             WriteLog "ERROR: Insufficient disk space to extract MSU package"
-            throw "Insufficient disk space on mounted image for MSU extraction"
+            WriteLog "RESOLUTION: The mounted image needs at least 3x the package size plus 5GB safety margin."
+            WriteLog "  1. Increase the VHDX size using Resize-VHD"
+            WriteLog "  2. Or expand the OS partition using Expand-FFUPartition"
+            WriteLog "  Package size: $([Math]::Round((Get-Item $PackagePath).Length / 1MB, 2)) MB"
+            throw "Insufficient disk space on mounted image for MSU extraction. See log for resolution steps."
         }
 
         # Use controlled temp directory instead of $env:TEMP for better reliability and shorter paths
@@ -1193,18 +1215,29 @@ function Add-WindowsPackageWithUnattend {
             WriteLog "Extracting MSU package to check for unattend.xml: $extractPath"
 
             # Extract MSU package using expand.exe with enhanced error handling
-            # Note: Do not embed quotes in argument array - PowerShell handles quoting automatically
-            $expandArgs = @(
-                '-F:*',
-                $PackagePath,
-                $extractPath
-            )
+            # FIX: Use Start-Process for PowerShell 7 compatibility
+            # PowerShell 7.x changed native command argument passing, causing -F:* wildcard
+            # and paths to be corrupted before reaching expand.exe ("Can't open input file" error)
+            $expandExe = Join-Path $env:SystemRoot 'System32\expand.exe'
+            $quotedPackagePath = "`"$PackagePath`""
+            $quotedExtractPath = "`"$extractPath`""
 
-            WriteLog "Running expand.exe with arguments: expand.exe $($expandArgs -join ' ')"
+            WriteLog "Running expand.exe: $expandExe -F:* $quotedPackagePath $quotedExtractPath"
 
-            # Capture stderr and stdout
-            $expandOutput = & expand.exe $expandArgs 2>&1
-            $expandExitCode = $LASTEXITCODE
+            # Use Start-Process for reliable cross-version argument passing
+            $stdoutFile = Join-Path $extractBasePath "expand_stdout.txt"
+            $stderrFile = Join-Path $extractBasePath "expand_stderr.txt"
+
+            $expandProcess = Start-Process -FilePath $expandExe -ArgumentList "-F:*", $quotedPackagePath, $quotedExtractPath -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+
+            $expandExitCode = $expandProcess.ExitCode
+            $expandStdout = if (Test-Path $stdoutFile) { Get-Content $stdoutFile -Raw } else { "" }
+            $expandStderr = if (Test-Path $stderrFile) { Get-Content $stderrFile -Raw } else { "" }
+            $expandOutput = @($expandStdout, $expandStderr) | Where-Object { $_ }
+
+            # Cleanup temp log files
+            Remove-Item $stdoutFile -Force -ErrorAction SilentlyContinue
+            Remove-Item $stderrFile -Force -ErrorAction SilentlyContinue
 
             WriteLog "expand.exe exit code: $expandExitCode"
 
@@ -1212,12 +1245,29 @@ function Add-WindowsPackageWithUnattend {
                 WriteLog "WARNING: expand.exe returned exit code $expandExitCode"
                 WriteLog "expand.exe output: $($expandOutput | Out-String)"
 
-                # Check specific exit codes
+                # Check specific exit codes with detailed resolution guidance
                 switch ($expandExitCode) {
-                    -1 { WriteLog "ERROR: expand.exe reported file system or permission error" }
-                    1  { WriteLog "ERROR: expand.exe reported invalid syntax or file not found" }
-                    2  { WriteLog "ERROR: expand.exe reported out of memory" }
-                    default { WriteLog "ERROR: expand.exe reported unknown error: $expandExitCode" }
+                    -1 {
+                        WriteLog "ERROR: expand.exe reported file system or permission error"
+                        WriteLog "RESOLUTION: This typically indicates:"
+                        WriteLog "  1. The MSU file is corrupted or incomplete - redownload the update"
+                        WriteLog "  2. Disk is full - free up space on the system drive"
+                        WriteLog "  3. File permissions issue - run as Administrator"
+                    }
+                    1  {
+                        WriteLog "ERROR: expand.exe reported invalid syntax or file not found"
+                        WriteLog "RESOLUTION: This typically indicates:"
+                        WriteLog "  1. The MSU file path contains special characters - move to simpler path"
+                        WriteLog "  2. The MSU file was moved or deleted during operation"
+                    }
+                    2  {
+                        WriteLog "ERROR: expand.exe reported out of memory"
+                        WriteLog "RESOLUTION: Close other applications and retry, or increase system memory"
+                    }
+                    default {
+                        WriteLog "ERROR: expand.exe reported unknown error: $expandExitCode"
+                        WriteLog "RESOLUTION: Try running 'sfc /scannow' to verify Windows system integrity"
+                    }
                 }
 
                 # Verify extraction path is accessible
@@ -1322,6 +1372,7 @@ function Add-WindowsPackageWithUnattend {
                 Where-Object { $_.Name -notmatch 'WSUSSCAN' -and $_.Name -notmatch 'wsusscan' }
 
             if ($cabFiles -and $cabFiles.Count -gt 0) {
+                WriteLog "BUG-02 FIX: Using CAB extraction method to bypass DISM MSU handler issues"
                 WriteLog "Found $($cabFiles.Count) CAB file(s) in MSU package - applying directly to bypass UUP"
 
                 # Apply each CAB file (typically there's only one main CAB)
@@ -1341,6 +1392,10 @@ function Add-WindowsPackageWithUnattend {
                         }
                         else {
                             WriteLog "ERROR applying CAB $($cabFile.Name): $($_.Exception.Message)"
+                            WriteLog "RESOLUTION: DISM CAB application failure. Try these steps:"
+                            WriteLog "  1. Reboot your computer and restart the FFU build process"
+                            WriteLog "  2. If error persists, check if the Windows image is corrupted"
+                            WriteLog "  3. Try rebuilding from a fresh Windows ISO"
                             throw $_
                         }
                     }
