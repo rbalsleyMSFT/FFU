@@ -45,7 +45,7 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 
 ### Missing Features
 
-- [ ] **FEAT-01**: Implement graceful build cancellation with proper cleanup
+- [x] **FEAT-01**: Implement graceful build cancellation with proper cleanup ✓
 - [ ] **FEAT-02**: Implement build progress checkpoint/resume capability
 - [ ] **FEAT-03**: Implement configuration file migration between versions
 
@@ -104,7 +104,7 @@ Deferred to future cycle. Lower priority or higher complexity.
 | TEST-04 | Phase 6 | Complete |
 | TEST-05 | Phase 6 | Complete |
 | TEST-06 | Phase 6 | Complete |
-| FEAT-01 | Phase 7 | Pending |
+| FEAT-01 | Phase 7 | Complete |
 | FEAT-02 | Phase 8 | Pending |
 | FEAT-03 | Phase 9 | Pending |
 | DEP-01 | Phase 10 | Pending |
