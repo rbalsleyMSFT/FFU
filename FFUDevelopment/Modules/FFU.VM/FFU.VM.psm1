@@ -112,7 +112,9 @@ function New-LocalUserAccount {
     )
 
     try {
-        # Convert SecureString to plain text (required for PrincipalContext API)
+        # SECURITY: SecureString to plaintext conversion with BSTR cleanup
+        # Pattern: Convert -> Use in finally block scope -> ZeroFreeBSTR + null variable
+        # The PrincipalContext.SetPassword() API requires plaintext string
         $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
         $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
 
@@ -229,7 +231,9 @@ function Set-LocalUserPassword {
         [SecureString]$Password
     )
 
-    # Convert SecureString to plain text (required for SetPassword API)
+    # SECURITY: SecureString to plaintext conversion with BSTR cleanup
+    # Pattern: Convert -> Use -> ZeroFreeBSTR + null variable (in finally block)
+    # The PrincipalContext.SetPassword() API requires plaintext string
     $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
     $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
 
@@ -1125,7 +1129,7 @@ function Get-FFUEnvironment {
         }
     } elseif (Test-Path -Path $KBPath) {
         try {
-            $kbFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction SilentlyContinue
+            $kbFiles = Get-ChildItem -Path $KBPath -Recurse -File -ErrorAction Stop
             if ($kbFiles -and $kbFiles.Count -gt 0) {
                 $kbSize = ($kbFiles | Measure-Object -Property Length -Sum).Sum
                 WriteLog "Keeping $KBPath ($($kbFiles.Count) files, $([math]::Round($kbSize/1MB, 2)) MB) for future builds - RemoveUpdates=false"
@@ -1584,7 +1588,10 @@ function Update-CaptureFFUScript {
             WriteLog "Script may have been modified. Proceeding with update but results may be unexpected."
         }
 
-        # Convert SecureString password to plain text if needed
+        # SECURITY: Convert SecureString to plaintext for script injection
+        # WinPE cannot use SecureString/DPAPI, so plaintext is unavoidable in CaptureFFU.ps1
+        # Pattern: Convert -> Use -> Clear immediately
+        $plainPassword = $null
         if ($Password -is [SecureString]) {
             WriteLog "Converting SecureString password to plain text for script injection"
             $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
@@ -1624,6 +1631,12 @@ function Update-CaptureFFUScript {
 
         WriteLog "CaptureFFU.ps1 script updated successfully"
 
+        # SECURITY: Clear plaintext password from memory immediately after use
+        # This minimizes the time the password exists in memory as plaintext
+        if ($plainPassword) {
+            $plainPassword = $null
+        }
+
         # Verify the update by re-reading and checking values
         WriteLog "Verifying script update..."
         $verifyContent = Get-Content -Path $captureFFUScriptPath -Raw
@@ -1655,6 +1668,12 @@ function Update-CaptureFFUScript {
         WriteLog "ERROR: Failed to update CaptureFFU.ps1 script: $($_.Exception.Message)"
         WriteLog "Stack trace: $($_.ScriptStackTrace)"
         throw $_
+    }
+    finally {
+        # SECURITY: Ensure plaintext password is always cleared, even on error
+        if ($plainPassword) {
+            $plainPassword = $null
+        }
     }
 }
 
