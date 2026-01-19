@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.10'
+    ModuleVersion = '1.0.11'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -80,6 +80,13 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.11 - PERF-01: Optimize VHD flush from triple-pass to single verified Write-VolumeCache call (~7s -> <1s)
+- Added Invoke-VerifiedVolumeFlush function using Windows native Write-VolumeCache cmdlet
+- Write-VolumeCache guarantees flush completion before returning (no arbitrary waits needed)
+- Fallback to fsutil for older Windows versions without Write-VolumeCache
+- Removes 3x flush passes with 500ms pauses and 5s final I/O wait delay
+- Dismount-ScratchVhd now completes 6+ seconds faster per VHD operation
+
 v1.0.10 - BUG-03: Added Expand-FFUPartitionForDrivers for automatic VHDX/partition expansion with large driver sets
 - New function calculates driver folder size and expands VHDX/partition when driver set exceeds threshold (default 5GB)
 - Properly dismounts VHDX before resize and remounts after for partition expansion
