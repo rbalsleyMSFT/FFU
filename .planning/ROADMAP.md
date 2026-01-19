@@ -78,10 +78,16 @@ Plans:
 ### Phase 5: Integration Tests - Core Operations
 **Goal:** Add test coverage for VM and imaging operations
 **Requirements:** TEST-01, TEST-02, TEST-03
+**Plans:** 3 plans
 **Success Criteria:**
 1. Integration tests exist for Hyper-V VM creation/removal
 2. Integration tests exist for driver injection workflow
 3. Integration tests exist for FFU capture (mock or conditional)
+
+Plans:
+- [ ] 05-01-PLAN.md - FFU.VM integration tests (TEST-01) (Wave 1)
+- [ ] 05-02-PLAN.md - FFU.Drivers integration tests (TEST-02) (Wave 1)
+- [ ] 05-03-PLAN.md - FFU.Imaging integration tests (TEST-03) (Wave 1)
 
 ### Phase 6: Integration Tests - UI and Error Handling
 **Goal:** Add test coverage for UI handlers and error recovery
@@ -133,7 +139,7 @@ Plans:
 | 2 | Bug Fixes - Critical ✓ | 4 | 4 plans (COMPLETE) |
 | 3 | Security Hardening ✓ | 3 | 3 plans (COMPLETE) |
 | 4 | Performance Optimization ✓ | 3 | 3 plans (COMPLETE) |
-| 5 | Integration Tests - Core | 3 | TBD |
+| 5 | Integration Tests - Core | 3 | 3 plans |
 | 6 | Integration Tests - UI/Error | 3 | TBD |
 | 7 | Feature - Build Cancellation | 1 | TBD |
 | 8 | Feature - Progress Checkpoint | 1 | TBD |
@@ -152,3 +158,4 @@ Plans:
 *Phase 3 complete: 2026-01-19*
 *Phase 4 planned: 2026-01-19*
 *Phase 4 complete: 2026-01-19*
+*Phase 5 planned: 2026-01-19*
