@@ -50,9 +50,9 @@ Describe 'FFU.Hypervisor Module Structure' {
         $module | Should -Not -BeNullOrEmpty
     }
 
-    It 'Module version should be 1.1.15' {
+    It 'Module version should be 1.3.0 or higher' {
         $module = Get-Module -Name 'FFU.Hypervisor'
-        $module.Version.ToString() | Should -Be '1.1.15'
+        $module.Version | Should -BeGreaterOrEqual ([Version]'1.3.0')
     }
 
     It 'Module should export Get-HypervisorProvider function' {
@@ -564,11 +564,11 @@ Describe 'VMwareProvider Class' {
             $provider.Capabilities.SupportsSecureBoot | Should -Be $true
         }
 
-        It 'Should support VMDK format only (VHD not bootable)' {
-            # VMware cannot boot from VHD files - they require VMDK for bootable VMs
+        It 'Should support VMDK and VHD formats' {
+            # VMware Workstation 10+ supports both VMDK and VHD formats
             $provider.Capabilities.SupportedDiskFormats | Should -Contain 'VMDK'
-            # VHD is not included as it's not bootable in VMware
-            $provider.Capabilities.SupportedDiskFormats | Should -Not -Contain 'VHD'
+            # VHD is supported as of v1.1.19 (VMware 10+ can use VHD directly)
+            $provider.Capabilities.SupportedDiskFormats | Should -Contain 'VHD'
         }
 
         It 'Should NOT support dynamic memory' {
@@ -663,109 +663,171 @@ Describe 'Module Integration' {
 }
 
 # =============================================================================
-# Private Function Tests - VMware REST API and Utilities
+# Private Function Tests - VMware vmrun Utilities (REST API removed in v1.2.0)
 # =============================================================================
 
 Describe 'VMware Private Functions' -Tag 'VMware', 'Private' {
 
-    Context 'Start-VMrestService Function' {
+    Context 'Get-VmrunPath Function' {
         It 'Should be defined in module scope' {
             $command = Invoke-InModuleScope {
-                Get-Command -Name 'Start-VMrestService' -ErrorAction SilentlyContinue
+                Get-Command -Name 'Get-VmrunPath' -ErrorAction SilentlyContinue
             }
             $command | Should -Not -BeNullOrEmpty
         }
 
-        It 'Should have correct parameters' {
-            $params = Invoke-InModuleScope {
-                (Get-Command -Name 'Start-VMrestService').Parameters.Keys
-            }
-            $params | Should -Contain 'Port'
-            $params | Should -Contain 'Credential'  # Uses PSCredential instead of Username/Password
-        }
-    }
-
-    Context 'Stop-VMrestService Function' {
-        It 'Should be defined in module scope' {
-            $command = Invoke-InModuleScope {
-                Get-Command -Name 'Stop-VMrestService' -ErrorAction SilentlyContinue
-            }
-            $command | Should -Not -BeNullOrEmpty
-        }
-    }
-
-    Context 'Test-VMrestEndpoint Function' {
-        It 'Should be defined in module scope' {
-            $command = Invoke-InModuleScope {
-                Get-Command -Name 'Test-VMrestEndpoint' -ErrorAction SilentlyContinue
-            }
-            $command | Should -Not -BeNullOrEmpty
-        }
-
-        It 'Should return boolean' {
-            # Without VMware installed, this should return false gracefully
+        It 'Should return string or null' {
             $result = Invoke-InModuleScope {
-                Test-VMrestEndpoint -Port 8697
+                Get-VmrunPath
             }
-            $result | Should -BeOfType [bool]
+            # Result can be null (VMware not installed) or a path string
+            if ($result) {
+                $result | Should -BeOfType [string]
+            }
         }
     }
 
-    Context 'Invoke-VMwareRestMethod Function' {
+    Context 'Get-VMwarePowerStateWithVmrun Function' {
         It 'Should be defined in module scope' {
             $command = Invoke-InModuleScope {
-                Get-Command -Name 'Invoke-VMwareRestMethod' -ErrorAction SilentlyContinue
+                Get-Command -Name 'Get-VMwarePowerStateWithVmrun' -ErrorAction SilentlyContinue
+            }
+            $command | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Should have VMXPath parameter' {
+            $params = Invoke-InModuleScope {
+                (Get-Command -Name 'Get-VMwarePowerStateWithVmrun').Parameters.Keys
+            }
+            $params | Should -Contain 'VMXPath'
+        }
+    }
+
+    Context 'Test-VMwareVMXProcess Function (v1.2.2)' {
+        It 'Should be defined in module scope' {
+            $command = Invoke-InModuleScope {
+                Get-Command -Name 'Test-VMwareVMXProcess' -ErrorAction SilentlyContinue
+            }
+            $command | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Should have VMXPath parameter as mandatory' {
+            $params = Invoke-InModuleScope {
+                (Get-Command -Name 'Test-VMwareVMXProcess').Parameters['VMXPath']
+            }
+            $params | Should -Not -BeNullOrEmpty
+            $params.Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+                ForEach-Object { $_.Mandatory | Should -Be $true }
+        }
+
+        It 'Should return hashtable with Running, ProcessId, CommandLine keys' {
+            $result = Invoke-InModuleScope {
+                Test-VMwareVMXProcess -VMXPath 'C:\TestVM\nonexistent.vmx'
+            }
+            $result | Should -BeOfType [hashtable]
+            $result.Keys | Should -Contain 'Running'
+            $result.Keys | Should -Contain 'ProcessId'
+            $result.Keys | Should -Contain 'CommandLine'
+        }
+
+        It 'Should return Running=$false for non-existent VMX' {
+            $result = Invoke-InModuleScope {
+                Test-VMwareVMXProcess -VMXPath 'C:\TestVM\nonexistent.vmx'
+            }
+            $result.Running | Should -Be $false
+        }
+    }
+
+    Context 'Wait-VMwareVMStart Function (v1.2.2)' {
+        It 'Should be defined in module scope' {
+            $command = Invoke-InModuleScope {
+                Get-Command -Name 'Wait-VMwareVMStart' -ErrorAction SilentlyContinue
+            }
+            $command | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Should have VMXPath and TimeoutSeconds parameters' {
+            $params = Invoke-InModuleScope {
+                (Get-Command -Name 'Wait-VMwareVMStart').Parameters.Keys
+            }
+            $params | Should -Contain 'VMXPath'
+            $params | Should -Contain 'TimeoutSeconds'
+        }
+
+        It 'Should have default TimeoutSeconds of 10' {
+            $param = Invoke-InModuleScope {
+                (Get-Command -Name 'Wait-VMwareVMStart').Parameters['TimeoutSeconds']
+            }
+            $param.Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+                ForEach-Object { $_.Mandatory | Should -Be $false }
+        }
+
+        It 'Should return hashtable with Started, ProcessId, ElapsedSeconds keys' {
+            # Short timeout for testing
+            $result = Invoke-InModuleScope {
+                Wait-VMwareVMStart -VMXPath 'C:\TestVM\nonexistent.vmx' -TimeoutSeconds 1
+            }
+            $result | Should -BeOfType [hashtable]
+            $result.Keys | Should -Contain 'Started'
+            $result.Keys | Should -Contain 'ProcessId'
+            $result.Keys | Should -Contain 'ElapsedSeconds'
+        }
+
+        It 'Should return Started=$false after timeout for non-existent VMX' {
+            $result = Invoke-InModuleScope {
+                Wait-VMwareVMStart -VMXPath 'C:\TestVM\nonexistent.vmx' -TimeoutSeconds 1
+            }
+            $result.Started | Should -Be $false
+            $result.ElapsedSeconds | Should -BeGreaterOrEqual 1
+        }
+    }
+
+    Context 'Set-VMwarePowerStateWithVmrun Function' {
+        It 'Should be defined in module scope' {
+            $command = Invoke-InModuleScope {
+                Get-Command -Name 'Set-VMwarePowerStateWithVmrun' -ErrorAction SilentlyContinue
             }
             $command | Should -Not -BeNullOrEmpty
         }
 
         It 'Should have required parameters' {
             $params = Invoke-InModuleScope {
-                (Get-Command -Name 'Invoke-VMwareRestMethod').Parameters.Keys
+                (Get-Command -Name 'Set-VMwarePowerStateWithVmrun').Parameters.Keys
             }
-            $params | Should -Contain 'Endpoint'
-            $params | Should -Contain 'Method'
-        }
-
-        It 'Should have Method parameter for HTTP verbs' {
-            $params = Invoke-InModuleScope {
-                (Get-Command -Name 'Invoke-VMwareRestMethod').Parameters.Keys
-            }
-            $params | Should -Contain 'Method'
+            $params | Should -Contain 'VMXPath'
+            $params | Should -Contain 'State'
+            $params | Should -Contain 'ShowConsole'
         }
     }
 
-    Context 'Get-VMwareVMList Function' {
-        It 'Should be defined in module scope' {
+    Context 'REST API Functions Removed (v1.2.0)' {
+        # These functions were removed in v1.2.0 when REST API was replaced with vmrun
+        It 'Start-VMrestService should NOT exist' {
             $command = Invoke-InModuleScope {
-                Get-Command -Name 'Get-VMwareVMList' -ErrorAction SilentlyContinue
+                Get-Command -Name 'Start-VMrestService' -ErrorAction SilentlyContinue
             }
-            $command | Should -Not -BeNullOrEmpty
-        }
-    }
-
-    Context 'Get-VMwarePowerState Function' {
-        It 'Should be defined in module scope' {
-            $command = Invoke-InModuleScope {
-                Get-Command -Name 'Get-VMwarePowerState' -ErrorAction SilentlyContinue
-            }
-            $command | Should -Not -BeNullOrEmpty
-        }
-    }
-
-    Context 'Set-VMwarePowerState Function' {
-        It 'Should be defined in module scope' {
-            $command = Invoke-InModuleScope {
-                Get-Command -Name 'Set-VMwarePowerState' -ErrorAction SilentlyContinue
-            }
-            $command | Should -Not -BeNullOrEmpty
+            $command | Should -BeNullOrEmpty
         }
 
-        It 'Should have State parameter' {
-            $params = Invoke-InModuleScope {
-                (Get-Command -Name 'Set-VMwarePowerState').Parameters.Keys
+        It 'Stop-VMrestService should NOT exist' {
+            $command = Invoke-InModuleScope {
+                Get-Command -Name 'Stop-VMrestService' -ErrorAction SilentlyContinue
             }
-            $params | Should -Contain 'State'  # Parameter is named 'State' not 'PowerState'
+            $command | Should -BeNullOrEmpty
+        }
+
+        It 'Test-VMrestEndpoint should NOT exist' {
+            $command = Invoke-InModuleScope {
+                Get-Command -Name 'Test-VMrestEndpoint' -ErrorAction SilentlyContinue
+            }
+            $command | Should -BeNullOrEmpty
+        }
+
+        It 'Invoke-VMwareRestMethod should NOT exist' {
+            $command = Invoke-InModuleScope {
+                Get-Command -Name 'Invoke-VMwareRestMethod' -ErrorAction SilentlyContinue
+            }
+            $command | Should -BeNullOrEmpty
         }
     }
 }
