@@ -7,7 +7,7 @@
     RootModule = 'FFU.Updates.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.1'
+    ModuleVersion = '1.0.3'
 
     # ID used to uniquely identify this module
     GUID = 'e3b9c4a1-5f7d-4e2b-8c9a-1d6f3e8b2a5c'
@@ -75,7 +75,24 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Updates v1.0.1
+# Release Notes - FFU.Updates v1.0.3
+
+## v1.0.3 BUG-02: MSU Unattend.xml Extraction Verification (2026-01-19)
+- **BUG-02 FIX:** Documented and verified CAB extraction workaround for Issue #301
+- Added BUG-02 FIX comment blocks documenting the CAB extraction method
+- Enhanced error messages with specific remediation guidance:
+  - Disk space errors now show required space and resolution steps
+  - expand.exe failures include specific troubleshooting steps
+  - DISM CAB failures suggest reboot and retry steps
+- Added logging to show which method was used (CAB vs MSU)
+- Full Pester test coverage for MSU handling functions (60 tests)
+
+## v1.0.2 Fix PowerShell 7 Native Command Argument Passing (2026-01-13)
+- **Fixed "Can't open input file" error** with expand.exe in PowerShell 7.x
+- Replaced `& expand.exe` with `Start-Process` for reliable argument handling
+- PowerShell 7 changed how wildcard arguments (-F:*) are passed to external commands
+- Explicit quoting ensures paths are not modified before reaching expand.exe
+- Affected builds: Windows 11 25H2 with KB5074109 and similar MSU packages
 
 ## v1.0.1 Bug Fix
 - **Fixed expand.exe argument quoting bug** - Removed embedded quotes from argument arrays
