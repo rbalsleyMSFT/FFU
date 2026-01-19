@@ -39,9 +39,9 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 - [x] **TEST-01**: Add integration tests for VM creation (Hyper-V and VMware) ✓
 - [x] **TEST-02**: Add integration tests for driver injection workflow ✓
 - [x] **TEST-03**: Add integration tests for FFU capture process ✓
-- [ ] **TEST-04**: Add unit tests for UI event handlers (FFUUI.Core.Handlers.psm1 - 0% coverage)
-- [ ] **TEST-05**: Add tests for error recovery paths and cleanup handlers
-- [ ] **TEST-06**: Add tests for VMware provider operations
+- [x] **TEST-04**: Add unit tests for UI event handlers (FFUUI.Core.Handlers.psm1 - 41 tests) ✓
+- [x] **TEST-05**: Add tests for error recovery paths and cleanup handlers (56 tests) ✓
+- [x] **TEST-06**: Add tests for VMware provider operations (32 tests) ✓
 
 ### Missing Features
 
@@ -101,9 +101,9 @@ Deferred to future cycle. Lower priority or higher complexity.
 | TEST-01 | Phase 5 | Complete |
 | TEST-02 | Phase 5 | Complete |
 | TEST-03 | Phase 5 | Complete |
-| TEST-04 | Phase 6 | Pending |
-| TEST-05 | Phase 6 | Pending |
-| TEST-06 | Phase 6 | Pending |
+| TEST-04 | Phase 6 | Complete |
+| TEST-05 | Phase 6 | Complete |
+| TEST-06 | Phase 6 | Complete |
 | FEAT-01 | Phase 7 | Pending |
 | FEAT-02 | Phase 8 | Pending |
 | FEAT-03 | Phase 9 | Pending |
@@ -118,4 +118,4 @@ Deferred to future cycle. Lower priority or higher complexity.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-19 - Phase 4 complete (PERF-01, PERF-02, PERF-03)*
+*Last updated: 2026-01-19 - Phase 6 complete (TEST-04, TEST-05, TEST-06)*

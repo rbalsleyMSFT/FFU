@@ -91,19 +91,21 @@ Plans:
 - [x] 05-02-PLAN.md - FFU.Drivers integration tests (TEST-02) (Wave 1)
 - [x] 05-03-PLAN.md - FFU.Imaging integration tests (TEST-03) (Wave 1)
 
-### Phase 6: Integration Tests - UI and Error Handling
+### Phase 6: Integration Tests - UI and Error Handling ✓
 **Goal:** Add test coverage for UI handlers and error recovery
 **Requirements:** TEST-04, TEST-05, TEST-06
 **Plans:** 3 plans
+**Status:** COMPLETE (2026-01-19)
+
 **Success Criteria:**
-1. Unit tests cover FFUUI.Core.Handlers.psm1 key functions
-2. Tests verify cleanup handlers are called on failure
-3. VMware provider has test coverage (mocked or conditional)
+1. ✓ Unit tests cover FFUUI.Core.Handlers.psm1 key functions (41 tests)
+2. ✓ Tests verify cleanup handlers are called on failure (56 tests)
+3. ✓ VMware provider has test coverage (mocked or conditional) (32 tests)
 
 Plans:
-- [ ] 06-01-PLAN.md - FFUUI.Core.Handlers unit tests (TEST-04) (Wave 1)
-- [ ] 06-02-PLAN.md - FFU.Core cleanup registry tests (TEST-05) (Wave 1)
-- [ ] 06-03-PLAN.md - VMware provider integration tests (TEST-06) (Wave 1)
+- [x] 06-01-PLAN.md - FFUUI.Core.Handlers unit tests (TEST-04) (Wave 1)
+- [x] 06-02-PLAN.md - FFU.Core cleanup registry tests (TEST-05) (Wave 1)
+- [x] 06-03-PLAN.md - VMware provider integration tests (TEST-06) (Wave 1)
 
 ### Phase 7: Feature - Build Cancellation
 **Goal:** Allow users to gracefully cancel in-progress builds
@@ -148,7 +150,7 @@ Plans:
 | 3 | Security Hardening ✓ | 3 | 3 plans (COMPLETE) |
 | 4 | Performance Optimization ✓ | 3 | 3 plans (COMPLETE) |
 | 5 | Integration Tests - Core ✓ | 3 | 3 plans (COMPLETE) |
-| 6 | Integration Tests - UI/Error | 3 | 3 plans |
+| 6 | Integration Tests - UI/Error ✓ | 3 | 3 plans (COMPLETE) |
 | 7 | Feature - Build Cancellation | 1 | TBD |
 | 8 | Feature - Progress Checkpoint | 1 | TBD |
 | 9 | Feature - Config Migration | 1 | TBD |
@@ -169,3 +171,4 @@ Plans:
 *Phase 5 planned: 2026-01-19*
 *Phase 5 complete: 2026-01-19*
 *Phase 6 planned: 2026-01-19*
+*Phase 6 complete: 2026-01-19*
