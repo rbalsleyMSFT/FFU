@@ -110,10 +110,17 @@ Plans:
 ### Phase 7: Feature - Build Cancellation
 **Goal:** Allow users to gracefully cancel in-progress builds
 **Requirements:** FEAT-01
+**Plans:** 3 plans
+
 **Success Criteria:**
 1. Cancel button in UI triggers graceful build termination
 2. Cleanup handlers execute on cancellation
 3. VMs, shares, and user accounts cleaned up after cancel
+
+Plans:
+- [ ] 07-01-PLAN.md - Add Test-BuildCancellation helper to FFU.Core (Wave 1)
+- [ ] 07-02-PLAN.md - Add cancellation checkpoints to BuildFFUVM.ps1 (Wave 2)
+- [ ] 07-03-PLAN.md - Cancellation flow unit and integration tests (Wave 2)
 
 ### Phase 8: Feature - Progress Checkpoint/Resume
 **Goal:** Allow builds to resume after interruption
@@ -151,7 +158,7 @@ Plans:
 | 4 | Performance Optimization ✓ | 3 | 3 plans (COMPLETE) |
 | 5 | Integration Tests - Core ✓ | 3 | 3 plans (COMPLETE) |
 | 6 | Integration Tests - UI/Error ✓ | 3 | 3 plans (COMPLETE) |
-| 7 | Feature - Build Cancellation | 1 | TBD |
+| 7 | Feature - Build Cancellation | 1 | 3 plans |
 | 8 | Feature - Progress Checkpoint | 1 | TBD |
 | 9 | Feature - Config Migration | 1 | TBD |
 | 10 | Dependency Resilience | 3 | TBD |
@@ -172,3 +179,4 @@ Plans:
 *Phase 5 complete: 2026-01-19*
 *Phase 6 planned: 2026-01-19*
 *Phase 6 complete: 2026-01-19*
+*Phase 7 planned: 2026-01-19*
