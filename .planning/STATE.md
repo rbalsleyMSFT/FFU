@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 3 of 10 (Security Hardening)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** In Progress
-**Last activity:** 2026-01-19 - Completed 03-01-PLAN.md (SEC-01 - Lenovo PSREF token caching)
+**Last activity:** 2026-01-19 - Completed 03-03-PLAN.md (SEC-03 - Script integrity verification)
 
-Progress: [=====-----] 28%
+Progress: [=====-----] 30%
 
 ## Progress
 
@@ -23,7 +23,7 @@ Progress: [=====-----] 28%
 |-------|--------|-------|----------|
 | 1     | COMPLETE | 5/5 | 100% |
 | 2     | COMPLETE | 4/4 | 100% |
-| 3     | In Progress | 1/3 | 33% |
+| 3     | In Progress | 2/3 | 67% |
 | 4     | Pending | 0/? | 0% |
 | 5     | Pending | 0/? | 0% |
 | 6     | Pending | 0/? | 0% |
@@ -50,12 +50,13 @@ Progress: [=====-----] 28%
 |------|------|------------|--------------|-------------|--------|
 | 03-01 | 1 | - | SEC-01 | Lenovo PSREF token caching | COMPLETE |
 | 03-02 | 1 | - | SEC-02 | SecureString audit | Pending |
-| 03-03 | 1 | - | SEC-03 | Script integrity verification | Pending |
+| 03-03 | 1 | - | SEC-03 | Script integrity verification | COMPLETE |
 
 **Wave 1:** Plans 03-01, 03-02, 03-03 (parallel - independent)
 
 ## Recent Activity
 
+- 2026-01-19: Completed 03-03-PLAN.md (SEC-03 - Script integrity verification with SHA-256 hash manifest)
 - 2026-01-19: Completed 03-01-PLAN.md (SEC-01 - Lenovo PSREF token caching with DPAPI encryption)
 - 2026-01-19: Completed 02-04-PLAN.md (BUG-02 - MSU unattend.xml extraction verified with 60 Pester tests)
 - 2026-01-19: Completed 02-02-PLAN.md (BUG-01 - SSL inspection detection for Netskope/zScaler proxies)
@@ -95,6 +96,10 @@ Progress: [=====-----] 28%
 | Token cache path .security/token-cache/ | 2026-01-19 | Follows security artifact pattern, separates from code |
 | Export-Clixml for token storage | 2026-01-19 | Automatic DPAPI encryption on Windows, no extra dependencies |
 | 60-minute default token expiry | 2026-01-19 | Standard session token lifetime, balances security vs convenience |
+| SHA-256 for script integrity | 2026-01-19 | Industry standard, collision-resistant, native PowerShell support |
+| Manifest in .security folder | 2026-01-19 | Separate from scripts, clear purpose, defense in depth |
+| Self-verification halts execution | 2026-01-19 | Orchestrator tampering is critical, must fail closed |
+| Inline verification in Orchestrator | 2026-01-19 | FFU.Core not available in VM context |
 
 ## Open Issues
 
@@ -107,9 +112,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-19
-**Stopped at:** Completed 03-01-PLAN.md (Lenovo PSREF token caching)
+**Stopped at:** Completed 03-03-PLAN.md (Script integrity verification)
 **Resume file:** None
-**Next action:** Execute 03-02-PLAN.md or 03-03-PLAN.md
+**Next action:** Execute 03-02-PLAN.md (SecureString audit)
 
 ---
 *State updated: 2026-01-19*
