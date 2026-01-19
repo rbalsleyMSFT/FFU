@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Improve codebase quality, reliability, and maintainability
-**Current focus:** Phase 5 - Integration Tests Core (COMPLETE, VERIFIED)
+**Current focus:** Phase 6 - Integration Tests UI and Error Handling (IN PROGRESS)
 
 ## Current Position
 
 **Milestone:** v1.8.0 - Codebase Health
-**Phase:** 5 of 10 (Integration Tests Core)
-**Plan:** 3 of 3 complete
-**Status:** Phase Complete
-**Last activity:** 2026-01-19 - Phase 5 verified (3/3 must-haves, 104 tests)
+**Phase:** 6 of 10 (Integration Tests UI and Error Handling)
+**Plan:** 1 of 3 complete
+**Status:** In Progress
+**Last activity:** 2026-01-19 - Completed 06-01-PLAN.md (TEST-04 - 41 UI handler unit tests)
 
-Progress: [=====-----] 50%
+Progress: [=====-----] 53%
 
 ## Progress
 
@@ -26,7 +26,7 @@ Progress: [=====-----] 50%
 | 3     | COMPLETE | 3/3 | 100% |
 | 4     | COMPLETE | 3/3 | 100% |
 | 5     | COMPLETE | 3/3 | 100% |
-| 6     | Pending | 0/? | 0% |
+| 6     | In Progress | 1/3 | 33% |
 | 7     | Pending | 0/? | 0% |
 | 8     | Pending | 0/? | 0% |
 | 9     | Pending | 0/? | 0% |
@@ -74,8 +74,19 @@ Progress: [=====-----] 50%
 
 **Wave 1:** Plans 05-01, 05-02, 05-03 (parallel - independent) - COMPLETE
 
+## Phase 6 Plan Structure
+
+| Plan | Wave | Depends On | Requirements | Description | Status |
+|------|------|------------|--------------|-------------|--------|
+| 06-01 | 1 | - | TEST-04 | FFUUI.Core.Handlers unit tests | COMPLETE |
+| 06-02 | 1 | - | TEST-05 | FFU.Core cleanup handler tests | Pending |
+| 06-03 | 1 | - | TEST-06 | VMware provider integration tests | Pending |
+
+**Wave 1:** Plans 06-01, 06-02, 06-03 (parallel - independent)
+
 ## Recent Activity
 
+- 2026-01-19: Completed 06-01-PLAN.md (TEST-04 - FFUUI.Core.Handlers unit tests with 41 Pester tests)
 - 2026-01-19: Phase 5 verified (3/3 must-haves, 104 integration tests total)
 - 2026-01-19: Phase 5 COMPLETE - All integration tests created (3/3 plans)
 - 2026-01-19: Completed 05-01-PLAN.md (TEST-01 - FFU.VM integration tests with 22 Pester tests)
@@ -144,6 +155,8 @@ Progress: [=====-----] 50%
 | Import FFU.Common for WriteLog | 2026-01-19 | FFU.Imaging depends on WriteLog from FFU.Common, import first in tests |
 | Add-Member for Dispose mocking | 2026-01-19 | PSCustomObject lacks Dispose; Add-Member ScriptMethod adds it |
 | Return null for Hyper-V type bypass | 2026-01-19 | Get-VMHardDiskDrive returns null to avoid Set-VMFirmware type validation |
+| Mock State object for WPF-free testing | 2026-01-19 | PSCustomObject duck typing allows testing handler logic without WPF types |
+| Logic extraction pattern for UI tests | 2026-01-19 | Test business logic, not WPF event bindings |
 
 ## Open Issues
 
@@ -156,9 +169,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-19
-**Stopped at:** Phase 5 complete - All integration tests created
+**Stopped at:** Completed 06-01-PLAN.md
 **Resume file:** None
-**Next action:** Plan Phase 6 with `/gsd:plan-phase 6`
+**Next action:** Execute 06-02-PLAN.md (TEST-05 - FFU.Core cleanup handler tests)
 
 ---
 *State updated: 2026-01-19*
