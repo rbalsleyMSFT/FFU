@@ -387,6 +387,13 @@ class FFUConstants {
     # Minimal delay for service state propagation
     static [int] $SERVICE_STARTUP_WAIT = 1
 
+    # Driver extraction timeout (30 seconds)
+    # Timeout for Dell/Intel driver extraction processes that may hang
+    # Calibrated for driver extraction which typically completes in 5-15 seconds
+    # with 30 seconds as a generous safety margin
+    # Used by Get-DellDrivers for Chipset and Network driver extraction
+    static [int] $DRIVER_EXTRACTION_TIMEOUT_SECONDS = 30
+
     # Update catalog search wait (5 seconds)
     # Rate limiting for Microsoft Update Catalog requests
     # Prevents HTTP 429 throttling errors
