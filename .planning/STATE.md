@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 6 of 10 (Integration Tests UI and Error Handling)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** In Progress
-**Last activity:** 2026-01-19 - Completed 06-01-PLAN.md (TEST-04 - 41 UI handler unit tests)
+**Last activity:** 2026-01-19 - Completed 06-02-PLAN.md (TEST-05 - 56 cleanup registry tests)
 
-Progress: [=====-----] 53%
+Progress: [=====-----] 57%
 
 ## Progress
 
@@ -26,7 +26,7 @@ Progress: [=====-----] 53%
 | 3     | COMPLETE | 3/3 | 100% |
 | 4     | COMPLETE | 3/3 | 100% |
 | 5     | COMPLETE | 3/3 | 100% |
-| 6     | In Progress | 1/3 | 33% |
+| 6     | In Progress | 2/3 | 67% |
 | 7     | Pending | 0/? | 0% |
 | 8     | Pending | 0/? | 0% |
 | 9     | Pending | 0/? | 0% |
@@ -79,13 +79,14 @@ Progress: [=====-----] 53%
 | Plan | Wave | Depends On | Requirements | Description | Status |
 |------|------|------------|--------------|-------------|--------|
 | 06-01 | 1 | - | TEST-04 | FFUUI.Core.Handlers unit tests | COMPLETE |
-| 06-02 | 1 | - | TEST-05 | FFU.Core cleanup handler tests | Pending |
+| 06-02 | 1 | - | TEST-05 | FFU.Core cleanup handler tests | COMPLETE |
 | 06-03 | 1 | - | TEST-06 | VMware provider integration tests | Pending |
 
 **Wave 1:** Plans 06-01, 06-02, 06-03 (parallel - independent)
 
 ## Recent Activity
 
+- 2026-01-19: Completed 06-02-PLAN.md (TEST-05 - FFU.Core cleanup registry tests with 56 Pester tests)
 - 2026-01-19: Completed 06-01-PLAN.md (TEST-04 - FFUUI.Core.Handlers unit tests with 41 Pester tests)
 - 2026-01-19: Phase 5 verified (3/3 must-haves, 104 integration tests total)
 - 2026-01-19: Phase 5 COMPLETE - All integration tests created (3/3 plans)
@@ -157,6 +158,8 @@ Progress: [=====-----] 53%
 | Return null for Hyper-V type bypass | 2026-01-19 | Get-VMHardDiskDrive returns null to avoid Set-VMFirmware type validation |
 | Mock State object for WPF-free testing | 2026-01-19 | PSCustomObject duck typing allows testing handler logic without WPF types |
 | Logic extraction pattern for UI tests | 2026-01-19 | Test business logic, not WPF event bindings |
+| InModuleScope for CleanupRegistry access | 2026-01-19 | CleanupRegistry is script-scoped; InModuleScope required for test verification |
+| Filter by Name not Id in InModuleScope | 2026-01-19 | Pester 5.x ArgumentList has scope issues; Name is unique per test |
 
 ## Open Issues
 
@@ -169,9 +172,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-19
-**Stopped at:** Completed 06-01-PLAN.md
+**Stopped at:** Completed 06-02-PLAN.md
 **Resume file:** None
-**Next action:** Execute 06-02-PLAN.md (TEST-05 - FFU.Core cleanup handler tests)
+**Next action:** Execute 06-03-PLAN.md (TEST-06 - VMware provider integration tests)
 
 ---
 *State updated: 2026-01-19*
