@@ -17,10 +17,10 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 
 ### Bug Fixes
 
-- [ ] **BUG-01**: Fix Issue #327 - Corporate proxy failures with Netskope/zScaler SSL inspection
-- [ ] **BUG-02**: Fix Issue #301 - Unattend.xml extraction from MSU packages fails with DISM
-- [ ] **BUG-03**: Fix Issue #298 - OS partition doesn't expand for large driver sets (>5GB)
-- [ ] **BUG-04**: Fix Dell chipset driver extraction hang (FFUUI.Core.Drivers.Dell.psm1 lines 556-579)
+- [x] **BUG-01**: Fix Issue #327 - Corporate proxy failures with Netskope/zScaler SSL inspection ✓
+- [x] **BUG-02**: Fix Issue #301 - Unattend.xml extraction from MSU packages fails with DISM ✓
+- [x] **BUG-03**: Fix Issue #298 - OS partition doesn't expand for large driver sets (>5GB) ✓
+- [x] **BUG-04**: Fix Dell chipset driver extraction hang (FFUUI.Core.Drivers.Dell.psm1 lines 556-579) ✓
 
 ### Security
 
@@ -88,10 +88,10 @@ Deferred to future cycle. Lower priority or higher complexity.
 | DEBT-03 | Phase 1 | Complete |
 | DEBT-04 | Phase 1 | Complete |
 | DEBT-05 | Phase 1 | Complete |
-| BUG-01 | Phase 2 | Pending |
-| BUG-02 | Phase 2 | Pending |
-| BUG-03 | Phase 2 | Pending |
-| BUG-04 | Phase 2 | Pending |
+| BUG-01 | Phase 2 | Complete |
+| BUG-02 | Phase 2 | Complete |
+| BUG-03 | Phase 2 | Complete |
+| BUG-04 | Phase 2 | Complete |
 | SEC-01 | Phase 3 | Pending |
 | SEC-02 | Phase 3 | Pending |
 | SEC-03 | Phase 3 | Pending |
@@ -118,4 +118,4 @@ Deferred to future cycle. Lower priority or higher complexity.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-18 - Phase 1 requirements (DEBT-01 through DEBT-05) marked Complete*
+*Last updated: 2026-01-19 - Phase 2 requirements (BUG-01 through BUG-04) marked Complete*
