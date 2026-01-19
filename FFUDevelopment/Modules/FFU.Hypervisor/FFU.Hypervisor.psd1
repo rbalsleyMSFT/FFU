@@ -6,7 +6,7 @@
     RootModule = 'FFU.Hypervisor.psm1'
 
     # Version number of this module
-    ModuleVersion = '1.1.17'
+    ModuleVersion = '1.3.0'
 
     # ID used to uniquely identify this module
     GUID = 'a8e2c3f1-5d7b-4e9a-bc12-3f4d5e6a7b8c'
@@ -21,7 +21,7 @@
     Copyright = '(c) 2025 FFU Builder Team. MIT License.'
 
     # Description of the functionality provided by this module
-    Description = 'Hypervisor abstraction layer supporting Hyper-V and VMware Workstation Pro for FFU Builder VM operations'
+    Description = 'Hypervisor abstraction layer supporting Hyper-V and VMware Workstation Pro - vmware-vmx process detection, vmrun list, nvram lock'
 
     # Minimum version of the PowerShell engine required by this module
     PowerShellVersion = '7.0'
@@ -41,6 +41,7 @@
         'Get-VMStateValue',
         'Test-VMStateOff',
         'Test-VMStateRunning',
+        'Wait-VMStateChange',
         # Provider interface functions
         'New-HypervisorVM',
         'Start-HypervisorVM',
@@ -78,6 +79,151 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.3.0 (2026-01-19)
+- NEW: Event-driven VM state monitoring for Hyper-V (PERF-02)
+- Added Wait-VMStateChange function using Register-CimIndicationEvent
+- Uses CIM event subscription instead of polling for efficient state monitoring
+- Added HyperVProvider.WaitForState method for event-driven waiting
+- Added IHypervisorProvider.WaitForState interface method
+- VMware keeps polling-based waiting (no CIM event support)
+
+v1.2.9 (2026-01-15)
+- FIX: VMware GUI mode capture boot - recognize VM "Completed" vs "Failed to start"
+- Root cause: vmrun -T ws start "vmx" gui BLOCKS until VM shuts down
+- When vmrun returns with exit code 0 but no VM process, this means VM COMPLETED
+- Previously code assumed "no process = startup failed" and retried (wrong)
+- CHANGES:
+  - Wait-VMwareVMStart: New -GUIMode parameter, returns Status='Completed' when appropriate
+  - Set-VMwarePowerStateWithVmrun: Now returns hashtable with Status property
+  - VMwareProvider.StartVM: Now returns 'Running' or 'Completed' string
+  - IHypervisorProvider.StartVM: Changed from [void] to [string] return type
+  - BuildFFUVM.ps1: Handles 'Completed' status - skips shutdown polling, goes to FFU capture
+- This fixes the "Apps.iso not replaced with WinPE capture ISO" bug
+
+v1.2.8 (2026-01-15)
+- FIX: VMware capture boot now boots from WinPE ISO instead of Windows
+- Root cause: VMware NVRAM caches boot order from first boot
+- When VM boots Windows (hdd,cdrom), NVRAM records "boot from HDD"
+- Even when VMX bios.bootOrder is changed to "cdrom,hdd", NVRAM takes precedence
+- FIX: AttachISO() now deletes NVRAM file before configuring capture boot
+- This forces VMware to read boot order from VMX file on next boot
+
+v1.2.7 (2026-01-14)
+- FIX: Hyper-V VM now connects network adapter to virtual switch specified in config
+- Root cause: HyperVProvider.CreateVM() didn't connect network adapter to VMSwitchName
+- Added New-VMConfiguration -NetworkSwitchName parameter
+- BuildFFUVM.ps1 now passes $VMSwitchName to the factory function
+- CreateVM() validates switch exists and connects adapter with logging
+
+v1.2.6 (2026-01-14)
+- CRITICAL FIX: Hyper-V AttachISO now correctly sets DVD drive as FIRST boot device
+- Root cause: AttachISO only added DVD drive but didn't call Set-VMFirmware -FirstBootDevice
+- VM was booting from hard disk (Windows) instead of capture ISO (WinPE)
+- Added comprehensive logging: BEFORE/AFTER boot device, step-by-step progress, verification
+- VMware AttachISO now includes post-write verification of boot order and ISO path
+- Update-VMwareVMX now flushes file to disk and verifies settings persisted
+
+v1.2.5 (2026-01-14)
+- CHANGED: Increased VM process wait timeout from 10 to 60 seconds in Wait-VMwareVMStart
+- Allows more time for slow VM startups before warning about process not found
+- Default timeout is now 60 seconds (previously 10 seconds)
+
+v1.2.4 (2026-01-13)
+- NEW: Configurable NIC type for VMware VMs (NicType parameter on New-VMwareVMX)
+- Options: e1000e (default), vmxnet3, e1000
+- e1000e (Intel 82574L emulation) recommended for best WinPE network compatibility
+- vmxnet3 provides higher performance but requires paravirtual drivers in WinPE
+- Supports new NicType setting in config schema (VMwareSettings.NicType)
+
+v1.2.3 (2026-01-13)
+- REMOVED: All .lck folder detection methods (vmx.lck, vmem.lck, generic .lck)
+- Root cause: .lck folders persist after VM shutdown, causing false "running" detections
+- Simplified detection to 3 methods:
+  1. vmware-vmx process detection (PRIMARY - most reliable)
+  2. vmrun list (fallback)
+  3. nvram file lock (last resort)
+- Process detection remains the definitive method for determining VM state
+
+v1.2.2 (2026-01-12)
+- FIX: vmrun list broken on VMware 25.0.0 - now uses vmware-vmx process detection as PRIMARY method
+- NEW: Test-VMwareVMXProcess function - detects running VMs via Win32_Process/CIM query
+- NEW: Wait-VMwareVMStart function - verifies VM actually started after vmrun returns success
+- CHANGED: Get-VMwarePowerStateWithVmrun detection order:
+  1. vmware-vmx process detection (PRIMARY - most reliable, context-independent)
+  2. vmx.lck folder check
+  3. vmem.lck folder check
+  4. vmrun list (DEMOTED - broken on some systems)
+  5. nvram file lock
+  6. Generic .lck folder check
+- CHANGED: Set-VMwarePowerStateWithVmrun now verifies VM process appears within 10 seconds
+- Root cause: vmrun -T ws list returns 0 VMs on some VMware 25.0.0 installations
+
+v1.2.1 (2026-01-12)
+- FIX: VMware 25.0.0 compatibility - VMs may not have nvram files
+- vmx.lck folder check is now PRIMARY fallback method (not nvram)
+- Added vmem.lck folder detection as additional running indicator
+- nvram check is now tertiary (only if nvram file exists)
+- Handles missing nvram files gracefully with informational log message
+- Better diagnostic logging for all lock folder checks
+- Root cause: VMware 25.0.0 doesn't create nvram files for some VM configs
+
+v1.2.0 (2026-01-12)
+- BREAKING: Removed vmrest REST API dependency entirely
+- NEW: Uses vmrun.exe directly for all VM operations (no authentication required)
+- NEW: Optional vmxtoolkit PowerShell module support for enhanced operations
+- NEW: vmxtoolkit availability checked in VMwareProvider constructor
+- REMOVED: vmrest service startup/management (Start-VMrestService.ps1 deleted)
+- REMOVED: Credential management (SetCredential method, Port property)
+- REMOVED: REST API functions (Invoke-VMwareRestMethod, Get-VMwareVMList, etc.)
+- KEPT: Reliable file lock detection for VM state
+- KEPT: ShowVMConsole option (gui/nogui mode)
+- Simpler architecture, fewer dependencies, no authentication issues
+
+v1.1.23 (2026-01-12)
+- FIX: Improved VM state detection to properly detect shutdown
+- nvram file lock test is now PRIMARY detection method (most reliable)
+- If nvram file can be opened exclusively, VM is definitely OFF
+- Lock folder checks are now secondary and check for ACTIVE .lck files inside
+- Stale lock folders (after VM shutdown) no longer cause false "running" detection
+- Root cause: .lck folders may persist briefly after shutdown
+
+v1.1.22 (2026-01-12)
+- FIX: Get-VMwarePowerStateWithVmrun now uses multiple detection methods
+- vmrun list may fail to show running VMs (known VMware bug on some systems)
+- Added fallback: Check for .lck folders in VM directory (VMware creates these when VM runs)
+- Added fallback: Check if nvram file is locked by VMware process
+- Added diagnostic logging: shows raw vmrun list output and path comparisons
+- Root cause of "VM failed to start" - vmrun list returned empty despite VM running
+
+v1.1.21 (2026-01-12)
+- FIX: Set-VMwareBootISO now changes boot order to "cdrom,hdd" for WinPE capture
+- Previous boot order "hdd,cdrom" was correct for initial Windows boot
+- But during FFU CAPTURE, VM must boot WinPE from ISO, not Windows from VHD
+- Added diagnostic logging: shows current and new boot order when attaching ISO
+- Root cause of "VM shutdown timeout" - WinPE never booted, Windows booted instead
+
+v1.1.20 (2026-01-11)
+- FIX: Added VHD to VMware SupportedDiskFormats capability list
+- Validation was rejecting VHD format even though VMware 10+ supports it
+- Error was: "Disk format 'VHD' not supported by VMware. Supported: VMDK"
+
+v1.1.19 (2026-01-11)
+- FIX: VMware VM now uses VHD file directly instead of creating empty VMDK
+- VMware Workstation 10+ supports VHD files as virtual disks
+- Previously: VHD with Windows was created, then empty VMDK was created (boot failure)
+- Now: VHD with Windows is passed directly to VMware (VM boots correctly)
+- BuildFFUVM.ps1 no longer changes .vhd extension to .vmdk for VMware
+
+v1.1.18 (2026-01-11)
+- FIX: VMware VM boot order changed from "cdrom,hdd" to "hdd,cdrom"
+- FFU builds apply Windows to VHD before VM boot - HDD must be first
+- VM was failing to boot because it looked for CD-ROM first (which has no bootable media)
+
+v1.1.17 (2026-01-11)
+- FIX: Added ulm.disableMitigations = TRUE to VMX for Hyper-V host compatibility
+- Disables side-channel mitigations popup (KB79832) on systems with Hyper-V enabled
+- See: https://knowledge.broadcom.com/external/article?legacyId=79832
+
 v1.1.16 (2026-01-10)
 - FIX: Get-VHDMountedDriveLetter and Set-VHDDriveLetter now have diskpart fallback
 - Systems with broken WMI/Storage namespace (Get-Disk "Invalid property" error) now work

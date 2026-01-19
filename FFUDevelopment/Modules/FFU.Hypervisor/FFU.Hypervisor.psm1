@@ -424,6 +424,7 @@ Export-ModuleMember -Function @(
     'Get-VMStateValue',
     'Test-VMStateOff',
     'Test-VMStateRunning',
+    'Wait-VMStateChange',
     # VM lifecycle wrapper functions
     'New-HypervisorVM',
     'Start-HypervisorVM',

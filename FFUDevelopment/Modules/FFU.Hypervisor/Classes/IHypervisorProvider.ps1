@@ -63,13 +63,16 @@ class IHypervisorProvider {
     .PARAMETER ShowConsole
         If true, display the VM console window (VMware only - Hyper-V always shows console)
         Default is false for headless/nogui operation during automated builds
+    .RETURNS
+        String status: 'Running' if VM is currently running, 'Completed' if VM ran and shut down
+        (VMware GUI mode: vmrun blocks until VM shuts down, so 'Completed' indicates successful run)
     #>
-    [void] StartVM([VMInfo]$VM) {
+    [string] StartVM([VMInfo]$VM) {
         # Default overload - runs headless
-        $this.StartVM($VM, $false)
+        return $this.StartVM($VM, $false)
     }
 
-    [void] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
+    [string] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
         throw [System.NotImplementedException]::new("StartVM must be implemented by derived provider")
     }
 
@@ -145,6 +148,27 @@ class IHypervisorProvider {
     #>
     [VMInfo[]] GetAllVMs() {
         throw [System.NotImplementedException]::new("GetAllVMs must be implemented by derived provider")
+    }
+
+    <#
+    .SYNOPSIS
+        Wait for VM to reach specified state using event-driven monitoring
+    .DESCRIPTION
+        For Hyper-V: Uses CIM event subscription via Register-CimIndicationEvent.
+        For VMware: Falls back to polling (VMware lacks CIM event support).
+    .PARAMETER VM
+        VMInfo object or object with Name/VMName property representing the VM to monitor.
+    .PARAMETER TargetState
+        Target state to wait for: Running, Off, Paused, Saved.
+    .PARAMETER TimeoutSeconds
+        Maximum time to wait for state change.
+    .RETURNS
+        True if target state reached, False if timeout exceeded.
+    .NOTES
+        PERF-02: Event-driven VM state monitoring
+    #>
+    [bool] WaitForState([object]$VM, [string]$TargetState, [int]$TimeoutSeconds) {
+        throw [System.NotImplementedException]::new("WaitForState must be implemented by derived provider")
     }
 
     #endregion

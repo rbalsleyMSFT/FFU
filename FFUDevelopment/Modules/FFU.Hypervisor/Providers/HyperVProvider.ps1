@@ -118,6 +118,33 @@ class HyperVProvider : IHypervisorProvider {
                 }
             }
 
+            # Connect network adapter to virtual switch if specified
+            if (-not [string]::IsNullOrEmpty($Config.NetworkSwitchName)) {
+                WriteLog "Configuring network adapter..."
+                WriteLog "  Switch name: $($Config.NetworkSwitchName)"
+
+                # Verify switch exists
+                $vmSwitch = Get-VMSwitch -Name $Config.NetworkSwitchName -ErrorAction SilentlyContinue
+                if (-not $vmSwitch) {
+                    throw "Virtual switch '$($Config.NetworkSwitchName)' not found. Please verify the switch name in your configuration."
+                }
+
+                # Connect the VM's network adapter to the switch
+                $networkAdapter = Get-VMNetworkAdapter -VMName $Config.Name -ErrorAction Stop
+                if ($networkAdapter) {
+                    Connect-VMNetworkAdapter -VMNetworkAdapter $networkAdapter -SwitchName $Config.NetworkSwitchName -ErrorAction Stop
+                    WriteLog "  Network adapter connected to switch: $($Config.NetworkSwitchName)"
+                }
+                else {
+                    WriteLog "  WARNING: No network adapter found on VM - adding one"
+                    Add-VMNetworkAdapter -VMName $Config.Name -SwitchName $Config.NetworkSwitchName -ErrorAction Stop
+                    WriteLog "  Network adapter added and connected to switch: $($Config.NetworkSwitchName)"
+                }
+            }
+            else {
+                WriteLog "No network switch specified - network adapter not connected"
+            }
+
             # Connect to VM console
             WriteLog "Starting vmconnect localhost $($Config.Name)"
             & vmconnect localhost $Config.Name
@@ -160,12 +187,12 @@ class HyperVProvider : IHypervisorProvider {
         }
     }
 
-    [void] StartVM([VMInfo]$VM) {
+    [string] StartVM([VMInfo]$VM) {
         # Default overload - calls with ShowConsole=$false
-        $this.StartVM($VM, $false)
+        return $this.StartVM($VM, $false)
     }
 
-    [void] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
+    [string] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
         try {
             # Hyper-V VMs are always visible via Hyper-V Manager
             # ShowConsole parameter is ignored for Hyper-V but logged for visibility
@@ -174,6 +201,8 @@ class HyperVProvider : IHypervisorProvider {
             }
             Start-VM -Name $VM.Name -ErrorAction Stop
             WriteLog "VM '$($VM.Name)' started"
+            # Hyper-V Start-VM returns immediately, VM is always 'Running' after this
+            return 'Running'
         }
         catch {
             WriteLog "ERROR: Failed to start VM '$($VM.Name)': $($_.Exception.Message)"
@@ -306,6 +335,40 @@ class HyperVProvider : IHypervisorProvider {
         }
     }
 
+    <#
+    .SYNOPSIS
+        Wait for VM to reach specified state using event-driven monitoring.
+    .DESCRIPTION
+        Uses CIM event subscription instead of polling for efficient state monitoring.
+        This method delegates to Wait-VMStateChange which subscribes to Msvm_ComputerSystem
+        state change events via Register-CimIndicationEvent.
+    .PARAMETER VM
+        VMInfo object or object with VMName property representing the VM to monitor.
+    .PARAMETER TargetState
+        Target state to wait for: Running, Off, Paused, Saved.
+    .PARAMETER TimeoutSeconds
+        Maximum time to wait for state change. Default is 3600 (1 hour).
+    .RETURNS
+        True if target state reached, False if timeout exceeded.
+    .NOTES
+        PERF-02: Event-driven VM state monitoring for Hyper-V
+    #>
+    [bool] WaitForState([object]$VM, [string]$TargetState, [int]$TimeoutSeconds) {
+        # Extract VM name - handle VMInfo, native VM objects, or any object with Name/VMName property
+        # Using string type check to avoid type resolution issues when Hyper-V module isn't loaded
+        $vmType = $VM.GetType().FullName
+        $vmName = if ($vmType -like '*HyperV*VirtualMachine*') {
+            $VM.Name
+        } elseif ($VM.VMName) {
+            $VM.VMName
+        } else {
+            $VM.Name
+        }
+
+        # Delegate to event-driven function
+        return Wait-VMStateChange -VMName $vmName -TargetState $TargetState -TimeoutSeconds $TimeoutSeconds
+    }
+
     #endregion
 
     #region Disk Operations
@@ -395,11 +458,81 @@ class HyperVProvider : IHypervisorProvider {
 
     [void] AttachISO([VMInfo]$VM, [string]$ISOPath) {
         try {
+            WriteLog "=== Configuring capture boot for Hyper-V VM ==="
+            WriteLog "  VM Name: $($VM.Name)"
+            WriteLog "  ISO Path: $ISOPath"
+
+            # 1. Log current boot configuration before changes
+            $currentFirmware = Get-VMFirmware -VMName $VM.Name -ErrorAction SilentlyContinue
+            if ($currentFirmware) {
+                $firstBoot = $currentFirmware.FirstBootDevice
+                if ($firstBoot) {
+                    $deviceType = $firstBoot.GetType().Name
+                    WriteLog "  BEFORE - First boot device type: $deviceType"
+                    if ($firstBoot.Path) {
+                        WriteLog "  BEFORE - First boot device path: $($firstBoot.Path)"
+                    }
+                }
+                else {
+                    WriteLog "  BEFORE - No explicit first boot device set"
+                }
+            }
+
+            # 2. Add DVD drive with capture ISO
+            WriteLog "  Step 1: Adding DVD drive with capture ISO..."
             Add-VMDvdDrive -VMName $VM.Name -Path $ISOPath -ErrorAction Stop
+            WriteLog "  Step 1 COMPLETE: DVD drive added successfully"
+
+            # 3. Get the DVD drive we just added
+            WriteLog "  Step 2: Retrieving DVD drive for boot configuration..."
+            $dvdDrive = Get-VMDvdDrive -VMName $VM.Name -ErrorAction Stop | Where-Object { $_.Path -eq $ISOPath }
+            if (-not $dvdDrive) {
+                # Fallback: get the first DVD drive with any path set
+                $dvdDrive = Get-VMDvdDrive -VMName $VM.Name -ErrorAction Stop | Where-Object { $_.Path } | Select-Object -First 1
+            }
+            if (-not $dvdDrive) {
+                throw "Failed to retrieve DVD drive after adding it. Cannot set boot order."
+            }
+            WriteLog "  Step 2 COMPLETE: DVD drive found at Controller $($dvdDrive.ControllerNumber), Location $($dvdDrive.ControllerLocation)"
+
+            # 4. CRITICAL: Set DVD as first boot device
+            WriteLog "  Step 3: Setting DVD drive as FIRST boot device (CRITICAL for capture)..."
+            Set-VMFirmware -VMName $VM.Name -FirstBootDevice $dvdDrive -ErrorAction Stop
+            WriteLog "  Step 3 COMPLETE: Boot order configured - DVD is now first boot device"
+
+            # 5. Verify boot configuration change
+            WriteLog "  Step 4: Verifying boot configuration..."
+            $newFirmware = Get-VMFirmware -VMName $VM.Name -ErrorAction SilentlyContinue
+            if ($newFirmware -and $newFirmware.FirstBootDevice) {
+                $newFirstBoot = $newFirmware.FirstBootDevice
+                $newDeviceType = $newFirstBoot.GetType().Name
+                WriteLog "  AFTER - First boot device type: $newDeviceType"
+                if ($newFirstBoot.Path) {
+                    WriteLog "  AFTER - First boot device path: $($newFirstBoot.Path)"
+                }
+
+                # Check if it's actually a DVD drive
+                if ($newDeviceType -like '*DvdDrive*' -or $newDeviceType -like '*DVD*') {
+                    WriteLog "  VERIFIED: VM will boot from DVD/ISO (capture media)"
+                }
+                elseif ($newFirstBoot.Path -eq $ISOPath) {
+                    WriteLog "  VERIFIED: First boot device path matches capture ISO"
+                }
+                else {
+                    WriteLog "  WARNING: First boot device may not be the DVD drive!"
+                    WriteLog "  WARNING: Device type is: $newDeviceType"
+                }
+            }
+            else {
+                WriteLog "  WARNING: Could not verify boot configuration after change"
+            }
+
+            WriteLog "=== Capture boot configuration complete ==="
             WriteLog "Attached ISO to VM '$($VM.Name)': $ISOPath"
         }
         catch {
-            WriteLog "ERROR: Failed to attach ISO: $($_.Exception.Message)"
+            WriteLog "ERROR: Failed to configure capture boot: $($_.Exception.Message)"
+            WriteLog "ERROR: Stack trace: $($_.ScriptStackTrace)"
             throw
         }
     }
