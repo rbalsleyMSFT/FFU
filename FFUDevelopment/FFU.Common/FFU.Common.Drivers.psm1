@@ -624,7 +624,188 @@ function Get-LenovoPSREFToken {
 
 
 # --------------------------------------------------------------------------
+# SECTION: Lenovo PSREF Token Caching
+# --------------------------------------------------------------------------
+
+function Set-LenovoPSREFTokenCache {
+    <#
+    .SYNOPSIS
+        Caches a Lenovo PSREF token with DPAPI encryption.
+
+    .DESCRIPTION
+        Stores the Lenovo PSREF token in a secure cache file using Export-Clixml
+        (which provides DPAPI encryption on Windows). Optionally applies NTFS
+        encryption for an additional layer of protection.
+
+    .PARAMETER FFUDevelopmentPath
+        The root path of the FFU Development folder. The cache will be stored
+        in .security\token-cache\ under this path.
+
+    .PARAMETER Token
+        The Lenovo PSREF token string to cache.
+
+    .EXAMPLE
+        Set-LenovoPSREFTokenCache -FFUDevelopmentPath "C:\FFUDevelopment" -Token "X-PSREF-USER-TOKEN=abc123"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Token
+    )
+
+    $cacheDir = Join-Path -Path $FFUDevelopmentPath -ChildPath ".security\token-cache"
+    $cachePath = Join-Path -Path $cacheDir -ChildPath "lenovo-psref.xml"
+
+    # Create .security\token-cache directory if missing
+    if (-not (Test-Path -Path $cacheDir -PathType Container)) {
+        WriteLog "Creating token cache directory: $cacheDir"
+        New-Item -Path $cacheDir -ItemType Directory -Force | Out-Null
+    }
+
+    # Store hashtable with Token and Timestamp (ISO 8601 format)
+    $cacheData = @{
+        Token     = $Token
+        Timestamp = (Get-Date).ToString('o')
+    }
+
+    # Export with Export-Clixml (provides DPAPI encryption on Windows)
+    $cacheData | Export-Clixml -Path $cachePath -Force
+    WriteLog "Cached Lenovo PSREF token to $cachePath"
+
+    # Apply NTFS encryption (try/catch, non-fatal if unavailable)
+    try {
+        (Get-Item -Path $cachePath).Encrypt()
+        WriteLog "Applied NTFS encryption to token cache file."
+    }
+    catch {
+        WriteLog "NTFS encryption not available for token cache: $($_.Exception.Message)"
+    }
+}
+
+function Get-LenovoPSREFTokenCached {
+    <#
+    .SYNOPSIS
+        Retrieves a Lenovo PSREF token, using cache when available.
+
+    .DESCRIPTION
+        Checks for a cached Lenovo PSREF token first. If a valid cached token
+        exists (not expired), it is returned immediately, avoiding the need for
+        browser automation. If the cache is expired, missing, or ForceRefresh
+        is specified, the function retrieves a fresh token using Get-LenovoPSREFToken
+        and caches it for future use.
+
+    .PARAMETER FFUDevelopmentPath
+        The root path of the FFU Development folder.
+
+    .PARAMETER CacheValidMinutes
+        The number of minutes a cached token remains valid. Default is 60.
+
+    .PARAMETER ForceRefresh
+        When specified, bypasses the cache and retrieves a fresh token.
+
+    .OUTPUTS
+        [string] The Lenovo PSREF token.
+
+    .EXAMPLE
+        $token = Get-LenovoPSREFTokenCached -FFUDevelopmentPath "C:\FFUDevelopment"
+
+    .EXAMPLE
+        $token = Get-LenovoPSREFTokenCached -FFUDevelopmentPath "C:\FFUDevelopment" -ForceRefresh
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter()]
+        [int]$CacheValidMinutes = 60,
+
+        [Parameter()]
+        [switch]$ForceRefresh
+    )
+
+    $cacheDir = Join-Path -Path $FFUDevelopmentPath -ChildPath ".security\token-cache"
+    $cachePath = Join-Path -Path $cacheDir -ChildPath "lenovo-psref.xml"
+
+    # Check cache first (unless ForceRefresh)
+    if (-not $ForceRefresh -and (Test-Path -Path $cachePath -PathType Leaf)) {
+        try {
+            $cached = Import-Clixml -Path $cachePath
+            $cacheTimestamp = [datetime]$cached.Timestamp
+            $age = (Get-Date) - $cacheTimestamp
+
+            if ($age.TotalMinutes -lt $CacheValidMinutes) {
+                WriteLog "Using cached Lenovo PSREF token (age: $([int]$age.TotalMinutes) minutes, valid for $CacheValidMinutes minutes)"
+                return $cached.Token
+            }
+            else {
+                WriteLog "Cached Lenovo PSREF token expired (age: $([int]$age.TotalMinutes) minutes > $CacheValidMinutes minutes)"
+            }
+        }
+        catch {
+            WriteLog "Failed to read token cache, will retrieve fresh token: $($_.Exception.Message)"
+        }
+    }
+    elseif ($ForceRefresh) {
+        WriteLog "Force refresh requested, bypassing token cache."
+    }
+    else {
+        WriteLog "No cached Lenovo PSREF token found."
+    }
+
+    # Retrieve fresh token using existing browser automation
+    WriteLog "Retrieving fresh Lenovo PSREF token via browser automation..."
+    $token = Get-LenovoPSREFToken
+
+    # Cache the token if retrieval succeeded
+    if (-not [string]::IsNullOrWhiteSpace($token)) {
+        Set-LenovoPSREFTokenCache -FFUDevelopmentPath $FFUDevelopmentPath -Token $token
+        WriteLog "Fresh token cached for $CacheValidMinutes minutes."
+    }
+    else {
+        WriteLog "Warning: Failed to retrieve Lenovo PSREF token, cache not updated."
+    }
+
+    return $token
+}
+
+function Clear-LenovoPSREFTokenCache {
+    <#
+    .SYNOPSIS
+        Removes the cached Lenovo PSREF token.
+
+    .DESCRIPTION
+        Deletes the cached Lenovo PSREF token file if it exists. This forces
+        the next token request to perform fresh browser automation.
+
+    .PARAMETER FFUDevelopmentPath
+        The root path of the FFU Development folder.
+
+    .EXAMPLE
+        Clear-LenovoPSREFTokenCache -FFUDevelopmentPath "C:\FFUDevelopment"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
+    )
+
+    $cachePath = Join-Path -Path $FFUDevelopmentPath -ChildPath ".security\token-cache\lenovo-psref.xml"
+
+    if (Test-Path -Path $cachePath -PathType Leaf) {
+        Remove-Item -Path $cachePath -Force
+        WriteLog "Removed cached Lenovo PSREF token from $cachePath"
+    }
+    else {
+        WriteLog "No cached Lenovo PSREF token to remove."
+    }
+}
+
+# --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 
-Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson, Test-ExistingDriver, Get-LenovoPSREFToken
+Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson, Test-ExistingDriver, Get-LenovoPSREFToken, Get-LenovoPSREFTokenCached, Set-LenovoPSREFTokenCache, Clear-LenovoPSREFTokenCache
