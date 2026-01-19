@@ -1300,40 +1300,60 @@ function Get-DellDrivers {
             $arguments = "/s /drivers=`"$extractFolder`""
             WriteLog "Extracting driver: $driverFilePath $arguments"
             try {
-                #If Category is Chipset, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel chipset driver which leaves a Window open
+                #If Category is Chipset, use timeout-based extraction to prevent hanging on Intel chipset driver GUI windows
                 if ($driver.Category -eq "Chipset") {
-                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
+                    WriteLog "Extracting Chipset driver with timeout protection: $driverFilePath"
+                    $process = Start-Process -FilePath $driverFilePath -ArgumentList $arguments -PassThru -NoNewWindow
 
-                    #Wait to allow for the extraction process to finish
-                    Start-Sleep -Seconds ([FFUConstants]::DRIVER_EXTRACTION_WAIT)
+                    # Wait with timeout - WaitForExit returns $true if process exited, $false if timed out
+                    $timeoutSeconds = [FFUConstants]::DRIVER_EXTRACTION_TIMEOUT_SECONDS
+                    $completed = $process.WaitForExit($timeoutSeconds * 1000)
 
-                    $childProcesses = Get-ChildProcesses $process.Id
+                    if (-not $completed) {
+                        WriteLog "WARNING: Chipset driver extraction timed out after ${timeoutSeconds}s - killing process tree"
 
-                    # Find and stop the last created child process
-                    if ($childProcesses) {
-                        $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
-                        Stop-Process -Id $latestProcess.ProcessId -Force
-                        # Sleep to let process finish exiting so its installer can be removed
-                        Start-Sleep -Seconds ([FFUConstants]::SERVICE_STARTUP_WAIT)
-                    }
-                    #If Category is Network and $isServer is $false, must add -wait $false to the Invoke-Process command line to prevent the script from hanging on the Intel network driver which leaves a Window open
-                }
-                elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
-
-                    $process = Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait $false
-
-                    #Sometimes the network drivers will extract on client OS, wait and check if the process is still running
-                    Start-Sleep -Seconds ([FFUConstants]::DRIVER_EXTRACTION_WAIT)
-                    if ($process.HasExited -eq $false) {
-                        $childProcesses = Get-ChildProcesses $process.Id
-
-                        # Find and stop the last created child process
-                        if ($childProcesses) {
-                            $latestProcess = $childProcesses | Sort-Object CreationDate -Descending | Select-Object -First 1
-                            Stop-Process -Id $latestProcess.ProcessId -Force
-                            #Move on to the next driver and skip this one - it won't extract on a client OS even with /s /e switches
-                            continue
+                        # Kill child processes first (Intel GUI windows)
+                        $childProcesses = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" -ErrorAction SilentlyContinue
+                        foreach ($child in $childProcesses) {
+                            WriteLog "Stopping child process: $($child.Name) (PID: $($child.ProcessId))"
+                            Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
                         }
+
+                        # Kill parent process
+                        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Seconds ([FFUConstants]::SERVICE_STARTUP_WAIT)  # Allow cleanup
+                    }
+                    else {
+                        WriteLog "Chipset driver extraction completed with exit code: $($process.ExitCode)"
+                    }
+                }
+                #If Category is Network and $isServer is $false, use timeout-based extraction to prevent hanging on Intel network driver GUI windows
+                elseif ($driver.Category -eq "Network" -and $isServer -eq $false) {
+                    WriteLog "Extracting Network driver with timeout protection: $driverFilePath"
+                    $process = Start-Process -FilePath $driverFilePath -ArgumentList $arguments -PassThru -NoNewWindow
+
+                    # Wait with timeout
+                    $timeoutSeconds = [FFUConstants]::DRIVER_EXTRACTION_TIMEOUT_SECONDS
+                    $completed = $process.WaitForExit($timeoutSeconds * 1000)
+
+                    if (-not $completed) {
+                        WriteLog "WARNING: Network driver extraction timed out after ${timeoutSeconds}s - killing process tree"
+
+                        # Kill child processes first (Intel GUI windows)
+                        $childProcesses = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" -ErrorAction SilentlyContinue
+                        foreach ($child in $childProcesses) {
+                            WriteLog "Stopping child process: $($child.Name) (PID: $($child.ProcessId))"
+                            Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+                        }
+
+                        # Kill parent process
+                        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                        Start-Sleep -Seconds ([FFUConstants]::SERVICE_STARTUP_WAIT)  # Allow cleanup
+                        # Move on to the next driver - it won't extract on a client OS even with /s /e switches
+                        continue
+                    }
+                    else {
+                        WriteLog "Network driver extraction completed with exit code: $($process.ExitCode)"
                     }
                 }
                 else {
@@ -1400,14 +1420,23 @@ function Copy-Drivers {
     )
     # Find more information about device classes here:
     # https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
-    # For now, included are system devices, scsi and raid controllers, keyboards, mice and HID devices for touch support
+    # For now, included are system devices, scsi and raid controllers, keyboards, mice, HID devices, and network adapters
     # 4D36E97D-E325-11CE-BFC1-08002BE10318 = System devices
     # 4D36E97B-E325-11CE-BFC1-08002BE10318 = SCSI, RAID, and NVMe Controllers
     # 4d36e96b-e325-11ce-bfc1-08002be10318 = Keyboards
     # 4d36e96f-e325-11ce-bfc1-08002be10318 = Mice and other pointing devices
     # 745a17a0-74d3-11d0-b6fe-00a0c90f57da = Human Interface Devices
-    $filterGUIDs = @("{4D36E97D-E325-11CE-BFC1-08002BE10318}", "{4D36E97B-E325-11CE-BFC1-08002BE10318}", "{4d36e96b-e325-11ce-bfc1-08002be10318}", "{4d36e96f-e325-11ce-bfc1-08002be10318}", "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}")
-    $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware"
+    # 4D36E972-E325-11CE-BFC1-08002BE10318 = Network Adapters (for WinPE network support, especially VMware)
+    $filterGUIDs = @(
+        "{4D36E97D-E325-11CE-BFC1-08002BE10318}",  # System devices
+        "{4D36E97B-E325-11CE-BFC1-08002BE10318}",  # SCSI, RAID, NVMe
+        "{4d36e96b-e325-11ce-bfc1-08002be10318}",  # Keyboards
+        "{4d36e96f-e325-11ce-bfc1-08002be10318}",  # Mice
+        "{745a17a0-74d3-11d0-b6fe-00a0c90f57da}",  # HID
+        "{4D36E972-E325-11CE-BFC1-08002BE10318}"   # Network Adapters
+    )
+    # Exclude audio, camera, firmware, and wireless drivers to keep WinPE size small
+    $exclusionList = "wdmaudio.inf|Sound|Machine Learning|Camera|Firmware|Bluetooth|WiFi|Wireless"
     $pathLength = $Path.Length
     $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
 
@@ -1458,11 +1487,216 @@ function Copy-Drivers {
     }
 }
 
+function Get-IntelEthernetDrivers {
+    <#
+    .SYNOPSIS
+    Downloads Intel Ethernet drivers for WinPE network support (especially VMware e1000e)
+
+    .DESCRIPTION
+    Downloads the Intel Ethernet Adapter Complete Driver Pack and extracts
+    the e1000e drivers needed for WinPE network connectivity in VMware VMs.
+    VMware Workstation Pro uses e1000e (Intel 82574L) emulated NICs by default.
+
+    .PARAMETER DestinationPath
+    Path where the Intel e1000e drivers will be extracted
+
+    .PARAMETER TempPath
+    Temporary path for download and extraction operations. Defaults to $env:TEMP
+
+    .EXAMPLE
+    Get-IntelEthernetDrivers -DestinationPath "C:\FFU\VMwareDrivers"
+
+    .NOTES
+    Driver source: Intel Ethernet Adapter Complete Driver Pack v30.6
+    https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html
+    Note: Intel CDN requires browser-like headers to avoid 403 Forbidden errors.
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$TempPath = $env:TEMP
+    )
+
+    # Intel Ethernet Adapter Complete Driver Pack v30.6
+    # Source: https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html
+    # This contains PRO1000 drivers including e1000e for VMware compatibility
+    $downloadUrl = "https://downloadmirror.intel.com/871940/Release_30.6.zip"
+    $zipFile = Join-Path $TempPath "Intel_Ethernet_Drivers.zip"
+    $extractPath = Join-Path $TempPath "Intel_Ethernet_Extract_$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+    # Browser-like headers required to bypass Intel CDN 403 block
+    $headers = @{
+        'Accept' = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'Accept-Language' = 'en-US,en;q=0.5'
+        'Accept-Encoding' = 'gzip, deflate, br'
+    }
+    $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+    WriteLog "Downloading Intel Ethernet Driver Pack v30.6 for VMware WinPE support..."
+    WriteLog "Source: $downloadUrl"
+
+    $downloadSuccess = $false
+    try {
+        # Download with browser-like headers to avoid 403 from Intel CDN
+        WriteLog "Attempting download via Invoke-WebRequest..."
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipFile -Headers $headers -UserAgent $userAgent -UseBasicParsing -ErrorAction Stop
+        WriteLog "Download complete: $zipFile"
+        WriteLog "File exists at: $zipFile = $(Test-Path $zipFile)"
+        $downloadSuccess = $true
+    }
+    catch {
+        WriteLog "WebRequest download failed: $($_.Exception.Message)"
+        WriteLog "Attempting BITS transfer as fallback..."
+
+        try {
+            # BITS fallback for restricted networks
+            Start-BitsTransfer -Source $downloadUrl -Destination $zipFile -ErrorAction Stop
+            WriteLog "BITS download complete: $zipFile"
+            WriteLog "File exists at: $zipFile = $(Test-Path $zipFile)"
+            $downloadSuccess = $true
+        }
+        catch {
+            WriteLog "BITS download also failed: $($_.Exception.Message)"
+            throw "Failed to download Intel Ethernet drivers via both WebRequest and BITS. Original error: $($_.Exception.Message)"
+        }
+    }
+
+    if (-not $downloadSuccess) {
+        throw "Download failed - no successful download method"
+    }
+
+    # Verify download
+    if (-not (Test-Path $zipFile)) {
+        throw "Download verification failed: $zipFile does not exist"
+    }
+
+    $fileSize = (Get-Item $zipFile).Length
+    # Intel Ethernet pack is ~65MB - use 50MB as minimum threshold
+    $expectedMinSize = 50MB
+    WriteLog "Downloaded file size: $([math]::Round($fileSize / 1MB, 2)) MB (expected: ~65 MB, minimum: 50 MB)"
+
+    if ($fileSize -lt $expectedMinSize) {
+        # Check if file is HTML (common proxy/firewall block response)
+        try {
+            $firstBytes = Get-Content $zipFile -First 1 -Raw -ErrorAction Stop
+            if ($firstBytes -match '<!DOCTYPE|<html|<HTML') {
+                WriteLog "ERROR: Downloaded file appears to be HTML (likely proxy/firewall block)"
+                $preview = $firstBytes.Substring(0, [Math]::Min(200, $firstBytes.Length))
+                WriteLog "Content preview: $preview"
+            }
+        }
+        catch {
+            WriteLog "Could not read file content for validation: $($_.Exception.Message)"
+        }
+        Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+        throw "Downloaded file is too small ($([math]::Round($fileSize / 1MB, 2)) MB), expected ~65 MB. May be corrupted or blocked by proxy/firewall."
+    }
+
+    # Extract the archive
+    WriteLog "Extracting Intel Ethernet drivers to: $extractPath"
+    try {
+        Expand-Archive -Path $zipFile -DestinationPath $extractPath -Force
+    }
+    catch {
+        Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+        throw "Failed to extract Intel Ethernet drivers: $($_.Exception.Message)"
+    }
+
+    # Verify extraction produced files
+    $extractedFiles = Get-ChildItem -Path $extractPath -Recurse -File -ErrorAction SilentlyContinue
+    WriteLog "Extraction complete. Found $($extractedFiles.Count) files in temp location"
+    if ($extractedFiles.Count -eq 0) {
+        Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Extraction produced no files - archive may be corrupted or empty"
+    }
+
+    # Locate e1000e drivers (PRO1000\Winx64\NDIS68 for Windows 10/11)
+    # NDIS68 = Windows 10/11 compatible drivers
+    # v30.6 structure may be: Release_30.6\PRO1000\Winx64\NDIS68
+    $e1000ePaths = @(
+        (Join-Path $extractPath "PRO1000\Winx64\NDIS68"),
+        (Join-Path $extractPath "Release_*\PRO1000\Winx64\NDIS68"),
+        (Join-Path $extractPath "Wired_driver*\PRO1000\Winx64\NDIS68"),
+        (Join-Path $extractPath "*\PRO1000\Winx64\NDIS68")
+    )
+
+    $e1000eSource = $null
+    foreach ($searchPath in $e1000ePaths) {
+        $matches = Get-Item $searchPath -ErrorAction SilentlyContinue
+        if ($matches) {
+            $e1000eSource = $matches[0].FullName
+            WriteLog "Found e1000e drivers at: $e1000eSource"
+            break
+        }
+    }
+
+    if (-not $e1000eSource) {
+        # Fallback: search for e1000e.inf directly
+        $infSearch = Get-ChildItem -Path $extractPath -Filter "e1000e.inf" -Recurse -ErrorAction SilentlyContinue
+        if ($infSearch) {
+            $e1000eSource = Split-Path $infSearch[0].FullName -Parent
+            WriteLog "Found e1000e drivers via INF search at: $e1000eSource"
+        }
+    }
+
+    if (-not $e1000eSource) {
+        Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Could not locate e1000e drivers in extracted archive"
+    }
+
+    # Create destination and copy drivers
+    $destE1000e = Join-Path $DestinationPath "e1000e"
+    WriteLog "Copying e1000e drivers to: $destE1000e"
+    WriteLog "Source path: $e1000eSource"
+
+    # Create destination directory
+    New-Item -Path $destE1000e -ItemType Directory -Force | Out-Null
+    WriteLog "Destination directory created: $(Test-Path $destE1000e)"
+
+    # Count source files before copy
+    $sourceFiles = Get-ChildItem -Path "$e1000eSource" -Recurse -File -ErrorAction SilentlyContinue
+    WriteLog "Source contains $($sourceFiles.Count) files to copy"
+
+    # Copy files
+    Copy-Item -Path "$e1000eSource\*" -Destination $destE1000e -Recurse -Force
+
+    # Verify copied files
+    $copiedFiles = Get-ChildItem -Path $destE1000e -Recurse -File -ErrorAction SilentlyContinue
+    WriteLog "Copied $($copiedFiles.Count) total files to destination"
+
+    $infFiles = Get-ChildItem -Path $destE1000e -Filter "*.inf" -ErrorAction SilentlyContinue
+    if (-not $infFiles) {
+        WriteLog "ERROR: No INF files found after copy!"
+        WriteLog "Destination path exists: $(Test-Path $destE1000e)"
+        WriteLog "Files in destination: $(($copiedFiles | Select-Object -ExpandProperty Name) -join ', ')"
+        throw "Driver copy verification failed: no INF files found in $destE1000e"
+    }
+    WriteLog "Successfully verified $($infFiles.Count) driver INF file(s) in $destE1000e"
+    foreach ($inf in $infFiles) {
+        WriteLog "  - $($inf.Name)"
+    }
+
+    # Cleanup temp files
+    WriteLog "Cleaning up temporary files..."
+    Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+
+    WriteLog "Intel e1000e drivers ready for WinPE injection"
+    return $destE1000e
+}
+
 # Export all functions
 Export-ModuleMember -Function @(
     'Get-MicrosoftDrivers',
     'Get-HPDrivers',
     'Get-LenovoDrivers',
     'Get-DellDrivers',
-    'Copy-Drivers'
+    'Copy-Drivers',
+    'Get-IntelEthernetDrivers'
 )
