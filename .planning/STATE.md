@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 7 of 10 (Feature: Build Cancellation)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** In Progress
-**Last activity:** 2026-01-19 - Completed 07-01-PLAN.md (Test-BuildCancellation helper function)
+**Last activity:** 2026-01-19 - Completed 07-02-PLAN.md (cancellation checkpoints in BuildFFUVM.ps1)
 
-Progress: [======----] 63%
+Progress: [======----] 67%
 
 ## Progress
 
@@ -27,7 +27,7 @@ Progress: [======----] 63%
 | 4     | COMPLETE | 3/3 | 100% |
 | 5     | COMPLETE | 3/3 | 100% |
 | 6     | COMPLETE | 3/3 | 100% |
-| 7     | In Progress | 1/3 | 33% |
+| 7     | In Progress | 2/3 | 67% |
 | 8     | Pending | 0/? | 0% |
 | 9     | Pending | 0/? | 0% |
 | 10    | Pending | 0/? | 0% |
@@ -89,13 +89,14 @@ Progress: [======----] 63%
 | Plan | Wave | Depends On | Requirements | Description | Status |
 |------|------|------------|--------------|-------------|--------|
 | 07-01 | 1 | - | FEAT-01 | Test-BuildCancellation helper function | COMPLETE |
-| 07-02 | 1 | 07-01 | FEAT-01 | Add cancellation checkpoints to BuildFFUVM.ps1 | Pending |
+| 07-02 | 1 | 07-01 | FEAT-01 | Add cancellation checkpoints to BuildFFUVM.ps1 | COMPLETE |
 | 07-03 | 1 | 07-02 | FEAT-01 | Verify resource cleanup on cancel | Pending |
 
 **Wave 1:** Plans 07-01, 07-02, 07-03 (sequential - each depends on prior)
 
 ## Recent Activity
 
+- 2026-01-19: Completed 07-02-PLAN.md (9 cancellation checkpoints in BuildFFUVM.ps1)
 - 2026-01-19: Completed 07-01-PLAN.md (Test-BuildCancellation helper function with 23 Pester tests)
 - 2026-01-19: Phase 7 started - Feature: Build Cancellation
 - 2026-01-19: Phase 6 verified (3/3 must-haves, 129 UI/Error handling tests total)
@@ -179,6 +180,7 @@ Progress: [======----] 63%
 | Warnings for resource limits | 2026-01-19 | Base class uses warnings (not errors) for MaxMemoryGB/MaxProcessors - flexible design |
 | Export-ModuleMember overrides psd1 | 2026-01-19 | When psm1 has explicit Export-ModuleMember, must update both psm1 and psd1 |
 | Proper messaging context mock | 2026-01-19 | Use synchronized hashtable with ConcurrentQueue for FFU.Messaging tests |
+| Two FFU Capture checkpoints | 2026-01-19 | InstallApps and non-InstallApps paths need separate checkpoints |
 
 ## Open Issues
 
@@ -191,9 +193,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-19
-**Stopped at:** Completed 07-01-PLAN.md (Test-BuildCancellation helper)
+**Stopped at:** Completed 07-02-PLAN.md (cancellation checkpoints)
 **Resume file:** None
-**Next action:** Execute 07-02-PLAN.md (cancellation checkpoints)
+**Next action:** Execute 07-03-PLAN.md (verify resource cleanup on cancel)
 
 ---
 *State updated: 2026-01-19*
