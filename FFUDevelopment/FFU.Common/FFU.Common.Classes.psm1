@@ -169,10 +169,97 @@ class FFUNetworkConfiguration {
     [PSCredential]$ProxyCredential
     [string[]]$ProxyBypass
     [bool]$UseSystemProxy
+    [bool]$SSLInspectionDetected
+    [string]$SSLInspectorType
+    [string]$CertificateIssuer
 
     FFUNetworkConfiguration() {
         $this.ProxyBypass = @()
         $this.UseSystemProxy = $false
+        $this.SSLInspectionDetected = $false
+        $this.SSLInspectorType = $null
+        $this.CertificateIssuer = $null
+    }
+
+    # Tests if SSL inspection is being performed by a corporate proxy (parameterless overload)
+    static [PSCustomObject] TestSSLInspection() {
+        return [FFUNetworkConfiguration]::TestSSLInspection("https://www.microsoft.com", 5000)
+    }
+
+    # Tests if SSL inspection is being performed by a corporate proxy
+    static [PSCustomObject] TestSSLInspection([string]$TestUrl, [int]$TimeoutMs) {
+        try {
+            $request = [System.Net.HttpWebRequest]::Create($TestUrl)
+            $request.Method = "HEAD"
+            $request.Timeout = $TimeoutMs
+            # Allow self-signed or proxy certs for detection purposes
+            $request.ServerCertificateValidationCallback = { $true }
+
+            $response = $request.GetResponse()
+            $cert = $request.ServicePoint.Certificate
+            $response.Close()
+
+            if ($null -eq $cert) {
+                return [PSCustomObject]@{
+                    IsSSLInspected = $false
+                    ProxyType = $null
+                    Issuer = $null
+                    Error = "No certificate returned"
+                }
+            }
+
+            $issuer = $cert.Issuer
+            # Known SSL inspection proxy certificate issuers
+            $knownProxies = @(
+                'Netskope',
+                'Zscaler',
+                'goskope',
+                'Blue Coat',
+                'Forcepoint',
+                'McAfee',
+                'Symantec',
+                'Palo Alto',
+                'Cisco Umbrella',
+                'Websense'
+            )
+
+            foreach ($proxy in $knownProxies) {
+                if ($issuer -match $proxy) {
+                    return [PSCustomObject]@{
+                        IsSSLInspected = $true
+                        ProxyType = $proxy
+                        Issuer = $issuer
+                        Error = $null
+                    }
+                }
+            }
+
+            # No known proxy detected - check for non-standard issuers (may still be proxy)
+            $trustedIssuers = @('DigiCert', 'GlobalSign', 'Comodo', 'Let''s Encrypt', 'Microsoft', 'Entrust', 'GeoTrust', 'Thawte', 'VeriSign', 'Baltimore')
+            $isKnownCA = $false
+            foreach ($ca in $trustedIssuers) {
+                if ($issuer -match $ca) {
+                    $isKnownCA = $true
+                    break
+                }
+            }
+
+            return [PSCustomObject]@{
+                IsSSLInspected = $false
+                ProxyType = $null
+                Issuer = $issuer
+                Error = $null
+                UnknownIssuer = (-not $isKnownCA)
+            }
+        }
+        catch {
+            return [PSCustomObject]@{
+                IsSSLInspected = $false
+                ProxyType = $null
+                Issuer = $null
+                Error = $_.Exception.Message
+            }
+        }
     }
 
     # Detects proxy settings from Windows configuration
@@ -220,6 +307,27 @@ class FFUNetworkConfiguration {
 
             if (-not $config.ProxyServer) {
                 WriteLog "No proxy configuration detected. Using direct connection."
+            }
+
+            # Test for SSL inspection when proxy is detected or as a general network health check
+            $sslCheck = [FFUNetworkConfiguration]::TestSSLInspection()
+            if ($sslCheck.IsSSLInspected) {
+                $config.SSLInspectionDetected = $true
+                $config.SSLInspectorType = $sslCheck.ProxyType
+                $config.CertificateIssuer = $sslCheck.Issuer
+                WriteLog "WARNING: SSL inspection detected ($($sslCheck.ProxyType))"
+                WriteLog "WARNING: Certificate issuer: $($sslCheck.Issuer)"
+                WriteLog "WARNING: If downloads fail with certificate errors, ensure the proxy root certificate is in the Windows certificate store"
+                WriteLog "WARNING: Consider adding exclusions for: *.microsoft.com, *.windowsupdate.com, *.dell.com, *.hp.com, *.lenovo.com"
+            }
+            elseif ($sslCheck.UnknownIssuer) {
+                # Unknown certificate issuer - may be a custom corporate CA
+                $config.CertificateIssuer = $sslCheck.Issuer
+                WriteLog "INFO: Certificate issuer is not a well-known CA: $($sslCheck.Issuer)"
+                WriteLog "INFO: If you experience download failures, check if this is a corporate SSL inspection proxy"
+            }
+            elseif ($sslCheck.Error) {
+                WriteLog "WARNING: SSL inspection check failed: $($sslCheck.Error)"
             }
         }
         catch {

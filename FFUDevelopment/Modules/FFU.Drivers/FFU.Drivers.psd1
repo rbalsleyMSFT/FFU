@@ -3,7 +3,7 @@
     RootModule = 'FFU.Drivers.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.2'
+    ModuleVersion = '1.0.6'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -67,7 +67,8 @@
         'Get-HPDrivers',
         'Get-LenovoDrivers',
         'Get-DellDrivers',
-        'Copy-Drivers'
+        'Copy-Drivers',
+        'Get-IntelEthernetDrivers'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
@@ -105,6 +106,35 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.6: BUG-04 Fix Dell Chipset Driver Extraction Hang
+- Fixed Dell Intel chipset driver extraction hanging indefinitely
+- Replaced Invoke-Process + Start-Sleep with Start-Process + WaitForExit()
+- Added 30-second timeout via DRIVER_EXTRACTION_TIMEOUT_SECONDS constant
+- Use Get-CimInstance for reliable child process discovery
+- Kill child processes before parent for clean process tree termination
+- Applied same timeout pattern to Network driver extraction on client OS
+- Added detailed logging for timeout events and exit codes
+
+v1.0.5: Enhanced Download Diagnostics and BITS Fallback
+- Added BITS transfer fallback when WebRequest fails (network restrictions)
+- Enhanced file size validation with 50MB minimum (detects proxy/firewall blocks)
+- Added HTML content detection to identify proxy interception (blocked downloads)
+- Added extraction verification to ensure archive produces files
+- Enhanced copy verification with detailed logging of source/destination
+- Comprehensive diagnostic logging throughout download process
+
+v1.0.4: Fix Intel CDN 403 Forbidden Error
+- Updated Intel driver URL to v30.6 release (871940/Release_30.6.zip)
+- Added browser-like headers to bypass Intel CDN 403 Forbidden error
+- Removed BITS transfer in favor of Invoke-WebRequest with custom headers
+- Added search path for Release_* folder structure in v30.6 archive
+
+v1.0.3: VMware WinPE Network Support
+- Added Get-IntelEthernetDrivers function for auto-downloading Intel e1000e drivers
+- Intel e1000e is the default NIC type for VMware Workstation Pro VMs
+- Added Network Adapters ClassGUID to Copy-Drivers filter for WinPE network support
+- Updated exclusion list to filter Bluetooth/WiFi drivers from WinPE
+
 v1.0.2: Module Dependency Declaration
 - Added FFU.Core as RequiredModule dependency
 - Ensures WriteLog and other shared functions are available

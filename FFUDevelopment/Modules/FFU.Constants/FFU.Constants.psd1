@@ -1,6 +1,6 @@
 @{
     # Module metadata
-    ModuleVersion = '1.1.1'
+    ModuleVersion = '1.1.2'
     GUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
     Author = 'FFUBuilder Contributors'
     CompanyName = 'FFUBuilder'
@@ -26,6 +26,10 @@
             LicenseUri = 'https://github.com/rbalsleyMSFT/FFU/blob/UI_2510/LICENSE'
             ProjectUri = 'https://github.com/rbalsleyMSFT/FFU'
             ReleaseNotes = @'
+Version 1.1.2 (2026-01-19)
+- Added DRIVER_EXTRACTION_TIMEOUT_SECONDS constant (30 seconds)
+- Used for Dell/Intel driver extraction timeout protection (BUG-04)
+
 Version 1.1.1 (2026-01-17)
 - Removed deprecated static path properties ($DEFAULT_WORKING_DIR, etc.)
 - Removed legacy wrapper methods (GetWorkingDirectory, GetVMDirectory, GetCaptureDirectory)
