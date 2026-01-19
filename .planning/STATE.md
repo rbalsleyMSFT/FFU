@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Improve codebase quality, reliability, and maintainability
-**Current focus:** Phase 5 - Integration Tests Core (IN PROGRESS)
+**Current focus:** Phase 5 - Integration Tests Core (COMPLETE)
 
 ## Current Position
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 5 of 10 (Integration Tests Core)
-**Plan:** 1 of 3 complete
-**Status:** In Progress
-**Last activity:** 2026-01-19 - Completed 05-02-PLAN.md (TEST-02 - FFU.Drivers integration tests)
+**Plan:** 3 of 3 complete
+**Status:** Phase Complete
+**Last activity:** 2026-01-19 - Completed 05-01-PLAN.md (TEST-01 - FFU.VM integration tests)
 
-Progress: [====------] 43%
+Progress: [=====-----] 50%
 
 ## Progress
 
@@ -25,7 +25,7 @@ Progress: [====------] 43%
 | 2     | COMPLETE | 4/4 | 100% |
 | 3     | COMPLETE | 3/3 | 100% |
 | 4     | COMPLETE | 3/3 | 100% |
-| 5     | In Progress | 1/3 | 33% |
+| 5     | COMPLETE | 3/3 | 100% |
 | 6     | Pending | 0/? | 0% |
 | 7     | Pending | 0/? | 0% |
 | 8     | Pending | 0/? | 0% |
@@ -68,14 +68,16 @@ Progress: [====------] 43%
 
 | Plan | Wave | Depends On | Requirements | Description | Status |
 |------|------|------------|--------------|-------------|--------|
-| 05-01 | 1 | - | TEST-01 | VM creation integration tests | Pending |
+| 05-01 | 1 | - | TEST-01 | VM creation integration tests | COMPLETE |
 | 05-02 | 1 | - | TEST-02 | Driver injection integration tests | COMPLETE |
 | 05-03 | 1 | - | TEST-03 | FFU capture integration tests | COMPLETE |
 
-**Wave 1:** Plans 05-01, 05-02, 05-03 (parallel - independent) - IN PROGRESS
+**Wave 1:** Plans 05-01, 05-02, 05-03 (parallel - independent) - COMPLETE
 
 ## Recent Activity
 
+- 2026-01-19: Phase 5 COMPLETE - All integration tests created (3/3 plans)
+- 2026-01-19: Completed 05-01-PLAN.md (TEST-01 - FFU.VM integration tests with 22 Pester tests)
 - 2026-01-19: Completed 05-03-PLAN.md (TEST-03 - FFU.Imaging integration tests with 61 Pester tests)
 - 2026-01-19: Completed 05-02-PLAN.md (TEST-02 - FFU.Drivers integration tests with 21 Pester tests)
 - 2026-01-19: Phase 4 verified (3/3 must-haves) - Performance Optimization COMPLETE
@@ -139,6 +141,8 @@ Progress: [====------] 43%
 | 2s safety pause on flush error only | 2026-01-19 | Write-VolumeCache is verified complete; pause only when something went wrong |
 | Global WriteLog stub pattern | 2026-01-19 | Create global stub before module import to allow Pester mocking |
 | Import FFU.Common for WriteLog | 2026-01-19 | FFU.Imaging depends on WriteLog from FFU.Common, import first in tests |
+| Add-Member for Dispose mocking | 2026-01-19 | PSCustomObject lacks Dispose; Add-Member ScriptMethod adds it |
+| Return null for Hyper-V type bypass | 2026-01-19 | Get-VMHardDiskDrive returns null to avoid Set-VMFirmware type validation |
 
 ## Open Issues
 
@@ -151,9 +155,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-19
-**Stopped at:** Completed 05-02-PLAN.md
+**Stopped at:** Phase 5 complete - All integration tests created
 **Resume file:** None
-**Next action:** Continue Phase 5 execution (05-01, 05-03 remaining)
+**Next action:** Plan Phase 6 with `/gsd:plan-phase 6`
 
 ---
 *State updated: 2026-01-19*
