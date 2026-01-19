@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 4 of 10 (Performance Optimization)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** In Progress
-**Last activity:** 2026-01-19 - Completed 04-03-PLAN.md (PERF-03 documented)
+**Last activity:** 2026-01-19 - Completed 04-02-PLAN.md (PERF-02 event-driven monitoring)
 
-Progress: [===-------] 33%
+Progress: [====------] 40%
 
 ## Progress
 
@@ -24,7 +24,7 @@ Progress: [===-------] 33%
 | 1     | COMPLETE | 5/5 | 100% |
 | 2     | COMPLETE | 4/4 | 100% |
 | 3     | COMPLETE | 3/3 | 100% |
-| 4     | In Progress | 1/3 | 33% |
+| 4     | In Progress | 2/3 | 67% |
 | 5     | Pending | 0/? | 0% |
 | 6     | Pending | 0/? | 0% |
 | 7     | Pending | 0/? | 0% |
@@ -59,13 +59,14 @@ Progress: [===-------] 33%
 | Plan | Wave | Depends On | Requirements | Description | Status |
 |------|------|------------|--------------|-------------|--------|
 | 04-01 | 1 | - | PERF-01 | VHD flush optimization | Pending |
-| 04-02 | 1 | - | PERF-02 | Event-driven synchronization | Pending |
+| 04-02 | 1 | - | PERF-02 | Event-driven synchronization | COMPLETE |
 | 04-03 | 1 | - | PERF-03 | Module decomposition analysis | COMPLETE |
 
 **Wave 1:** Plans 04-01, 04-02, 04-03 (parallel - independent)
 
 ## Recent Activity
 
+- 2026-01-19: Completed 04-02-PLAN.md (PERF-02 - event-driven VM monitoring with CIM event subscription)
 - 2026-01-19: Completed 04-03-PLAN.md (PERF-03 - module decomposition documented, defer decision)
 - 2026-01-19: Phase 3 verified (12/12 must-haves) - Security Hardening COMPLETE
 - 2026-01-19: Completed 03-02-PLAN.md (SEC-02 - SecureString password hardening with 25 Pester tests)
@@ -117,6 +118,9 @@ Progress: [===-------] 33%
 | Source code pattern tests | 2026-01-19 | Test source patterns rather than runtime behavior for reliability |
 | Finally block for cleanup | 2026-01-19 | Guarantees cleanup even on exceptions |
 | Defer module decomposition | 2026-01-19 | Import performance 12-15x penalty outweighs maintainability benefit |
+| CIM over WMI for events | 2026-01-19 | Register-CimIndicationEvent is modern standard, PowerShell Core compatible |
+| WITHIN 2 for WQL polling | 2026-01-19 | Balance responsiveness vs CPU; WITHIN 1 causes high WmiPrvSE CPU |
+| VMware keeps polling | 2026-01-19 | VMware lacks CIM event support; vmrun CLI has no event subscription |
 
 ## Open Issues
 
@@ -129,9 +133,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-19
-**Stopped at:** Completed 04-03-PLAN.md
+**Stopped at:** Completed 04-02-PLAN.md
 **Resume file:** None
-**Next action:** Execute 04-01 or 04-02 (parallel Wave 1 plans)
+**Next action:** Execute 04-01 (VHD flush optimization - last plan in Wave 1)
 
 ---
 *State updated: 2026-01-19*
