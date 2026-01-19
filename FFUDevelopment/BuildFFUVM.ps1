@@ -518,13 +518,6 @@ param(
     [Parameter(Mandatory = $false)]
     [ValidateSet('HyperV', 'VMware', 'Auto')]
     [string]$HypervisorType = 'HyperV',
-    # VMware REST API configuration (only used when HypervisorType is VMware or Auto)
-    [Parameter(Mandatory = $false)]
-    [int]$VMwarePort = 8697,
-    [Parameter(Mandatory = $false)]
-    [string]$VMwareUsername = '',
-    [Parameter(Mandatory = $false)]
-    [string]$VMwarePassword = '',
     # ShowVMConsole: When true, displays the VM window during the build process (VMware only)
     # This allows you to follow the Windows installation progress visually
     # When false (default), the VM runs in headless/nogui mode for automation
@@ -532,10 +525,10 @@ param(
     [bool]$ShowVMConsole = $false,
     # VMShutdownTimeoutMinutes: Maximum time to wait for VM shutdown before forcing power off
     # If the VM doesn't shutdown gracefully within this time, it will be forcibly powered off
-    # Default is 20 minutes (from FFUConstants::DefaultVMShutdownTimeoutMinutes)
+    # Default is 60 minutes (from FFUConstants::DefaultVMShutdownTimeoutMinutes)
     [Parameter(Mandatory = $false)]
     [ValidateRange(5, 120)]
-    [int]$VMShutdownTimeoutMinutes = 20,
+    [int]$VMShutdownTimeoutMinutes = 60,
     # MessagingContext: Synchronized hashtable for real-time UI communication via FFU.Messaging module
     # When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates
     # When null (CLI usage), script operates normally without messaging
@@ -744,6 +737,8 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
             Set-Variable -Name $key -Value $value -Scope 0
         }
     }
+
+    # Note: VMware REST API credentials removed in v1.7.0 - vmrun/vmxtoolkit used instead
 }
 
 # Initialize $Filter for Microsoft Update Catalog searches
@@ -845,6 +840,7 @@ Import-Module "FFU.Preflight" -Force -Global -ErrorAction Stop -WarningAction Si
 # =============================================================================
 $script:HypervisorProvider = $null
 if ($InstallApps) {
+    Set-Progress -Percentage 2 -Message "Initializing hypervisor..."
     WriteLog "Initializing hypervisor provider: $HypervisorType"
 
     # Handle Auto-detect mode
@@ -901,15 +897,8 @@ Please verify the hypervisor is installed and properly configured.
     }
 
     # Get the provider instance (will be used for VM operations)
-    # Build credential for VMware if username/password provided
-    $vmwareCredential = $null
-    if ((-not [string]::IsNullOrWhiteSpace($VMwareUsername)) -and (-not [string]::IsNullOrWhiteSpace($VMwarePassword))) {
-        $securePassword = ConvertTo-SecureString -String $VMwarePassword -AsPlainText -Force
-        $vmwareCredential = New-Object System.Management.Automation.PSCredential($VMwareUsername, $securePassword)
-        WriteLog "VMware REST API credentials configured for user: $VMwareUsername"
-    }
-
-    $script:HypervisorProvider = Get-HypervisorProvider -Type $HypervisorType -Port $VMwarePort -Credential $vmwareCredential
+    # VMware uses vmrun/vmxtoolkit (no credentials needed since v1.7.0)
+    $script:HypervisorProvider = Get-HypervisorProvider -Type $HypervisorType
     WriteLog "Hypervisor provider initialized: $($script:HypervisorProvider.Name) v$($script:HypervisorProvider.Version)"
 }
 
@@ -2090,11 +2079,104 @@ if (($HypervisorType -eq 'HyperV') -and ($VMHostIPAddress) -and ($VMSwitchName))
     }
     WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
 }
-elseif (($HypervisorType -eq 'VMware') -and ($VMHostIPAddress)) {
+elseif ($HypervisorType -eq 'VMware') {
     # VMware uses bridged/NAT networking configured via VMwareSettings, not Hyper-V virtual switches
     WriteLog "VMware hypervisor selected - skipping Hyper-V VMSwitch validation"
-    WriteLog "VMHostIPAddress: $VMHostIPAddress (will be used for FFU capture network share)"
     WriteLog "VMware network type is configured via VMwareSettings.DefaultNetworkType (default: bridged)"
+
+    # === VMware Network Diagnostics ===
+    WriteLog "=== VMware Network Diagnostics ==="
+    WriteLog "VMHostIPAddress parameter value: '$VMHostIPAddress'"
+    WriteLog "VMHostIPAddress is null or empty: $([string]::IsNullOrWhiteSpace($VMHostIPAddress))"
+
+    # Log all network adapters on host for troubleshooting
+    try {
+        $hostAdapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' }
+        WriteLog "Host physical adapters (Up):"
+        foreach ($adapter in $hostAdapters) {
+            $ips = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            foreach ($ip in $ips) {
+                if ($ip.IPAddress -notlike '169.254.*') {
+                    WriteLog "  - $($adapter.Name): $($ip.IPAddress)"
+                }
+            }
+        }
+    }
+    catch {
+        WriteLog "WARNING: Could not enumerate host network adapters: $($_.Exception.Message)"
+    }
+
+    # CRITICAL: Validate VMHostIPAddress is set for VMware when InstallApps is enabled
+    if ([string]::IsNullOrWhiteSpace($VMHostIPAddress)) {
+        if ($InstallApps) {
+            WriteLog "WARNING: VMHostIPAddress is empty but InstallApps is enabled!"
+            WriteLog "For VMware FFU capture, the host IP address is required for the network share."
+            WriteLog "This IP should be your physical network adapter's IP (same network as VMware bridged adapter)."
+
+            # Attempt auto-detection as fallback
+            WriteLog "Attempting auto-detection of host IP for VMware..."
+            try {
+                # Strategy 1: Find the adapter with the default gateway (primary network)
+                $defaultRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+                    Sort-Object -Property RouteMetric |
+                    Select-Object -First 1
+
+                if ($defaultRoute) {
+                    $primaryIP = Get-NetIPAddress -InterfaceIndex $defaultRoute.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                        Where-Object { $_.IPAddress -notlike '169.254.*' } |
+                        Select-Object -First 1
+
+                    if ($primaryIP) {
+                        WriteLog "Auto-detected host IP via default route: $($primaryIP.IPAddress)"
+                        $VMHostIPAddress = $primaryIP.IPAddress
+                    }
+                }
+
+                # Strategy 2: Fall back to first physical adapter with valid IP
+                if ([string]::IsNullOrWhiteSpace($VMHostIPAddress)) {
+                    $physicalAdapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' }
+                    foreach ($adapter in $physicalAdapters) {
+                        $ip = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                            Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '127.*' } |
+                            Select-Object -First 1
+
+                        if ($ip) {
+                            WriteLog "Auto-detected host IP from physical adapter '$($adapter.Name)': $($ip.IPAddress)"
+                            $VMHostIPAddress = $ip.IPAddress
+                            break
+                        }
+                    }
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($VMHostIPAddress)) {
+                    WriteLog "Using auto-detected host IP for VMware FFU capture: $VMHostIPAddress"
+                }
+                else {
+                    throw "VMHostIPAddress is required for InstallApps with VMware but could not be auto-detected. Please specify your host's network IP address in the VMHostIPAddress parameter."
+                }
+            }
+            catch {
+                if ($_.Exception.Message -like '*VMHostIPAddress is required*') {
+                    throw $_
+                }
+                WriteLog "Auto-detection failed: $($_.Exception.Message)"
+                throw "VMHostIPAddress is required for InstallApps with VMware. Please specify your host's network IP address."
+            }
+        }
+        else {
+            WriteLog "VMHostIPAddress is empty (InstallApps is disabled, so this is OK)"
+        }
+    }
+    else {
+        WriteLog "VMHostIPAddress: $VMHostIPAddress (will be used for FFU capture network share)"
+
+        # Verify the IP is valid
+        $testIP = $null
+        if (-not [System.Net.IPAddress]::TryParse($VMHostIPAddress, [ref]$testIP)) {
+            throw "VMHostIPAddress '$VMHostIPAddress' is not a valid IP address"
+        }
+        WriteLog "VMHostIPAddress validation passed"
+    }
 }
 
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
@@ -2248,6 +2330,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         }
         
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
+        Set-Progress -Percentage 3 -Message "Downloading drivers..."
         $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $driversToProcess `
             -TaskType 'DownloadDriverByMake' `
             -TaskArguments $taskArguments `
@@ -2257,6 +2340,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
             -MainThreadLogPath $LogFile
 
         # After processing, update the driver mapping file
+        Set-Progress -Percentage 4 -Message "Processing driver results..."
         $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
         if ($null -ne $parallelResults) {
             # Create a lookup table from the original items to get the 'Make'
@@ -2364,6 +2448,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
 }
 # Existing single-model driver download logic
 elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
+    Set-Progress -Percentage 4 -Message "Downloading OEM drivers..."
     try {
         if ($Make -eq 'HP') {
             WriteLog 'Getting HP drivers'
@@ -3736,10 +3821,64 @@ if ($InstallApps) {
         WriteLog "Registered disk cleanup handler for unattend injection (ID: $vhdxUnattendCleanupId)"
     }
     $osPartition = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+
+    # === OS Partition Detection and Drive Letter Assignment ===
+    # VHD files mounted via diskpart don't auto-assign drive letters (unlike Mount-VHD for VHDX)
+    WriteLog "=== OS Partition Detection ==="
+    WriteLog "Disk Number: $($disk.Number)"
+    WriteLog "All partitions on disk:"
+    $disk | Get-Partition | ForEach-Object {
+        WriteLog "  Partition $($_.PartitionNumber): GptType=$($_.GptType), DriveLetter=$($_.DriveLetter), Size=$([math]::Round($_.Size/1GB, 2))GB"
+    }
+
+    if (-not $osPartition) {
+        WriteLog "ERROR: No OS partition found with GPT type {ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}"
+        WriteLog "This may indicate the VHD was not properly partitioned or Windows installation failed"
+        throw "OS partition not found on mounted disk. Cannot inject unattend.xml."
+    }
+
+    WriteLog "Found OS partition: Partition $($osPartition.PartitionNumber), Size=$([math]::Round($osPartition.Size/1GB, 2))GB"
+
+    # Check if drive letter is assigned (VHD via diskpart doesn't auto-assign)
     $osPartitionDriveLetter = $osPartition.DriveLetter
+
+    if ([string]::IsNullOrWhiteSpace($osPartitionDriveLetter)) {
+        WriteLog "OS partition has no drive letter assigned (common with VHD via diskpart)"
+        WriteLog "Assigning drive letter to OS partition..."
+
+        # Find an available drive letter (start from Z and work backwards to avoid conflicts)
+        $usedLetters = (Get-Volume).DriveLetter
+        $availableLetter = [char[]](90..68) | Where-Object { $_ -notin $usedLetters } | Select-Object -First 1
+
+        if (-not $availableLetter) {
+            throw "No available drive letters to assign to OS partition"
+        }
+
+        WriteLog "Assigning drive letter $availableLetter to partition $($osPartition.PartitionNumber)"
+        $osPartition | Set-Partition -NewDriveLetter $availableLetter
+
+        # Refresh partition info to get the assigned letter
+        Start-Sleep -Milliseconds 500
+        $osPartition = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+        $osPartitionDriveLetter = $osPartition.DriveLetter
+
+        if ([string]::IsNullOrWhiteSpace($osPartitionDriveLetter)) {
+            throw "Failed to assign drive letter to OS partition"
+        }
+
+        WriteLog "Successfully assigned drive letter: $osPartitionDriveLetter"
+    }
+    else {
+        WriteLog "OS partition already has drive letter: $osPartitionDriveLetter"
+    }
+
     WriteLog 'Copying unattend file to boot to audit mode'
     try {
-        New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        # Log the target directory creation
+        $unattendDir = "$($osPartitionDriveLetter):\Windows\Panther\Unattend"
+        WriteLog "Creating unattend directory: $unattendDir"
+        New-Item -Path $unattendDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        WriteLog "Unattend directory created successfully"
 
         # Determine source unattend file based on architecture
         $unattendSource = if ($WindowsArch -eq 'x64') {
@@ -3749,19 +3888,159 @@ if ($InstallApps) {
         }
         $unattendDest = "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml"
 
-        # Validate source exists before copying
-        if (-not (Test-Path $unattendSource -PathType Leaf)) {
+        # Log source file details BEFORE copy
+        WriteLog "=== UNATTEND COPY DIAGNOSTICS ==="
+        WriteLog "Source path: $unattendSource"
+        WriteLog "Destination path: $unattendDest"
+        WriteLog "Architecture: $WindowsArch"
+        WriteLog "OS Partition Drive Letter: $osPartitionDriveLetter"
+
+        if (Test-Path $unattendSource -PathType Leaf) {
+            $sourceInfo = Get-Item $unattendSource
+            WriteLog "SOURCE FILE EXISTS:"
+            WriteLog "  - Full Path: $($sourceInfo.FullName)"
+            WriteLog "  - Size: $($sourceInfo.Length) bytes"
+            WriteLog "  - Last Modified: $($sourceInfo.LastWriteTime)"
+        } else {
+            WriteLog "ERROR: Source file does NOT exist: $unattendSource"
             throw "Unattend source file not found: $unattendSource"
         }
 
-        Copy-Item -Path $unattendSource -Destination $unattendDest -Force -ErrorAction Stop | Out-Null
+        # Perform the copy using write-through to bypass file system cache
+        # This ensures data is written directly to the VHD file, not just to cache
+        WriteLog "Copying unattend file with write-through (bypassing cache)..."
 
-        # Verify copy succeeded
-        if (-not (Test-Path $unattendDest -PathType Leaf)) {
+        try {
+            # Read source file content
+            $sourceContent = [System.IO.File]::ReadAllBytes($unattendSource)
+            WriteLog "  Read $($sourceContent.Length) bytes from source"
+
+            # Validate destination path before FileStream creation
+            if ([string]::IsNullOrWhiteSpace($unattendDest)) {
+                WriteLog "  ERROR: unattendDest is empty before write! osPartitionDriveLetter='$osPartitionDriveLetter'"
+                throw "Cannot write unattend file: destination path is empty"
+            }
+
+            # Write to destination with WriteThrough flag to bypass caching
+            # FileOptions.WriteThrough ensures each write goes directly to disk
+            $fileStream = [System.IO.FileStream]::new(
+                $unattendDest,
+                [System.IO.FileMode]::Create,
+                [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::None,
+                4096,  # Buffer size
+                [System.IO.FileOptions]::WriteThrough
+            )
+            try {
+                $fileStream.Write($sourceContent, 0, $sourceContent.Length)
+                $fileStream.Flush($true)  # Flush to disk with flushToDisk=true
+                WriteLog "  Wrote $($sourceContent.Length) bytes with WriteThrough"
+            }
+            finally {
+                $fileStream.Close()
+                $fileStream.Dispose()
+            }
+
+            # Force volume flush for the specific file
+            WriteLog "  Flushing volume for unattend file..."
+            $null = & fsutil file seteof $unattendDest $sourceContent.Length 2>&1
+            $null = & fsutil volume flush "$osPartitionDriveLetter`:" 2>&1
+
+            # CRITICAL: Verify by re-reading from disk (not from cache)
+            # Clear any cached data by opening with NoBuffering
+            WriteLog "  Verifying file persisted to disk (cache bypass read)..."
+            Start-Sleep -Milliseconds 500  # Brief pause to ensure disk I/O completes
+
+            # DEBUG: Log the verification path value to diagnose empty path issue
+            WriteLog "  DEBUG: Verification path value: '$unattendDest'"
+            WriteLog "  DEBUG: osPartitionDriveLetter value: '$osPartitionDriveLetter'"
+
+            # Validate and reconstruct path if empty (defensive fix for VMware VHD edge case)
+            if ([string]::IsNullOrWhiteSpace($unattendDest)) {
+                WriteLog "  WARNING: unattendDest is empty! Reconstructing path..."
+                # Re-fetch the drive letter in case something changed
+                $osPartitionRefresh = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+                $refreshedDriveLetter = $osPartitionRefresh.DriveLetter
+                WriteLog "  DEBUG: Refreshed drive letter: '$refreshedDriveLetter'"
+
+                if ([string]::IsNullOrWhiteSpace($refreshedDriveLetter)) {
+                    throw "Cannot verify unattend file: OS partition drive letter is not assigned"
+                }
+
+                $unattendDest = "$($refreshedDriveLetter):\Windows\Panther\Unattend\Unattend.xml"
+                WriteLog "  DEBUG: Reconstructed path: '$unattendDest'"
+            }
+
+            # Final validation before FileStream creation
+            if ([string]::IsNullOrWhiteSpace($unattendDest)) {
+                throw "Verification failed: unattendDest path is empty after reconstruction attempt"
+            }
+
+            # Re-read the file to verify it's actually on disk
+            $verifyStream = [System.IO.FileStream]::new(
+                $unattendDest,
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::Read,
+                [System.IO.FileShare]::Read,
+                4096,
+                [System.IO.FileOptions]::None  # Normal read for verification
+            )
+            try {
+                $verifyContent = [byte[]]::new($verifyStream.Length)
+                $bytesRead = $verifyStream.Read($verifyContent, 0, $verifyContent.Length)
+                WriteLog "  Verified: Read back $bytesRead bytes from disk"
+
+                # Compare content
+                $contentMatch = $true
+                if ($bytesRead -ne $sourceContent.Length) {
+                    $contentMatch = $false
+                } else {
+                    for ($i = 0; $i -lt $sourceContent.Length; $i++) {
+                        if ($sourceContent[$i] -ne $verifyContent[$i]) {
+                            $contentMatch = $false
+                            break
+                        }
+                    }
+                }
+
+                if ($contentMatch) {
+                    WriteLog "  Content verification: PASSED (byte-for-byte match)"
+                } else {
+                    WriteLog "  Content verification: FAILED (content mismatch!)"
+                    throw "Unattend file content verification failed - data not persisted correctly"
+                }
+            }
+            finally {
+                $verifyStream.Close()
+                $verifyStream.Dispose()
+            }
+        }
+        catch {
+            WriteLog "ERROR: Write-through copy failed: $($_.Exception.Message)"
+            throw
+        }
+
+        # Additional verification using standard file system
+        if (Test-Path $unattendDest -PathType Leaf) {
+            $destInfo = Get-Item $unattendDest
+            WriteLog "DESTINATION FILE EXISTS (copy successful):"
+            WriteLog "  - Full Path: $($destInfo.FullName)"
+            WriteLog "  - Size: $($destInfo.Length) bytes"
+            WriteLog "  - Last Modified: $($destInfo.LastWriteTime)"
+
+            # Verify sizes match
+            if ($destInfo.Length -eq $sourceInfo.Length) {
+                WriteLog "  - Size verification: PASSED (source and dest match)"
+            } else {
+                WriteLog "  - Size verification: FAILED (source: $($sourceInfo.Length), dest: $($destInfo.Length))"
+            }
+        } else {
+            WriteLog "ERROR: Destination file does NOT exist after copy: $unattendDest"
             throw "Unattend file copy verification failed - destination file not found: $unattendDest"
         }
 
-        WriteLog 'Copy completed'
+        WriteLog "=== END UNATTEND COPY DIAGNOSTICS ==="
+        WriteLog 'Unattend copy completed successfully'
     }
     catch {
         WriteLog "ERROR: Failed to copy unattend file for audit mode boot - $($_.Exception.Message)"
@@ -3775,62 +4054,14 @@ if ($InstallApps) {
 
 #If installing apps (Office or 3rd party), we need to build a VM and capture that FFU, if not, just cut the FFU from the VHDX file
 if ($InstallApps) {
-    Set-Progress -Percentage 41 -Message "Starting VM for app installation..."
-    #Create VM and attach VHDX
-    try {
-        WriteLog 'Creating new FFU VM using hypervisor provider'
+    # IMPORTANT: Build sequence is:
+    # 1. Set-CaptureFFU (create user/share)
+    # 2. Create WinPE capture ISO (must be ready BEFORE VM starts)
+    # 3. Create and start VM for app installation
+    # This ensures WinPE ISO is available when the VM reboots for capture
 
-        # Create VMConfiguration for hypervisor-agnostic VM creation
-        # NOTE: Use New-VMConfiguration factory function instead of [VMConfiguration]::new()
-        # because PowerShell module classes aren't exported to caller's scope (background jobs fail)
-        #
-        # IMPORTANT: VMware requires VMDK format for bootable VMs (VHD is not supported for booting)
-        # The VMwareProvider will create a VMDK disk using vmware-vdiskmanager.exe
-        $diskFormat = if ($HypervisorType -eq 'VMware') { 'VMDK' } else { 'VHDX' }
-
-        # Determine the disk path - VMware needs VMDK extension
-        $vmDiskPath = if ($HypervisorType -eq 'VMware') {
-            # Change extension from .vhd/.vhdx to .vmdk for VMware
-            [System.IO.Path]::ChangeExtension($VHDXPath, '.vmdk')
-        } else {
-            $VHDXPath
-        }
-        WriteLog "VM disk path: $vmDiskPath (format: $diskFormat)"
-
-        $vmConfig = New-VMConfiguration -Name $VMName -Path $VMPath `
-                                        -MemoryBytes $memory -ProcessorCount $processors `
-                                        -VirtualDiskPath $vmDiskPath -ISOPath $AppsISO `
-                                        -DiskFormat $diskFormat -EnableTPM $true `
-                                        -EnableSecureBoot $true -Generation 2 `
-                                        -AutomaticCheckpoints $false -DynamicMemory $false
-
-        WriteLog "VMConfiguration: $($vmConfig.ToString())"
-
-        # Create VM using the initialized hypervisor provider
-        $FFUVM = $script:HypervisorProvider.CreateVM($vmConfig)
-        WriteLog "FFU VM Created: $($FFUVM.Name) [HypervisorType: $($FFUVM.HypervisorType)]"
-
-        # Start the VM - CreateVM only creates it, doesn't start it
-        # (Original New-FFUVM function called Start-VM internally, hypervisor provider does not)
-        WriteLog "Starting VM: $($FFUVM.Name) (ShowVMConsole: $ShowVMConsole)"
-        $script:HypervisorProvider.StartVM($FFUVM, $ShowVMConsole)
-        WriteLog "VM started successfully"
-
-        # Register cleanup for VM in case of failure during subsequent operations
-        $vmCleanupId = Register-VMCleanup -VMName $VMName
-        WriteLog "Registered VM cleanup handler (ID: $vmCleanupId)"
-    }
-    catch {
-        Write-Host 'VM creation failed'
-        Writelog "VM creation failed with error $_"
-        # Use hypervisor-agnostic cleanup helper
-        Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
-                                 -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                                 -FFUDevelopmentPath $FFUDevelopmentPath
-        throw $_
-
-    }
-    #Create ffu user and share to capture FFU to
+    # Step 1: Create FFU user and share to capture FFU to
+    Set-Progress -Percentage 41 -Message "Setting up FFU capture share..."
     try {
         # DIAGNOSTIC: Verify Set-CaptureFFU is available before calling
         WriteLog "Verifying Set-CaptureFFU function availability..."
@@ -3882,9 +4113,15 @@ if ($InstallApps) {
             WriteLog "Set-CaptureFFU verified available in current session"
         }
 
-        # Generate secure random password for FFU capture user
-        # SECURITY: Password is generated directly to SecureString - never exists as plain text during generation
-        # This password will be used by both Set-CaptureFFU and Update-CaptureFFUScript
+        # SECURITY: FFU Capture Password Flow
+        # ====================================
+        # 1. Password is generated via New-SecureRandomPassword (RNGCryptoServiceProvider)
+        # 2. Password NEVER exists as plaintext during generation - built directly into SecureString
+        # 3. SecureString passed to Set-CaptureFFU (creates user account with BSTR conversion in finally block)
+        # 4. SecureString passed to Update-CaptureFFUScript (converts to plaintext for script injection only)
+        # 5. Plaintext in CaptureFFU.ps1 is UNAVOIDABLE - WinPE cannot use SecureString/DPAPI
+        # 6. SecureString.Dispose() called after use; GC.Collect() for defense in depth
+        # 7. Remove-SensitiveCaptureMedia cleans up CaptureFFU.ps1 backup files post-capture
         WriteLog "Generating cryptographically secure password for FFU capture user"
         $capturePasswordSecure = New-SecureRandomPassword -Length 32 -IncludeSpecialChars $false
         WriteLog "Password generated (length: 32 characters, using cryptographic RNG)"
@@ -3897,16 +4134,15 @@ if ($InstallApps) {
         WriteLog "Set-CaptureFFU function failed with error $_"
         # SECURITY: Dispose credentials on failure
         Remove-SecureStringFromMemory -SecureStringVariable ([ref]$capturePasswordSecure)
-        Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
-                                 -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                                 -FFUDevelopmentPath $FFUDevelopmentPath
+        # Note: VM cleanup removed - VM is not created yet at this point in the build sequence
         throw $_
 
     }
+
+    # Step 2: Create WinPE capture media (must be ready BEFORE VM starts)
     If ($CreateCaptureMedia) {
-        #Create Capture Media
         try {
-            Set-Progress -Percentage 45 -Message "Creating WinPE capture media..."
+            Set-Progress -Percentage 44 -Message "Creating WinPE capture media..."
 
             # Update CaptureFFU.ps1 script with runtime configuration before creating WinPE media
             # SECURITY: Pass SecureString - Update-CaptureFFUScript handles conversion internally
@@ -3938,19 +4174,21 @@ if ($InstallApps) {
                 throw "Failed to update CaptureFFU.ps1 script. Capture media creation aborted. Error: $_"
             }
 
-            #This should happen while the FFUVM is building
+            # Create WinPE capture media BEFORE starting VM
+            # HypervisorType is passed to enable VMware-specific driver injection
+            Set-Progress -Percentage 45 -Message "Building WinPE media..."
             New-PEMedia -Capture $true -Deploy $false -adkPath $adkPath -FFUDevelopmentPath $FFUDevelopmentPath `
                         -WindowsArch $WindowsArch -CaptureISO $CaptureISO -DeployISO $null `
                         -CopyPEDrivers $CopyPEDrivers -UseDriversAsPEDrivers $UseDriversAsPEDrivers `
                         -PEDriversFolder $PEDriversFolder -DriversFolder $DriversFolder `
-                        -CompressDownloadedDriversToWim $CompressDownloadedDriversToWim
+                        -CompressDownloadedDriversToWim $CompressDownloadedDriversToWim `
+                        -HypervisorType $HypervisorType
+            Set-Progress -Percentage 47 -Message "WinPE media created..."
         }
         catch {
             Write-Host 'Creating capture media failed'
             WriteLog "Creating capture media failed with error $_"
-            Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
-                                     -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                                     -FFUDevelopmentPath $FFUDevelopmentPath
+            # Note: VM cleanup removed - VM is not created yet at this point in the build sequence
             throw $_
 
         }
@@ -3982,6 +4220,112 @@ if ($InstallApps) {
             WriteLog "SECURITY: Plain text credential cleared (no capture media)"
         }
     }
+
+    # Step 3: Create VM and start app installation (AFTER WinPE ISO is ready)
+    Set-Progress -Percentage 48 -Message "Starting VM for app installation..."
+    #Create VM and attach VHDX
+    try {
+        WriteLog 'Creating new FFU VM using hypervisor provider'
+
+        # Create VMConfiguration for hypervisor-agnostic VM creation
+        # NOTE: Use New-VMConfiguration factory function instead of [VMConfiguration]::new()
+        # because PowerShell module classes aren't exported to caller's scope (background jobs fail)
+        #
+        # NOTE: VMware Workstation 10+ supports VHD files directly as virtual disks.
+        # We create a VHD during the build (New-ScratchVhd), then use it directly in VMware.
+        # No conversion to VMDK is needed - the VMX file can reference VHD files.
+        $diskFormat = if ($HypervisorType -eq 'VMware') { 'VHD' } else { 'VHDX' }
+
+        # Use the disk path as-is - VMware can use VHD files directly
+        # The VHD was already created by New-ScratchVhd and contains Windows
+        $vmDiskPath = $VHDXPath
+        WriteLog "VM disk path: $vmDiskPath (format: $diskFormat)"
+
+        Set-Progress -Percentage 46 -Message "Preparing VM configuration..."
+        $vmConfig = New-VMConfiguration -Name $VMName -Path $VMPath `
+                                        -MemoryBytes $memory -ProcessorCount $processors `
+                                        -VirtualDiskPath $vmDiskPath -ISOPath $AppsISO `
+                                        -DiskFormat $diskFormat -EnableTPM $true `
+                                        -EnableSecureBoot $true -Generation 2 `
+                                        -AutomaticCheckpoints $false -DynamicMemory $false `
+                                        -NetworkSwitchName $VMSwitchName
+
+        WriteLog "VMConfiguration: $($vmConfig.ToString())"
+
+        # Create VM using the initialized hypervisor provider
+        Set-Progress -Percentage 47 -Message "Creating virtual machine..."
+        $FFUVM = $script:HypervisorProvider.CreateVM($vmConfig)
+        WriteLog "FFU VM Created: $($FFUVM.Name) [HypervisorType: $($FFUVM.HypervisorType)]"
+
+        # Start the VM - CreateVM only creates it, doesn't start it
+        # (Original New-FFUVM function called Start-VM internally, hypervisor provider does not)
+        Set-Progress -Percentage 48 -Message "Starting virtual machine..."
+        WriteLog "Starting VM: $($FFUVM.Name) (ShowVMConsole: $ShowVMConsole)"
+        $startVMStatus = $script:HypervisorProvider.StartVM($FFUVM, $ShowVMConsole)
+        WriteLog "VM start command returned. Status: $startVMStatus"
+
+        # VMware GUI mode special handling:
+        # When ShowVMConsole=$true and using VMware, vmrun blocks until VM shuts down.
+        # If StartVM returns 'Completed', the VM already ran and shut down.
+        # This means app installation (orchestrator.ps1) completed successfully.
+        $script:VMCompletedDuringStartup = ($startVMStatus -eq 'Completed')
+
+        if ($script:VMCompletedDuringStartup) {
+            WriteLog "=========================================="
+            WriteLog "VM COMPLETED during StartVM call"
+            WriteLog "This is expected when using VMware with ShowVMConsole=`$true"
+            WriteLog "(vmrun gui blocks until VM shuts down)"
+            WriteLog "App installation completed - proceeding directly to FFU capture"
+            WriteLog "=========================================="
+            # Skip the startup polling loop - VM already ran and shut down
+        }
+        else {
+            # VM is running - wait for it to appear in running state
+            # The vmrun list command may take 1-5 seconds to show a newly started VM
+            Set-Progress -Percentage 49 -Message "Waiting for VM to initialize..."
+            WriteLog "Waiting for VM to register as running..."
+            $startupTimeout = 60  # seconds
+            $startupElapsed = 0
+            $startupPollInterval = 2
+            $vmStartConfirmed = $false
+
+            while ($startupElapsed -lt $startupTimeout) {
+                Start-Sleep -Seconds $startupPollInterval
+                $startupElapsed += $startupPollInterval
+
+                $vmState = $script:HypervisorProvider.GetVMState($FFUVM)
+                if (Test-VMStateRunning -State $vmState) {
+                    WriteLog "VM confirmed running after $startupElapsed seconds"
+                    $vmStartConfirmed = $true
+                    break
+                }
+
+                if ($startupElapsed % 10 -eq 0) {
+                    WriteLog "  Still waiting for VM to start ($startupElapsed seconds)..."
+                }
+            }
+
+            if (-not $vmStartConfirmed) {
+                throw "VM failed to start within $startupTimeout seconds. Check VMware/Hyper-V console for errors."
+            }
+
+            WriteLog "VM started successfully and confirmed running"
+        }
+
+        # Register cleanup for VM in case of failure during subsequent operations
+        $vmCleanupId = Register-VMCleanup -VMName $VMName
+        WriteLog "Registered VM cleanup handler (ID: $vmCleanupId)"
+    }
+    catch {
+        Write-Host 'VM creation failed'
+        Writelog "VM creation failed with error $_"
+        # Use hypervisor-agnostic cleanup helper
+        Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                                 -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
+                                 -FFUDevelopmentPath $FFUDevelopmentPath
+        throw $_
+
+    }
 }
 #Capture FFU file
 try {
@@ -4008,60 +4352,76 @@ try {
 
     #Check if VM is done provisioning
     If ($InstallApps) {
-        Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
-
-        # Initial state check before polling loop
-        $initialState = $script:HypervisorProvider.GetVMState($FFUVM)
-        WriteLog "Initial VM state before polling: $initialState (VMX: $($FFUVM.VMXPath))"
-
-        if (Test-VMStateOff -State $initialState) {
-            WriteLog "WARNING: VM is already OFF at start of polling loop - this may indicate the VM failed to start or shut down immediately"
+        # Check if VM already completed during StartVM (VMware GUI mode)
+        # In this case, skip the shutdown polling loop entirely
+        if ($script:VMCompletedDuringStartup) {
+            WriteLog "=========================================="
+            WriteLog "SKIPPING SHUTDOWN POLLING"
+            WriteLog "VM already completed during StartVM (vmrun gui mode)"
+            WriteLog "Proceeding directly to FFU capture..."
+            WriteLog "=========================================="
         }
+        else {
+            Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
 
-        # VM shutdown polling with configurable timeout
-        # If VM doesn't shutdown gracefully within timeout, force power off
-        $pollCount = 0
-        $pollIntervalSeconds = 5  # Must match [FFUConstants]::VM_STATE_POLL_INTERVAL
-        $maxPolls = ($VMShutdownTimeoutMinutes * 60) / $pollIntervalSeconds
-        $startTime = Get-Date
+            # Initial state check before polling loop
+            # After startup verification above, VM should definitely be running at this point
+            $initialState = $script:HypervisorProvider.GetVMState($FFUVM)
+            WriteLog "Initial VM state before polling: $initialState (VMX: $($FFUVM.VMXPath))"
 
-        WriteLog "Starting VM shutdown polling (timeout: $VMShutdownTimeoutMinutes minutes, max polls: $maxPolls)"
-
-        do {
-            $pollCount++
-            # Use hypervisor provider for VM state polling (works with both Hyper-V and VMware)
-            $vmState = $script:HypervisorProvider.GetVMState($FFUVM)
-            $elapsed = (Get-Date) - $startTime
-            $elapsedMinutes = [math]::Round($elapsed.TotalMinutes, 1)
-
-            WriteLog "Waiting for VM to shutdown (poll #$pollCount, state: $vmState, elapsed: ${elapsedMinutes}m)"
-
-            if (-not (Test-VMStateOff -State $vmState)) {
-                if ($pollCount -ge $maxPolls) {
-                    WriteLog "WARNING: VM shutdown timeout reached after $VMShutdownTimeoutMinutes minutes. Forcing power off..."
-                    try {
-                        $script:HypervisorProvider.StopVM($FFUVM, $true)  # Force = $true
-                        Start-Sleep -Seconds 5  # Allow time for force shutdown to complete
-                    }
-                    catch {
-                        WriteLog "ERROR: Force power off failed: $($_.Exception.Message)"
-                    }
-                    break
-                }
-                Start-Sleep -Seconds $pollIntervalSeconds
+            if (Test-VMStateOff -State $initialState) {
+                # VM should be Running at this point after successful startup verification
+                # If it's OFF, the VM crashed or failed during the setup phase
+                WriteLog "ERROR: VM is OFF at start of polling - VM may have crashed during app installation setup"
+                throw "VM is not running. Expected Running state at this point. Check VMware/Hyper-V console for crash details."
             }
-        } while (-not (Test-VMStateOff -State $vmState))
 
-        # Verify VM is actually off after polling loop exits
-        $finalState = $script:HypervisorProvider.GetVMState($FFUVM)
-        if (-not (Test-VMStateOff -State $finalState)) {
-            WriteLog "ERROR: VM is still running after shutdown polling completed. State: $finalState"
-            throw "Failed to shutdown VM after force power off. State: $finalState"
+            # VM shutdown polling with configurable timeout
+            # If VM doesn't shutdown gracefully within timeout, force power off
+            $pollCount = 0
+            $pollIntervalSeconds = 5  # Must match [FFUConstants]::VM_STATE_POLL_INTERVAL
+            $maxPolls = ($VMShutdownTimeoutMinutes * 60) / $pollIntervalSeconds
+            $startTime = Get-Date
+
+            WriteLog "Starting VM shutdown polling (timeout: $VMShutdownTimeoutMinutes minutes, max polls: $maxPolls)"
+
+            do {
+                $pollCount++
+                # Use hypervisor provider for VM state polling (works with both Hyper-V and VMware)
+                $vmState = $script:HypervisorProvider.GetVMState($FFUVM)
+                $elapsed = (Get-Date) - $startTime
+                $elapsedMinutes = [math]::Round($elapsed.TotalMinutes, 1)
+
+                WriteLog "Waiting for VM to shutdown (poll #$pollCount, state: $vmState, elapsed: ${elapsedMinutes}m)"
+
+                if (-not (Test-VMStateOff -State $vmState)) {
+                    if ($pollCount -ge $maxPolls) {
+                        WriteLog "WARNING: VM shutdown timeout reached after $VMShutdownTimeoutMinutes minutes. Forcing power off..."
+                        try {
+                            $script:HypervisorProvider.StopVM($FFUVM, $true)  # Force = $true
+                            Start-Sleep -Seconds 5  # Allow time for force shutdown to complete
+                        }
+                        catch {
+                            WriteLog "ERROR: Force power off failed: $($_.Exception.Message)"
+                        }
+                        break
+                    }
+                    Start-Sleep -Seconds $pollIntervalSeconds
+                }
+            } while (-not (Test-VMStateOff -State $vmState))
+
+            # Verify VM is actually off after polling loop exits
+            $finalState = $script:HypervisorProvider.GetVMState($FFUVM)
+            if (-not (Test-VMStateOff -State $finalState)) {
+                WriteLog "ERROR: VM is still running after shutdown polling completed. State: $finalState"
+                throw "Failed to shutdown VM after force power off. State: $finalState"
+            }
         }
 
         WriteLog 'VM Shutdown'
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
+        Set-Progress -Percentage 67 -Message "Starting FFU capture..."
         #Capture FFU file
         New-FFU -VMName $FFUVM.Name -InstallApps $InstallApps -CaptureISO $CaptureISO `
                 -VMSwitchName $VMSwitchName -FFUCaptureLocation $FFUCaptureLocation `
@@ -4070,7 +4430,11 @@ try {
                 -DandIEnv $DandIEnv -VhdxDisk $vhdxDisk -CachedVHDXInfo $cachedVHDXInfo `
                 -InstallationType $installationType -InstallDrivers $InstallDrivers `
                 -Optimize $Optimize -FFUDevelopmentPath $FFUDevelopmentPath `
-                -DriversFolder $DriversFolder
+                -DriversFolder $DriversFolder `
+                -HypervisorProvider $script:HypervisorProvider `
+                -VMInfo $FFUVM `
+                -VMShutdownTimeoutMinutes $VMShutdownTimeoutMinutes
+        Set-Progress -Percentage 80 -Message "FFU capture complete..."
     }
     else {
         Set-Progress -Percentage 81 -Message "Starting FFU capture from VHDX..."
@@ -4151,7 +4515,8 @@ If ($CreateDeploymentMedia) {
                     -WindowsArch $WindowsArch -CaptureISO $null -DeployISO $DeployISO `
                     -CopyPEDrivers $CopyPEDrivers -UseDriversAsPEDrivers $UseDriversAsPEDrivers `
                     -PEDriversFolder $PEDriversFolder -DriversFolder $DriversFolder `
-                    -CompressDownloadedDriversToWim $CompressDownloadedDriversToWim
+                    -CompressDownloadedDriversToWim $CompressDownloadedDriversToWim `
+                    -HypervisorType $HypervisorType
     }
     catch {
         Write-Host 'Creating deployment media failed'
