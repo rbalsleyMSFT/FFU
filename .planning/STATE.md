@@ -70,12 +70,13 @@ Progress: [====------] 43%
 |------|------|------------|--------------|-------------|--------|
 | 05-01 | 1 | - | TEST-01 | VM creation integration tests | Pending |
 | 05-02 | 1 | - | TEST-02 | Driver injection integration tests | COMPLETE |
-| 05-03 | 1 | - | TEST-03 | FFU capture integration tests | Pending |
+| 05-03 | 1 | - | TEST-03 | FFU capture integration tests | COMPLETE |
 
 **Wave 1:** Plans 05-01, 05-02, 05-03 (parallel - independent) - IN PROGRESS
 
 ## Recent Activity
 
+- 2026-01-19: Completed 05-03-PLAN.md (TEST-03 - FFU.Imaging integration tests with 61 Pester tests)
 - 2026-01-19: Completed 05-02-PLAN.md (TEST-02 - FFU.Drivers integration tests with 21 Pester tests)
 - 2026-01-19: Phase 4 verified (3/3 must-haves) - Performance Optimization COMPLETE
 - 2026-01-19: Completed 04-01-PLAN.md (PERF-01 - VHD flush optimization ~7s to <1s with Write-VolumeCache)
@@ -137,6 +138,7 @@ Progress: [====------] 43%
 | Write-VolumeCache primary flush | 2026-01-19 | Native cmdlet guarantees completion; no arbitrary delays needed |
 | 2s safety pause on flush error only | 2026-01-19 | Write-VolumeCache is verified complete; pause only when something went wrong |
 | Global WriteLog stub pattern | 2026-01-19 | Create global stub before module import to allow Pester mocking |
+| Import FFU.Common for WriteLog | 2026-01-19 | FFU.Imaging depends on WriteLog from FFU.Common, import first in tests |
 
 ## Open Issues
 
