@@ -178,7 +178,13 @@ function Test-WimSourceAccessibility {
                 }
 
                 # Verify the mounted ISO's drive letter matches the WIM's drive
-                $isoVolume = $diskImage | Get-Volume -ErrorAction SilentlyContinue
+                try {
+                    $isoVolume = $diskImage | Get-Volume -ErrorAction Stop
+                }
+                catch {
+                    WriteLog "WARNING: Could not get volume for mounted ISO: $($_.Exception.Message)"
+                    $isoVolume = $null
+                }
                 if ($isoVolume) {
                     $expectedRoot = "$($isoVolume.DriveLetter):\"
                     $wimRoot = $result.DriveRoot + "\"
@@ -1134,6 +1140,58 @@ function Dismount-ScratchVhd {
         return
     }
 
+    # CRITICAL: Flush all file system buffers before detaching the VHD
+    # This ensures all pending writes (including unattend.xml) are committed to the VHD file
+    # Without this flush, data may be lost when using diskpart detach (unlike Dismount-VHD which flushes automatically)
+    WriteLog "Flushing file system buffers before VHD dismount..."
+    try {
+        # Find all volumes on this VHD by matching the disk path
+        $disk = Get-Disk -ErrorAction SilentlyContinue | Where-Object {
+            $_.BusType -eq 'File Backed Virtual' -and $_.Location -eq $VhdPath
+        }
+        if ($disk) {
+            $partitions = $disk | Get-Partition -ErrorAction SilentlyContinue | Where-Object { $_.DriveLetter }
+
+            # Perform multiple flush passes to ensure all data is written
+            for ($flushPass = 1; $flushPass -le 3; $flushPass++) {
+                WriteLog "  Flush pass $flushPass of 3..."
+                foreach ($partition in $partitions) {
+                    $driveLetter = $partition.DriveLetter
+
+                    # Use fsutil to flush volume - most reliable cross-version method
+                    $flushResult = & fsutil volume flush "$driveLetter`:" 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        WriteLog "    Volume $driveLetter`: flushed"
+                    }
+                    else {
+                        WriteLog "    WARNING: fsutil flush returned: $flushResult"
+                    }
+                }
+                # Brief pause between flush passes
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        else {
+            WriteLog "  Could not identify VHD disk for targeted flush, flushing all volumes as fallback..."
+            # Fallback: flush all fixed/removable volumes
+            Get-Volume -ErrorAction SilentlyContinue | Where-Object {
+                $_.DriveType -in @('Fixed', 'Removable') -and $_.DriveLetter
+            } | ForEach-Object {
+                $null = & fsutil volume flush "$($_.DriveLetter):" 2>&1
+            }
+        }
+
+        # Extended delay to ensure all I/O operations complete before detach
+        # VHD files may have additional buffering at the virtual disk driver level
+        WriteLog "  Waiting for disk I/O to complete..."
+        Start-Sleep -Seconds 5
+        WriteLog "Volume flush complete"
+    }
+    catch {
+        WriteLog "WARNING: Volume flush encountered error: $($_.Exception.Message)"
+        WriteLog "Continuing with dismount anyway..."
+    }
+
     $diskpartScript = @"
 select vdisk file="$VhdPath"
 detach vdisk
@@ -1751,30 +1809,141 @@ function New-FFU {
         [string]$FFUDevelopmentPath,
 
         [Parameter(Mandatory = $false)]
-        [string]$DriversFolder
+        [string]$DriversFolder,
+
+        [Parameter(Mandatory = $false)]
+        [object]$HypervisorProvider,
+
+        [Parameter(Mandatory = $false)]
+        [object]$VMInfo,
+
+        [Parameter(Mandatory = $false)]
+        [int]$VMShutdownTimeoutMinutes = 60
     )
     #If $InstallApps = $true, configure the VM
     If ($InstallApps) {
         WriteLog 'Creating FFU from VM'
-        WriteLog "Setting $CaptureISO as first boot device"
-        $VMDVDDrive = Get-VMDvdDrive -VMName $VMName
-        Set-VMFirmware -VMName $VMName -FirstBootDevice $VMDVDDrive
-        Set-VMDvdDrive -VMName $VMName -Path $CaptureISO
-        $VMSwitch = Get-VMSwitch -name $VMSwitchName
-        WriteLog "Setting $($VMSwitch.Name) as VMSwitch"
-        get-vm $VMName | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $VMSwitch.Name
-        WriteLog "Configuring VM complete"
 
-        #Start VM
-        Set-Progress -Percentage 68 -Message "Capturing FFU from VM..."
-        WriteLog "Starting VM"
-        Start-VM -Name $VMName
+        # Use hypervisor provider if available (supports both Hyper-V and VMware)
+        if ($HypervisorProvider -and $VMInfo) {
+            WriteLog "Using hypervisor provider for VM capture operations"
+            WriteLog "  Provider type: $($HypervisorProvider.GetType().Name)"
+            WriteLog "  VM Name: $($VMInfo.Name)"
+            if ($VMInfo.VMXPath) {
+                WriteLog "  VMX Path: $($VMInfo.VMXPath)"
+            }
 
-        # Wait for the VM to turn off
-        do {
-            $FFUVM = Get-VM -Name $VMName
-            Start-Sleep -Seconds ([FFUConstants]::VM_STATE_POLL_INTERVAL)
-        } while ($FFUVM.State -ne 'Off')
+            # Verify capture ISO exists before attaching
+            if (-not (Test-Path $CaptureISO)) {
+                throw "Capture ISO not found: $CaptureISO"
+            }
+            $isoInfo = Get-Item $CaptureISO
+            WriteLog "  Capture ISO: $CaptureISO"
+            WriteLog "  ISO Size: $([math]::Round($isoInfo.Length / 1MB, 2)) MB"
+            WriteLog "  ISO Modified: $($isoInfo.LastWriteTime)"
+
+            # Attach capture ISO and configure boot order
+            # Provider handles: (1) ISO attachment, (2) Boot order change, (3) Verification
+            WriteLog "============================================"
+            WriteLog "CAPTURE BOOT CONFIGURATION"
+            WriteLog "============================================"
+            WriteLog "Attaching capture ISO and configuring boot order..."
+            WriteLog "  Provider: $($HypervisorProvider.GetType().Name)"
+            $HypervisorProvider.AttachISO($VMInfo, $CaptureISO)
+            WriteLog "ISO attachment and boot configuration complete"
+            WriteLog "============================================"
+            Set-Progress -Percentage 69 -Message "Capture ISO attached, booting VM..."
+
+            # Start VM for capture
+            WriteLog ""
+            WriteLog "============================================"
+            WriteLog "STARTING VM FOR FFU CAPTURE"
+            WriteLog "============================================"
+            Set-Progress -Percentage 68 -Message "Capturing FFU from VM..."
+            WriteLog "Starting VM for WinPE capture..."
+            WriteLog "  Expected behavior:"
+            WriteLog "    1. VM boots from capture ISO (WinPE environment)"
+            WriteLog "    2. WinPE runs startnet.cmd which launches CaptureFFU.ps1"
+            WriteLog "    3. CaptureFFU.ps1 connects to FFU capture share"
+            WriteLog "    4. DISM captures disk to FFU file"
+            WriteLog "    5. VM shuts down automatically after capture"
+            WriteLog "  If VM boots to Windows instead of WinPE, boot order was not changed correctly"
+            $HypervisorProvider.StartVM($VMInfo)
+            WriteLog "VM started - monitor VM console to verify WinPE boot"
+            WriteLog "============================================"
+
+            # Wait for VM to shut down with timeout
+            $timeoutSeconds = $VMShutdownTimeoutMinutes * 60
+            $elapsed = 0
+            $pollInterval = 5
+
+            WriteLog "Waiting for VM to complete capture and shut down (timeout: $VMShutdownTimeoutMinutes minutes)..."
+            do {
+                Start-Sleep -Seconds $pollInterval
+                $elapsed += $pollInterval
+                $vmState = $HypervisorProvider.GetVMState($VMInfo)
+
+                # Log progress every minute and update UI progress bar
+                if ($elapsed % 60 -eq 0) {
+                    $minutesElapsed = [int]($elapsed / 60)
+                    WriteLog "  Still waiting... ($minutesElapsed minutes elapsed, VM state: $vmState)"
+                    # Progress from 70% to 78% over the capture period (proportional to elapsed time)
+                    $progressPercent = [math]::Min(78, 70 + [int]($minutesElapsed / 5))
+                    Set-Progress -Percentage $progressPercent -Message "VM capturing in progress ($minutesElapsed min)..."
+                }
+
+                # Check for timeout
+                if ($elapsed -ge $timeoutSeconds) {
+                    throw "VM shutdown timeout exceeded ($VMShutdownTimeoutMinutes minutes). VM state: $vmState. Check VM console for issues."
+                }
+            } while ($vmState -ne 'Off')
+            Set-Progress -Percentage 79 -Message "VM capture complete, verifying..."
+        }
+        else {
+            # Fallback to direct Hyper-V cmdlets for backwards compatibility
+            WriteLog "Using direct Hyper-V cmdlets for VM capture operations"
+            WriteLog "Setting $CaptureISO as first boot device"
+            $VMDVDDrive = Get-VMDvdDrive -VMName $VMName
+            Set-VMFirmware -VMName $VMName -FirstBootDevice $VMDVDDrive
+            Set-VMDvdDrive -VMName $VMName -Path $CaptureISO
+            $VMSwitch = Get-VMSwitch -name $VMSwitchName
+            WriteLog "Setting $($VMSwitch.Name) as VMSwitch"
+            Get-VM $VMName | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $VMSwitch.Name
+            WriteLog "Configuring VM complete"
+
+            # Start VM
+            Set-Progress -Percentage 68 -Message "Capturing FFU from VM..."
+            WriteLog "Starting VM"
+            Start-VM -Name $VMName
+
+            # Wait for VM to shut down with timeout
+            $timeoutSeconds = $VMShutdownTimeoutMinutes * 60
+            $elapsed = 0
+            $pollInterval = [FFUConstants]::VM_STATE_POLL_INTERVAL
+
+            WriteLog "Waiting for VM to complete capture and shut down (timeout: $VMShutdownTimeoutMinutes minutes)..."
+            do {
+                Start-Sleep -Seconds $pollInterval
+                $elapsed += $pollInterval
+                $FFUVM = Get-VM -Name $VMName
+
+                # Log progress every minute and update UI progress bar
+                if ($elapsed % 60 -eq 0) {
+                    $minutesElapsed = [int]($elapsed / 60)
+                    WriteLog "  Still waiting... ($minutesElapsed minutes elapsed, VM state: $($FFUVM.State))"
+                    # Progress from 70% to 78% over the capture period (proportional to elapsed time)
+                    $progressPercent = [math]::Min(78, 70 + [int]($minutesElapsed / 5))
+                    Set-Progress -Percentage $progressPercent -Message "VM capturing in progress ($minutesElapsed min)..."
+                }
+
+                # Check for timeout
+                if ($elapsed -ge $timeoutSeconds) {
+                    throw "VM shutdown timeout exceeded ($VMShutdownTimeoutMinutes minutes). VM state: $($FFUVM.State). Check VM console for issues."
+                }
+            } while ($FFUVM.State -ne 'Off')
+        }
+
+        Set-Progress -Percentage 79 -Message "VM capture complete, verifying..."
         WriteLog "VM Shutdown"
         # Check for .ffu files in the FFUDevelopment folder
         WriteLog "Checking for FFU Files"
@@ -2451,6 +2620,165 @@ function Invoke-FFUOptimizeWithScratchDir {
     $true
 }
 
+function Expand-FFUPartitionForDrivers {
+    <#
+    .SYNOPSIS
+    Expands VHDX and OS partition to accommodate large driver sets
+
+    .DESCRIPTION
+    Calculates driver folder size and expands the VHDX file and OS partition
+    if the driver set exceeds the specified threshold. Addresses Issue #298.
+
+    .PARAMETER VHDXPath
+    Path to the VHDX file to expand
+
+    .PARAMETER DriversFolder
+    Path to the drivers folder to measure
+
+    .PARAMETER ThresholdGB
+    Minimum driver size (GB) that triggers expansion (default: 5)
+
+    .PARAMETER SafetyMarginGB
+    Additional space to add beyond driver size (default: 5)
+
+    .EXAMPLE
+    Expand-FFUPartitionForDrivers -VHDXPath "C:\FFU\VM.vhdx" -DriversFolder "C:\FFU\Drivers\Dell"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VHDXPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder,
+
+        [Parameter()]
+        [int]$ThresholdGB = 5,
+
+        [Parameter()]
+        [int]$SafetyMarginGB = 5
+    )
+
+    # Validate inputs
+    if (-not (Test-Path -Path $VHDXPath)) {
+        WriteLog "ERROR: VHDX file not found: $VHDXPath"
+        throw "VHDX file not found: $VHDXPath"
+    }
+
+    if (-not (Test-Path -Path $DriversFolder)) {
+        WriteLog "WARNING: Drivers folder not found: $DriversFolder - skipping expansion check"
+        return
+    }
+
+    # Calculate driver folder size
+    $driverBytes = (Get-ChildItem -Path $DriversFolder -Recurse -File -ErrorAction SilentlyContinue |
+                    Measure-Object -Property Length -Sum).Sum
+
+    if ($null -eq $driverBytes) { $driverBytes = 0 }
+
+    $driverSizeGB = [math]::Ceiling($driverBytes / 1GB)
+    WriteLog "Driver folder size: ${driverSizeGB}GB ($([math]::Round($driverBytes / 1MB, 2)) MB)"
+
+    # Check threshold
+    if ($driverSizeGB -lt $ThresholdGB) {
+        WriteLog "Driver set (${driverSizeGB}GB) is under threshold (${ThresholdGB}GB) - no expansion needed"
+        return
+    }
+
+    WriteLog "Driver set (${driverSizeGB}GB) exceeds threshold (${ThresholdGB}GB) - checking VHDX capacity"
+
+    # Get current VHDX info
+    $vhdx = Get-VHD -Path $VHDXPath -ErrorAction Stop
+    $currentSizeGB = [math]::Floor($vhdx.Size / 1GB)
+    $wasMounted = $vhdx.Attached
+
+    WriteLog "Current VHDX size: ${currentSizeGB}GB, Attached: $wasMounted"
+
+    # Calculate required size with safety margin and 1.5x factor for DISM compression overhead
+    $compressionFactor = 1.5
+    $requiredDriverSpace = [math]::Ceiling($driverSizeGB * $compressionFactor)
+    $requiredSizeGB = $currentSizeGB + $requiredDriverSpace + $SafetyMarginGB
+    WriteLog "Required VHDX size: ${requiredSizeGB}GB (driver: ${driverSizeGB}GB x $compressionFactor + margin: ${SafetyMarginGB}GB)"
+
+    # Dismount if mounted - Resize-VHD requires exclusive access
+    if ($wasMounted) {
+        WriteLog "Dismounting VHDX for resize operation..."
+        Dismount-VHD -Path $VHDXPath -ErrorAction Stop
+        # Wait for file lock release
+        Start-Sleep -Seconds 2
+        WriteLog "VHDX dismounted"
+    }
+
+    try {
+        # Resize VHDX
+        WriteLog "Expanding VHDX from ${currentSizeGB}GB to ${requiredSizeGB}GB..."
+        Resize-VHD -Path $VHDXPath -SizeBytes ($requiredSizeGB * 1GB) -ErrorAction Stop
+        WriteLog "VHDX expanded successfully"
+
+        # Mount and expand partition
+        WriteLog "Mounting VHDX to expand partition..."
+        $disk = Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop | Get-Disk
+        WriteLog "VHDX mounted as Disk $($disk.Number)"
+
+        # Find the OS partition (largest Basic partition with drive letter)
+        $osPartition = Get-Partition -DiskNumber $disk.Number -ErrorAction Stop |
+                       Where-Object { $_.Type -eq 'Basic' -and $_.DriveLetter } |
+                       Sort-Object Size -Descending |
+                       Select-Object -First 1
+
+        if (-not $osPartition) {
+            WriteLog "WARNING: Could not identify OS partition - looking for largest Basic partition"
+            $osPartition = Get-Partition -DiskNumber $disk.Number -ErrorAction Stop |
+                           Where-Object { $_.Type -eq 'Basic' } |
+                           Sort-Object Size -Descending |
+                           Select-Object -First 1
+        }
+
+        if ($osPartition) {
+            $currentPartitionGB = [math]::Floor($osPartition.Size / 1GB)
+            WriteLog "Found OS partition: $($osPartition.PartitionNumber) at $($osPartition.DriveLetter): (${currentPartitionGB}GB)"
+
+            # Get maximum supported size
+            $supportedSize = Get-PartitionSupportedSize -DiskNumber $disk.Number -PartitionNumber $osPartition.PartitionNumber
+            $maxSizeGB = [math]::Floor($supportedSize.SizeMax / 1GB)
+            WriteLog "Maximum supported partition size: ${maxSizeGB}GB"
+
+            if ($supportedSize.SizeMax -gt $osPartition.Size) {
+                WriteLog "Expanding partition to maximum supported size..."
+                Resize-Partition -DiskNumber $disk.Number -PartitionNumber $osPartition.PartitionNumber -Size $supportedSize.SizeMax -ErrorAction Stop
+                $newPartitionGB = [math]::Floor((Get-Partition -DiskNumber $disk.Number -PartitionNumber $osPartition.PartitionNumber).Size / 1GB)
+                WriteLog "Partition expanded from ${currentPartitionGB}GB to ${newPartitionGB}GB"
+            }
+            else {
+                WriteLog "Partition is already at maximum size"
+            }
+        }
+        else {
+            WriteLog "WARNING: Could not find OS partition to expand"
+        }
+
+        # Dismount if it wasn't mounted before
+        if (-not $wasMounted) {
+            WriteLog "Dismounting VHDX (was not mounted before expansion)..."
+            Dismount-VHD -Path $VHDXPath -ErrorAction Stop
+            WriteLog "VHDX dismounted"
+        }
+    }
+    catch {
+        WriteLog "ERROR: Partition expansion failed: $($_.Exception.Message)"
+
+        # Attempt to restore mount state
+        if ($wasMounted) {
+            WriteLog "Attempting to remount VHDX..."
+            Mount-VHD -Path $VHDXPath -ErrorAction SilentlyContinue
+        }
+
+        throw $_
+    }
+
+    WriteLog "VHDX expansion complete - ready for driver injection"
+}
+
 # Export module members
 Export-ModuleMember -Function @(
     'Initialize-DISMService',
@@ -2473,5 +2801,6 @@ Export-ModuleMember -Function @(
     'New-FFU',
     'Remove-FFU',
     'Start-RequiredServicesForDISM',
-    'Invoke-FFUOptimizeWithScratchDir'
+    'Invoke-FFUOptimizeWithScratchDir',
+    'Expand-FFUPartitionForDrivers'
 )

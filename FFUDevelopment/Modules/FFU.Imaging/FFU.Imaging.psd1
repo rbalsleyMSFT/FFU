@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.5'
+    ModuleVersion = '1.0.10'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -53,7 +53,8 @@
         'New-FFU',
         'Remove-FFU',
         'Start-RequiredServicesForDISM',
-        'Invoke-FFUOptimizeWithScratchDir'
+        'Invoke-FFUOptimizeWithScratchDir',
+        'Expand-FFUPartitionForDrivers'
     )
 
     # Cmdlets to export from this module
@@ -79,6 +80,41 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.10 - BUG-03: Added Expand-FFUPartitionForDrivers for automatic VHDX/partition expansion with large driver sets
+- New function calculates driver folder size and expands VHDX/partition when driver set exceeds threshold (default 5GB)
+- Properly dismounts VHDX before resize and remounts after for partition expansion
+- Uses Get-PartitionSupportedSize for safe partition resize to maximum available space
+- Includes 1.5x compression factor and configurable safety margin for DISM overhead
+- Addresses Issue #298: OS partition size limitations with large driver sets
+
+v1.0.9 - Fix VMware VHD data persistence issue (unattend.xml missing after dismount)
+- Added explicit volume flush (fsutil volume flush) before diskpart detach in Dismount-ScratchVhd
+- Fixes issue where files copied to VHD (like unattend.xml) were lost due to unflushed buffers
+- Without flush, VMware VMs would boot to OOBE instead of audit mode because unattend.xml was missing
+- Hyper-V's Dismount-VHD cmdlet flushes automatically, but diskpart detach does not
+- Now both Hyper-V (VHDX) and VMware (VHD) paths have proper data persistence
+
+v1.0.8 - Enhanced capture boot logging
+- Added clear section markers for CAPTURE BOOT CONFIGURATION and STARTING VM FOR FFU CAPTURE
+- Added expected behavior documentation in logs (step-by-step what should happen)
+- Logs provider type before capture
+- Removed redundant VMX verification (now done in provider's AttachISO method)
+- Clearer diagnostic messages if VM boots to Windows instead of WinPE
+
+v1.0.7 - Enhanced VMware capture diagnostics
+- Added comprehensive pre-capture logging: provider type, VM name, VMX path
+- Added ISO verification: checks existence, logs size and modification time
+- Added boot order verification after AttachISO: confirms VMX has correct boot order
+- Warns if boot order doesn't start with 'cdrom' (WinPE won't boot)
+
+v1.0.6 - VMware support for FFU capture from VM
+- Added HypervisorProvider and VMInfo parameters to New-FFU for hypervisor-agnostic VM operations
+- Added VMShutdownTimeoutMinutes parameter with timeout mechanism (default 20 minutes)
+- Uses HypervisorProvider.AttachISO(), StartVM(), GetVMState() instead of direct Hyper-V cmdlets
+- Maintains backwards compatibility with Hyper-V when provider not specified
+- Fixes hang when using VMware - previous code used Hyper-V cmdlets (Get-VM, Start-VM) unconditionally
+- Progress logging every minute during VM shutdown wait
+
 v1.0.5 - Fix Windows Explorer format prompt race condition
 - Modified New-SystemPartition, New-OSPartition, New-RecoveryPartition to create partitions WITHOUT drive letters
 - Partitions are now formatted BEFORE drive letters are assigned, preventing Explorer from detecting raw partitions
