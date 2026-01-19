@@ -2363,6 +2363,110 @@ function Invoke-FailureCleanup {
     & $log "=========================================="
 }
 
+function Test-BuildCancellation {
+    <#
+    .SYNOPSIS
+    Checks if cancellation was requested and handles cleanup if so.
+
+    .DESCRIPTION
+    Should be called at major phase boundaries in BuildFFUVM.ps1 to check
+    if the user has requested build cancellation. Returns $true if cancelled
+    (caller should return early).
+
+    This function provides a consistent pattern for cancellation checking
+    that includes logging, UI notification, and optional cleanup invocation.
+
+    .PARAMETER MessagingContext
+    The synchronized messaging context from FFU.Messaging. If $null (CLI mode),
+    the function returns $false immediately since cancellation is not supported.
+
+    .PARAMETER PhaseName
+    Name of the current build phase (for logging and cleanup reason).
+
+    .PARAMETER InvokeCleanup
+    If specified, calls Invoke-FailureCleanup and sets build state to Cancelled
+    when cancellation is detected.
+
+    .EXAMPLE
+    # Check cancellation without cleanup (just returns status)
+    if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Driver Download") {
+        return
+    }
+
+    .EXAMPLE
+    # Check cancellation with automatic cleanup
+    if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "VHDX Creation" -InvokeCleanup) {
+        return
+    }
+
+    .EXAMPLE
+    # CLI mode (no messaging context) - always returns false
+    $result = Test-BuildCancellation -MessagingContext $null -PhaseName "Test"
+    # $result is $false
+
+    .OUTPUTS
+    System.Boolean
+    Returns $true if cancellation was requested, $false otherwise.
+
+    .NOTES
+    Requires FFU.Messaging module for Test-FFUCancellationRequested, Write-FFUWarning,
+    and Set-FFUBuildState functions. These are called only when MessagingContext is provided.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [hashtable]$MessagingContext,
+
+        [Parameter(Mandatory)]
+        [string]$PhaseName,
+
+        [Parameter()]
+        [switch]$InvokeCleanup
+    )
+
+    # No messaging context = no cancellation support (CLI mode)
+    if ($null -eq $MessagingContext) {
+        return $false
+    }
+
+    # Check if cancellation was requested via FFU.Messaging
+    $cancellationRequested = $false
+    if (Get-Command Test-FFUCancellationRequested -ErrorAction SilentlyContinue) {
+        $cancellationRequested = Test-FFUCancellationRequested -Context $MessagingContext
+    }
+
+    if (-not $cancellationRequested) {
+        return $false
+    }
+
+    # Cancellation was requested - log and notify
+    # Safe logging helper (Write-Verbose fallback for background job compatibility)
+    if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        WriteLog "Cancellation detected at phase: $PhaseName"
+    } else {
+        Write-Verbose "Cancellation detected at phase: $PhaseName"
+    }
+
+    # Send warning to UI if FFU.Messaging functions available
+    if (Get-Command Write-FFUWarning -ErrorAction SilentlyContinue) {
+        Write-FFUWarning -Context $MessagingContext `
+            -Message "Build cancellation requested at: $PhaseName" `
+            -Source 'BuildFFUVM'
+    }
+
+    # Invoke cleanup if requested
+    if ($InvokeCleanup) {
+        Invoke-FailureCleanup -Reason "User cancelled build at: $PhaseName"
+
+        if (Get-Command Set-FFUBuildState -ErrorAction SilentlyContinue) {
+            Set-FFUBuildState -Context $MessagingContext -State Cancelled -SendMessage
+        }
+    }
+
+    return $true
+}
+
 function Clear-CleanupRegistry {
     <#
     .SYNOPSIS
