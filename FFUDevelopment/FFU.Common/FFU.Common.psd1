@@ -12,7 +12,7 @@
 RootModule = 'FFU.Common.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.7'
+ModuleVersion = '0.0.8'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -115,6 +115,15 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.8: BUG-01 - SSL inspection detection for corporate proxies (Netskope/zScaler)
+- Added FFUNetworkConfiguration.TestSSLInspection() static method to detect SSL-inspecting proxies
+- Detects known SSL inspectors: Netskope, Zscaler, goskope, Blue Coat, Forcepoint, McAfee, Symantec, Palo Alto, Cisco Umbrella, Websense
+- Added SSLInspectionDetected, SSLInspectorType, CertificateIssuer properties to FFUNetworkConfiguration
+- DetectProxySettings() now automatically tests for SSL inspection when detecting proxy configuration
+- Logs clear warnings when SSL inspection is detected with remediation guidance
+- Suggests domain exclusions (*.microsoft.com, *.windowsupdate.com, *.dell.com, *.hp.com, *.lenovo.com)
+- Warns about unknown certificate issuers that may indicate corporate proxy
+
 v0.0.7: Signature compatibility fix for FFU.Messaging module collision
 - Fixed: "A parameter cannot be found that matches parameter name 'Source'" error
 - Root cause: FFU.Common.Logging exports Write-FFUError/Warning/Critical without -Source parameter,
