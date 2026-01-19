@@ -126,10 +126,18 @@ Plans:
 ### Phase 8: Feature - Progress Checkpoint/Resume
 **Goal:** Allow builds to resume after interruption
 **Requirements:** FEAT-02
+**Plans:** 3 plans
+**Status:** PLANNED
+
 **Success Criteria:**
 1. Build state checkpointed at major stages
 2. Resume from checkpoint detects existing state
 3. Partial builds can continue without full restart
+
+Plans:
+- [ ] 08-01-PLAN.md - Create FFU.Checkpoint module with core functions (Wave 1)
+- [ ] 08-02-PLAN.md - Integrate checkpoint persistence into BuildFFUVM.ps1 (Wave 2)
+- [ ] 08-03-PLAN.md - Add resume detection and phase skip logic with tests (Wave 3)
 
 ### Phase 9: Feature - Config Migration
 **Goal:** Automatically migrate config files between versions
@@ -160,7 +168,7 @@ Plans:
 | 5 | Integration Tests - Core ✓ | 3 | 3 plans (COMPLETE) |
 | 6 | Integration Tests - UI/Error ✓ | 3 | 3 plans (COMPLETE) |
 | 7 | Feature - Build Cancellation ✓ | 1 | 3 plans (COMPLETE) |
-| 8 | Feature - Progress Checkpoint | 1 | TBD |
+| 8 | Feature - Progress Checkpoint | 1 | 3 plans (PLANNED) |
 | 9 | Feature - Config Migration | 1 | TBD |
 | 10 | Dependency Resilience | 3 | TBD |
 
@@ -182,3 +190,4 @@ Plans:
 *Phase 6 complete: 2026-01-19*
 *Phase 7 planned: 2026-01-19*
 *Phase 7 complete: 2026-01-19*
+*Phase 8 planned: 2026-01-19*
