@@ -1716,6 +1716,13 @@ if (-not $Cleanup) {
     }
 }
 
+# === CANCELLATION CHECKPOINT 1: After Pre-flight Validation ===
+# Check for cancellation before proceeding with resource-intensive operations
+if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Pre-flight Validation" -InvokeCleanup) {
+    WriteLog "Build cancelled by user at: Pre-flight Validation"
+    return
+}
+
 # Set default values for variables that depend on other parameters
 if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps\Apps.iso" }
 if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
@@ -2328,7 +2335,14 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
             CompressToWim            = $CompressDownloadedDriversToWim
             PreserveSourceOnCompress = $preserveSourceOnCompress
         }
-        
+
+        # === CANCELLATION CHECKPOINT 2: Before Driver Download ===
+        # Check before starting long-running driver download operations
+        if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Driver Download" -InvokeCleanup) {
+            WriteLog "Build cancelled by user at: Driver Download"
+            return
+        }
+
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
         Set-Progress -Percentage 3 -Message "Downloading drivers..."
         $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $driversToProcess `
@@ -3522,6 +3536,13 @@ try {
         $UpdateLatestMicrocode = $false
     }
     
+    # === CANCELLATION CHECKPOINT 3: Before VHDX Creation ===
+    # Check before creating VHDX and applying Windows image (expensive operations)
+    if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "VHDX Creation" -InvokeCleanup) {
+        WriteLog "Build cancelled by user at: VHDX Creation"
+        return
+    }
+
     if (-Not $cachedVHDXFileFound) {
         Set-Progress -Percentage 15 -Message "Creating VHDX and applying base Windows image..."
         if ($ISOPath) {
@@ -3796,7 +3817,14 @@ catch {
         WriteLog "ESD File deleted"
     }
     throw $_
-    
+
+}
+
+# === CANCELLATION CHECKPOINT 4: After VHDX Creation, Before VM Setup ===
+# Check before proceeding to VM configuration and unattend injection
+if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "VM Setup" -InvokeCleanup) {
+    WriteLog "Build cancelled by user at: VM Setup"
+    return
 }
 
 #Inject unattend after caching so cached VHDX never contains audit-mode unattend
@@ -4259,6 +4287,14 @@ if ($InstallApps) {
 
         # Start the VM - CreateVM only creates it, doesn't start it
         # (Original New-FFUVM function called Start-VM internally, hypervisor provider does not)
+
+        # === CANCELLATION CHECKPOINT 5: Before VM Start ===
+        # Last chance to cancel before VM starts running (point of no return for VM operations)
+        if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "VM Start" -InvokeCleanup) {
+            WriteLog "Build cancelled by user at: VM Start"
+            return
+        }
+
         Set-Progress -Percentage 48 -Message "Starting virtual machine..."
         WriteLog "Starting VM: $($FFUVM.Name) (ShowVMConsole: $ShowVMConsole)"
         $startVMStatus = $script:HypervisorProvider.StartVM($FFUVM, $ShowVMConsole)
@@ -4327,6 +4363,14 @@ if ($InstallApps) {
 
     }
 }
+
+# === CANCELLATION CHECKPOINT 6: Before FFU Capture ===
+# Check before starting DISM FFU capture (long-running, cannot be interrupted)
+if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "FFU Capture" -InvokeCleanup) {
+    WriteLog "Build cancelled by user at: FFU Capture"
+    return
+}
+
 #Capture FFU file
 try {
     #Check for FFU Folder and create it if it's missing
@@ -4419,6 +4463,14 @@ try {
         }
 
         WriteLog 'VM Shutdown'
+
+        # === CANCELLATION CHECKPOINT 6: After VM Shutdown, Before FFU Capture ===
+        # Check before starting long-running DISM capture operation
+        if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "FFU Capture" -InvokeCleanup) {
+            WriteLog "Build cancelled by user at: FFU Capture"
+            return
+        }
+
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         Set-Progress -Percentage 67 -Message "Starting FFU capture..."
@@ -4507,6 +4559,13 @@ catch {
 }
 
 
+# === CANCELLATION CHECKPOINT 7: Before Deployment Media Creation ===
+# Check before creating deployment ISO
+if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Deployment Media" -InvokeCleanup) {
+    WriteLog "Build cancelled by user at: Deployment Media"
+    return
+}
+
 #Create Deployment Media
 If ($CreateDeploymentMedia) {
     Set-Progress -Percentage 91 -Message "Creating deployment media..."
@@ -4525,6 +4584,14 @@ If ($CreateDeploymentMedia) {
     
     }
 }
+
+# === CANCELLATION CHECKPOINT 8: Before USB Drive Creation ===
+# Check before partitioning and copying files to USB drive
+if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "USB Drive Creation" -InvokeCleanup) {
+    WriteLog "Build cancelled by user at: USB Drive Creation"
+    return
+}
+
 If ($BuildUSBDrive) {
     Set-Progress -Percentage 95 -Message "Building USB drive..."
     try {
