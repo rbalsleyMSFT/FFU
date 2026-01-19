@@ -62,10 +62,18 @@ Plans:
 ### Phase 4: Performance Optimization
 **Goal:** Reduce unnecessary delays and improve build throughput
 **Requirements:** PERF-01, PERF-02, PERF-03
+**Plans:** 3 plans
+**Status:** Planned
+
 **Success Criteria:**
 1. VHD flush time reduced by 50%+ while maintaining data integrity
-2. At least 20 Start-Sleep instances replaced with event-driven sync
+2. Event-driven VM state monitoring for Hyper-V (CIM events)
 3. Module decomposition plan documented (or initial extraction done)
+
+Plans:
+- [ ] 04-01-PLAN.md - Optimize VHD flush from triple-pass to single Write-VolumeCache (PERF-01) (Wave 1)
+- [ ] 04-02-PLAN.md - Add event-driven VM state monitoring for Hyper-V (PERF-02) (Wave 1)
+- [ ] 04-03-PLAN.md - Document module decomposition analysis (PERF-03) (Wave 1)
 
 ### Phase 5: Integration Tests - Core Operations
 **Goal:** Add test coverage for VM and imaging operations
@@ -124,7 +132,7 @@ Plans:
 | 1 | Tech Debt Cleanup ✓ | 5 | 5 plans (COMPLETE) |
 | 2 | Bug Fixes - Critical ✓ | 4 | 4 plans (COMPLETE) |
 | 3 | Security Hardening ✓ | 3 | 3 plans (COMPLETE) |
-| 4 | Performance Optimization | 3 | TBD |
+| 4 | Performance Optimization | 3 | 3 plans |
 | 5 | Integration Tests - Core | 3 | TBD |
 | 6 | Integration Tests - UI/Error | 3 | TBD |
 | 7 | Feature - Build Cancellation | 1 | TBD |
@@ -142,3 +150,4 @@ Plans:
 *Phase 2 complete: 2026-01-19*
 *Phase 3 planned: 2026-01-19*
 *Phase 3 complete: 2026-01-19*
+*Phase 4 planned: 2026-01-19*
