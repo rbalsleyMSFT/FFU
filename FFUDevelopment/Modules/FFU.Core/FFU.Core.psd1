@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.14'
+    ModuleVersion = '1.0.15'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -84,7 +84,11 @@
         'Remove-SecureStringFromMemory',
         # Configuration schema validation (v1.0.10)
         'Test-FFUConfiguration',
-        'Get-FFUConfigurationSchema'
+        'Get-FFUConfigurationSchema',
+        # Script integrity verification (v1.0.15 - SEC-03)
+        'Test-ScriptIntegrity',
+        'New-OrchestrationHashManifest',
+        'Update-OrchestrationHashManifest'
     )
 
     # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
@@ -115,7 +119,16 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.14
+# Release Notes - FFU.Core v1.0.15
+
+## v1.0.15 - Script Integrity Verification (SEC-03)
+- Added Test-ScriptIntegrity: Verifies script files against SHA-256 hashes
+- Added New-OrchestrationHashManifest: Generates hash manifest for all orchestration scripts
+- Added Update-OrchestrationHashManifest: Updates hashes for specific scripts
+- Supports manifest-based or direct hash comparison
+- Configurable fail/warn behavior on mismatch
+- Safe logging pattern (WriteLog or Write-Verbose fallback)
+- 43 total functions now exported
 
 ## v1.0.14 - Background Job Compatibility
 - Replaced Write-Host with Write-Verbose in Invoke-FailureCleanup safe logging helper

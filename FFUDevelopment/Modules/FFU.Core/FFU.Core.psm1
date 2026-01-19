@@ -2609,6 +2609,291 @@ function Register-SensitiveMediaCleanup {
     }.GetNewClosure()
 }
 
+# ============================================================================
+# Script Integrity Verification Functions (v1.0.15 - SEC-03)
+# ============================================================================
+
+function Test-ScriptIntegrity {
+    <#
+    .SYNOPSIS
+    Verifies script integrity against expected SHA-256 hash
+
+    .DESCRIPTION
+    Calculates SHA-256 hash of a script file and compares against expected hash
+    from manifest or parameter. Returns $true if match, $false if mismatch.
+    Used to detect tampering of orchestration scripts before execution.
+
+    .PARAMETER ScriptPath
+    Full path to the script file to verify
+
+    .PARAMETER ExpectedHash
+    Optional - direct hash to compare against (overrides manifest lookup)
+
+    .PARAMETER ManifestPath
+    Optional - path to JSON manifest file containing expected hashes
+
+    .PARAMETER FailOnMismatch
+    If $true (default), logs ERROR on mismatch. If $false, logs WARNING.
+
+    .EXAMPLE
+    Test-ScriptIntegrity -ScriptPath "C:\Apps\Orchestrator.ps1" -ManifestPath "C:\FFU\.security\orchestration-hashes.json"
+
+    .OUTPUTS
+    [bool] $true if hash matches or no hash available, $false if mismatch
+
+    .NOTES
+    Added in v1.0.15 for SEC-03 (Script Integrity Verification)
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({ Test-Path $_ -PathType Leaf })]
+        [string]$ScriptPath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExpectedHash,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ManifestPath,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$FailOnMismatch = $true
+    )
+
+    # Calculate actual hash
+    $actualHash = (Get-FileHash -Path $ScriptPath -Algorithm SHA256).Hash
+
+    # Get expected hash from manifest if not provided directly
+    if ([string]::IsNullOrEmpty($ExpectedHash) -and -not [string]::IsNullOrEmpty($ManifestPath)) {
+        if (Test-Path $ManifestPath) {
+            try {
+                $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+                $scriptName = [System.IO.Path]::GetFileName($ScriptPath)
+                $ExpectedHash = $manifest.scripts.$scriptName
+            }
+            catch {
+                # Safe logging - use WriteLog if available, otherwise Write-Verbose
+                if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+                    WriteLog "WARNING: Failed to read hash manifest: $($_.Exception.Message)"
+                }
+                else {
+                    Write-Verbose "WARNING: Failed to read hash manifest: $($_.Exception.Message)"
+                }
+            }
+        }
+        else {
+            if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+                WriteLog "WARNING: Hash manifest not found at $ManifestPath"
+            }
+            else {
+                Write-Verbose "WARNING: Hash manifest not found at $ManifestPath"
+            }
+        }
+    }
+
+    # If no expected hash available, log and return based on strict mode
+    if ([string]::IsNullOrEmpty($ExpectedHash)) {
+        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            WriteLog "WARNING: No expected hash for $(Split-Path $ScriptPath -Leaf) - skipping verification"
+        }
+        else {
+            Write-Verbose "WARNING: No expected hash for $(Split-Path $ScriptPath -Leaf) - skipping verification"
+        }
+        return $true  # Permissive mode - allow execution when no hash available
+    }
+
+    # Compare hashes
+    if ($actualHash -eq $ExpectedHash) {
+        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            WriteLog "SECURITY: Verified integrity of $(Split-Path $ScriptPath -Leaf)"
+        }
+        else {
+            Write-Verbose "SECURITY: Verified integrity of $(Split-Path $ScriptPath -Leaf)"
+        }
+        return $true
+    }
+    else {
+        $logLevel = if ($FailOnMismatch) { "ERROR" } else { "WARNING" }
+        $message = "$logLevel`: Hash mismatch for $(Split-Path $ScriptPath -Leaf)"
+        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            WriteLog $message
+            WriteLog "  Expected: $ExpectedHash"
+            WriteLog "  Actual:   $actualHash"
+        }
+        else {
+            Write-Verbose $message
+            Write-Verbose "  Expected: $ExpectedHash"
+            Write-Verbose "  Actual:   $actualHash"
+        }
+        return $false
+    }
+}
+
+function New-OrchestrationHashManifest {
+    <#
+    .SYNOPSIS
+    Generates hash manifest for all orchestration scripts
+
+    .DESCRIPTION
+    Calculates SHA-256 hashes for all .ps1 files in the orchestration folder
+    and writes them to a JSON manifest file. Used to establish baseline
+    integrity hashes for script verification.
+
+    .PARAMETER OrchestrationPath
+    Path to the Apps/Orchestration folder
+
+    .PARAMETER ManifestPath
+    Output path for the manifest JSON file
+
+    .EXAMPLE
+    New-OrchestrationHashManifest -OrchestrationPath "C:\FFU\Apps\Orchestration" -ManifestPath "C:\FFU\.security\orchestration-hashes.json"
+
+    .OUTPUTS
+    [hashtable] The generated manifest object
+
+    .NOTES
+    Added in v1.0.15 for SEC-03 (Script Integrity Verification)
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({ Test-Path $_ -PathType Container })]
+        [string]$OrchestrationPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath
+    )
+
+    $scripts = Get-ChildItem -Path $OrchestrationPath -Filter "*.ps1" -File
+    $manifest = @{
+        generated = (Get-Date).ToString('o')
+        algorithm = 'SHA256'
+        version   = '1.0.0'
+        scripts   = @{}
+    }
+
+    foreach ($script in $scripts) {
+        $hash = (Get-FileHash -Path $script.FullName -Algorithm SHA256).Hash
+        $manifest.scripts[$script.Name] = $hash
+        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            WriteLog "Hashed $($script.Name): $hash"
+        }
+        else {
+            Write-Verbose "Hashed $($script.Name): $hash"
+        }
+    }
+
+    # Ensure directory exists
+    $manifestDir = Split-Path $ManifestPath -Parent
+    if (-not (Test-Path $manifestDir)) {
+        New-Item -Path $manifestDir -ItemType Directory -Force | Out-Null
+    }
+
+    $manifest | ConvertTo-Json -Depth 3 | Set-Content -Path $ManifestPath -Encoding UTF8
+    if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+        WriteLog "Generated manifest at $ManifestPath with $($scripts.Count) scripts"
+    }
+    else {
+        Write-Verbose "Generated manifest at $ManifestPath with $($scripts.Count) scripts"
+    }
+
+    return $manifest
+}
+
+function Update-OrchestrationHashManifest {
+    <#
+    .SYNOPSIS
+    Updates hash manifest for specific scripts (leaves others unchanged)
+
+    .DESCRIPTION
+    Recalculates hashes only for specified scripts, preserving existing hashes.
+    Used when individual scripts are modified and need their hashes updated.
+
+    .PARAMETER OrchestrationPath
+    Path to the Apps/Orchestration folder
+
+    .PARAMETER ManifestPath
+    Path to the manifest JSON file
+
+    .PARAMETER ScriptNames
+    Array of script names to update (e.g., "Orchestrator.ps1")
+
+    .EXAMPLE
+    Update-OrchestrationHashManifest -OrchestrationPath "C:\FFU\Apps\Orchestration" -ManifestPath "C:\FFU\.security\orchestration-hashes.json" -ScriptNames @("Orchestrator.ps1")
+
+    .OUTPUTS
+    None
+
+    .NOTES
+    Added in v1.0.15 for SEC-03 (Script Integrity Verification)
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OrchestrationPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$ScriptNames
+    )
+
+    # Load existing manifest or create new
+    if (Test-Path $ManifestPath) {
+        $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json -AsHashtable
+    }
+    else {
+        $manifest = @{
+            generated = (Get-Date).ToString('o')
+            algorithm = 'SHA256'
+            version   = '1.0.0'
+            scripts   = @{}
+        }
+    }
+
+    foreach ($scriptName in $ScriptNames) {
+        $scriptPath = Join-Path $OrchestrationPath $scriptName
+        if (Test-Path $scriptPath) {
+            $hash = (Get-FileHash -Path $scriptPath -Algorithm SHA256).Hash
+            $manifest.scripts[$scriptName] = $hash
+            if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+                WriteLog "Updated hash for $scriptName`: $hash"
+            }
+            else {
+                Write-Verbose "Updated hash for $scriptName`: $hash"
+            }
+        }
+        else {
+            if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+                WriteLog "WARNING: Script not found: $scriptPath"
+            }
+            else {
+                Write-Verbose "WARNING: Script not found: $scriptPath"
+            }
+        }
+    }
+
+    $manifest.generated = (Get-Date).ToString('o')
+
+    # Ensure directory exists
+    $manifestDir = Split-Path $ManifestPath -Parent
+    if (-not (Test-Path $manifestDir)) {
+        New-Item -Path $manifestDir -ItemType Directory -Force | Out-Null
+    }
+
+    $manifest | ConvertTo-Json -Depth 3 | Set-Content -Path $ManifestPath -Encoding UTF8
+    if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+        WriteLog "Updated manifest at $ManifestPath"
+    }
+    else {
+        Write-Verbose "Updated manifest at $ManifestPath"
+    }
+}
+
 # Create backward compatibility aliases for renamed functions (v1.0.11)
 # These aliases allow existing code to continue working while encouraging migration to approved verbs
 Set-Alias -Name 'LogVariableValues' -Value 'Write-VariableValues' -Scope Script
@@ -2665,6 +2950,10 @@ Export-ModuleMember -Function @(
     'Get-FFUConfigurationSchema'
     # WIM mount error handling (v1.0.13)
     'Invoke-WimMountWithErrorHandling'
+    # Script integrity verification (v1.0.15 - SEC-03)
+    'Test-ScriptIntegrity'
+    'New-OrchestrationHashManifest'
+    'Update-OrchestrationHashManifest'
 )
 
 # Export backward compatibility aliases (deprecated - use new function names)
