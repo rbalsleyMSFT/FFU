@@ -24,9 +24,9 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 
 ### Security
 
-- [ ] **SEC-01**: Improve Lenovo PSREF token handling - reduce browser automation exposure
-- [ ] **SEC-02**: Use SecureString for temporary FFU capture user account password
-- [ ] **SEC-03**: Add integrity verification for Apps orchestration scripts before execution
+- [x] **SEC-01**: Improve Lenovo PSREF token handling - reduce browser automation exposure ✓
+- [x] **SEC-02**: Use SecureString for temporary FFU capture user account password ✓
+- [x] **SEC-03**: Add integrity verification for Apps orchestration scripts before execution ✓
 
 ### Performance
 
@@ -92,9 +92,9 @@ Deferred to future cycle. Lower priority or higher complexity.
 | BUG-02 | Phase 2 | Complete |
 | BUG-03 | Phase 2 | Complete |
 | BUG-04 | Phase 2 | Complete |
-| SEC-01 | Phase 3 | Pending |
-| SEC-02 | Phase 3 | Pending |
-| SEC-03 | Phase 3 | Pending |
+| SEC-01 | Phase 3 | Complete |
+| SEC-02 | Phase 3 | Complete |
+| SEC-03 | Phase 3 | Complete |
 | PERF-01 | Phase 4 | Pending |
 | PERF-02 | Phase 4 | Pending |
 | PERF-03 | Phase 4 | Pending |
@@ -118,4 +118,4 @@ Deferred to future cycle. Lower priority or higher complexity.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-19 - Phase 2 requirements (BUG-01 through BUG-04) marked Complete*
+*Last updated: 2026-01-19 - Phase 3 requirements (SEC-01 through SEC-03) marked Complete*
