@@ -20,6 +20,7 @@ BeforeAll {
     $TestRoot = Split-Path $PSScriptRoot -Parent
     $ProjectRoot = Split-Path $TestRoot -Parent
     $ModulesPath = Join-Path $ProjectRoot 'FFUDevelopment\Modules'
+    $CommonPath = Join-Path $ProjectRoot 'FFUDevelopment\FFU.Common'
     $ModulePath = Join-Path $ModulesPath 'FFU.Imaging'
 
     # Add Modules folder to PSModulePath for RequiredModules resolution
@@ -58,14 +59,20 @@ BeforeAll {
         function global:Get-WindowsEdition { param($Path) }
     }
 
-    # Remove and re-import module
-    Get-Module -Name 'FFU.Imaging', 'FFU.Core', 'FFU.Constants' | Remove-Module -Force -ErrorAction SilentlyContinue
+    # Remove any existing module imports
+    Get-Module -Name 'FFU.Imaging', 'FFU.Core', 'FFU.Constants', 'FFU.Common' | Remove-Module -Force -ErrorAction SilentlyContinue
 
-    # Import FFU.Imaging (will auto-load FFU.Core dependency)
+    # Import FFU.Common first to get WriteLog function (dependency of FFU.Core/FFU.Imaging)
+    Import-Module $CommonPath -Force -ErrorAction Stop
+
+    # Now import FFU.Imaging (which depends on FFU.Core, which uses WriteLog)
     if (-not (Test-Path "$ModulePath\FFU.Imaging.psd1")) {
         throw "FFU.Imaging module not found at: $ModulePath"
     }
     Import-Module "$ModulePath\FFU.Imaging.psd1" -Force -ErrorAction Stop
+
+    # Mock WriteLog in FFU.Common module to suppress log output during tests
+    Mock WriteLog { } -ModuleName FFU.Common
 }
 
 AfterAll {
@@ -77,10 +84,6 @@ AfterAll {
 # =============================================================================
 
 Describe 'New-ScratchVhdx Integration' -Tag 'Integration', 'FFU.Imaging', 'VHDXCreation' {
-
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
 
     Context 'Function Exports and Parameters' {
 
@@ -119,10 +122,6 @@ Describe 'New-ScratchVhdx Integration' -Tag 'Integration', 'FFU.Imaging', 'VHDXC
 
 Describe 'New-ScratchVhd Integration' -Tag 'Integration', 'FFU.Imaging', 'VHDCreation', 'VMware' {
 
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
-
     Context 'Function Exports and Parameters' {
 
         It 'Should export New-ScratchVhd function' {
@@ -153,10 +152,6 @@ Describe 'New-ScratchVhd Integration' -Tag 'Integration', 'FFU.Imaging', 'VHDCre
 # =============================================================================
 
 Describe 'Partition Functions Integration' -Tag 'Integration', 'FFU.Imaging', 'Partitioning' {
-
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
 
     Context 'New-SystemPartition' {
 
@@ -235,10 +230,6 @@ Describe 'Partition Functions Integration' -Tag 'Integration', 'FFU.Imaging', 'P
 
 Describe 'New-FFU Integration' -Tag 'Integration', 'FFU.Imaging', 'FFUCapture' {
 
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
-
     Context 'Function Exports and Parameters' {
 
         It 'Should export New-FFU function' {
@@ -314,10 +305,6 @@ Describe 'New-FFU Integration' -Tag 'Integration', 'FFU.Imaging', 'FFUCapture' {
 
 Describe 'Dismount-ScratchVhdx Integration' -Tag 'Integration', 'FFU.Imaging', 'VHDXDismount' {
 
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
-
     Context 'Function Exports and Parameters' {
 
         It 'Should export Dismount-ScratchVhdx function' {
@@ -336,10 +323,6 @@ Describe 'Dismount-ScratchVhdx Integration' -Tag 'Integration', 'FFU.Imaging', '
 # =============================================================================
 
 Describe 'Dismount-ScratchVhd Integration' -Tag 'Integration', 'FFU.Imaging', 'VHDDismount', 'VMware' {
-
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
 
     Context 'Function Exports and Parameters' {
 
@@ -385,10 +368,6 @@ Describe 'Dismount-ScratchVhd Integration' -Tag 'Integration', 'FFU.Imaging', 'V
 
 Describe 'Expand-FFUPartitionForDrivers Integration' -Tag 'Integration', 'FFU.Imaging', 'PartitionExpand', 'BUG-03' {
 
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
-
     Context 'Function Exports and Parameters' {
 
         It 'Should export Expand-FFUPartitionForDrivers function' {
@@ -427,19 +406,25 @@ Describe 'Expand-FFUPartitionForDrivers Integration' -Tag 'Integration', 'FFU.Im
 
 Describe 'Get-WindowsVersionInfo Integration' -Tag 'Integration', 'FFU.Imaging', 'VersionInfo' {
 
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
-
     Context 'Function Exports and Parameters' {
 
         It 'Should export Get-WindowsVersionInfo function' {
             Get-Command Get-WindowsVersionInfo -Module FFU.Imaging | Should -Not -BeNullOrEmpty
         }
 
-        It 'Should have MountPath parameter' {
+        It 'Should have OsPartitionDriveLetter parameter' {
             $command = Get-Command Get-WindowsVersionInfo -Module FFU.Imaging
-            $command.Parameters['MountPath'] | Should -Not -BeNullOrEmpty
+            $command.Parameters['OsPartitionDriveLetter'] | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Should have InstallationType parameter' {
+            $command = Get-Command Get-WindowsVersionInfo -Module FFU.Imaging
+            $command.Parameters['InstallationType'] | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Should have ShortenedWindowsSKU parameter' {
+            $command = Get-Command Get-WindowsVersionInfo -Module FFU.Imaging
+            $command.Parameters['ShortenedWindowsSKU'] | Should -Not -BeNullOrEmpty
         }
     }
 }
@@ -449,10 +434,6 @@ Describe 'Get-WindowsVersionInfo Integration' -Tag 'Integration', 'FFU.Imaging',
 # =============================================================================
 
 Describe 'Invoke-FFUOptimizeWithScratchDir Integration' -Tag 'Integration', 'FFU.Imaging', 'FFUOptimize' {
-
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
 
     Context 'Function Exports and Parameters' {
 
@@ -483,10 +464,6 @@ Describe 'Invoke-FFUOptimizeWithScratchDir Integration' -Tag 'Integration', 'FFU
 
 Describe 'Initialize-DISMService Integration' -Tag 'Integration', 'FFU.Imaging', 'DISMInit' {
 
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
-
     Context 'Function Exports and Parameters' {
 
         It 'Should export Initialize-DISMService function' {
@@ -507,10 +484,6 @@ Describe 'Initialize-DISMService Integration' -Tag 'Integration', 'FFU.Imaging',
 # =============================================================================
 
 Describe 'Test-WimSourceAccessibility Integration' -Tag 'Integration', 'FFU.Imaging', 'WimValidation' {
-
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
 
     Context 'Function Exports and Parameters' {
 
@@ -537,10 +510,6 @@ Describe 'Test-WimSourceAccessibility Integration' -Tag 'Integration', 'FFU.Imag
 # =============================================================================
 
 Describe 'Add-BootFiles Integration' -Tag 'Integration', 'FFU.Imaging', 'BootFiles' {
-
-    BeforeAll {
-        Mock WriteLog { } -ModuleName 'FFU.Imaging'
-    }
 
     Context 'Function Exports and Parameters' {
 
