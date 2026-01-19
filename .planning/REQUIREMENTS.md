@@ -36,9 +36,9 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 
 ### Test Coverage
 
-- [ ] **TEST-01**: Add integration tests for VM creation (Hyper-V and VMware)
-- [ ] **TEST-02**: Add integration tests for driver injection workflow
-- [ ] **TEST-03**: Add integration tests for FFU capture process
+- [x] **TEST-01**: Add integration tests for VM creation (Hyper-V and VMware) ✓
+- [x] **TEST-02**: Add integration tests for driver injection workflow ✓
+- [x] **TEST-03**: Add integration tests for FFU capture process ✓
 - [ ] **TEST-04**: Add unit tests for UI event handlers (FFUUI.Core.Handlers.psm1 - 0% coverage)
 - [ ] **TEST-05**: Add tests for error recovery paths and cleanup handlers
 - [ ] **TEST-06**: Add tests for VMware provider operations
@@ -98,9 +98,9 @@ Deferred to future cycle. Lower priority or higher complexity.
 | PERF-01 | Phase 4 | Complete |
 | PERF-02 | Phase 4 | Complete |
 | PERF-03 | Phase 4 | Complete |
-| TEST-01 | Phase 5 | Pending |
-| TEST-02 | Phase 5 | Pending |
-| TEST-03 | Phase 5 | Pending |
+| TEST-01 | Phase 5 | Complete |
+| TEST-02 | Phase 5 | Complete |
+| TEST-03 | Phase 5 | Complete |
 | TEST-04 | Phase 6 | Pending |
 | TEST-05 | Phase 6 | Pending |
 | TEST-06 | Phase 6 | Pending |
