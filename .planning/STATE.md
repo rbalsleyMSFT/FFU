@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Improve codebase quality, reliability, and maintainability
-**Current focus:** Phase 1 - Tech Debt Cleanup (in progress)
+**Current focus:** Phase 2 - Bug Fixes - Critical (in progress)
 
 ## Current Position
 
 **Milestone:** v1.8.0 - Codebase Health
-**Phase:** 1 of 10 (Tech Debt Cleanup)
-**Plan:** 5 of 5 complete
-**Status:** COMPLETE
-**Last activity:** 2026-01-18 - Completed 01-05-PLAN.md (SilentlyContinue audit)
+**Phase:** 2 of 10 (Bug Fixes - Critical)
+**Plan:** 1 of 4 complete
+**Status:** In Progress
+**Last activity:** 2026-01-19 - Completed 02-01-PLAN.md (BUG-04 fix)
 
-Progress: [##########] 100%
+Progress: [=---------] 15%
 
 ## Progress
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1     | COMPLETE | 5/5 | 100% |
-| 2     | Pending | 0/? | 0% |
+| 2     | In Progress | 1/4 | 25% |
 | 3     | Pending | 0/? | 0% |
 | 4     | Pending | 0/? | 0% |
 | 5     | Pending | 0/? | 0% |
@@ -32,32 +32,29 @@ Progress: [##########] 100%
 | 9     | Pending | 0/? | 0% |
 | 10    | Pending | 0/? | 0% |
 
-## Phase 1 Plan Structure
+## Phase 2 Plan Structure
 
 | Plan | Wave | Depends On | Requirements | Description | Status |
 |------|------|------------|--------------|-------------|--------|
-| 01-01 | 1 | - | DEBT-04, DEBT-05 | Doc param coupling, remove logStreamReader | COMPLETE |
-| 01-02 | 1 | - | DEBT-01 | Remove deprecated FFU.Constants properties | COMPLETE |
-| 01-03 | 2 | 01-02 | DEBT-03 (partial) | Replace Write-Host in FFU.ADK, FFU.Core | COMPLETE |
-| 01-04 | 2 | - | DEBT-03 (partial) | Replace Write-Host in FFU.Preflight | COMPLETE |
-| 01-05 | 2 | - | DEBT-02 | Audit SilentlyContinue (50%+ reduction) | COMPLETE |
+| 02-01 | 1 | - | BUG-04 | Fix Dell chipset driver extraction hang | COMPLETE |
+| 02-02 | 1 | - | BUG-01 | Add SSL inspection detection for proxies | READY |
+| 02-03 | 1 | - | BUG-03 | Add VHDX/partition expansion for drivers | READY |
+| 02-04 | 2 | - | BUG-02 | Verify MSU unattend.xml extraction | READY |
 
-**Wave 1:** Plans 01-01 (COMPLETE), 01-02 (COMPLETE)
-**Wave 2:** Plans 01-03 (COMPLETE), 01-04 (COMPLETE), 01-05 (COMPLETE)
-
-**PHASE 1 COMPLETE** - All 5 tech debt items addressed
+**Wave 1:** Plans 02-01, 02-02, 02-03 (parallel - independent)
+**Wave 2:** Plan 02-04 (sequential - test coverage depends on stable base)
 
 ## Recent Activity
 
+- 2026-01-19: Completed 02-01-PLAN.md (BUG-04 - Dell chipset driver timeout fix)
+- 2026-01-19: Phase 2 planning complete - 4 plans in 2 waves
+- 2026-01-19: Created 02-RESEARCH.md for Phase 2 bug fixes
 - 2026-01-18: Completed 01-05-PLAN.md (DEBT-02 - SilentlyContinue audit: all 254 usages are appropriate)
 - 2026-01-18: Completed 01-04-PLAN.md (DEBT-03 partial - 2 Write-Host in FFU.Preflight examples replaced)
 - 2026-01-18: Completed 01-03-PLAN.md (DEBT-03 partial - Write-Host removed from FFU.ADK, FFU.Core)
 - 2026-01-17: Completed 01-02-PLAN.md (DEBT-01 - deprecated FFU.Constants properties removed)
 - 2026-01-18: Completed 01-01-PLAN.md (param coupling docs, logStreamReader removal)
 - 2026-01-17: Project initialized from codebase mapping concerns
-- 2026-01-17: Created PROJECT.md, config.json, REQUIREMENTS.md, ROADMAP.md
-- 2026-01-17: Research completed for Phase 1 (01-RESEARCH.md)
-- 2026-01-17: Phase 1 planned - 5 plans in 2 waves
 
 ## Decisions Made
 
@@ -73,10 +70,13 @@ Progress: [##########] 100%
 | WriteLog for production messages | 2026-01-18 | WriteLog writes to both file and messaging queue, visible in UI |
 | Research estimate correction | 2026-01-18 | FFU.Preflight had 2 Write-Host (not 91) - only in doc examples |
 | SilentlyContinue best practices confirmed | 2026-01-18 | Audit of 254 occurrences shows all are appropriate for context |
+| 4 plans for Phase 2 | 2026-01-19 | One plan per bug (BUG-01 through BUG-04) |
+| Wave structure for Phase 2 | 2026-01-19 | Wave 1: isolated fixes; Wave 2: verification and tests |
+| 30-second driver extraction timeout | 2026-01-19 | Typical extraction 5-15s; 30s provides generous safety margin |
 
 ## Open Issues
 
-None yet.
+None.
 
 ## Blockers
 
@@ -84,10 +84,10 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-01-18
-**Stopped at:** Completed 01-05-PLAN.md - Phase 1 COMPLETE
+**Last session:** 2026-01-19
+**Stopped at:** Completed 02-01-PLAN.md
 **Resume file:** None
-**Next action:** Begin Phase 2 planning (or continue to next roadmap phase)
+**Next action:** Continue Phase 2 Wave 1 (02-02, 02-03)
 
 ---
-*State updated: 2026-01-18*
+*State updated: 2026-01-19*
