@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.7.24",
-    "buildDate": "2026-01-19",
+    "version": "1.7.25",
+    "buildDate": "2026-01-20",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -92,6 +92,11 @@
             "version": "1.1.0",
             "path": "Modules/FFU.BuildTest/FFU.BuildTest.psd1",
             "description": "Build testing and verification with elevated execution support (Start-FFUBuildListener, Invoke-FFUBuildElevated)"
+        },
+        "FFU.ConfigMigration": {
+            "version": "1.0.0",
+            "path": "Modules/FFU.ConfigMigration/FFU.ConfigMigration.psd1",
+            "description": "Configuration file migration and schema versioning"
         }
     },
 
