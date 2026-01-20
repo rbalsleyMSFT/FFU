@@ -9,10 +9,10 @@ Requirements for v1.8.1 release. Each maps to roadmap phases.
 
 ### Windows Updates
 
-- [ ] **UPD-01**: Build process excludes preview/beta Windows Updates by default (GA releases only)
-- [ ] **UPD-02**: User can opt-in to include preview updates via UI checkbox in Updates tab
-- [ ] **UPD-03**: `IncludePreviewUpdates` setting persisted in configuration file
-- [ ] **UPD-04**: Config migration handles new `IncludePreviewUpdates` property (defaults to false)
+- [x] **UPD-01**: Build process excludes preview/beta Windows Updates by default (GA releases only)
+- [x] **UPD-02**: User can opt-in to include preview updates via UI checkbox in Updates tab
+- [x] **UPD-03**: `IncludePreviewUpdates` setting persisted in configuration file
+- [x] **UPD-04**: Config migration handles new `IncludePreviewUpdates` property (defaults to false)
 
 ### VHDX Operations
 
@@ -48,10 +48,10 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UPD-01 | 11 | Pending |
-| UPD-02 | 11 | Pending |
-| UPD-03 | 11 | Pending |
-| UPD-04 | 11 | Pending |
+| UPD-01 | 11 | Complete |
+| UPD-02 | 11 | Complete |
+| UPD-03 | 11 | Complete |
+| UPD-04 | 11 | Complete |
 | VHDX-01 | 12 | Pending |
 | VHDX-02 | 12 | Pending |
 | VHDX-03 | 12 | Pending |
@@ -63,4 +63,4 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 ---
 *Requirements defined: 2026-01-20*
-*Last updated: 2026-01-20 after initial definition*
+*Last updated: 2026-01-20 — Phase 11 requirements complete*

@@ -8,7 +8,7 @@
 
 | Phase | Name | Requirements | Plans | Status |
 |-------|------|--------------|-------|--------|
-| 11 | Windows Update Preview Filtering | UPD-01, UPD-02, UPD-03, UPD-04 | 2 | Planned |
+| 11 | Windows Update Preview Filtering | UPD-01, UPD-02, UPD-03, UPD-04 | 2 | ✓ Complete |
 | 12 | VHDX Drive Letter Stability | VHDX-01, VHDX-02, VHDX-03 | 0 | Not Started |
 
 **Total:** 2 phases covering 7 requirements
@@ -28,15 +28,17 @@
 **Plans:** 2 plans
 
 Plans:
-- [ ] 11-01-PLAN.md - Config schema and migration for IncludePreviewUpdates
-- [ ] 11-02-PLAN.md - UI checkbox and build script filtering logic
+- [x] 11-01-PLAN.md - Config schema and migration for IncludePreviewUpdates
+- [x] 11-02-PLAN.md - UI checkbox and build script filtering logic
 
 **Success Criteria:**
-- [ ] Windows Update search excludes preview versions unless explicitly requested
-- [ ] Updates tab in UI has checkbox for "Include Preview Updates"
-- [ ] Checkbox state persists in config file as `IncludePreviewUpdates` boolean
-- [ ] Config migration adds property with `false` default for existing configs
+- [x] Windows Update search excludes preview versions unless explicitly requested
+- [x] Updates tab in UI has checkbox for "Include Preview Updates"
+- [x] Checkbox state persists in config file as `IncludePreviewUpdates` boolean
+- [x] Config migration adds property with `false` default for existing configs
 - [ ] Tests verify filtering logic works correctly
+
+**Completed:** 2026-01-20
 
 **Key Files:**
 - `BuildFFUVM.ps1` - Update search logic
@@ -91,3 +93,4 @@ Plans:
 ---
 *Roadmap created: 2026-01-20*
 *Phase 11 planned: 2026-01-20*
+*Phase 11 complete: 2026-01-20*
