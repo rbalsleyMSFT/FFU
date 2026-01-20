@@ -201,6 +201,9 @@ When set to $true, will download and install the latest OneDrive and install it 
 .PARAMETER UpdatePreviewCU
 When set to $true, will download and install the latest Preview cumulative update. Default is $false.
 
+.PARAMETER IncludePreviewUpdates
+When set to $true, allows preview/optional updates in Windows Update searches. When $false (default), search queries exclude preview updates to ensure only GA (Generally Available) releases are downloaded. Affects Cumulative Updates and .NET Framework updates.
+
 .PARAMETER UseDriversAsPEDrivers
 When set to $true (and -CopyPEDrivers is also $true), bypasses the contents of $FFUDevelopmentPath\PEDrivers and instead builds the WinPE driver set dynamically from the $DriversFolder path, copying only the required WinPE drivers. Has no effect if -CopyPEDrivers is not specified. Default is $false.
 
@@ -457,6 +460,7 @@ param(
     [string[]]$AdditionalFFUFiles,
     [bool]$UpdateLatestCU,
     [bool]$UpdatePreviewCU,
+    [bool]$IncludePreviewUpdates,
     [bool]$UpdateLatestMicrocode,
     [bool]$UpdateLatestNet,
     [bool]$UpdateLatestDefender,
@@ -730,33 +734,47 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
                 }
                 WriteLog "Backup created: $($migrationResult.BackupPath)"
 
-                # CLI prompt for confirmation
-                Write-Host ""
-                Write-Host "Your configuration file needs migration from v$($migrationResult.FromVersion) to v$($migrationResult.ToVersion)." -ForegroundColor Yellow
-                Write-Host "Changes to be applied:" -ForegroundColor Yellow
-                foreach ($change in $migrationResult.Changes) {
-                    if ($change -like "WARNING:*") {
-                        Write-Host "  [!] $change" -ForegroundColor Red
-                    } else {
-                        Write-Host "  [+] $change" -ForegroundColor Green
-                    }
-                }
-                Write-Host ""
-                Write-Host "Backup created at: $($migrationResult.BackupPath)" -ForegroundColor Cyan
-                Write-Host ""
+                # Check if running in non-interactive context (UI background job)
+                # MessagingContext indicates we were launched by BuildFFUVM_UI.ps1
+                $isNonInteractive = $null -ne $MessagingContext
 
-                $response = Read-Host "Save migrated configuration? (Y/N)"
+                if ($isNonInteractive) {
+                    # Auto-accept migration when running from UI (no user prompt possible)
+                    WriteLog "Running in non-interactive mode (UI background job). Auto-accepting config migration."
+                    $response = 'Y'
+                } else {
+                    # CLI prompt for confirmation (interactive mode)
+                    Write-Host ""
+                    Write-Host "Your configuration file needs migration from v$($migrationResult.FromVersion) to v$($migrationResult.ToVersion)." -ForegroundColor Yellow
+                    Write-Host "Changes to be applied:" -ForegroundColor Yellow
+                    foreach ($change in $migrationResult.Changes) {
+                        if ($change -like "WARNING:*") {
+                            Write-Host "  [!] $change" -ForegroundColor Red
+                        } else {
+                            Write-Host "  [+] $change" -ForegroundColor Green
+                        }
+                    }
+                    Write-Host ""
+                    Write-Host "Backup created at: $($migrationResult.BackupPath)" -ForegroundColor Cyan
+                    Write-Host ""
+
+                    $response = Read-Host "Save migrated configuration? (Y/N)"
+                }
 
                 if ($response -eq 'Y' -or $response -eq 'y') {
                     $migrationResult.Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigFile -Encoding UTF8
                     WriteLog "Migrated configuration saved to $ConfigFile"
-                    Write-Host "Configuration migrated and saved." -ForegroundColor Green
+                    if (-not $isNonInteractive) {
+                        Write-Host "Configuration migrated and saved." -ForegroundColor Green
+                    }
 
                     # Use migrated config
                     $configData = [PSCustomObject]$migrationResult.Config
                 } else {
                     WriteLog "User declined migration. Continuing with original config (deprecated properties ignored)."
-                    Write-Host "Migration declined. Continuing with original configuration." -ForegroundColor Yellow
+                    if (-not $isNonInteractive) {
+                        Write-Host "Migration declined. Continuing with original configuration." -ForegroundColor Yellow
+                    }
                 }
             }
         }
@@ -3461,17 +3479,25 @@ try {
         $cupKbArticleId = $null
         $netKbArticleId = $null
 
+        # Apply preview exclusion filter when IncludePreviewUpdates is false
+        $PreviewFilter = if ($IncludePreviewUpdates -eq $false) { " -preview" } else { "" }
+        if ($IncludePreviewUpdates -eq $false) {
+            WriteLog "Preview updates will be excluded from search results (IncludePreviewUpdates=`$false)"
+        } else {
+            WriteLog "Preview updates may be included in search results (IncludePreviewUpdates=`$true)"
+        }
+
         if ($UpdateLatestCU -and -not $UpdatePreviewCU) {
             Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-            if ($WindowsRelease -in 10, 11) { $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch""" }
-            if ($WindowsRelease -eq 2025) { $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch""" }
-            if ($WindowsRelease -eq 2022) { $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch""" }
-            if ($WindowsRelease -in 2016, 2019 -and $installationType -eq "Server") { $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch""" }
+            if ($WindowsRelease -in 10, 11) { $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch""$PreviewFilter" }
+            if ($WindowsRelease -eq 2025) { $Name = """Cumulative Update for Microsoft server operating system, version 24h2 for $WindowsArch""$PreviewFilter" }
+            if ($WindowsRelease -eq 2022) { $Name = """Cumulative Update for Microsoft server operating system, version 21h2 for $WindowsArch""$PreviewFilter" }
+            if ($WindowsRelease -in 2016, 2019 -and $installationType -eq "Server") { $Name = """Cumulative update for Windows Server $WindowsRelease for $WindowsArch""$PreviewFilter" }
             if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                 $today = Get-Date; $firstDayOfMonth = Get-Date -Year $today.Year -Month $today.Month -Day 1; $secondTuesday = $firstDayOfMonth.AddDays(((2 - [int]$firstDayOfMonth.DayOfWeek + 7) % 7) + 7); $updateDate = if ($today -gt $secondTuesday) { $today } else { $today.AddMonths(-1) }
-                $Name = """$($updateDate.ToString('yyyy-MM')) Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch"""
+                $Name = """$($updateDate.ToString('yyyy-MM')) Cumulative update for Windows 10 Version $WindowsVersion for $WindowsArch""$PreviewFilter"
             }
-            if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch""" }
+            if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = """Cumulative update for Windows 11 Version $WindowsVersion for $WindowsArch""$PreviewFilter" }
             
             if (($WindowsRelease -eq 2016 -and $installationType -eq "Server") -or ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC)) {
                 $SSUName = if ($isLTSC) { """Servicing Stack Update for Windows 10 Version $WindowsVersion for $WindowsArch""" } else { """Servicing stack update for Windows Server $WindowsRelease for $WindowsArch""" }
@@ -3512,9 +3538,9 @@ try {
                 (Get-UpdateFileInfo -Name $NETFeatureName -WindowsArch $WindowsArch -Headers $Headers -UserAgent $UserAgent -Filter $Filter) | ForEach-Object { $netFeatureUpdateInfos.Add($_) }
             }
             else {
-                if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch -preview" }
-                if ($WindowsRelease -in 10, 11) { $Name = "Cumulative update for .NET framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview" }
-                if ($WindowsRelease -eq 2025 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64 -preview" }
+                if ($WindowsRelease -eq 2024 -and $isLTSC) { $Name = "Cumulative update for .NET framework windows 11 $WindowsVersion $WindowsArch$PreviewFilter" }
+                if ($WindowsRelease -in 10, 11) { $Name = "Cumulative update for .NET framework windows $WindowsRelease $WindowsVersion $WindowsArch$PreviewFilter" }
+                if ($WindowsRelease -eq 2025 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework"" ""3.5 and 4.8.1"" for Windows 11 24H2 x64$PreviewFilter" }
                 if ($WindowsRelease -eq 2022 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 3.5, 4.8 and 4.8.1"" ""operating system version 21H2 for x64""" }
                 if ($WindowsRelease -eq 2019 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 3.5, 4.7.2 and 4.8 for Windows Server 2019 for x64""" }
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") { $Name = """Cumulative Update for .NET Framework 4.8 for Windows Server 2016 for x64""" }
@@ -3820,7 +3846,7 @@ try {
 
     # === CHECKPOINT PERSISTENCE 3: Before VHDX Creation ===
     if ($script:CheckpointEnabled) {
-        Save-FFUBuildCheckpoint -CompletedPhase WindowsDownload `
+        Save-FFUBuildCheckpoint -CompletedPhase UpdatesDownload `
             -Configuration @{
                 FFUDevelopmentPath = $FFUDevelopmentPath
                 WindowsRelease = $WindowsRelease
@@ -4627,7 +4653,7 @@ if ($InstallApps) {
 
         # === CHECKPOINT PERSISTENCE 5: Before VM Start ===
         if ($script:CheckpointEnabled) {
-            Save-FFUBuildCheckpoint -CompletedPhase VMCreation `
+            Save-FFUBuildCheckpoint -CompletedPhase VMSetup `
                 -Configuration @{
                     FFUDevelopmentPath = $FFUDevelopmentPath
                     WindowsRelease = $WindowsRelease
@@ -4736,7 +4762,7 @@ if (-not $skipFFUCapture -and (Test-BuildCancellation -MessagingContext $Messagi
 
 # === CHECKPOINT PERSISTENCE 6a: Before FFU Capture (non-InstallApps path) ===
 if ($script:CheckpointEnabled -and (-not $InstallApps)) {
-    Save-FFUBuildCheckpoint -CompletedPhase VMExecution `
+    Save-FFUBuildCheckpoint -CompletedPhase VMStart `
         -Configuration @{
             FFUDevelopmentPath = $FFUDevelopmentPath
             WindowsRelease = $WindowsRelease
@@ -4862,7 +4888,7 @@ try {
 
         # === CHECKPOINT PERSISTENCE 6b: After VM Shutdown (InstallApps path) ===
         if ($script:CheckpointEnabled) {
-            Save-FFUBuildCheckpoint -CompletedPhase VMExecution `
+            Save-FFUBuildCheckpoint -CompletedPhase VMStart `
                 -Configuration @{
                     FFUDevelopmentPath = $FFUDevelopmentPath
                     WindowsRelease = $WindowsRelease
