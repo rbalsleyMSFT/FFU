@@ -12,7 +12,7 @@
 RootModule = 'FFU.Common.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.8'
+ModuleVersion = '0.0.9'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -115,6 +115,14 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.9: ThreadJob runspace isolation fix - "Get-Date is not recognized" error
+- Fixed: Build failures with "The term 'Get-Date' is not recognized" when running via UI
+- Root cause: Get-Date cmdlet requires Microsoft.PowerShell.Utility module which can become
+  temporarily unavailable in ThreadJob runspaces during heavy parallel operations
+- Solution: Replaced all Get-Date calls with [DateTime]::Now (.NET, always available)
+- Files fixed: FFU.Common.Core.psm1 (WriteLog function), FFU.Common.Download.psm1 (fallback WriteLog)
+- Affects builds launched from BuildFFUVM_UI.ps1 which uses Start-ThreadJob
+
 v0.0.8: BUG-01 - SSL inspection detection for corporate proxies (Netskope/zScaler)
 - Added FFUNetworkConfiguration.TestSSLInspection() static method to detect SSL-inspecting proxies
 - Detects known SSL inspectors: Netskope, Zscaler, goskope, Blue Coat, Forcepoint, McAfee, Symantec, Palo Alto, Cisco Umbrella, Websense

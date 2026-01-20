@@ -19,9 +19,10 @@ if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
 }
 else {
     # Fallback logging function
+    # Uses [DateTime]::Now instead of Get-Date for ThreadJob runspace compatibility
     function WriteLog {
         param([string]$LogText)
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $timestamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")
         Write-Verbose "[$timestamp] $LogText"
         Write-Host "[$timestamp] $LogText"
     }

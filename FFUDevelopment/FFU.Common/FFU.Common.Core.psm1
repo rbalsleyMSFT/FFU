@@ -83,7 +83,7 @@ function Set-CommonCoreLogPath {
 
     # Log the initialization message
     if ($Initialize) {
-        WriteLog "=== Fresh log session started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
+        WriteLog "=== Fresh log session started at $([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss')) ==="
         WriteLog "CommonCoreLogPath set to: $script:CommonCoreLogFilePath"
     }
     else {
@@ -159,7 +159,10 @@ function WriteLog {
 
     # Write to log file if path is set
     if (-not [string]::IsNullOrWhiteSpace($script:CommonCoreLogFilePath)) {
-        $logEntry = "$((Get-Date).ToString()) $LogText"
+        # Use [DateTime]::Now instead of Get-Date for ThreadJob runspace compatibility
+        # Get-Date cmdlet requires Microsoft.PowerShell.Utility module which can become
+        # temporarily unavailable in ThreadJob contexts, causing "Get-Date is not recognized" errors
+        $logEntry = "$([DateTime]::Now.ToString()) $LogText"
         $streamWriter = $null
 
         try {
