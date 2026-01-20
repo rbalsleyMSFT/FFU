@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-20)
 
 **Milestone:** v1.8.1 Bug Fixes
 **Phase:** 11 - Windows Update Preview Filtering (in progress)
-**Plan:** 01 of 4 complete
+**Plan:** 02 of 4 complete
 **Status:** In progress
-**Last activity:** 2026-01-20 - Completed 11-01-PLAN.md (Config schema and migration)
+**Last activity:** 2026-01-20 - Completed 11-02-PLAN.md (UI checkbox and build script filtering)
 
-Progress: [#-------] 12.5% (1/8 total plans: 1/4 phase 11 + 0/4 phase 12)
+Progress: [##------] 25% (2/8 total plans: 2/4 phase 11 + 0/4 phase 12)
 
 ## Completed Milestones
 
@@ -25,6 +25,11 @@ Progress: [#-------] 12.5% (1/8 total plans: 1/4 phase 11 + 0/4 phase 12)
 
 ## Recent Activity
 
+- 2026-01-20: **PLAN 11-02 COMPLETE** - UI checkbox and build script filtering logic
+  - Added chkIncludePreviewUpdates checkbox to Updates tab
+  - Wired checkbox to config save/load
+  - Added IncludePreviewUpdates parameter and -preview filter to build script
+  - Commits: 20c7754, be1f628, b7ba336
 - 2026-01-20: **PLAN 11-01 COMPLETE** - Config schema and migration for IncludePreviewUpdates
   - Added IncludePreviewUpdates boolean property to schema (default: false)
   - Updated FFU.ConfigMigration to v1.1 with migration support
@@ -44,6 +49,8 @@ Progress: [#-------] 12.5% (1/8 total plans: 1/4 phase 11 + 0/4 phase 12)
 | ID | Decision | Rationale | Plan |
 |----|----------|-----------|------|
 | D-11-01-01 | Place IncludePreviewUpdates after UpdatePreviewCU | Logical grouping with update settings | 11-01 |
+| D-11-02-01 | Apply -preview exclusion filter to search query string | Microsoft Update Catalog search supports negative keywords | 11-02 |
+| D-11-02-02 | UpdatePreviewCU explicit request is NOT filtered | When user explicitly wants preview CU, do not exclude | 11-02 |
 
 ## Open Issues
 
@@ -59,9 +66,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Completed 11-01-PLAN.md
+**Stopped at:** Completed 11-02-PLAN.md
 **Resume file:** None
-**Next action:** Execute 11-02-PLAN.md (UI checkbox integration)
+**Next action:** Execute 11-03-PLAN.md (Test coverage for preview filter)
 
 ---
 *State updated: 2026-01-20*
