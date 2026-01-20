@@ -49,7 +49,17 @@ Enable rapid, reliable Windows deployment through pre-configured FFU images with
 
 ### Active
 
-(No active requirements - awaiting next milestone definition)
+**Current Milestone: v1.8.1 Bug Fixes**
+
+**Goal:** Fix critical bugs discovered during v1.8.0 testing
+
+- [ ] **Windows Update Preview Filtering** — Only download GA updates by default; exclude preview/beta unless explicitly requested
+  - Backend: Update BuildFFUVM.ps1 search logic to exclude preview versions
+  - UI: Add checkbox in Updates tab to opt-in to preview updates
+  - Config: Add `IncludePreviewUpdates` setting with migration support
+- [ ] **OS Partition Drive Letter Stability** — Fix drive letter lost during unattend file copy verification
+  - Root cause: Drive letter becomes empty between copy and verification steps
+  - Must work with both Hyper-V and VMware providers
 
 ### Out of Scope
 
@@ -92,4 +102,4 @@ Key files:
 | 7-day catalog cache TTL | Reduces network traffic for Lenovo | Shipped |
 
 ---
-*Last updated: 2026-01-20 after v1.8.0 milestone*
+*Last updated: 2026-01-20 after v1.8.1 milestone started*
