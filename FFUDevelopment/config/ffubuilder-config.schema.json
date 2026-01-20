@@ -13,6 +13,12 @@
             "type": "string",
             "description": "Optional comment field for documentation purposes"
         },
+        "configSchemaVersion": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+$",
+            "default": "1.0",
+            "description": "Schema version of this configuration file. Used for automatic migration of older configs. Configs without this field are treated as version 0.0 (pre-versioning)."
+        },
         "AllowExternalHardDiskMedia": {
             "type": "boolean",
             "default": false,
@@ -191,28 +197,17 @@
                     "default": "",
                     "description": "Path to VMware Workstation Pro installation. Leave empty for auto-detection from registry."
                 },
-                "VMrestPort": {
-                    "type": "integer",
-                    "default": 8697,
-                    "minimum": 1024,
-                    "maximum": 65535,
-                    "description": "Port number for VMware REST API (vmrest.exe). Default is 8697."
-                },
-                "VMrestUsername": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Username for vmrest authentication. Leave empty to use default credentials."
-                },
-                "VMrestPassword": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Password for vmrest authentication. Leave empty to use default credentials."
-                },
                 "DefaultNetworkType": {
                     "type": "string",
                     "enum": ["bridged", "nat", "hostonly"],
                     "default": "bridged",
                     "description": "Default network adapter type for VMware VMs. 'bridged' recommended for FFU capture."
+                },
+                "NicType": {
+                    "type": "string",
+                    "enum": ["e1000e", "vmxnet3", "e1000"],
+                    "default": "e1000e",
+                    "description": "Virtual network adapter type. 'e1000e' (Intel 82574L emulation) is recommended for best WinPE compatibility. 'vmxnet3' is VMware paravirtual (higher performance, requires vmxnet3 drivers in WinPE). 'e1000' is older Intel PRO/1000 MT emulation."
                 }
             },
             "additionalProperties": false
@@ -453,6 +448,11 @@
             "default": false,
             "description": "When set to true, displays the VM window during the build process (VMware only). When false (default), the VM runs in headless mode for automation. Hyper-V uses Hyper-V Manager for console access."
         },
+        "ForceVMwareDriverDownload": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, forces re-download of Intel e1000e network drivers for VMware WinPE support, replacing any existing drivers in the VMwareDrivers folder. Use when a previous download failed or drivers appear corrupted. Only applicable when using VMware Workstation Pro."
+        },
         "VMLocation": {
             "type": "string",
             "default": "",
@@ -467,7 +467,7 @@
             "type": "integer",
             "minimum": 5,
             "maximum": 120,
-            "default": 20,
+            "default": 60,
             "description": "Maximum time in minutes to wait for VM shutdown before forcing power off. If the VM does not shutdown within this timeout, it will be forcibly powered off and the build will continue."
         },
         "WindowsArch": {
