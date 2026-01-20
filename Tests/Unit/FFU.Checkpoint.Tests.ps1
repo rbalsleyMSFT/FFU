@@ -48,11 +48,13 @@ Describe 'FFU.Checkpoint Module' {
         $commands.Name | Should -Contain 'Remove-FFUBuildCheckpoint'
         $commands.Name | Should -Contain 'Test-FFUBuildCheckpoint'
         $commands.Name | Should -Contain 'Get-FFUBuildPhasePercent'
+        $commands.Name | Should -Contain 'Test-CheckpointArtifacts'
+        $commands.Name | Should -Contain 'Test-PhaseAlreadyComplete'
     }
 
-    It 'exports exactly 5 functions' {
+    It 'exports exactly 7 functions' {
         $commands = Get-Command -Module FFU.Checkpoint
-        $commands.Count | Should -Be 5
+        $commands.Count | Should -Be 7
     }
 
     It 'defines FFUBuildPhase enum with 16 phases' {
@@ -183,9 +185,10 @@ Describe 'Save-FFUBuildCheckpoint' {
         }
 
         $checkpointFile = Join-Path $script:TestBasePath '.ffubuilder\checkpoint.json'
-        $checkpoint = Get-Content $checkpointFile -Raw | ConvertFrom-Json
-        # ISO 8601 format ends with Z for UTC or has timezone offset
-        $checkpoint.timestamp | Should -Match '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        $jsonContent = Get-Content $checkpointFile -Raw
+        # Check the raw JSON has ISO 8601 timestamp format (ConvertFrom-Json converts to DateTime)
+        # The timestamp should be in format: "2026-01-20T01:53:02.3513403Z"
+        $jsonContent | Should -Match '"timestamp":\s*"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
     }
 
     It 'sets version to 1.0' {
@@ -634,5 +637,245 @@ Describe 'Cross-version Compatibility' {
             $result[0].Name | Should -Be 'Item1'
             $result[1].Name | Should -Be 'Item2'
         }
+    }
+}
+
+Describe 'Test-CheckpointArtifacts' {
+
+    BeforeEach {
+        # Clean up before each test
+        $testDir = Join-Path $script:TestBasePath 'artifacts'
+        if (Test-Path $testDir) {
+            Remove-Item -Path $testDir -Recurse -Force
+        }
+        New-Item -Path $testDir -ItemType Directory -Force | Out-Null
+    }
+
+    It 'returns false when checkpoint has no artifacts' {
+        $checkpoint = @{
+            artifacts = $null
+            paths = @{}
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns false when checkpoint has no paths' {
+        $checkpoint = @{
+            artifacts = @{ vhdxCreated = $true }
+            paths = $null
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns true when no artifacts marked as created' {
+        $checkpoint = @{
+            artifacts = @{ vhdxCreated = $false }
+            paths = @{ VHDXPath = 'C:\nonexistent\test.vhdx' }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeTrue
+    }
+
+    It 'returns false when VHDX marked created but file missing' {
+        $checkpoint = @{
+            artifacts = @{ vhdxCreated = $true }
+            paths = @{ VHDXPath = 'C:\nonexistent\test.vhdx' }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns true when VHDX marked created and file exists' {
+        $testVHDX = Join-Path $script:TestBasePath 'artifacts\test.vhdx'
+        '' | Set-Content $testVHDX
+
+        $checkpoint = @{
+            artifacts = @{ vhdxCreated = $true }
+            paths = @{ VHDXPath = $testVHDX }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeTrue
+    }
+
+    It 'returns false when DriversFolder marked but directory missing' {
+        $checkpoint = @{
+            artifacts = @{ driversDownloaded = $true }
+            paths = @{ DriversFolder = 'C:\nonexistent\drivers' }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns true when DriversFolder marked and directory exists' {
+        $driversDir = Join-Path $script:TestBasePath 'artifacts\drivers'
+        New-Item -Path $driversDir -ItemType Directory -Force | Out-Null
+
+        $checkpoint = @{
+            artifacts = @{ driversDownloaded = $true }
+            paths = @{ DriversFolder = $driversDir }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeTrue
+    }
+
+    It 'returns false when AppsISO marked but file missing' {
+        $checkpoint = @{
+            artifacts = @{ appsIsoCreated = $true }
+            paths = @{ AppsISO = 'C:\nonexistent\apps.iso' }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns true when AppsISO marked and file exists' {
+        $isoPath = Join-Path $script:TestBasePath 'artifacts\apps.iso'
+        '' | Set-Content $isoPath
+
+        $checkpoint = @{
+            artifacts = @{ appsIsoCreated = $true }
+            paths = @{ AppsISO = $isoPath }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeTrue
+    }
+
+    It 'validates multiple artifacts and returns false if any missing' {
+        $testVHDX = Join-Path $script:TestBasePath 'artifacts\test.vhdx'
+        '' | Set-Content $testVHDX
+
+        $checkpoint = @{
+            artifacts = @{
+                vhdxCreated = $true
+                driversDownloaded = $true  # This path doesn't exist
+            }
+            paths = @{
+                VHDXPath = $testVHDX
+                DriversFolder = 'C:\nonexistent\drivers'
+            }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'validates multiple artifacts and returns true if all exist' {
+        $testVHDX = Join-Path $script:TestBasePath 'artifacts\test.vhdx'
+        '' | Set-Content $testVHDX
+        $driversDir = Join-Path $script:TestBasePath 'artifacts\drivers'
+        New-Item -Path $driversDir -ItemType Directory -Force | Out-Null
+
+        $checkpoint = @{
+            artifacts = @{
+                vhdxCreated = $true
+                driversDownloaded = $true
+            }
+            paths = @{
+                VHDXPath = $testVHDX
+                DriversFolder = $driversDir
+            }
+        }
+        $result = Test-CheckpointArtifacts -Checkpoint $checkpoint
+        $result | Should -BeTrue
+    }
+}
+
+Describe 'Test-PhaseAlreadyComplete' {
+
+    It 'returns false when checkpoint is null' {
+        $result = Test-PhaseAlreadyComplete -PhaseName 'VHDXCreation' -Checkpoint $null
+        $result | Should -BeFalse
+    }
+
+    It 'returns false when PhaseName is not in phase ordering map' {
+        $checkpoint = @{ lastCompletedPhase = 'VHDXCreation' }
+        $result = Test-PhaseAlreadyComplete -PhaseName 'UnknownPhase' -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns false when checkpoint phase is not in phase ordering map' {
+        $checkpoint = @{ lastCompletedPhase = 'UnknownPhase' }
+        $result = Test-PhaseAlreadyComplete -PhaseName 'VHDXCreation' -Checkpoint $checkpoint
+        $result | Should -BeFalse
+    }
+
+    It 'returns true when current phase order is less than checkpoint phase order' {
+        $checkpoint = @{ lastCompletedPhase = 'VHDXCreation' }  # Order 5
+        $result = Test-PhaseAlreadyComplete -PhaseName 'PreflightValidation' -Checkpoint $checkpoint  # Order 1
+        $result | Should -BeTrue
+    }
+
+    It 'returns true when current phase equals checkpoint phase' {
+        $checkpoint = @{ lastCompletedPhase = 'VHDXCreation' }  # Order 5
+        $result = Test-PhaseAlreadyComplete -PhaseName 'VHDXCreation' -Checkpoint $checkpoint  # Order 5
+        $result | Should -BeTrue
+    }
+
+    It 'returns false when current phase order is greater than checkpoint phase order' {
+        $checkpoint = @{ lastCompletedPhase = 'PreflightValidation' }  # Order 1
+        $result = Test-PhaseAlreadyComplete -PhaseName 'VHDXCreation' -Checkpoint $checkpoint  # Order 5
+        $result | Should -BeFalse
+    }
+
+    It 'handles alias phases correctly - WindowsDownload equals UpdatesDownload' {
+        $checkpoint = @{ lastCompletedPhase = 'WindowsDownload' }  # Order 3
+        $result = Test-PhaseAlreadyComplete -PhaseName 'UpdatesDownload' -Checkpoint $checkpoint  # Order 3
+        $result | Should -BeTrue
+    }
+
+    It 'handles alias phases correctly - VMCreation equals VMSetup' {
+        $checkpoint = @{ lastCompletedPhase = 'VMCreation' }  # Order 7
+        $result = Test-PhaseAlreadyComplete -PhaseName 'VMSetup' -Checkpoint $checkpoint  # Order 7
+        $result | Should -BeTrue
+    }
+
+    It 'handles alias phases correctly - VMExecution equals VMStart' {
+        $checkpoint = @{ lastCompletedPhase = 'VMExecution' }  # Order 8
+        $result = Test-PhaseAlreadyComplete -PhaseName 'VMStart' -Checkpoint $checkpoint  # Order 8
+        $result | Should -BeTrue
+    }
+
+    It 'phase ordering is consistent from PreflightValidation through USBCreation' {
+        # Test sequential phase ordering
+        $phases = @(
+            'PreflightValidation',
+            'DriverDownload',
+            'UpdatesDownload',
+            'AppsPreparation',
+            'VHDXCreation',
+            'WindowsUpdates',
+            'VMSetup',
+            'VMStart',
+            'AppInstallation',
+            'VMShutdown',
+            'FFUCapture',
+            'DeploymentMedia',
+            'USBCreation'
+        )
+
+        for ($i = 1; $i -lt $phases.Count; $i++) {
+            $checkpoint = @{ lastCompletedPhase = $phases[$i] }
+            # Earlier phase should be "already complete"
+            $result = Test-PhaseAlreadyComplete -PhaseName $phases[$i-1] -Checkpoint $checkpoint
+            $result | Should -BeTrue -Because "Phase $($phases[$i-1]) should be complete when at $($phases[$i])"
+        }
+    }
+
+    It 'FFUCapture is not complete when checkpoint at VHDXCreation' {
+        $checkpoint = @{ lastCompletedPhase = 'VHDXCreation' }  # Order 5
+        $result = Test-PhaseAlreadyComplete -PhaseName 'FFUCapture' -Checkpoint $checkpoint  # Order 11
+        $result | Should -BeFalse
+    }
+
+    It 'DeploymentMedia is not complete when checkpoint at FFUCapture' {
+        $checkpoint = @{ lastCompletedPhase = 'FFUCapture' }  # Order 11
+        $result = Test-PhaseAlreadyComplete -PhaseName 'DeploymentMedia' -Checkpoint $checkpoint  # Order 12
+        $result | Should -BeFalse
+    }
+
+    It 'USBCreation is not complete when checkpoint at DeploymentMedia' {
+        $checkpoint = @{ lastCompletedPhase = 'DeploymentMedia' }  # Order 12
+        $result = Test-PhaseAlreadyComplete -PhaseName 'USBCreation' -Checkpoint $checkpoint  # Order 13
+        $result | Should -BeFalse
     }
 }
