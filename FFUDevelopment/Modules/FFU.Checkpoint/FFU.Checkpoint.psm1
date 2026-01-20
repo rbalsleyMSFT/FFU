@@ -455,6 +455,195 @@ function Test-FFUBuildCheckpoint {
 
 #endregion Core Functions
 
+#region Resume Functions
+
+function Test-CheckpointArtifacts {
+    <#
+    .SYNOPSIS
+    Validates that artifacts marked as created in a checkpoint still exist on disk.
+
+    .DESCRIPTION
+    Checks each artifact flag in the checkpoint's artifacts hashtable. For artifacts
+    marked as true (created), verifies the corresponding path exists on disk.
+    This helps detect if artifacts were deleted after checkpoint was saved.
+
+    For Hyper-V VMs, also verifies the VM still exists when vmCreated is true.
+
+    .PARAMETER Checkpoint
+    The checkpoint hashtable to validate (from Get-FFUBuildCheckpoint).
+
+    .OUTPUTS
+    System.Boolean - True if all marked artifacts exist, False if any are missing.
+
+    .EXAMPLE
+    $checkpoint = Get-FFUBuildCheckpoint -FFUDevelopmentPath "C:\FFUDevelopment"
+    if (Test-CheckpointArtifacts -Checkpoint $checkpoint) {
+        Write-Host "All checkpoint artifacts exist - safe to resume"
+    }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Checkpoint
+    )
+
+    $artifacts = $Checkpoint.artifacts
+    $paths = $Checkpoint.paths
+
+    if ($null -eq $artifacts -or $null -eq $paths) {
+        Write-Verbose "Test-CheckpointArtifacts: Missing artifacts or paths in checkpoint"
+        return $false
+    }
+
+    # Validate VHDX if marked created
+    if ($artifacts.vhdxCreated -and $paths.VHDXPath) {
+        if (-not (Test-Path -Path $paths.VHDXPath)) {
+            Write-Verbose "Test-CheckpointArtifacts: Artifact missing - VHDXPath ($($paths.VHDXPath))"
+            return $false
+        }
+    }
+
+    # Validate VM exists if marked created (Hyper-V only)
+    if ($artifacts.vmCreated) {
+        $configuration = $Checkpoint.configuration
+        if ($configuration -and $configuration.HypervisorType -eq 'HyperV') {
+            $vmName = $configuration.VMName
+            if ($vmName) {
+                try {
+                    $vm = Get-VM -Name $vmName -ErrorAction SilentlyContinue
+                    if (-not $vm) {
+                        Write-Verbose "Test-CheckpointArtifacts: Artifact missing - VM '$vmName' not found"
+                        return $false
+                    }
+                }
+                catch {
+                    Write-Verbose "Test-CheckpointArtifacts: Cannot verify VM '$vmName': $($_.Exception.Message)"
+                    # Don't fail if Hyper-V cmdlets not available - validation will catch at runtime
+                }
+            }
+        }
+        # VMware VMs: Don't validate here - vmrun list is slow and may not show stopped VMs
+    }
+
+    # Validate drivers folder if marked downloaded
+    if ($artifacts.driversDownloaded -and $paths.DriversFolder) {
+        if (-not (Test-Path -Path $paths.DriversFolder)) {
+            Write-Verbose "Test-CheckpointArtifacts: Artifact missing - DriversFolder ($($paths.DriversFolder))"
+            return $false
+        }
+    }
+
+    # Validate FFU if marked captured
+    if ($artifacts.ffuCaptured -and $paths.FFUCaptureLocation) {
+        # Check if any FFU files exist in capture location
+        if (-not (Test-Path -Path $paths.FFUCaptureLocation)) {
+            Write-Verbose "Test-CheckpointArtifacts: Artifact missing - FFUCaptureLocation ($($paths.FFUCaptureLocation))"
+            return $false
+        }
+    }
+
+    # Validate Apps ISO if marked created
+    if ($artifacts.appsIsoCreated -and $paths.AppsISO) {
+        if (-not (Test-Path -Path $paths.AppsISO)) {
+            Write-Verbose "Test-CheckpointArtifacts: Artifact missing - AppsISO ($($paths.AppsISO))"
+            return $false
+        }
+    }
+
+    Write-Verbose "Test-CheckpointArtifacts: All marked artifacts validated successfully"
+    return $true
+}
+
+function Test-PhaseAlreadyComplete {
+    <#
+    .SYNOPSIS
+    Determines if a build phase was already completed in a previous checkpoint.
+
+    .DESCRIPTION
+    Compares the requested phase against the last completed phase in the checkpoint.
+    Uses phase ordering to determine if the requested phase should be skipped
+    (already completed) or executed.
+
+    .PARAMETER PhaseName
+    The name of the build phase to check (e.g., 'DriverDownload', 'VHDXCreation').
+
+    .PARAMETER Checkpoint
+    Optional - the checkpoint hashtable to check against. If null, returns false.
+
+    .OUTPUTS
+    System.Boolean - True if phase was already completed (should skip), False otherwise.
+
+    .EXAMPLE
+    if (Test-PhaseAlreadyComplete -PhaseName 'DriverDownload' -Checkpoint $checkpoint) {
+        Write-Host "Skipping driver download - already completed"
+    }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$PhaseName,
+
+        [Parameter()]
+        [hashtable]$Checkpoint
+    )
+
+    if ($null -eq $Checkpoint) {
+        return $false
+    }
+
+    # Phase ordering map - must match the FFUBuildPhase enum values
+    # Note: Some enum values don't map directly to checkpoint phase names
+    $phaseOrder = @{
+        'PreflightValidation' = 1
+        'DriverDownload'      = 2
+        'UpdatesDownload'     = 3
+        'WindowsDownload'     = 3   # Alias - downloads happen together
+        'AppsPreparation'     = 4
+        'VHDXCreation'        = 5
+        'WindowsUpdates'      = 6
+        'VMSetup'             = 7
+        'VMCreation'          = 7   # Alias - same phase
+        'VMStart'             = 8
+        'VMExecution'         = 8   # Alias - same phase
+        'AppInstallation'     = 9
+        'VMShutdown'          = 10
+        'FFUCapture'          = 11
+        'DeploymentMedia'     = 12
+        'USBCreation'         = 13
+    }
+
+    $currentPhaseOrder = $phaseOrder[$PhaseName]
+    $lastCompletedPhase = $Checkpoint.lastCompletedPhase
+    $checkpointPhaseOrder = $phaseOrder[$lastCompletedPhase]
+
+    if ($null -eq $currentPhaseOrder) {
+        Write-Verbose "Test-PhaseAlreadyComplete: Unknown phase name '$PhaseName'"
+        return $false
+    }
+
+    if ($null -eq $checkpointPhaseOrder) {
+        Write-Verbose "Test-PhaseAlreadyComplete: Unknown checkpoint phase '$lastCompletedPhase'"
+        return $false
+    }
+
+    if ($currentPhaseOrder -le $checkpointPhaseOrder) {
+        # Phase already completed - log it
+        if (Get-Command -Name WriteLog -ErrorAction SilentlyContinue) {
+            WriteLog "RESUME: Phase '$PhaseName' already completed (checkpoint at '$lastCompletedPhase')"
+        }
+        else {
+            Write-Verbose "Test-PhaseAlreadyComplete: Phase '$PhaseName' already completed (checkpoint at '$lastCompletedPhase')"
+        }
+        return $true
+    }
+
+    return $false
+}
+
+#endregion Resume Functions
+
 #region Module Exports
 
 Export-ModuleMember -Function @(
@@ -463,6 +652,8 @@ Export-ModuleMember -Function @(
     'Remove-FFUBuildCheckpoint'
     'Test-FFUBuildCheckpoint'
     'Get-FFUBuildPhasePercent'
+    'Test-CheckpointArtifacts'
+    'Test-PhaseAlreadyComplete'
 )
 
 #endregion Module Exports

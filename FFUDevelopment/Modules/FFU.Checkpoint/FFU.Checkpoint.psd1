@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule = 'FFU.Checkpoint.psm1'
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.1.0'
     GUID = 'b4e8f2a1-6c3d-4b7e-9f1a-5d2c8e4f6a3b'
 
     # Author information
@@ -31,6 +31,8 @@
         'Remove-FFUBuildCheckpoint'
         'Test-FFUBuildCheckpoint'
         'Get-FFUBuildPhasePercent'
+        'Test-CheckpointArtifacts'
+        'Test-PhaseAlreadyComplete'
     )
 
     # Cmdlets to export (none - this is a script module)
@@ -59,6 +61,12 @@
 
             # Release notes
             ReleaseNotes = @'
+Version 1.1.0 (Resume Support)
+- NEW: Test-CheckpointArtifacts validates artifact existence on disk
+- NEW: Test-PhaseAlreadyComplete determines if phase should be skipped
+- Phase ordering map with alias support (e.g., VMSetup/VMCreation)
+- Hyper-V VM existence validation for vmCreated artifacts
+
 Version 1.0.0 (Initial Release)
 - FFUBuildPhase enum defining 16 build phases
 - Save-FFUBuildCheckpoint with atomic write pattern
