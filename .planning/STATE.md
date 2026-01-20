@@ -5,29 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-01-20)
 
 **Core value:** Enable rapid, reliable Windows deployment through pre-configured FFU images
-**Current focus:** v1.8.1 Bug Fixes — Gap closure in progress
+**Current focus:** v1.8.1 Bug Fixes — COMPLETE
 
 ## Current Position
 
 **Milestone:** v1.8.1 Bug Fixes
-**Phase:** 13 - Fix UI Default for IncludePreviewUpdates (planned)
-**Plan:** —
-**Status:** Gap closure phase added from audit
-**Last activity:** 2026-01-20 — Phase 13 created from audit gaps
+**Phase:** 13 - Fix UI Default for IncludePreviewUpdates (COMPLETE)
+**Plan:** 1 of 1 (COMPLETE)
+**Status:** Milestone complete
+**Last activity:** 2026-01-20 — Completed 13-01-PLAN.md
 
-Progress: 67% (2/3 phases complete)
+Progress: 100% (3/3 phases complete)
+[##########] 100%
 
 ## Completed Milestones
 
 | Milestone | Status | Phases | Date |
 |-----------|--------|--------|------|
 | v1.8.0 Codebase Health | SHIPPED | 1-10 (33 plans) | 2026-01-20 |
+| v1.8.1 Bug Fixes | SHIPPED | 11-13 (5 plans) | 2026-01-20 |
 
 ## Recent Activity
 
-- 2026-01-20: **PHASE 13 CREATED** - Gap closure from audit
-  - UPD-02 gap: Get-GeneralDefaults missing IncludePreviewUpdates
-  - Single task: Add `IncludePreviewUpdates = $false` to defaults
+- 2026-01-20: **PHASE 13 COMPLETE** - UI Default Fix
+  - 1 plan executed, gap closure complete
+  - Added `IncludePreviewUpdates = $false` to Get-GeneralDefaults
+  - Phase 11 E2E flow now passes completely (all 9 steps)
+  - Commit: 24600cd
 - 2026-01-20: **PHASE 12 COMPLETE** - VHDX Drive Letter Stability
   - 2 plans executed, verification passed (8/8 must-haves)
   - Set-OSPartitionDriveLetter utility function in FFU.Imaging
@@ -43,7 +47,6 @@ Progress: 67% (2/3 phases complete)
   - UI checkbox in Updates tab
   - Build script filtering logic for CU and .NET searches
   - Commits: 99ecc47, d086bbe, 262a459, 20c7754, be1f628, b7ba336, e3ac4b4
-- 2026-01-20: **ROADMAP CREATED** for v1.8.1
 - 2026-01-20: **MILESTONE v1.8.1 STARTED**
 
 ## Key Decisions from v1.8.1
@@ -59,6 +62,7 @@ Progress: 67% (2/3 phases complete)
 | D-12-02-01 | Use NoteProperty to attach drive letter to disk object | Maintains backward compatibility | 12-02 |
 | D-12-02-02 | Add retry logic with exponential backoff to HyperVProvider | Handles transient failures during disk operations | 12-02 |
 | D-12-02-03 | Add drive letter normalization to VMwareProvider | Ensures consistent X:\ format | 12-02 |
+| D-13-01-01 | Place IncludePreviewUpdates after UpdatePreviewCU in defaults | Consistent with D-11-01-01 logical grouping | 13-01 |
 
 ## Open Issues
 
@@ -74,9 +78,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Phase 13 created from audit gaps
+**Stopped at:** Completed 13-01-PLAN.md - Milestone v1.8.1 complete
 **Resume file:** None
-**Next action:** `/gsd:plan-phase 13` to plan the gap closure fix
+**Next action:** Ready for next milestone planning
 
 ---
 *State updated: 2026-01-20*
