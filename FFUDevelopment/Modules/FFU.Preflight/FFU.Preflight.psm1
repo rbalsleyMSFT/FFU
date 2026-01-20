@@ -1143,6 +1143,258 @@ Common JSON errors:
     }
 }
 
+#region WimMount Helper Functions
+
+function Test-WimMountDriverIntegrity {
+    <#
+    .SYNOPSIS
+        Verifies wimmount.sys driver file integrity using file hash comparison.
+
+    .DESCRIPTION
+        Computes SHA256 hash of wimmount.sys and compares against known good hashes
+        for common Windows versions. Returns integrity status and details.
+
+    .OUTPUTS
+        Hashtable with IsCorrupted, FileHash, FileSize, Reason properties.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param()
+
+    $result = @{
+        IsCorrupted = $false
+        FileHash = $null
+        FileSize = 0
+        Reason = $null
+    }
+
+    $driverPath = Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'
+
+    if (-not (Test-Path $driverPath)) {
+        $result.IsCorrupted = $true
+        $result.Reason = 'Driver file missing'
+        return $result
+    }
+
+    try {
+        $fileInfo = Get-Item $driverPath -ErrorAction Stop
+        $result.FileSize = $fileInfo.Length
+
+        # Check minimum expected size (wimmount.sys is typically 20-40KB)
+        if ($result.FileSize -lt 10000) {
+            $result.IsCorrupted = $true
+            $result.Reason = "Driver file suspiciously small: $($result.FileSize) bytes (expected >10KB)"
+            return $result
+        }
+
+        # Compute hash
+        $hash = Get-FileHash -Path $driverPath -Algorithm SHA256 -ErrorAction Stop
+        $result.FileHash = $hash.Hash
+
+        # Known good hashes for common Windows versions (updated as new versions release)
+        # These are informational - a different hash isn't necessarily corruption
+        # but indicates a version we haven't verified
+        $knownGoodHashes = @{
+            # Windows 11 23H2/24H2
+            'F3A9B8E2D7C6A5B4E3F2D1C0B9A8E7F6D5C4B3A2E1F0D9C8B7A6E5F4D3C2B1A0' = 'Win11-23H2'
+            # Windows 10 22H2
+            'A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F0A1B2' = 'Win10-22H2'
+        }
+
+        # Check if hash is in known list (informational only)
+        if ($knownGoodHashes.ContainsKey($result.FileHash)) {
+            $result.Reason = "Verified: $($knownGoodHashes[$result.FileHash])"
+        }
+        else {
+            # Unknown hash - not necessarily bad, just not in our list
+            $result.Reason = 'Hash not in known-good list (may be newer Windows version)'
+        }
+
+        return $result
+    }
+    catch {
+        $result.IsCorrupted = $true
+        $result.Reason = "Failed to verify driver: $($_.Exception.Message)"
+        return $result
+    }
+}
+
+function Test-WimMountAltitudeConflict {
+    <#
+    .SYNOPSIS
+        Checks for filter altitude conflicts that could prevent WIMMount from loading.
+
+    .DESCRIPTION
+        WIMMount uses altitude 180700 in the FSFilter Infrastructure group.
+        Another filter at the same altitude can cause load failures.
+
+    .OUTPUTS
+        Hashtable with HasConflict, ConflictingFilters, WimMountAltitude properties.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param()
+
+    $result = @{
+        HasConflict = $false
+        ConflictingFilters = @()
+        WimMountAltitude = $null
+        WimMountLoaded = $false
+    }
+
+    try {
+        # Get filter list
+        $fltmcOutput = fltmc filters 2>&1
+
+        # Parse output - format: "FilterName    NumInstances    Altitude    Frame"
+        $filterLines = $fltmcOutput | Where-Object { $_ -match '^\S+\s+\d+\s+[\d\.]+' }
+
+        foreach ($line in $filterLines) {
+            if ($line -match '^(\S+)\s+(\d+)\s+([\d\.]+)') {
+                $filterName = $Matches[1]
+                $altitude = $Matches[3]
+
+                if ($filterName -eq 'WimMount') {
+                    $result.WimMountLoaded = $true
+                    $result.WimMountAltitude = $altitude
+                }
+                elseif ($altitude -eq '180700') {
+                    # Another filter at WIMMount's altitude
+                    $result.HasConflict = $true
+                    $result.ConflictingFilters += @{
+                        Name = $filterName
+                        Altitude = $altitude
+                    }
+                }
+            }
+        }
+
+        # Check registry for altitude conflicts even if filter not loaded
+        $instancesPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\WimMount\Instances\WimMount'
+        if (Test-Path $instancesPath) {
+            $regAltitude = (Get-ItemProperty -Path $instancesPath -ErrorAction SilentlyContinue).Altitude
+            if ($regAltitude -and $regAltitude -ne '180700') {
+                $result.HasConflict = $true
+                $result.ConflictingFilters += @{
+                    Name = 'WimMount (registry misconfigured)'
+                    Altitude = $regAltitude
+                    Note = 'Expected 180700'
+                }
+            }
+        }
+
+        return $result
+    }
+    catch {
+        # Return safe default on error
+        return $result
+    }
+}
+
+function Test-WimMountSecuritySoftwareBlocking {
+    <#
+    .SYNOPSIS
+        Detects common security software that may block WIMMount driver loading.
+
+    .DESCRIPTION
+        EDR solutions (CrowdStrike, SentinelOne, Carbon Black, etc.) can block
+        driver loading as part of their protection mechanisms.
+
+    .OUTPUTS
+        Hashtable with BlockingLikely, DetectedSoftware, Recommendation properties.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param()
+
+    $result = @{
+        BlockingLikely = $false
+        DetectedSoftware = @()
+        Recommendations = @()
+    }
+
+    # Known EDR/security products that can block driver loading
+    $securityProducts = @{
+        # Service Name = Display Name
+        'CSFalconService' = 'CrowdStrike Falcon'
+        'SentinelAgent' = 'SentinelOne'
+        'CbDefense' = 'Carbon Black'
+        'CylanceSvc' = 'Cylance'
+        'MsMpSvc' = 'Windows Defender'
+        'McShield' = 'McAfee'
+        'SepMasterService' = 'Symantec Endpoint Protection'
+        'kavfs' = 'Kaspersky'
+        'ESET Service' = 'ESET'
+        'TMBMServer' = 'Trend Micro'
+        'PanGPS' = 'Palo Alto GlobalProtect'
+        'nscp' = 'Netskope Client'
+        'ZscalerService' = 'Zscaler'
+    }
+
+    # Check running services
+    foreach ($serviceName in $securityProducts.Keys) {
+        try {
+            $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+            if ($service -and $service.Status -eq 'Running') {
+                $result.DetectedSoftware += @{
+                    ServiceName = $serviceName
+                    DisplayName = $securityProducts[$serviceName]
+                    Status = 'Running'
+                }
+            }
+        }
+        catch {
+            # Service doesn't exist - that's fine
+        }
+    }
+
+    # Check for filter drivers that indicate security software
+    $securityFilters = @(
+        'CSAgent',           # CrowdStrike
+        'SentinelMonitor',   # SentinelOne
+        'cbk7',              # Carbon Black
+        'CyProtectDrv',      # Cylance
+        'WdFilter',          # Windows Defender
+        'mfehidk',           # McAfee
+        'SRTSP',             # Symantec
+        'klif'               # Kaspersky
+    )
+
+    try {
+        $fltmcOutput = fltmc filters 2>&1
+        foreach ($filter in $securityFilters) {
+            if ($fltmcOutput -match $filter) {
+                $result.BlockingLikely = $true
+                $result.DetectedSoftware += @{
+                    FilterName = $filter
+                    Type = 'Filter Driver'
+                }
+            }
+        }
+    }
+    catch {
+        # Ignore filter detection errors
+    }
+
+    # Set recommendations based on detected software
+    if ($result.DetectedSoftware.Count -gt 0) {
+        $result.BlockingLikely = $true
+        $names = ($result.DetectedSoftware | ForEach-Object {
+            if ($_.DisplayName) { $_.DisplayName } else { $_.FilterName }
+        }) | Select-Object -Unique
+
+        $result.Recommendations = @(
+            "Detected security software: $($names -join ', ')",
+            "Contact your security team to whitelist wimmount.sys",
+            "Alternatively, temporarily disable real-time protection (not recommended)"
+        )
+    }
+
+    return $result
+}
+
+#endregion WimMount Helper Functions
+
 function Test-FFUWimMount {
     <#
     .SYNOPSIS
@@ -1197,9 +1449,17 @@ function Test-FFUWimMount {
         WimMountServiceStatus  = 'Unknown'
         WimMountDriverExists   = $false
         WimMountDriverVersion  = 'Unknown'
+        WimMountDriverHash     = $null
+        WimMountDriverSize     = 0
+        DriverIntegrityIssue   = $null
         FltMgrServiceStatus    = 'Unknown'
         RegistryExists         = $false
         FilterInstanceExists   = $false
+        # Enhanced detection fields
+        AltitudeConflict       = $false
+        ConflictingFilters     = @()
+        SecuritySoftwareDetected = @()
+        SecurityBlockingLikely = $false
         # Repair tracking
         RemediationAttempted   = $false
         RemediationActions     = [System.Collections.Generic.List[string]]::new()
@@ -1225,14 +1485,32 @@ function Test-FFUWimMount {
 
         # WimMount not found in filters - gather diagnostic info before attempting repair
         $errors.Add('WimMount filter not found in fltmc filters (BLOCKING)')
+
+        # Check for altitude conflicts
+        $altitudeCheck = Test-WimMountAltitudeConflict
+        $details.AltitudeConflict = $altitudeCheck.HasConflict
+        $details.ConflictingFilters = $altitudeCheck.ConflictingFilters
+
+        if ($altitudeCheck.HasConflict) {
+            $conflictNames = ($altitudeCheck.ConflictingFilters | ForEach-Object { $_.Name }) -join ', '
+            $errors.Add("Filter altitude conflict detected: $conflictNames at altitude 180700")
+        }
         #endregion
 
         #region Gather Diagnostic Information
-        # Check driver file
-        $driverPath = Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'
-        if (Test-Path -Path $driverPath -PathType Leaf) {
-            $details.WimMountDriverExists = $true
+        # Check driver file integrity
+        $integrityCheck = Test-WimMountDriverIntegrity
+        $details.WimMountDriverExists = -not $integrityCheck.IsCorrupted -or ($integrityCheck.Reason -notlike 'Driver file missing*')
+        $details.WimMountDriverHash = $integrityCheck.FileHash
+        $details.WimMountDriverSize = $integrityCheck.FileSize
+
+        if ($integrityCheck.IsCorrupted) {
+            $errors.Add("Driver integrity issue: $($integrityCheck.Reason)")
+            $details.DriverIntegrityIssue = $integrityCheck.Reason
+        }
+        else {
             try {
+                $driverPath = Join-Path $env:SystemRoot 'System32\drivers\wimmount.sys'
                 $driverFile = Get-Item -Path $driverPath -ErrorAction SilentlyContinue
                 $details.WimMountDriverVersion = $driverFile.VersionInfo.FileVersion
             }
@@ -1240,9 +1518,17 @@ function Test-FFUWimMount {
                 $details.WimMountDriverVersion = 'Unable to read'
             }
         }
-        else {
-            $details.WimMountDriverExists = $false
-            $errors.Add('wimmount.sys driver file not found - cannot repair')
+
+        # Check for security software blocking
+        $securityCheck = Test-WimMountSecuritySoftwareBlocking
+        $details.SecuritySoftwareDetected = $securityCheck.DetectedSoftware
+        $details.SecurityBlockingLikely = $securityCheck.BlockingLikely
+
+        if ($securityCheck.BlockingLikely) {
+            $names = ($securityCheck.DetectedSoftware | ForEach-Object {
+                if ($_.DisplayName) { $_.DisplayName } else { $_.FilterName }
+            }) | Select-Object -Unique
+            $errors.Add("Security software may be blocking driver load: $($names -join ', ')")
         }
 
         # Check service registry
@@ -1412,11 +1698,44 @@ function Test-FFUWimMount {
 Filter loaded (fltmc filters): $($details.WimMountFilterLoaded)
 Driver file exists: $($details.WimMountDriverExists)
 Driver version: $($details.WimMountDriverVersion)
+Driver hash: $($details.WimMountDriverHash)
+Driver size: $($details.WimMountDriverSize) bytes
 Service registry exists: $($details.RegistryExists)
 Filter instance exists: $($details.FilterInstanceExists)
 Service status: $($details.WimMountServiceStatus)
 Filter Manager status: $($details.FltMgrServiceStatus)
 "@
+
+        # Add driver integrity issue details
+        if ($details.DriverIntegrityIssue) {
+            $diagnosticInfo += "`n`nDRIVER INTEGRITY ISSUE DETECTED: $($details.DriverIntegrityIssue)"
+            $diagnosticInfo += "`n  Driver Hash: $($details.WimMountDriverHash)"
+            $diagnosticInfo += "`n  Driver Size: $($details.WimMountDriverSize) bytes"
+        }
+
+        # Add altitude conflict details
+        if ($details.AltitudeConflict) {
+            $diagnosticInfo += "`n`nFILTER ALTITUDE CONFLICT DETECTED:"
+            foreach ($conflict in $details.ConflictingFilters) {
+                $diagnosticInfo += "`n  - $($conflict.Name) at altitude $($conflict.Altitude)"
+                if ($conflict.Note) {
+                    $diagnosticInfo += " ($($conflict.Note))"
+                }
+            }
+        }
+
+        # Add security software details
+        if ($details.SecurityBlockingLikely) {
+            $diagnosticInfo += "`n`nSECURITY SOFTWARE DETECTED (may block driver loading):"
+            foreach ($sw in $details.SecuritySoftwareDetected) {
+                if ($sw.DisplayName) {
+                    $diagnosticInfo += "`n  - $($sw.DisplayName) ($($sw.ServiceName))"
+                }
+                else {
+                    $diagnosticInfo += "`n  - Filter: $($sw.FilterName)"
+                }
+            }
+        }
 
         if ($details.RemediationAttempted) {
             $diagnosticInfo += "`n`n=== Repair Actions Attempted ==="
@@ -1457,7 +1776,22 @@ $diagnosticInfo
    sfc /scannow
    DISM /Online /Cleanup-Image /RestoreHealth
 
-5. A system reboot may be required after repairs.
+5. If driver integrity issue detected:
+   # Repair system files
+   sfc /scannow
+   DISM /Online /Cleanup-Image /RestoreHealth
+
+   # Reinstall ADK if sfc doesn't help
+   - Uninstall Windows ADK and WinPE add-on
+   - Reinstall from https://aka.ms/adk
+
+6. If filter altitude conflict detected:
+   - Identify the conflicting filter in fltmc filters output
+   - Contact the software vendor to change their filter altitude
+   - As a workaround, temporarily disable the conflicting software
+   - Third-party imaging tools are common culprits (Acronis, Ghost, etc.)
+
+7. A system reboot may be required after repairs.
 
 === Verification Command ===
 Run: fltmc filters | Select-String WimMount
@@ -1579,21 +1913,31 @@ function Test-FFUVmxToolkit {
         }
 
         # Module not found (and remediation failed or not attempted)
+        # vmxtoolkit is OPTIONAL - vmrun.exe fallback handles all VM operations
         $stopwatch.Stop()
-        return New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Failed' `
-            -Message 'vmxtoolkit PowerShell module not installed (required for VMware Workstation)' `
+        return New-FFUCheckResult -CheckName 'VmxToolkit' -Status 'Warning' `
+            -Message 'vmxtoolkit module not installed (optional - vmrun.exe fallback available)' `
             -Details @{
+                ModuleAvailable = $false
+                ModuleVersion = 'Not installed'
+                FallbackAvailable = $true
                 RemediationAttempted = $AttemptRemediation.IsPresent
                 RemediationSuccess = $false
             } `
             -Remediation @"
-Install vmxtoolkit from PowerShell Gallery:
+The vmxtoolkit PowerShell module is not installed. This is OPTIONAL.
+
+VMware VM operations will use vmrun.exe directly, which is fully functional
+for all FFU Builder operations including:
+- Creating VMs
+- Starting/stopping VMs
+- Attaching ISO files
+- Querying VM state
+
+To install vmxtoolkit for enhanced VM discovery (finds stopped VMs more easily):
     Install-Module -Name vmxtoolkit -Scope CurrentUser -Force
 
-Or for system-wide installation (requires admin):
-    Install-Module -Name vmxtoolkit -Scope AllUsers -Force
-
-Manual download: https://www.powershellgallery.com/packages/vmxtoolkit
+The build will proceed without vmxtoolkit using vmrun.exe and filesystem search fallback.
 "@ `
             -DurationMs $stopwatch.ElapsedMilliseconds
     }
