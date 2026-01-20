@@ -4,6 +4,12 @@
 .DESCRIPTION
     This module provides the core logic for loading and saving the UI configuration. It includes functions to gather settings from the various UI controls, save them to a JSON file, and load settings from a JSON file to populate the UI. This allows users to persist their build configurations and easily switch between different setups.
 #>
+
+# Import config migration module for version handling
+$migrationModulePath = Join-Path (Split-Path $PSScriptRoot -Parent) 'Modules\FFU.ConfigMigration'
+if (Test-Path $migrationModulePath) {
+    Import-Module (Join-Path $migrationModulePath 'FFU.ConfigMigration.psd1') -Force -ErrorAction SilentlyContinue
+}
 function Get-UIConfig {
     param(
         [Parameter(Mandatory = $true)]
@@ -23,6 +29,7 @@ function Get-UIConfig {
             default { 'HyperV' }
         }
         ShowVMConsole                  = $State.Controls.chkShowVMConsole.IsChecked
+        ForceVMwareDriverDownload      = $State.Controls.chkForceVMwareDrivers.IsChecked
         AppsScriptVariables            = if ($State.Controls.chkDefineAppsScriptVariables.IsChecked) {
             $vars = @{}
             foreach ($item in $State.Data.appsScriptVariablesDataList) {
@@ -119,6 +126,17 @@ function Get-UIConfig {
         WindowsRelease                 = [int]$State.Controls.cmbWindowsRelease.SelectedItem.Value
         WindowsSKU                     = $State.Controls.cmbWindowsSKU.SelectedItem
         WindowsVersion                 = $State.Controls.cmbWindowsVersion.SelectedItem
+    }
+
+    # Add VMShutdownTimeoutMinutes from UI control
+    if ($null -ne $State.Controls.txtVMShutdownTimeout) {
+        $timeoutText = $State.Controls.txtVMShutdownTimeout.Text
+        if (-not [string]::IsNullOrWhiteSpace($timeoutText)) {
+            $timeout = 0
+            if ([int]::TryParse($timeoutText, [ref]$timeout) -and $timeout -ge 5 -and $timeout -le 120) {
+                $config.VMShutdownTimeoutMinutes = $timeout
+            }
+        }
     }
 
     $State.Controls.lstUSBDrives.Items | Where-Object { $_.IsSelected } | ForEach-Object {
@@ -422,6 +440,8 @@ function Update-UIFromConfig {
         }
     }
     Set-UIValue -ControlName 'chkShowVMConsole' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'ShowVMConsole' -State $State
+    Set-UIValue -ControlName 'chkForceVMwareDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'ForceVMwareDriverDownload' -State $State
+
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
     Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State
@@ -430,6 +450,12 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtVMLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMLocation' -State $State
     Set-UIValue -ControlName 'txtVMNamePrefix' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUPrefix' -State $State
     Set-UIValue -ControlName 'cmbLogicalSectorSize' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'LogicalSectorSizeBytes' -TransformValue { param($val) $val.ToString() } -State $State
+
+    # Load VMShutdownTimeoutMinutes if present
+    if ($ConfigContent.VMShutdownTimeoutMinutes -and $null -ne $State.Controls.txtVMShutdownTimeout) {
+        $State.Controls.txtVMShutdownTimeout.Text = $ConfigContent.VMShutdownTimeoutMinutes.ToString()
+        WriteLog "LoadConfig: Set VMShutdownTimeoutMinutes to $($ConfigContent.VMShutdownTimeoutMinutes)."
+    }
 
     # Windows Settings
     Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ISOPath' -State $State
@@ -891,6 +917,73 @@ function Invoke-RestoreDefaults {
     }
 }
 
+function Show-ConfigMigrationDialog {
+    <#
+    .SYNOPSIS
+    Shows a dialog with migration changes and asks user to confirm.
+
+    .DESCRIPTION
+    Displays a WPF MessageBox showing the list of changes that will be applied
+    during config migration. User can accept or decline the migration.
+
+    .PARAMETER MigrationResult
+    The result hashtable from Invoke-FFUConfigMigration containing:
+    - FromVersion: The original config version
+    - ToVersion: The target schema version
+    - Changes: Array of change descriptions
+
+    .OUTPUTS
+    System.Boolean - $true if user accepted, $false if declined
+
+    .EXAMPLE
+    $proceed = Show-ConfigMigrationDialog -MigrationResult $migrationResult
+    if ($proceed) { # Save migrated config }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$MigrationResult
+    )
+
+    if ($MigrationResult.Changes.Count -eq 0) {
+        return $true  # No changes needed
+    }
+
+    # Format changes with icons
+    $changesList = $MigrationResult.Changes | ForEach-Object {
+        if ($_ -like "WARNING:*") {
+            "[!] $_"
+        } else {
+            "[+] $_"
+        }
+    }
+    $changesText = $changesList -join "`n"
+
+    $message = @"
+Your configuration file was created with an older version of FFU Builder.
+
+From version: $($MigrationResult.FromVersion)
+To version: $($MigrationResult.ToVersion)
+
+The following changes will be applied:
+$changesText
+
+A backup of your original configuration has been created.
+
+Do you want to apply these changes?
+"@
+
+    $result = [System.Windows.MessageBox]::Show(
+        $message,
+        "Configuration Migration Required",
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Question
+    )
+
+    return ($result -eq [System.Windows.MessageBoxResult]::Yes)
+}
+
 function Invoke-AutoLoadPreviousEnvironment {
     [CmdletBinding()]
     param(
@@ -926,6 +1019,40 @@ function Invoke-AutoLoadPreviousEnvironment {
             WriteLog "AutoLoad: Parsed object null; aborting."
             return
         }
+
+        # Check if migration is needed
+        if (Get-Command -Name 'Test-FFUConfigVersion' -ErrorAction SilentlyContinue) {
+            # Convert to hashtable for migration
+            $configHashtable = ConvertTo-HashtableRecursive -InputObject $configContent
+
+            $versionCheck = Test-FFUConfigVersion -Config $configHashtable
+
+            if ($versionCheck.NeedsMigration) {
+                WriteLog "AutoLoad: Config needs migration from v$($versionCheck.ConfigVersion) to v$($versionCheck.CurrentSchemaVersion)"
+
+                # Perform migration with backup
+                $migrationResult = Invoke-FFUConfigMigration -Config $configHashtable -CreateBackup -ConfigPath $configPath
+
+                if ($migrationResult.Changes.Count -gt 0) {
+                    # Show dialog and get user confirmation
+                    $proceed = Show-ConfigMigrationDialog -MigrationResult $migrationResult
+
+                    if ($proceed) {
+                        WriteLog "AutoLoad: User accepted migration. Saving migrated config."
+
+                        # Save migrated config
+                        $migrationResult.Config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
+                        WriteLog "AutoLoad: Migrated config saved to $configPath"
+
+                        # Use migrated config
+                        $configContent = [PSCustomObject]$migrationResult.Config
+                    } else {
+                        WriteLog "AutoLoad: User declined migration. Loading original config (deprecated properties ignored)."
+                    }
+                }
+            }
+        }
+
         WriteLog "AutoLoad: Applying core configuration."
         Update-UIFromConfig -ConfigContent $configContent -State $State
         $State.Data.lastConfigFilePath = $configPath
