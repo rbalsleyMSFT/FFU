@@ -533,7 +533,11 @@ param(
     # When provided by BuildFFUVM_UI.ps1, enables queue-based progress updates
     # When null (CLI usage), script operates normally without messaging
     [Parameter(Mandatory = $false)]
-    [hashtable]$MessagingContext = $null
+    [hashtable]$MessagingContext = $null,
+    # NoResume: When set, forces a fresh build even if a checkpoint exists
+    # Removes any existing checkpoint and starts from the beginning
+    [Parameter(Mandatory = $false)]
+    [switch]$NoResume
 )
 
 BEGIN {
@@ -829,6 +833,13 @@ Import-Module "FFU.Checkpoint" -Force -Global -ErrorAction Stop -WarningAction S
 
 # Checkpoint control - can be disabled via parameter if needed
 $script:CheckpointEnabled = $true
+
+# Resume state - populated by checkpoint detection logic after log initialization
+$script:ResumeCheckpoint = $null
+$script:IsResuming = $false
+$script:ResumedVHDXPath = $null
+$script:ResumedVMPath = $null
+$script:ResumedDriversFolder = $null
 
 Import-Module "FFU.Core" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.ADK" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
@@ -1661,6 +1672,114 @@ if (-not $Cleanup) {
 else {
     # For cleanup operations, append to existing log
     Set-CommonCoreLogPath -Path $LogFile
+}
+
+# =============================================================================
+# CHECKPOINT RESUME DETECTION
+# Check for existing build checkpoint and offer to resume or start fresh
+# =============================================================================
+if (-not $Cleanup) {
+    $checkpointPath = Join-Path $FFUDevelopmentPath ".ffubuilder\checkpoint.json"
+
+    # Handle -NoResume flag first
+    if ($NoResume -and (Test-Path $checkpointPath)) {
+        WriteLog "NoResume flag set - removing existing checkpoint and starting fresh"
+        Remove-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath
+    }
+    elseif (Test-Path $checkpointPath) {
+        WriteLog "Found existing build checkpoint"
+
+        try {
+            $potentialCheckpoint = Get-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath
+
+            if ($null -ne $potentialCheckpoint) {
+                # Validate checkpoint structure
+                if (-not (Test-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath -Checkpoint $potentialCheckpoint)) {
+                    WriteLog "WARNING: Checkpoint validation failed, will start fresh build"
+                    Remove-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath
+                }
+                # Validate artifacts still exist
+                elseif (-not (Test-CheckpointArtifacts -Checkpoint $potentialCheckpoint)) {
+                    WriteLog "WARNING: Checkpoint artifacts missing, will start fresh build"
+                    Remove-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath
+                }
+                else {
+                    $lastPhase = $potentialCheckpoint.lastCompletedPhase
+                    $timestamp = $potentialCheckpoint.timestamp
+                    $percentComplete = $potentialCheckpoint.percentComplete
+
+                    WriteLog "Valid checkpoint from $timestamp at phase: $lastPhase ($percentComplete% complete)"
+
+                    # Determine resume behavior: UI mode vs CLI mode
+                    $shouldResume = $false
+
+                    if ($MessagingContext) {
+                        # UI mode: Auto-resume (UI can implement its own dialog if needed)
+                        WriteLog "UI mode detected - auto-resuming from checkpoint (phase: $lastPhase)"
+                        $shouldResume = $true
+                    }
+                    else {
+                        # CLI mode: Prompt user for decision
+                        Write-Host ""
+                        Write-Host "========================================" -ForegroundColor Yellow
+                        Write-Host "  INTERRUPTED BUILD DETECTED" -ForegroundColor Yellow
+                        Write-Host "========================================" -ForegroundColor Yellow
+                        Write-Host ""
+                        Write-Host "  Checkpoint from: $timestamp" -ForegroundColor Cyan
+                        Write-Host "  Last completed phase: $lastPhase" -ForegroundColor Cyan
+                        Write-Host "  Progress: $percentComplete% complete" -ForegroundColor Cyan
+                        Write-Host ""
+                        Write-Host "  [R] Resume from checkpoint" -ForegroundColor Green
+                        Write-Host "  [N] Start a fresh build" -ForegroundColor Red
+                        Write-Host ""
+
+                        do {
+                            $response = Read-Host "Enter choice (R/N)"
+                            $response = $response.ToUpper().Trim()
+                        } while ($response -notin @('R', 'N', 'Y', 'YES'))
+
+                        if ($response -eq 'R' -or $response -eq 'Y' -or $response -eq 'YES') {
+                            $shouldResume = $true
+                        }
+                        else {
+                            WriteLog "User chose fresh build - removing checkpoint"
+                            Remove-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath
+                        }
+                    }
+
+                    if ($shouldResume) {
+                        $script:ResumeCheckpoint = $potentialCheckpoint
+                        $script:IsResuming = $true
+
+                        # Restore paths from checkpoint for phase skip logic
+                        $paths = $potentialCheckpoint.paths
+                        if ($paths) {
+                            if ($paths.VHDXPath) {
+                                $script:ResumedVHDXPath = $paths.VHDXPath
+                                WriteLog "Restored VHDXPath from checkpoint: $($paths.VHDXPath)"
+                            }
+                            if ($paths.VMPath) {
+                                $script:ResumedVMPath = $paths.VMPath
+                                WriteLog "Restored VMPath from checkpoint: $($paths.VMPath)"
+                            }
+                            if ($paths.DriversFolder) {
+                                $script:ResumedDriversFolder = $paths.DriversFolder
+                                WriteLog "Restored DriversFolder from checkpoint: $($paths.DriversFolder)"
+                            }
+                        }
+
+                        WriteLog "=========================================="
+                        WriteLog "RESUMING BUILD from phase: $lastPhase"
+                        WriteLog "=========================================="
+                    }
+                }
+            }
+        }
+        catch {
+            WriteLog "WARNING: Failed to process checkpoint, starting fresh: $($_.Exception.Message)"
+            Remove-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # =============================================================================
