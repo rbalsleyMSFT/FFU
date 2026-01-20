@@ -3007,5 +3007,6 @@ Export-ModuleMember -Function @(
     'Remove-FFU',
     'Start-RequiredServicesForDISM',
     'Invoke-FFUOptimizeWithScratchDir',
-    'Expand-FFUPartitionForDrivers'
+    'Expand-FFUPartitionForDrivers',
+    'Set-OSPartitionDriveLetter'
 )
