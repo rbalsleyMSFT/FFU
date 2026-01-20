@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.11'
+    ModuleVersion = '1.0.12'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -54,7 +54,8 @@
         'Remove-FFU',
         'Start-RequiredServicesForDISM',
         'Invoke-FFUOptimizeWithScratchDir',
-        'Expand-FFUPartitionForDrivers'
+        'Expand-FFUPartitionForDrivers',
+        'Set-OSPartitionDriveLetter'
     )
 
     # Cmdlets to export from this module
@@ -80,6 +81,13 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.0.12 - VHDX-01: Add Set-OSPartitionDriveLetter for guaranteed drive letter assignment
+- New centralized utility function for OS partition drive letter management
+- Handles both already-assigned and missing drive letter cases
+- Preferred letter support (default: W) with automatic fallback
+- Retry logic (3 attempts) for resilience against transient failures
+- Addresses drive letter loss during VHDX/VHD dismount/remount cycles
+
 v1.0.11 - PERF-01: Optimize VHD flush from triple-pass to single verified Write-VolumeCache call (~7s -> <1s)
 - Added Invoke-VerifiedVolumeFlush function using Windows native Write-VolumeCache cmdlet
 - Write-VolumeCache guarantees flush completion before returning (no arbitrary waits needed)
