@@ -46,20 +46,24 @@ Enable rapid, reliable Windows deployment through pre-configured FFU images with
   - VMware vmxtoolkit fallback via vmrun/filesystem search
   - Lenovo catalogv2.xml fallback for PSREF API
   - WIMMount enhanced failure detection and recovery
+- **Windows Update Preview Filtering** — v1.8.1
+  - IncludePreviewUpdates config property with false default
+  - UI checkbox for opt-in to preview updates
+  - Build script filtering appends "-preview" to exclude GA releases
+  - Config migration for existing configs (schema v1.0 → v1.1)
+- **VHDX Drive Letter Stability** — v1.8.1
+  - Set-OSPartitionDriveLetter utility with GPT type detection
+  - Provider mount validation with retry and accessibility verification
+  - NoteProperty attachment for drive letter persistence
 
 ### Active
 
-**Current Milestone: v1.8.1 Bug Fixes**
+**Current Milestone:** None — ready for next milestone planning
 
-**Goal:** Fix critical bugs discovered during v1.8.0 testing
-
-- [ ] **Windows Update Preview Filtering** — Only download GA updates by default; exclude preview/beta unless explicitly requested
-  - Backend: Update BuildFFUVM.ps1 search logic to exclude preview versions
-  - UI: Add checkbox in Updates tab to opt-in to preview updates
-  - Config: Add `IncludePreviewUpdates` setting with migration support
-- [ ] **OS Partition Drive Letter Stability** — Fix drive letter lost during unattend file copy verification
-  - Root cause: Drive letter becomes empty between copy and verification steps
-  - Must work with both Hyper-V and VMware providers
+**Deferred bugs (not in v1.8.1 scope):**
+- HP driver extraction exit code 1168 (all HP models)
+- Dell CatalogPC.xml missing
+- expand.exe fails on large MSU files (fallback works)
 
 ### Out of Scope
 
@@ -100,6 +104,13 @@ Key files:
 | SHA-256 for script integrity | Industry standard, native PowerShell support | Shipped |
 | UI auto-resumes, CLI prompts | Appropriate for each context | Shipped |
 | 7-day catalog cache TTL | Reduces network traffic for Lenovo | Shipped |
+| Place IncludePreviewUpdates after UpdatePreviewCU | Logical grouping with update settings | ✓ Good |
+| Apply -preview exclusion to search query | Microsoft Update Catalog supports negative keywords | ✓ Good |
+| UpdatePreviewCU explicit request NOT filtered | User intent should be respected | ✓ Good |
+| GPT type for OS partition detection | More reliable than labels which can change | ✓ Good |
+| Default preferred drive letter to W | Consistent with New-OSPartition | ✓ Good |
+| NoteProperty for drive letter attachment | Maintains backward compatibility | ✓ Good |
+| Retry with exponential backoff for mounts | Handles transient disk operation failures | ✓ Good |
 
 ---
-*Last updated: 2026-01-20 after v1.8.1 milestone started*
+*Last updated: 2026-01-20 after v1.8.1 milestone shipped*
