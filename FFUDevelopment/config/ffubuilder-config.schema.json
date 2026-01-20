@@ -408,6 +408,11 @@
             "default": false,
             "description": "When set to true, downloads and installs the latest Preview cumulative update instead of the stable release."
         },
+        "IncludePreviewUpdates": {
+            "type": "boolean",
+            "default": false,
+            "description": "When set to true, allows preview/optional updates in Windows Update searches. When false (default), search queries exclude preview updates to ensure only GA (Generally Available) releases are downloaded. Affects Cumulative Updates and .NET Framework updates."
+        },
         "UseDriversAsPEDrivers": {
             "type": "boolean",
             "default": false,
