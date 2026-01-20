@@ -92,6 +92,73 @@ function Get-VMSwitchData {
     }
 }
 
+# Function to detect host IP address for VMware bridged networking
+function Get-VMwareHostIPAddress {
+    <#
+    .SYNOPSIS
+        Detects the host IP address for VMware bridged networking.
+    .DESCRIPTION
+        VMware bridged networking uses the host's physical network adapter.
+        This function finds the primary adapter's IP address for use in FFU capture.
+
+        This serves as a fallback when Hyper-V vSwitch data is not available
+        (e.g., on systems without Hyper-V or when VMware-only systems need IP detection).
+
+        Note: If Hyper-V is installed with an External vSwitch, that IP is already
+        correct for VMware bridged networking (both use the same physical adapter).
+    .OUTPUTS
+        String - The detected IPv4 address, or empty string if not found
+    .EXAMPLE
+        $hostIP = Get-VMwareHostIPAddress
+        if ($hostIP) {
+            Write-Host "Host IP for VMware: $hostIP"
+        }
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    try {
+        # Strategy 1: Find the adapter with the default gateway (primary network)
+        # This is the most reliable method as it identifies the adapter actually used for internet traffic
+        $defaultRoute = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+            Sort-Object -Property RouteMetric |
+            Select-Object -First 1
+
+        if ($defaultRoute) {
+            $primaryIP = Get-NetIPAddress -InterfaceIndex $defaultRoute.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                Where-Object { $_.IPAddress -notlike '169.254.*' } |
+                Select-Object -First 1
+
+            if ($primaryIP) {
+                WriteLog "VMware IP Detection: Found primary adapter IP via default route: $($primaryIP.IPAddress)"
+                return $primaryIP.IPAddress
+            }
+        }
+
+        # Strategy 2: Fall back to first physical adapter with valid IP
+        # This handles edge cases where routing table might not have expected entries
+        $physicalAdapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' }
+        foreach ($adapter in $physicalAdapters) {
+            $ip = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                Where-Object { $_.IPAddress -notlike '169.254.*' -and $_.IPAddress -notlike '127.*' } |
+                Select-Object -First 1
+
+            if ($ip) {
+                WriteLog "VMware IP Detection: Found IP from physical adapter '$($adapter.Name)': $($ip.IPAddress)"
+                return $ip.IPAddress
+            }
+        }
+
+        WriteLog "VMware IP Detection: No valid IP address found on physical adapters"
+        return ''
+    }
+    catch {
+        WriteLog "VMware IP Detection Error: $($_.Exception.Message)"
+        return ''
+    }
+}
+
 # Function to return general default settings for various UI elements
 function Get-GeneralDefaults {
     [CmdletBinding()]
@@ -157,6 +224,7 @@ function Get-GeneralDefaults {
         UpdateLatestMSRT               = $true
         UpdateLatestMicrocode          = $false
         UpdatePreviewCU                = $false
+        IncludePreviewUpdates          = $false
         # Applications Tab Defaults
         InstallApps                    = $false
         ApplicationPath                = $appsPath
