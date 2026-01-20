@@ -85,7 +85,36 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Preflight v1.0.12
+# Release Notes - FFU.Preflight v1.0.14
+
+## v1.0.14 (2026-01-20)
+### Enhanced WimMount Failure Scenario Detection
+- **NEW**: Test-WimMountDriverIntegrity - SHA256 hash verification for wimmount.sys
+- **NEW**: Test-WimMountAltitudeConflict - Filter altitude conflict detection at 180700
+- **NEW**: Test-WimMountSecuritySoftwareBlocking - EDR/security software detection
+- **ENHANCED**: Test-FFUWimMount now includes enhanced diagnostic details:
+  - Driver hash and file size in details
+  - Altitude conflict information with conflicting filter names
+  - Security software detection (CrowdStrike, SentinelOne, Carbon Black, etc.)
+- **ENHANCED**: Remediation guidance includes scenario-specific steps
+
+### Helper Functions (Internal)
+- Test-WimMountDriverIntegrity: Verifies driver file integrity via hash comparison
+- Test-WimMountAltitudeConflict: Detects filters at WimMount's altitude (180700)
+- Test-WimMountSecuritySoftwareBlocking: Identifies running EDR/security products
+
+### New Details Fields
+- WimMountDriverHash: SHA256 hash of wimmount.sys
+- WimMountDriverSize: File size in bytes
+- DriverIntegrityIssue: Description if driver corrupted/missing
+- AltitudeConflict: Boolean indicating altitude conflict
+- ConflictingFilters: Array of conflicting filter details
+- SecuritySoftwareDetected: Array of detected security products
+- SecurityBlockingLikely: Boolean indicating if security software may block
+
+### Part of Phase 10 Dependency Resilience (DEP-03)
+
+---
 
 ## v1.0.12 (2026-01-20)
 ### vmxtoolkit Now Optional for VMware Builds
