@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-01-20)
 ## Current Position
 
 **Milestone:** v1.8.1 Bug Fixes
-**Phase:** 12 - VHDX Drive Letter Stability (not started)
-**Plan:** —
-**Status:** Ready for phase planning
-**Last activity:** 2026-01-20 — Phase 11 complete (verified)
+**Phase:** 12 - VHDX Drive Letter Stability (in progress)
+**Plan:** 01 of 3 complete
+**Status:** Plan 12-01 complete, ready for 12-02
+**Last activity:** 2026-01-20 - Completed 12-01-PLAN.md
 
-Progress: 50% (1/2 phases complete)
+Progress: 67% (1/2 phases complete, 1/3 plans in phase 12)
 
 ## Completed Milestones
 
@@ -25,6 +25,13 @@ Progress: 50% (1/2 phases complete)
 
 ## Recent Activity
 
+- 2026-01-20: **PLAN 12-01 COMPLETE** - Set-OSPartitionDriveLetter Utility
+  - New centralized function in FFU.Imaging for drive letter assignment
+  - Handles already-assigned and missing drive letter cases
+  - Preferred letter (W) with Z-to-D fallback
+  - Retry logic (3 attempts) for transient failures
+  - 17 unit tests passing
+  - Commits: dd4f0e4, c5ddefa, 92df108
 - 2026-01-20: **PHASE 11 COMPLETE** - Windows Update Preview Filtering
   - 2 plans executed, verification passed
   - Config schema with IncludePreviewUpdates (default: false)
@@ -49,6 +56,9 @@ Progress: 50% (1/2 phases complete)
 | D-11-01-01 | Place IncludePreviewUpdates after UpdatePreviewCU | Logical grouping with update settings | 11-01 |
 | D-11-02-01 | Apply -preview exclusion filter to search query string | Microsoft Update Catalog search supports negative keywords | 11-02 |
 | D-11-02-02 | UpdatePreviewCU explicit request is NOT filtered | When user explicitly wants preview CU, do not exclude | 11-02 |
+| D-12-01-01 | Place function after New-RecoveryPartition in FFU.Imaging.psm1 | Logical grouping with partition functions | 12-01 |
+| D-12-01-02 | Use GPT type for OS partition detection | More reliable than labels which can change | 12-01 |
+| D-12-01-03 | Default preferred letter to W | Consistent with New-OSPartition initial assignment | 12-01 |
 
 ## Open Issues
 
@@ -64,9 +74,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Phase 11 complete
+**Stopped at:** Plan 12-01 complete
 **Resume file:** None
-**Next action:** `/gsd:plan-phase 12` to plan VHDX Drive Letter Stability
+**Next action:** Execute plan 12-02 (BuildFFUVM.ps1 integration)
 
 ---
 *State updated: 2026-01-20*
