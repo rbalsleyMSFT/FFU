@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Improve codebase quality, reliability, and maintainability
-**Current focus:** Phase 8 - Feature: Progress Checkpoint/Resume (COMPLETE)
+**Current focus:** Phase 9 - Feature: Config Migration (IN PROGRESS)
 
 ## Current Position
 
 **Milestone:** v1.8.0 - Codebase Health
-**Phase:** 8 of 10 (Feature: Progress Checkpoint/Resume)
-**Plan:** 3 of 3 complete
-**Status:** COMPLETE
-**Last activity:** 2026-01-20 - Completed 08-03-PLAN.md (Resume detection and phase skip logic)
+**Phase:** 9 of 10 (Feature: Config Migration)
+**Plan:** 1 of 3 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 09-01-PLAN.md (FFU.ConfigMigration module with 59 Pester tests)
 
-Progress: [========--] 80%
+Progress: [=========-] 83%
 
 ## Progress
 
@@ -29,7 +29,7 @@ Progress: [========--] 80%
 | 6     | COMPLETE | 3/3 | 100% |
 | 7     | COMPLETE | 3/3 | 100% |
 | 8     | COMPLETE | 3/3 | 100% |
-| 9     | Pending | 0/? | 0% |
+| 9     | In progress | 1/3 | 33% |
 | 10    | Pending | 0/? | 0% |
 
 ## Phase 2 Plan Structure
@@ -104,8 +104,20 @@ Progress: [========--] 80%
 
 **Wave 1:** Plans 08-01, 08-02, 08-03 (sequential - each depends on prior) - COMPLETE
 
+## Phase 9 Plan Structure
+
+| Plan | Wave | Depends On | Requirements | Description | Status |
+|------|------|------------|--------------|-------------|--------|
+| 09-01 | 1 | - | FEAT-03 | FFU.ConfigMigration module | COMPLETE |
+| 09-02 | 1 | 09-01 | FEAT-03 | UI integration | Pending |
+| 09-03 | 1 | 09-01 | FEAT-03 | CLI integration | Pending |
+
+**Wave 1:** Plans 09-01, 09-02, 09-03 (sequential - integration depends on module) - 1/3 complete
+
 ## Recent Activity
 
+- 2026-01-20: Completed 09-01-PLAN.md (FFU.ConfigMigration module with 59 Pester tests)
+- 2026-01-20: Phase 9 started - Feature: Config Migration
 - 2026-01-20: Phase 8 COMPLETE - Progress Checkpoint/Resume feature (3/3 plans, 66 tests)
 - 2026-01-20: Completed 08-03-PLAN.md (Resume detection, phase skip logic, 24 new tests)
 - 2026-01-20: Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration - 9 save locations)
@@ -208,6 +220,9 @@ Progress: [========--] 80%
 | $script:CheckpointEnabled control flag | 2026-01-20 | Allows checkpoint persistence to be disabled without code changes |
 | Phase ordering map with aliases | 2026-01-20 | WindowsDownload=UpdatesDownload, VMCreation=VMSetup, VMExecution=VMStart |
 | UI auto-resumes, CLI prompts | 2026-01-20 | UI can implement own dialog; CLI needs interactive choice |
+| Schema version format major.minor | 2026-01-20 | Simple string, pattern-validated, sufficient for versioning |
+| Pre-versioning config = 0.0 | 2026-01-20 | Distinguishes legacy configs from versioned ones |
+| Forward compatibility for unknown props | 2026-01-20 | Preserve unknown properties during migration for newer configs |
 
 ## Open Issues
 
@@ -220,9 +235,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Completed 08-03-PLAN.md (Resume detection and phase skip logic)
+**Stopped at:** Completed 09-01-PLAN.md (FFU.ConfigMigration module)
 **Resume file:** None
-**Next action:** Plan Phase 9 with `/gsd:plan-phase 9`
+**Next action:** Execute 09-02-PLAN.md (UI integration)
 
 ---
 *State updated: 2026-01-20*
