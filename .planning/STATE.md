@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 8 of 10 (Feature: Progress Checkpoint/Resume)
-**Plan:** 1 of ? complete
+**Plan:** 2 of 3 complete
 **Status:** In Progress
-**Last activity:** 2026-01-20 - Completed 08-01-PLAN.md (FFU.Checkpoint module with 42 tests)
+**Last activity:** 2026-01-20 - Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration)
 
-Progress: [=======---] 72%
+Progress: [=======---] 75%
 
 ## Progress
 
@@ -28,7 +28,7 @@ Progress: [=======---] 72%
 | 5     | COMPLETE | 3/3 | 100% |
 | 6     | COMPLETE | 3/3 | 100% |
 | 7     | COMPLETE | 3/3 | 100% |
-| 8     | In Progress | 1/? | 33% |
+| 8     | In Progress | 2/3 | 67% |
 | 9     | Pending | 0/? | 0% |
 | 10    | Pending | 0/? | 0% |
 
@@ -99,13 +99,14 @@ Progress: [=======---] 72%
 | Plan | Wave | Depends On | Requirements | Description | Status |
 |------|------|------------|--------------|-------------|--------|
 | 08-01 | 1 | - | FEAT-02 | FFU.Checkpoint module | COMPLETE |
-| 08-02 | 1 | 08-01 | FEAT-02 | BuildFFUVM.ps1 checkpoint integration | Pending |
+| 08-02 | 1 | 08-01 | FEAT-02 | BuildFFUVM.ps1 checkpoint integration | COMPLETE |
 | 08-03 | 1 | 08-02 | FEAT-02 | Resume detection logic | Pending |
 
 **Wave 1:** Plans 08-01, 08-02, 08-03 (sequential - each depends on prior) - In Progress
 
 ## Recent Activity
 
+- 2026-01-20: Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration - 9 save locations)
 - 2026-01-20: Completed 08-01-PLAN.md (FFU.Checkpoint module with 42 Pester tests)
 - 2026-01-20: Phase 8 started - Feature: Progress Checkpoint/Resume
 - 2026-01-19: Phase 7 verified (5/5 must-haves, 70 cancellation tests total)
@@ -201,6 +202,8 @@ Progress: [=======---] 72%
 | No FFU.Checkpoint external dependencies | 2026-01-20 | FFU.Checkpoint must work early in build before other modules load |
 | Enum access via using module or InModuleScope | 2026-01-20 | PowerShell enums require special import syntax for calling scope |
 | ConvertTo-HashtableRecursive helper for PS5.1 | 2026-01-20 | PS5.1 lacks -AsHashtable on ConvertFrom-Json |
+| 9 checkpoint locations (checkpoint 6 has two paths) | 2026-01-20 | Both InstallApps and non-InstallApps paths need checkpoint persistence |
+| $script:CheckpointEnabled control flag | 2026-01-20 | Allows checkpoint persistence to be disabled without code changes |
 
 ## Open Issues
 
@@ -213,9 +216,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Completed 08-01-PLAN.md (FFU.Checkpoint module)
+**Stopped at:** Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration)
 **Resume file:** None
-**Next action:** Execute 08-02-PLAN.md
+**Next action:** Execute 08-03-PLAN.md (Resume detection logic)
 
 ---
 *State updated: 2026-01-20*
