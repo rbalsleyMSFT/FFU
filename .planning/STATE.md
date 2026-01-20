@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Core value:** Improve codebase quality, reliability, and maintainability
-**Current focus:** Phase 7 - Feature: Build Cancellation (COMPLETE)
+**Current focus:** Phase 8 - Feature: Progress Checkpoint/Resume (In Progress)
 
 ## Current Position
 
 **Milestone:** v1.8.0 - Codebase Health
-**Phase:** 7 of 10 (Feature: Build Cancellation)
-**Plan:** 3 of 3 complete
-**Status:** COMPLETE
-**Last activity:** 2026-01-19 - Completed 07-03-PLAN.md (cancellation test coverage with 47 tests)
+**Phase:** 8 of 10 (Feature: Progress Checkpoint/Resume)
+**Plan:** 1 of ? complete
+**Status:** In Progress
+**Last activity:** 2026-01-20 - Completed 08-01-PLAN.md (FFU.Checkpoint module with 42 tests)
 
-Progress: [=======---] 70%
+Progress: [=======---] 72%
 
 ## Progress
 
@@ -28,7 +28,7 @@ Progress: [=======---] 70%
 | 5     | COMPLETE | 3/3 | 100% |
 | 6     | COMPLETE | 3/3 | 100% |
 | 7     | COMPLETE | 3/3 | 100% |
-| 8     | Pending | 0/? | 0% |
+| 8     | In Progress | 1/? | 33% |
 | 9     | Pending | 0/? | 0% |
 | 10    | Pending | 0/? | 0% |
 
@@ -94,8 +94,20 @@ Progress: [=======---] 70%
 
 **Wave 1:** Plans 07-01, 07-02, 07-03 (sequential - each depends on prior) - COMPLETE
 
+## Phase 8 Plan Structure
+
+| Plan | Wave | Depends On | Requirements | Description | Status |
+|------|------|------------|--------------|-------------|--------|
+| 08-01 | 1 | - | FEAT-02 | FFU.Checkpoint module | COMPLETE |
+| 08-02 | 1 | 08-01 | FEAT-02 | BuildFFUVM.ps1 checkpoint integration | Pending |
+| 08-03 | 1 | 08-02 | FEAT-02 | Resume detection logic | Pending |
+
+**Wave 1:** Plans 08-01, 08-02, 08-03 (sequential - each depends on prior) - In Progress
+
 ## Recent Activity
 
+- 2026-01-20: Completed 08-01-PLAN.md (FFU.Checkpoint module with 42 Pester tests)
+- 2026-01-20: Phase 8 started - Feature: Progress Checkpoint/Resume
 - 2026-01-19: Phase 7 verified (5/5 must-haves, 70 cancellation tests total)
 - 2026-01-19: Phase 7 COMPLETE - Build Cancellation feature (3/3 plans, 70 tests total)
 - 2026-01-19: Completed 07-03-PLAN.md (cancellation test coverage: 20 unit + 27 integration = 47 tests)
@@ -186,6 +198,9 @@ Progress: [=======---] 70%
 | Two FFU Capture checkpoints | 2026-01-19 | InstallApps and non-InstallApps paths need separate checkpoints |
 | Failed cleanup actions remain in registry | 2026-01-19 | By design - allows manual intervention for cleanup failures |
 | Source code pattern testing for checkpoints | 2026-01-19 | Regex-based verification faster than execution, no build env needed |
+| No FFU.Checkpoint external dependencies | 2026-01-20 | FFU.Checkpoint must work early in build before other modules load |
+| Enum access via using module or InModuleScope | 2026-01-20 | PowerShell enums require special import syntax for calling scope |
+| ConvertTo-HashtableRecursive helper for PS5.1 | 2026-01-20 | PS5.1 lacks -AsHashtable on ConvertFrom-Json |
 
 ## Open Issues
 
@@ -197,10 +212,10 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-01-19
-**Stopped at:** Phase 7 verified complete - Build Cancellation feature (70 tests)
+**Last session:** 2026-01-20
+**Stopped at:** Completed 08-01-PLAN.md (FFU.Checkpoint module)
 **Resume file:** None
-**Next action:** Plan Phase 8 with `/gsd:plan-phase 8`
+**Next action:** Execute 08-02-PLAN.md
 
 ---
-*State updated: 2026-01-19*
+*State updated: 2026-01-20*
