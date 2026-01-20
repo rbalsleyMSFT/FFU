@@ -709,8 +709,61 @@ if ($moduleInfo) {
 # If a config file is specified and it exists, load it
 if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     $configData = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+
+    # Check for migration if module available
+    if (Get-Command -Name 'Test-FFUConfigVersion' -ErrorAction SilentlyContinue) {
+        # Convert to hashtable for migration
+        $configHashtable = ConvertTo-HashtableRecursive -InputObject $configData
+
+        $versionCheck = Test-FFUConfigVersion -Config $configHashtable
+
+        if ($versionCheck.NeedsMigration) {
+            WriteLog "Config needs migration from v$($versionCheck.ConfigVersion) to v$($versionCheck.CurrentSchemaVersion)"
+
+            # Perform migration with backup
+            $migrationResult = Invoke-FFUConfigMigration -Config $configHashtable -CreateBackup -ConfigPath $ConfigFile
+
+            if ($migrationResult.Changes.Count -gt 0) {
+                WriteLog "Migration changes detected:"
+                foreach ($change in $migrationResult.Changes) {
+                    WriteLog "  - $change"
+                }
+                WriteLog "Backup created: $($migrationResult.BackupPath)"
+
+                # CLI prompt for confirmation
+                Write-Host ""
+                Write-Host "Your configuration file needs migration from v$($migrationResult.FromVersion) to v$($migrationResult.ToVersion)." -ForegroundColor Yellow
+                Write-Host "Changes to be applied:" -ForegroundColor Yellow
+                foreach ($change in $migrationResult.Changes) {
+                    if ($change -like "WARNING:*") {
+                        Write-Host "  [!] $change" -ForegroundColor Red
+                    } else {
+                        Write-Host "  [+] $change" -ForegroundColor Green
+                    }
+                }
+                Write-Host ""
+                Write-Host "Backup created at: $($migrationResult.BackupPath)" -ForegroundColor Cyan
+                Write-Host ""
+
+                $response = Read-Host "Save migrated configuration? (Y/N)"
+
+                if ($response -eq 'Y' -or $response -eq 'y') {
+                    $migrationResult.Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigFile -Encoding UTF8
+                    WriteLog "Migrated configuration saved to $ConfigFile"
+                    Write-Host "Configuration migrated and saved." -ForegroundColor Green
+
+                    # Use migrated config
+                    $configData = [PSCustomObject]$migrationResult.Config
+                } else {
+                    WriteLog "User declined migration. Continuing with original config (deprecated properties ignored)."
+                    Write-Host "Migration declined. Continuing with original configuration." -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+
     $keys = $configData.psobject.Properties.Name
-    
+
     # Iterate through the keys in the config data
     foreach ($key in $keys) {
         $value = $configdata.$key
@@ -851,6 +904,12 @@ Import-Module "FFU.Imaging" -Force -Global -ErrorAction Stop -WarningAction Sile
 Import-Module "FFU.Media" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Apps" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Preflight" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+
+# Import config migration module for version handling (optional - graceful fallback)
+$migrationModulePath = Join-Path $ModulePath 'FFU.ConfigMigration'
+if (Test-Path $migrationModulePath) {
+    Import-Module (Join-Path $migrationModulePath 'FFU.ConfigMigration.psd1') -Force -ErrorAction SilentlyContinue
+}
 
 # =============================================================================
 # Hypervisor Provider Initialization
