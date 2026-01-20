@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-17)
 
 **Milestone:** v1.8.0 - Codebase Health
 **Phase:** 8 of 10 (Feature: Progress Checkpoint/Resume)
-**Plan:** 2 of 3 complete
-**Status:** In Progress
-**Last activity:** 2026-01-20 - Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration)
+**Plan:** 3 of 3 complete
+**Status:** COMPLETE
+**Last activity:** 2026-01-20 - Completed 08-03-PLAN.md (Resume detection and phase skip logic)
 
-Progress: [=======---] 75%
+Progress: [==========] 100%
 
 ## Progress
 
@@ -28,7 +28,7 @@ Progress: [=======---] 75%
 | 5     | COMPLETE | 3/3 | 100% |
 | 6     | COMPLETE | 3/3 | 100% |
 | 7     | COMPLETE | 3/3 | 100% |
-| 8     | In Progress | 2/3 | 67% |
+| 8     | COMPLETE | 3/3 | 100% |
 | 9     | Pending | 0/? | 0% |
 | 10    | Pending | 0/? | 0% |
 
@@ -100,12 +100,14 @@ Progress: [=======---] 75%
 |------|------|------------|--------------|-------------|--------|
 | 08-01 | 1 | - | FEAT-02 | FFU.Checkpoint module | COMPLETE |
 | 08-02 | 1 | 08-01 | FEAT-02 | BuildFFUVM.ps1 checkpoint integration | COMPLETE |
-| 08-03 | 1 | 08-02 | FEAT-02 | Resume detection logic | Pending |
+| 08-03 | 1 | 08-02 | FEAT-02 | Resume detection logic | COMPLETE |
 
-**Wave 1:** Plans 08-01, 08-02, 08-03 (sequential - each depends on prior) - In Progress
+**Wave 1:** Plans 08-01, 08-02, 08-03 (sequential - each depends on prior) - COMPLETE
 
 ## Recent Activity
 
+- 2026-01-20: Phase 8 COMPLETE - Progress Checkpoint/Resume feature (3/3 plans, 66 tests)
+- 2026-01-20: Completed 08-03-PLAN.md (Resume detection, phase skip logic, 24 new tests)
 - 2026-01-20: Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration - 9 save locations)
 - 2026-01-20: Completed 08-01-PLAN.md (FFU.Checkpoint module with 42 Pester tests)
 - 2026-01-20: Phase 8 started - Feature: Progress Checkpoint/Resume
@@ -204,6 +206,8 @@ Progress: [=======---] 75%
 | ConvertTo-HashtableRecursive helper for PS5.1 | 2026-01-20 | PS5.1 lacks -AsHashtable on ConvertFrom-Json |
 | 9 checkpoint locations (checkpoint 6 has two paths) | 2026-01-20 | Both InstallApps and non-InstallApps paths need checkpoint persistence |
 | $script:CheckpointEnabled control flag | 2026-01-20 | Allows checkpoint persistence to be disabled without code changes |
+| Phase ordering map with aliases | 2026-01-20 | WindowsDownload=UpdatesDownload, VMCreation=VMSetup, VMExecution=VMStart |
+| UI auto-resumes, CLI prompts | 2026-01-20 | UI can implement own dialog; CLI needs interactive choice |
 
 ## Open Issues
 
@@ -216,9 +220,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Completed 08-02-PLAN.md (BuildFFUVM.ps1 checkpoint integration)
+**Stopped at:** Completed 08-03-PLAN.md (Resume detection and phase skip logic)
 **Resume file:** None
-**Next action:** Execute 08-03-PLAN.md (Resume detection logic)
+**Next action:** Phase 8 complete - ready for Phase 9
 
 ---
 *State updated: 2026-01-20*
