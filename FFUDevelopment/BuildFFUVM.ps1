@@ -823,6 +823,13 @@ class VhdxCacheUpdateItem {
 # Import modules in dependency order with -Global for cross-scope availability
 # NOTE: PSModulePath was configured earlier in the script (after FFU.Common import)
 # to ensure RequiredModules can resolve before any trap handlers fire
+
+# FFU.Checkpoint has no dependencies - import early for checkpoint persistence
+Import-Module "FFU.Checkpoint" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
+
+# Checkpoint control - can be disabled via parameter if needed
+$script:CheckpointEnabled = $true
+
 Import-Module "FFU.Core" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.ADK" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
 Import-Module "FFU.Drivers" -Force -Global -ErrorAction Stop -WarningAction SilentlyContinue
@@ -1723,6 +1730,31 @@ if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Pre-f
     return
 }
 
+# === CHECKPOINT PERSISTENCE 1: After Pre-flight Validation ===
+if ($script:CheckpointEnabled) {
+    Save-FFUBuildCheckpoint -CompletedPhase PreflightValidation `
+        -Configuration @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            WindowsRelease = $WindowsRelease
+            WindowsVersion = $WindowsVersion
+            WindowsSKU = $WindowsSKU
+            WindowsArch = $WindowsArch
+            WindowsLang = $WindowsLang
+            InstallApps = $InstallApps
+            HypervisorType = $HypervisorType
+            VMName = $VMName
+            OEM = $OEM
+            Model = $Model
+        } `
+        -Artifacts @{
+            preflightValidated = $true
+        } `
+        -Paths @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+        } `
+        -FFUDevelopmentPath $FFUDevelopmentPath
+}
+
 # Set default values for variables that depend on other parameters
 if (-not $AppsISO) { $AppsISO = "$FFUDevelopmentPath\Apps\Apps.iso" }
 if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
@@ -2341,6 +2373,32 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Driver Download" -InvokeCleanup) {
             WriteLog "Build cancelled by user at: Driver Download"
             return
+        }
+
+        # === CHECKPOINT PERSISTENCE 2: Before Driver Download ===
+        if ($script:CheckpointEnabled) {
+            Save-FFUBuildCheckpoint -CompletedPhase DriverDownload `
+                -Configuration @{
+                    FFUDevelopmentPath = $FFUDevelopmentPath
+                    WindowsRelease = $WindowsRelease
+                    WindowsVersion = $WindowsVersion
+                    WindowsSKU = $WindowsSKU
+                    WindowsArch = $WindowsArch
+                    InstallApps = $InstallApps
+                    InstallDrivers = $InstallDrivers
+                    CopyDrivers = $CopyDrivers
+                    OEM = $OEM
+                    Model = $Model
+                } `
+                -Artifacts @{
+                    preflightValidated = $true
+                    driversDownloadStarted = $true
+                } `
+                -Paths @{
+                    FFUDevelopmentPath = $FFUDevelopmentPath
+                    DriversFolder = $DriversFolder
+                } `
+                -FFUDevelopmentPath $FFUDevelopmentPath
         }
 
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
@@ -3543,6 +3601,32 @@ try {
         return
     }
 
+    # === CHECKPOINT PERSISTENCE 3: Before VHDX Creation ===
+    if ($script:CheckpointEnabled) {
+        Save-FFUBuildCheckpoint -CompletedPhase WindowsDownload `
+            -Configuration @{
+                FFUDevelopmentPath = $FFUDevelopmentPath
+                WindowsRelease = $WindowsRelease
+                WindowsVersion = $WindowsVersion
+                WindowsSKU = $WindowsSKU
+                WindowsArch = $WindowsArch
+                InstallApps = $InstallApps
+                InstallDrivers = $InstallDrivers
+                VMName = $VMName
+            } `
+            -Artifacts @{
+                preflightValidated = $true
+                windowsImageReady = $true
+                driversDownloaded = ($InstallDrivers -or $CopyDrivers)
+            } `
+            -Paths @{
+                FFUDevelopmentPath = $FFUDevelopmentPath
+                DriversFolder = $DriversFolder
+                VMPath = $VMPath
+            } `
+            -FFUDevelopmentPath $FFUDevelopmentPath
+    }
+
     if (-Not $cachedVHDXFileFound) {
         Set-Progress -Percentage 15 -Message "Creating VHDX and applying base Windows image..."
         if ($ISOPath) {
@@ -3825,6 +3909,35 @@ catch {
 if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "VM Setup" -InvokeCleanup) {
     WriteLog "Build cancelled by user at: VM Setup"
     return
+}
+
+# === CHECKPOINT PERSISTENCE 4: After VHDX Creation ===
+if ($script:CheckpointEnabled) {
+    Save-FFUBuildCheckpoint -CompletedPhase VHDXCreation `
+        -Configuration @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            WindowsRelease = $WindowsRelease
+            WindowsVersion = $WindowsVersion
+            WindowsSKU = $WindowsSKU
+            WindowsArch = $WindowsArch
+            InstallApps = $InstallApps
+            InstallDrivers = $InstallDrivers
+            VMName = $VMName
+            HypervisorType = $HypervisorType
+        } `
+        -Artifacts @{
+            preflightValidated = $true
+            windowsImageReady = $true
+            driversDownloaded = ($InstallDrivers -or $CopyDrivers)
+            vhdxCreated = $true
+        } `
+        -Paths @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            DriversFolder = $DriversFolder
+            VMPath = $VMPath
+            VHDXPath = $VHDXPath
+        } `
+        -FFUDevelopmentPath $FFUDevelopmentPath
 }
 
 #Inject unattend after caching so cached VHDX never contains audit-mode unattend
@@ -4295,6 +4408,31 @@ if ($InstallApps) {
             return
         }
 
+        # === CHECKPOINT PERSISTENCE 5: Before VM Start ===
+        if ($script:CheckpointEnabled) {
+            Save-FFUBuildCheckpoint -CompletedPhase VMCreation `
+                -Configuration @{
+                    FFUDevelopmentPath = $FFUDevelopmentPath
+                    WindowsRelease = $WindowsRelease
+                    WindowsVersion = $WindowsVersion
+                    WindowsSKU = $WindowsSKU
+                    InstallApps = $InstallApps
+                    VMName = $VMName
+                    HypervisorType = $HypervisorType
+                } `
+                -Artifacts @{
+                    preflightValidated = $true
+                    vhdxCreated = $true
+                    vmCreated = $true
+                } `
+                -Paths @{
+                    FFUDevelopmentPath = $FFUDevelopmentPath
+                    VMPath = $VMPath
+                    VHDXPath = $VHDXPath
+                } `
+                -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+
         Set-Progress -Percentage 48 -Message "Starting virtual machine..."
         WriteLog "Starting VM: $($FFUVM.Name) (ShowVMConsole: $ShowVMConsole)"
         $startVMStatus = $script:HypervisorProvider.StartVM($FFUVM, $ShowVMConsole)
@@ -4369,6 +4507,31 @@ if ($InstallApps) {
 if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "FFU Capture" -InvokeCleanup) {
     WriteLog "Build cancelled by user at: FFU Capture"
     return
+}
+
+# === CHECKPOINT PERSISTENCE 6a: Before FFU Capture (non-InstallApps path) ===
+if ($script:CheckpointEnabled -and (-not $InstallApps)) {
+    Save-FFUBuildCheckpoint -CompletedPhase VMExecution `
+        -Configuration @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            WindowsRelease = $WindowsRelease
+            WindowsVersion = $WindowsVersion
+            WindowsSKU = $WindowsSKU
+            InstallApps = $InstallApps
+            VMName = $VMName
+        } `
+        -Artifacts @{
+            preflightValidated = $true
+            vhdxCreated = $true
+            vmCreated = $true
+            vmReady = $true
+        } `
+        -Paths @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            VHDXPath = $VHDXPath
+            FFUCaptureLocation = $FFUCaptureLocation
+        } `
+        -FFUDevelopmentPath $FFUDevelopmentPath
 }
 
 #Capture FFU file
@@ -4471,6 +4634,32 @@ try {
             return
         }
 
+        # === CHECKPOINT PERSISTENCE 6b: After VM Shutdown (InstallApps path) ===
+        if ($script:CheckpointEnabled) {
+            Save-FFUBuildCheckpoint -CompletedPhase VMExecution `
+                -Configuration @{
+                    FFUDevelopmentPath = $FFUDevelopmentPath
+                    WindowsRelease = $WindowsRelease
+                    WindowsVersion = $WindowsVersion
+                    WindowsSKU = $WindowsSKU
+                    InstallApps = $InstallApps
+                    VMName = $VMName
+                } `
+                -Artifacts @{
+                    preflightValidated = $true
+                    vhdxCreated = $true
+                    vmCreated = $true
+                    appsInstalled = $true
+                    vmShutdown = $true
+                } `
+                -Paths @{
+                    FFUDevelopmentPath = $FFUDevelopmentPath
+                    VHDXPath = $VHDXPath
+                    FFUCaptureLocation = $FFUCaptureLocation
+                } `
+                -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         Set-Progress -Percentage 67 -Message "Starting FFU capture..."
@@ -4566,6 +4755,30 @@ if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Deplo
     return
 }
 
+# === CHECKPOINT PERSISTENCE 7: Before Deployment Media ===
+if ($script:CheckpointEnabled) {
+    Save-FFUBuildCheckpoint -CompletedPhase FFUCapture `
+        -Configuration @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            WindowsRelease = $WindowsRelease
+            WindowsVersion = $WindowsVersion
+            WindowsSKU = $WindowsSKU
+            CreateDeploymentMedia = $CreateDeploymentMedia
+            BuildUSBDrive = $BuildUSBDrive
+        } `
+        -Artifacts @{
+            preflightValidated = $true
+            vhdxCreated = $true
+            ffuCaptured = $true
+        } `
+        -Paths @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            FFUCaptureLocation = $FFUCaptureLocation
+            DeployISO = $DeployISO
+        } `
+        -FFUDevelopmentPath $FFUDevelopmentPath
+}
+
 #Create Deployment Media
 If ($CreateDeploymentMedia) {
     Set-Progress -Percentage 91 -Message "Creating deployment media..."
@@ -4590,6 +4803,29 @@ If ($CreateDeploymentMedia) {
 if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "USB Drive Creation" -InvokeCleanup) {
     WriteLog "Build cancelled by user at: USB Drive Creation"
     return
+}
+
+# === CHECKPOINT PERSISTENCE 8: Before USB Creation ===
+if ($script:CheckpointEnabled) {
+    Save-FFUBuildCheckpoint -CompletedPhase DeploymentMedia `
+        -Configuration @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            WindowsRelease = $WindowsRelease
+            WindowsVersion = $WindowsVersion
+            WindowsSKU = $WindowsSKU
+            BuildUSBDrive = $BuildUSBDrive
+        } `
+        -Artifacts @{
+            preflightValidated = $true
+            ffuCaptured = $true
+            deploymentMediaCreated = $CreateDeploymentMedia
+        } `
+        -Paths @{
+            FFUDevelopmentPath = $FFUDevelopmentPath
+            FFUCaptureLocation = $FFUCaptureLocation
+            DeployISO = $DeployISO
+        } `
+        -FFUDevelopmentPath $FFUDevelopmentPath
 }
 
 If ($BuildUSBDrive) {
@@ -4736,6 +4972,12 @@ WriteLog $runTimeFormatted
 
 # Clear cleanup registry since build completed successfully
 Clear-CleanupRegistry
+
+# === BUILD COMPLETE - Remove checkpoint ===
+if ($script:CheckpointEnabled) {
+    Remove-FFUBuildCheckpoint -FFUDevelopmentPath $FFUDevelopmentPath
+    WriteLog "Build completed successfully - checkpoint removed"
+}
 
 # Output explicit success marker for UI to detect
 # This allows the UI to distinguish successful completion from builds that
