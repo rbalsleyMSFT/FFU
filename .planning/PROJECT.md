@@ -1,51 +1,55 @@
-# FFU Builder - Codebase Improvement Initiative
+# FFU Builder - Project Context
 
 ## What This Is
 
-A comprehensive improvement initiative for FFU Builder, a PowerShell-based Windows deployment tool that creates pre-configured Windows 11 images (FFU format) deployable in under 2 minutes. This initiative addresses tech debt, known bugs, test coverage gaps, and missing features identified during codebase analysis.
+FFU Builder is a PowerShell-based Windows deployment tool that creates pre-configured Windows 11 images (FFU format) deployable in under 2 minutes. It features a WPF UI, supports both Hyper-V and VMware Workstation Pro, integrates with OEM driver catalogs (Dell, HP, Lenovo, Microsoft), and includes comprehensive build management capabilities including graceful cancellation, checkpoint/resume, and configuration migration.
 
 ## Core Value
 
-Improve codebase quality, reliability, and maintainability while ensuring FFU Builder remains a robust tool for rapid Windows deployment.
+Enable rapid, reliable Windows deployment through pre-configured FFU images with minimal manual intervention.
 
 ## Requirements
 
 ### Validated
 
-- ✓ Modular architecture with 11 PowerShell modules — existing
-- ✓ WPF-based UI with background job execution — existing
-- ✓ Hyper-V and VMware Workstation Pro support — existing
-- ✓ OEM driver integration (Dell, HP, Lenovo, Microsoft) — existing
-- ✓ Pre-flight validation system with tiered checks — existing
-- ✓ Thread-safe UI/job messaging via FFU.Messaging — existing
+- Modular architecture with 11 PowerShell modules — v1.0
+- WPF-based UI with background job execution — v1.0
+- Hyper-V and VMware Workstation Pro support — v1.6.0
+- OEM driver integration (Dell, HP, Lenovo, Microsoft) — v1.0
+- Pre-flight validation system with tiered checks — v1.3.0
+- Thread-safe UI/job messaging via FFU.Messaging — v1.0
+- **Tech Debt Cleanup** — v1.8.0
+  - Deprecated FFU.Constants properties removed
+  - SilentlyContinue usage audited (254 occurrences appropriate)
+  - Write-Host replaced with proper logging
+  - Legacy logStreamReader removed
+  - Param block coupling documented
+- **Bug Fixes** — v1.8.0
+  - Dell chipset driver extraction hang fixed (30s timeout)
+  - Corporate proxy SSL inspection detection (Netskope/zScaler)
+  - VHDX auto-expansion for large drivers (>5GB)
+  - MSU unattend.xml extraction hardened
+- **Security Hardening** — v1.8.0
+  - Lenovo PSREF token caching with DPAPI encryption
+  - SecureString password flow throughout
+  - SHA-256 script integrity verification
+- **Performance Optimization** — v1.8.0
+  - VHD flush reduced 85% via Write-VolumeCache
+  - Event-driven Hyper-V VM monitoring with CIM events
+- **Test Coverage** — v1.8.0
+  - 535+ Pester tests across VM, drivers, imaging, UI, cleanup, VMware
+- **Build Management Features** — v1.8.0
+  - Graceful build cancellation with cleanup
+  - Progress checkpoint/resume capability
+  - Configuration file migration between versions
+- **Dependency Resilience** — v1.8.0
+  - VMware vmxtoolkit fallback via vmrun/filesystem search
+  - Lenovo catalogv2.xml fallback for PSREF API
+  - WIMMount enhanced failure detection and recovery
 
 ### Active
 
-#### Tech Debt Cleanup
-- [ ] Remove deprecated static path properties from FFU.Constants
-- [ ] Audit and reduce -ErrorAction SilentlyContinue usage (336 occurrences)
-- [ ] Replace Write-Host with proper output streams (50+ occurrences)
-- [ ] Remove legacy logStreamReader from UI
-- [ ] Document BuildFFUVM.ps1 param block coupling with FFU.Constants
-
-#### Bug Fixes
-- [ ] Fix Issue #327: Corporate proxy failures with Netskope/zScaler
-- [ ] Fix Issue #301: Unattend.xml extraction from MSU packages
-- [ ] Fix Issue #298: OS partition size limitations with large drivers
-- [ ] Address Dell chipset driver extraction hang
-
-#### Test Coverage
-- [ ] Add integration tests for VM creation operations
-- [ ] Add integration tests for driver injection
-- [ ] Add integration tests for FFU capture
-- [ ] Add tests for UI event handlers (FFUUI.Core.Handlers.psm1)
-- [ ] Add tests for error recovery paths and cleanup handlers
-- [ ] Add tests for VMware provider operations
-
-#### Missing Features
-- [ ] Implement graceful build cancellation
-- [ ] Implement build progress checkpoint/resume
-- [ ] Implement configuration file migration between versions
+(No active requirements - awaiting next milestone definition)
 
 ### Out of Scope
 
@@ -53,15 +57,16 @@ Improve codebase quality, reliability, and maintainability while ensuring FFU Bu
 - New OEM vendor support — current vendors sufficient
 - Mobile/web UI — desktop WPF application only
 - Real-time monitoring dashboard — existing log monitoring adequate
+- Module decomposition — deferred due to 12-15x import penalty (see docs/MODULE_DECOMPOSITION.md)
 
 ## Context
 
-FFU Builder is a mature codebase with 98.8% PowerShell, 11 modules totaling ~15,000 lines of code. The codebase has evolved organically and accumulated tech debt that impacts maintainability and debugging. Known bugs affect users in corporate environments. Test coverage exists for unit tests but lacks integration tests for core operations.
+FFU Builder is a mature codebase with 98.8% PowerShell, 13 modules (11 original + FFU.Checkpoint + FFU.ConfigMigration) totaling ~62,000 lines of code. The v1.8.0 milestone completed comprehensive improvements including 535+ new Pester tests, three new features (cancellation, checkpoint/resume, config migration), and dependency resilience patterns.
 
 Key files:
-- `BuildFFUVM.ps1` — Core build orchestrator (4,677 lines)
+- `BuildFFUVM.ps1` — Core build orchestrator
 - `BuildFFUVM_UI.ps1` — WPF UI host
-- `Modules/` — 11 specialized modules
+- `Modules/` — 13 specialized modules
 - `FFU.Common/` — Shared utilities
 - `FFUUI.Core/` — UI framework
 
@@ -76,8 +81,15 @@ Key files:
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Comprehensive improvement scope | Address all concern categories in single initiative | — Pending |
-| YOLO mode workflow | Fast iteration, auto-approve execution | — Pending |
+| Comprehensive improvement scope | Address all concern categories in single initiative | Shipped |
+| YOLO mode workflow | Fast iteration, auto-approve execution | Shipped |
+| Module decomposition deferred | 12-15x import performance penalty | Documented |
+| CIM events for Hyper-V | Modern standard, PowerShell Core compatible | Shipped |
+| Write-VolumeCache for flush | Native cmdlet guarantees completion | ~85% faster |
+| DPAPI for token caching | Automatic encryption on Windows | Shipped |
+| SHA-256 for script integrity | Industry standard, native PowerShell support | Shipped |
+| UI auto-resumes, CLI prompts | Appropriate for each context | Shipped |
+| 7-day catalog cache TTL | Reduces network traffic for Lenovo | Shipped |
 
 ---
-*Last updated: 2026-01-17 after initialization*
+*Last updated: 2026-01-20 after v1.8.0 milestone*
