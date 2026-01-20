@@ -760,7 +760,32 @@ class VMwareProvider : IHypervisorProvider {
     [string] MountVirtualDisk([string]$Path) {
         try {
             $driveLetter = Mount-VHDWithDiskpart -Path $Path
-            WriteLog "Mounted virtual disk $Path at $driveLetter"
+
+            # Verify drive letter is not empty
+            if ([string]::IsNullOrWhiteSpace($driveLetter)) {
+                throw "Mount-VHDWithDiskpart returned empty drive letter for $Path"
+            }
+
+            # Normalize drive letter format (ensure it ends with :\)
+            if ($driveLetter -notmatch ':\\$') {
+                if ($driveLetter -match '^[A-Z]$') {
+                    $driveLetter = "$($driveLetter):\"
+                }
+                elseif ($driveLetter -match '^[A-Z]:$') {
+                    $driveLetter = "$($driveLetter)\"
+                }
+            }
+
+            # Verify path is accessible
+            if (-not (Test-Path $driveLetter)) {
+                WriteLog "WARNING: Drive letter returned but path not accessible, waiting..."
+                Start-Sleep -Milliseconds 500
+                if (-not (Test-Path $driveLetter)) {
+                    throw "Drive letter $driveLetter assigned but path not accessible after mount"
+                }
+            }
+
+            WriteLog "Mounted virtual disk $Path at $driveLetter (verified accessible)"
             return $driveLetter
         }
         catch {
