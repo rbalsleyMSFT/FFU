@@ -413,27 +413,64 @@ class HyperVProvider : IHypervisorProvider {
             $disk = Mount-VHD -Path $Path -Passthru -ErrorAction Stop
             $partitions = $disk | Get-Disk | Get-Partition | Where-Object { $_.Type -ne 'Reserved' }
 
+            $driveLetter = $null
+
             foreach ($partition in $partitions) {
                 if ($partition.DriveLetter) {
-                    WriteLog "Mounted virtual disk $Path at $($partition.DriveLetter):\"
-                    return "$($partition.DriveLetter):\"
+                    $driveLetter = $partition.DriveLetter
+                    break
                 }
             }
 
-            # No drive letter assigned, try to assign one
-            $partition = $partitions | Select-Object -First 1
-            if ($partition) {
-                $availableLetter = (68..90 | ForEach-Object { [char]$_ } |
-                    Where-Object { -not (Test-Path "$($_):") } | Select-Object -First 1)
-                if ($availableLetter) {
-                    Set-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber `
-                        -NewDriveLetter $availableLetter -ErrorAction Stop
-                    WriteLog "Mounted virtual disk $Path at $($availableLetter):\"
-                    return "$($availableLetter):\"
+            # No drive letter assigned, try to assign one with retry logic
+            if (-not $driveLetter) {
+                $partition = $partitions | Select-Object -First 1
+                if ($partition) {
+                    $maxRetries = 3
+                    $retryDelay = 500
+
+                    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+                        try {
+                            # Prefer W, fallback to Z-downward
+                            $preferredLetters = @('W') + (90..68 | ForEach-Object { [char]$_ })
+                            $availableLetter = $preferredLetters |
+                                Where-Object { -not (Test-Path "$($_):") } | Select-Object -First 1
+
+                            if ($availableLetter) {
+                                WriteLog "Assigning drive letter $availableLetter (attempt $attempt/$maxRetries)"
+                                Set-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber `
+                                    -NewDriveLetter $availableLetter -ErrorAction Stop
+                                $driveLetter = $availableLetter
+                                break
+                            }
+                        }
+                        catch {
+                            WriteLog "WARNING: Drive letter assignment attempt $attempt failed: $($_.Exception.Message)"
+                            if ($attempt -lt $maxRetries) {
+                                Start-Sleep -Milliseconds $retryDelay
+                                $retryDelay *= 2  # Exponential backoff
+                            }
+                        }
+                    }
                 }
             }
 
-            throw "Unable to assign drive letter to mounted VHD"
+            if (-not $driveLetter) {
+                throw "Unable to assign drive letter to mounted VHD after $maxRetries attempts"
+            }
+
+            # Verify drive letter is accessible
+            $drivePath = "$($driveLetter):\"
+            if (-not (Test-Path $drivePath)) {
+                WriteLog "WARNING: Drive letter assigned but path not accessible, waiting..."
+                Start-Sleep -Milliseconds 500
+                if (-not (Test-Path $drivePath)) {
+                    throw "Drive letter $driveLetter assigned but path $drivePath not accessible"
+                }
+            }
+
+            WriteLog "Mounted virtual disk $Path at $drivePath (verified accessible)"
+            return $drivePath
         }
         catch {
             WriteLog "ERROR: Failed to mount virtual disk: $($_.Exception.Message)"
