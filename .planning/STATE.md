@@ -10,12 +10,12 @@ See: .planning/PROJECT.md (updated 2026-01-20)
 ## Current Position
 
 **Milestone:** v1.8.1 Bug Fixes
-**Phase:** 11 - Windows Update Preview Filtering (not started)
-**Plan:** —
-**Status:** Ready for phase planning
-**Last activity:** 2026-01-20 — Roadmap created with 2 phases
+**Phase:** 11 - Windows Update Preview Filtering (in progress)
+**Plan:** 01 of 4 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 11-01-PLAN.md (Config schema and migration)
 
-Progress: 0% (0/2 phases complete)
+Progress: [#-------] 12.5% (1/8 total plans: 1/4 phase 11 + 0/4 phase 12)
 
 ## Completed Milestones
 
@@ -25,6 +25,10 @@ Progress: 0% (0/2 phases complete)
 
 ## Recent Activity
 
+- 2026-01-20: **PLAN 11-01 COMPLETE** - Config schema and migration for IncludePreviewUpdates
+  - Added IncludePreviewUpdates boolean property to schema (default: false)
+  - Updated FFU.ConfigMigration to v1.1 with migration support
+  - Commits: 99ecc47, d086bbe
 - 2026-01-20: **ROADMAP CREATED** for v1.8.1
   - Phase 11: Windows Update Preview Filtering (UPD-01 to UPD-04)
   - Phase 12: VHDX Drive Letter Stability (VHDX-01 to VHDX-03)
@@ -37,7 +41,9 @@ Progress: 0% (0/2 phases complete)
 
 ## Key Decisions from v1.8.1
 
-(None yet — milestone just started)
+| ID | Decision | Rationale | Plan |
+|----|----------|-----------|------|
+| D-11-01-01 | Place IncludePreviewUpdates after UpdatePreviewCU | Logical grouping with update settings | 11-01 |
 
 ## Open Issues
 
@@ -53,9 +59,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Roadmap created
+**Stopped at:** Completed 11-01-PLAN.md
 **Resume file:** None
-**Next action:** `/gsd:plan-phase 11` to plan Windows Update Preview Filtering
+**Next action:** Execute 11-02-PLAN.md (UI checkbox integration)
 
 ---
 *State updated: 2026-01-20*
