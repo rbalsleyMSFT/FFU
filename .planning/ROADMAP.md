@@ -139,20 +139,21 @@ Plans:
 - [x] 08-02-PLAN.md - Integrate checkpoint persistence into BuildFFUVM.ps1 (Wave 2)
 - [x] 08-03-PLAN.md - Add resume detection and phase skip logic with tests (Wave 3)
 
-### Phase 9: Feature - Config Migration
+### Phase 9: Feature - Config Migration ✓
 **Goal:** Automatically migrate config files between versions
 **Requirements:** FEAT-03
 **Plans:** 3 plans
+**Status:** COMPLETE (2026-01-20)
 
 **Success Criteria:**
-1. Config schema includes version field
-2. Migration functions transform old configs to new format
-3. User prompted to migrate on version mismatch
+1. ✓ Config schema includes version field (configSchemaVersion with pattern ^[0-9]+\.[0-9]+$)
+2. ✓ Migration functions transform old configs to new format (7 deprecated properties)
+3. ✓ User prompted to migrate on version mismatch (UI WPF dialog, CLI Read-Host)
 
 Plans:
-- [ ] 09-01-PLAN.md - Create FFU.ConfigMigration module with schema versioning (Wave 1)
-- [ ] 09-02-PLAN.md - Integrate migration into UI and CLI config loading (Wave 2)
-- [ ] 09-03-PLAN.md - Add integration tests and update version tracking (Wave 2)
+- [x] 09-01-PLAN.md - Create FFU.ConfigMigration module with schema versioning (Wave 1)
+- [x] 09-02-PLAN.md - Integrate migration into UI and CLI config loading (Wave 2)
+- [x] 09-03-PLAN.md - Add integration tests and update version tracking (Wave 2)
 
 ### Phase 10: Dependency Resilience
 **Goal:** Add fallbacks for at-risk external dependencies
@@ -176,7 +177,7 @@ Plans:
 | 6 | Integration Tests - UI/Error ✓ | 3 | 3 plans (COMPLETE) |
 | 7 | Feature - Build Cancellation ✓ | 1 | 3 plans (COMPLETE) |
 | 8 | Feature - Progress Checkpoint ✓ | 1 | 3 plans (COMPLETE) |
-| 9 | Feature - Config Migration | 1 | 3 plans |
+| 9 | Feature - Config Migration ✓ | 1 | 3 plans (COMPLETE) |
 | 10 | Dependency Resilience | 3 | TBD |
 
 **Total:** 26 requirements across 10 phases
@@ -200,3 +201,4 @@ Plans:
 *Phase 8 planned: 2026-01-19*
 *Phase 8 complete: 2026-01-19*
 *Phase 9 planned: 2026-01-20*
+*Phase 9 complete: 2026-01-20*
