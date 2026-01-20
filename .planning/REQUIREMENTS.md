@@ -51,9 +51,9 @@ Requirements for this improvement cycle. Derived from CONCERNS.md analysis.
 
 ### Dependencies
 
-- [ ] **DEP-01**: Implement vmrun.exe fallback for vmxtoolkit module failures
-- [ ] **DEP-02**: Implement Lenovo catalog fallback using catalogv2.xml
-- [ ] **DEP-03**: Enhance ADK WIMMount detection with automatic recovery
+- [x] **DEP-01**: Implement vmrun.exe fallback for vmxtoolkit module failures ✓
+- [x] **DEP-02**: Implement Lenovo catalog fallback using catalogv2.xml ✓
+- [x] **DEP-03**: Enhance ADK WIMMount detection with automatic recovery ✓
 
 ## v2 Requirements
 
@@ -107,9 +107,9 @@ Deferred to future cycle. Lower priority or higher complexity.
 | FEAT-01 | Phase 7 | Complete |
 | FEAT-02 | Phase 8 | Complete |
 | FEAT-03 | Phase 9 | Complete |
-| DEP-01 | Phase 10 | Pending |
-| DEP-02 | Phase 10 | Pending |
-| DEP-03 | Phase 10 | Pending |
+| DEP-01 | Phase 10 | Complete |
+| DEP-02 | Phase 10 | Complete |
+| DEP-03 | Phase 10 | Complete |
 
 **Coverage:**
 - v1 requirements: 26 total
@@ -118,4 +118,4 @@ Deferred to future cycle. Lower priority or higher complexity.
 
 ---
 *Requirements defined: 2026-01-17*
-*Last updated: 2026-01-20 - Phase 9 complete (FEAT-03)*
+*Last updated: 2026-01-20 - Phase 10 complete (DEP-01, DEP-02, DEP-03)*
