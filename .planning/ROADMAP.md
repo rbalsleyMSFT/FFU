@@ -10,7 +10,7 @@
 |-------|------|--------------|-------|--------|
 | 11 | Windows Update Preview Filtering | UPD-01, UPD-02, UPD-03, UPD-04 | 2 | ✓ Complete |
 | 12 | VHDX Drive Letter Stability | VHDX-01, VHDX-02, VHDX-03 | 2 | ✓ Complete |
-| 13 | Fix UI Default for IncludePreviewUpdates | UPD-02 (gap closure) | 1 | Planned |
+| 13 | Fix UI Default for IncludePreviewUpdates | UPD-02 (gap closure) | 1 | Ready |
 
 **Total:** 3 phases covering 7 requirements
 
@@ -100,7 +100,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 13-01-PLAN.md - Add IncludePreviewUpdates to Get-GeneralDefaults
+- [ ] 13-01-PLAN.md — Add IncludePreviewUpdates to Get-GeneralDefaults
 
 **Success Criteria:**
 - [ ] Get-GeneralDefaults includes `IncludePreviewUpdates = $false`
@@ -136,3 +136,4 @@ Plans:
 *Phase 12 planned: 2026-01-20*
 *Phase 12 complete: 2026-01-20*
 *Phase 13 added: 2026-01-20 (gap closure from audit)*
+*Phase 13 planned: 2026-01-20*
