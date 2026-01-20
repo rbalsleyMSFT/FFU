@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-20)
 
 **Core value:** Enable rapid, reliable Windows deployment through pre-configured FFU images
-**Current focus:** v1.8.1 Bug Fixes — MILESTONE COMPLETE
+**Current focus:** v1.8.1 Bug Fixes — Gap closure in progress
 
 ## Current Position
 
 **Milestone:** v1.8.1 Bug Fixes
-**Phase:** 12 - VHDX Drive Letter Stability (complete)
+**Phase:** 13 - Fix UI Default for IncludePreviewUpdates (planned)
 **Plan:** —
-**Status:** All phases complete, milestone ready for audit
-**Last activity:** 2026-01-20 — Phase 12 verified
+**Status:** Gap closure phase added from audit
+**Last activity:** 2026-01-20 — Phase 13 created from audit gaps
 
-Progress: 100% (2/2 phases complete)
+Progress: 67% (2/3 phases complete)
 
 ## Completed Milestones
 
@@ -25,6 +25,9 @@ Progress: 100% (2/2 phases complete)
 
 ## Recent Activity
 
+- 2026-01-20: **PHASE 13 CREATED** - Gap closure from audit
+  - UPD-02 gap: Get-GeneralDefaults missing IncludePreviewUpdates
+  - Single task: Add `IncludePreviewUpdates = $false` to defaults
 - 2026-01-20: **PHASE 12 COMPLETE** - VHDX Drive Letter Stability
   - 2 plans executed, verification passed (8/8 must-haves)
   - Set-OSPartitionDriveLetter utility function in FFU.Imaging
@@ -71,9 +74,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Phase 12 complete, milestone ready for audit
+**Stopped at:** Phase 13 created from audit gaps
 **Resume file:** None
-**Next action:** `/gsd:audit-milestone` to verify requirements, cross-phase integration, E2E flows
+**Next action:** `/gsd:plan-phase 13` to plan the gap closure fix
 
 ---
 *State updated: 2026-01-20*

@@ -10,8 +10,9 @@
 |-------|------|--------------|-------|--------|
 | 11 | Windows Update Preview Filtering | UPD-01, UPD-02, UPD-03, UPD-04 | 2 | ✓ Complete |
 | 12 | VHDX Drive Letter Stability | VHDX-01, VHDX-02, VHDX-03 | 2 | ✓ Complete |
+| 13 | Fix UI Default for IncludePreviewUpdates | UPD-02 (gap closure) | 1 | Planned |
 
-**Total:** 2 phases covering 7 requirements
+**Total:** 3 phases covering 7 requirements
 
 ## Phases
 
@@ -84,12 +85,42 @@ Plans:
 
 ---
 
+### Phase 13: Fix UI Default for IncludePreviewUpdates
+
+**Goal:** Close audit gap — ensure IncludePreviewUpdates checkbox initializes correctly on fresh UI launch
+
+**Gap Closure:**
+- UPD-02 partial → complete (checkbox defaults to `$null` instead of `$false`)
+- Integration: Get-GeneralDefaults → UI Checkbox wiring
+- Flow: Phase 11 E2E flow completes at UI default initialization
+
+**Requirements:**
+- UPD-02: User can opt-in to include preview updates via UI checkbox in Updates tab (gap closure)
+
+**Plans:** 1 plan
+
+Plans:
+- [ ] 13-01-PLAN.md - Add IncludePreviewUpdates to Get-GeneralDefaults
+
+**Success Criteria:**
+- [ ] Get-GeneralDefaults includes `IncludePreviewUpdates = $false`
+- [ ] Fresh UI launch initializes checkbox to unchecked (false)
+- [ ] Existing saved configs continue to work
+- [ ] Phase 11 E2E flow passes completely
+
+**Key Files:**
+- `FFUUI.Core/FFUUI.Core.psm1` - Get-GeneralDefaults function
+
+**Directory:** `.planning/phases/13-ui-default-fix/`
+
+---
+
 ## Requirement Coverage
 
 | Requirement | Phase | Description |
 |-------------|-------|-------------|
 | UPD-01 | 11 | Exclude preview/beta updates by default |
-| UPD-02 | 11 | UI checkbox for preview opt-in |
+| UPD-02 | 11, 13 | UI checkbox for preview opt-in (gap closure in 13) |
 | UPD-03 | 11 | Config persistence for setting |
 | UPD-04 | 11 | Config migration support |
 | VHDX-01 | 12 | Drive letter persistence |
@@ -104,3 +135,4 @@ Plans:
 *Phase 11 complete: 2026-01-20*
 *Phase 12 planned: 2026-01-20*
 *Phase 12 complete: 2026-01-20*
+*Phase 13 added: 2026-01-20 (gap closure from audit)*
