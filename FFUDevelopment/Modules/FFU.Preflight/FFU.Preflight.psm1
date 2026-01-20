@@ -2848,6 +2848,7 @@ function Invoke-FFUPreflight {
     }
 
     # vmxtoolkit check (only if using VMware hypervisor)
+    # vmxtoolkit is OPTIONAL - vmrun.exe fallback handles all VM operations
     if ($HypervisorType -eq 'VMware') {
         $vmxToolkitResult = Test-FFUVmxToolkit -AttemptRemediation
         $result.Tier2Results['VmxToolkit'] = $vmxToolkitResult
@@ -2855,7 +2856,15 @@ function Invoke-FFUPreflight {
             $msg = if ($vmxToolkitResult.Details.RemediationAttempted) { ' (installed)' } else { '' }
             Write-Information "  Checking vmxtoolkit module... PASSED$msg"
         }
+        elseif ($vmxToolkitResult.Status -eq 'Warning') {
+            # vmxtoolkit is optional - treat as non-blocking warning
+            Write-Warning "  Checking vmxtoolkit module... WARNING (optional - using vmrun.exe fallback)"
+            $result.HasWarnings = $true
+            $result.Warnings.Add("VmxToolkit: $($vmxToolkitResult.Message)")
+            # Don't add to RemediationSteps - it's informational only
+        }
         else {
+            # Only fail for actual errors (e.g., exception during check)
             Write-Information "  Checking vmxtoolkit module... FAILED"
             $result.IsValid = $false
             $result.Errors.Add("VmxToolkit: $($vmxToolkitResult.Message)")

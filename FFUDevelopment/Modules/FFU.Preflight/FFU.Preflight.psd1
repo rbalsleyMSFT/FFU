@@ -7,7 +7,7 @@
     RootModule = 'FFU.Preflight.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.11'
+    ModuleVersion = '1.0.14'
 
     # ID used to uniquely identify this module
     GUID = 'a7e8b3f2-c4d5-4e6a-9b8c-1d2e3f4a5b6c'
@@ -85,7 +85,23 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Preflight v1.0.11
+# Release Notes - FFU.Preflight v1.0.12
+
+## v1.0.12 (2026-01-20)
+### vmxtoolkit Now Optional for VMware Builds
+- **CHANGED**: Test-FFUVmxToolkit returns 'Warning' instead of 'Failed' when module missing
+- **CHANGED**: Invoke-FFUPreflight treats vmxtoolkit warnings as non-blocking
+- **REASON**: vmrun.exe and filesystem search fallback provide full VM management capability
+- **IMPACT**: VMware builds no longer require vmxtoolkit installation
+
+### Details
+- vmxtoolkit is optional - vmrun.exe handles all VM operations directly
+- VMwareProvider now includes SearchVMXFilesystem method for VM discovery
+- GetVM and GetAllVMs use filesystem fallback when vmxtoolkit unavailable
+- Warning message clearly indicates vmrun.exe fallback is available
+- Part of Phase 10 Dependency Resilience (DEP-01)
+
+---
 
 ## v1.0.11 (2026-01-18)
 ### Tech Debt: Replace Write-Host with Write-Information
