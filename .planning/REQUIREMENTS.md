@@ -48,18 +48,18 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| UPD-01 | — | Pending |
-| UPD-02 | — | Pending |
-| UPD-03 | — | Pending |
-| UPD-04 | — | Pending |
-| VHDX-01 | — | Pending |
-| VHDX-02 | — | Pending |
-| VHDX-03 | — | Pending |
+| UPD-01 | 11 | Pending |
+| UPD-02 | 11 | Pending |
+| UPD-03 | 11 | Pending |
+| UPD-04 | 11 | Pending |
+| VHDX-01 | 12 | Pending |
+| VHDX-02 | 12 | Pending |
+| VHDX-03 | 12 | Pending |
 
 **Coverage:**
 - v1 requirements: 7 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 7 ⚠️
+- Mapped to phases: 7 (100%)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-01-20*
