@@ -414,6 +414,7 @@ class HyperVProvider : IHypervisorProvider {
             $partitions = $disk | Get-Disk | Get-Partition | Where-Object { $_.Type -ne 'Reserved' }
 
             $driveLetter = $null
+            $maxRetries = 3
 
             foreach ($partition in $partitions) {
                 if ($partition.DriveLetter) {
@@ -426,7 +427,6 @@ class HyperVProvider : IHypervisorProvider {
             if (-not $driveLetter) {
                 $partition = $partitions | Select-Object -First 1
                 if ($partition) {
-                    $maxRetries = 3
                     $retryDelay = 500
 
                     for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
