@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule = 'FFU.ConfigMigration.psm1'
-    ModuleVersion = '1.0.0'
+    ModuleVersion = '1.0.1'
     GUID = '9a3eab81-2f9c-44dc-a26e-bbb11086668b'
 
     # Author information
@@ -66,6 +66,10 @@
 
             # Release notes
             ReleaseNotes = @'
+Version 1.0.1
+- Added migration support for IncludePreviewUpdates property (v1.1 schema)
+- Configs without IncludePreviewUpdates now get default value of false
+
 Version 1.0.0 (Initial Release)
 - Get-FFUConfigSchemaVersion returns current schema version (1.0)
 - Test-FFUConfigVersion detects if config needs migration

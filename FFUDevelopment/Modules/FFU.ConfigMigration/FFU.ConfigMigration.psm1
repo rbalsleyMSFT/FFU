@@ -24,7 +24,7 @@
 #region Version Constant
 
 # Single source of truth for current schema version
-$script:CurrentConfigSchemaVersion = "1.0"
+$script:CurrentConfigSchemaVersion = "1.1"
 
 #endregion Version Constant
 
@@ -432,6 +432,13 @@ function Invoke-FFUConfigMigration {
             $changes += "Removed deprecated property 'CopyOfficeConfigXML' (was false)"
         }
         $migrated.Remove('CopyOfficeConfigXML')
+    }
+    #endregion
+
+    #region Migration: Add IncludePreviewUpdates default (v1.1)
+    if (-not $migrated.ContainsKey('IncludePreviewUpdates')) {
+        $migrated['IncludePreviewUpdates'] = $false
+        $changes += "Added default 'IncludePreviewUpdates=false' (preview updates excluded by default)"
     }
     #endregion
 
