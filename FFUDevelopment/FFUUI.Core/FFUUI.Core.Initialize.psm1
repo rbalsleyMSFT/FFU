@@ -111,12 +111,10 @@ function Initialize-UIControls {
     $State.Controls.txtOverallStatus = $window.FindName('txtStatus')
     $State.Controls.cmbHypervisorType = $window.FindName('cmbHypervisorType')
     $State.Controls.txtHypervisorStatus = $window.FindName('txtHypervisorStatus')
-    $State.Controls.pnlVMwareSetupLabel = $window.FindName('pnlVMwareSetupLabel')
-    $State.Controls.pnlVMwareSetup = $window.FindName('pnlVMwareSetup')
-    $State.Controls.txtVMwareCredStatus = $window.FindName('txtVMwareCredStatus')
-    $State.Controls.btnConfigureVMrest = $window.FindName('btnConfigureVMrest')
     $State.Controls.pnlShowVMConsoleLabel = $window.FindName('pnlShowVMConsoleLabel')
     $State.Controls.chkShowVMConsole = $window.FindName('chkShowVMConsole')
+    $State.Controls.pnlForceVMwareDriversLabel = $window.FindName('pnlForceVMwareDriversLabel')
+    $State.Controls.chkForceVMwareDrivers = $window.FindName('chkForceVMwareDrivers')
     $State.Controls.pnlVMSwitchLabel = $window.FindName('pnlVMSwitchLabel')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
     $State.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')
@@ -149,6 +147,7 @@ function Initialize-UIControls {
     $State.Controls.txtVMLocation = $window.FindName('txtVMLocation')
     $State.Controls.txtVMNamePrefix = $window.FindName('txtVMNamePrefix')
     $State.Controls.cmbLogicalSectorSize = $window.FindName('cmbLogicalSectorSize')
+    $State.Controls.txtVMShutdownTimeout = $window.FindName('txtVMShutdownTimeout')
     $State.Controls.txtProductKey = $window.FindName('txtProductKey')
     $State.Controls.txtOfficePath = $window.FindName('txtOfficePath')
     $State.Controls.txtOfficeConfigXMLFilePath = $window.FindName('txtOfficeConfigXMLFilePath')
@@ -164,6 +163,7 @@ function Initialize-UIControls {
     $State.Controls.chkUpdateOneDrive = $window.FindName('chkUpdateOneDrive')
     $State.Controls.chkUpdateLatestMSRT = $window.FindName('chkUpdateLatestMSRT')
     $State.Controls.chkUpdatePreviewCU = $window.FindName('chkUpdatePreviewCU')
+    $State.Controls.chkIncludePreviewUpdates = $window.FindName('chkIncludePreviewUpdates')
     $State.Controls.txtApplicationPath = $window.FindName('txtApplicationPath')
     $State.Controls.txtAppListJsonPath = $window.FindName('txtAppListJsonPath')
     $State.Controls.chkInstallDrivers = $window.FindName('chkInstallDrivers')
@@ -309,6 +309,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkUpdateLatestMSRT.IsChecked = $State.Defaults.generalDefaults.UpdateLatestMSRT
     $State.Controls.chkUpdateLatestMicrocode.IsChecked = $State.Defaults.generalDefaults.UpdateLatestMicrocode
     $State.Controls.chkUpdatePreviewCU.IsChecked = $State.Defaults.generalDefaults.UpdatePreviewCU
+    $State.Controls.chkIncludePreviewUpdates.IsChecked = $State.Defaults.generalDefaults.IncludePreviewUpdates
     # Set initial state for CU checkbox interplay
     $State.Controls.chkPreviewCU.IsEnabled = -not $State.Controls.chkLatestCU.IsChecked
     $State.Controls.chkLatestCU.IsEnabled = -not $State.Controls.chkPreviewCU.IsChecked
