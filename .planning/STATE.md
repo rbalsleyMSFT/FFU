@@ -248,6 +248,9 @@ Progress: [==========] 100%
 | Helper functions not exported | 2026-01-20 | Test-WimMount* helpers are implementation details; only Test-FFUWimMount is public API |
 | BlockingLikely is informational | 2026-01-20 | Security software presence doesn't guarantee blocking; provides guidance |
 | Known hash list informational | 2026-01-20 | Unknown hash may be newer Windows version; corruption detected by size/access |
+| 7-day catalog cache TTL | 2026-01-20 | catalogv2.xml updates infrequently; reduces network traffic |
+| Two-tier caching for catalog | 2026-01-20 | Memory cache for fast access, file cache for persistence across sessions |
+| IsFallback property on results | 2026-01-20 | UI/downstream can detect and warn about partial coverage |
 
 ## Open Issues
 
