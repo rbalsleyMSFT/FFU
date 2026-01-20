@@ -1786,7 +1786,15 @@ if (-not $Cleanup) {
 # PRE-FLIGHT VALIDATION
 # Comprehensive environment validation before starting the build
 # =============================================================================
-if (-not $Cleanup) {
+# === PHASE: Pre-flight Validation ===
+# Check if pre-flight validation was already completed in checkpoint
+$skipPreflightValidation = $false
+if ($script:IsResuming -and (Test-PhaseAlreadyComplete -PhaseName 'PreflightValidation' -Checkpoint $script:ResumeCheckpoint)) {
+    WriteLog "RESUME: Skipping Pre-flight Validation phase - already completed"
+    $skipPreflightValidation = $true
+}
+
+if (-not $Cleanup -and -not $skipPreflightValidation) {
     WriteLog "Starting pre-flight validation..."
 
     # Build features hashtable from script parameters
@@ -2441,9 +2449,22 @@ if ($BuildUSBDrive -and $CopyAdditionalFFUFiles -and ((-not $AdditionalFFUFiles)
     }
 }
 
+# === PHASE: Driver Download ===
+# Skip driver download if already completed in checkpoint
+$skipDriverDownload = $false
+if ($script:IsResuming -and (Test-PhaseAlreadyComplete -PhaseName 'DriverDownload' -Checkpoint $script:ResumeCheckpoint)) {
+    WriteLog "RESUME: Skipping Driver Download phase - already completed"
+    # Restore drivers folder path from checkpoint if available
+    if ($script:ResumedDriversFolder -and (Test-Path $script:ResumedDriversFolder)) {
+        $DriversFolder = $script:ResumedDriversFolder
+        WriteLog "RESUME: Using drivers folder from checkpoint: $DriversFolder"
+    }
+    $skipDriverDownload = $true
+}
+
 #Get drivers first since user could be prompted for additional info
 Set-Progress -Percentage 3 -Message "Processing drivers..."
-if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or $CopyDrivers)) {
+if (-not $skipDriverDownload -and $driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or $CopyDrivers)) {
     WriteLog "Processing drivers from JSON file: $driversJsonPath"
     Import-Module "$PSScriptRoot\FFUUI.Core\FFUUI.Core.psm1"
     # FFU.Common.Drivers.psm1 is imported by FFUUI.Core.psm1
@@ -3460,8 +3481,26 @@ try {
         $requiredUpdates.AddRange($microcodeUpdateInfos)
     }
 
+    # === PHASE: VHDX Creation ===
+    # Initialize VHDX cache flag and check for checkpoint resume
+    $cachedVHDXFileFound = $false
+    if ($script:IsResuming -and (Test-PhaseAlreadyComplete -PhaseName 'VHDXCreation' -Checkpoint $script:ResumeCheckpoint)) {
+        WriteLog "RESUME: Skipping VHDX Creation phase - already completed"
+        # Restore VHDXPath from checkpoint
+        if ($script:ResumedVHDXPath -and (Test-Path $script:ResumedVHDXPath)) {
+            $VHDXPath = $script:ResumedVHDXPath
+            WriteLog "RESUME: Using VHDX from checkpoint: $VHDXPath"
+            # Simulate cached VHDX found to skip creation logic
+            $cachedVHDXFileFound = $true
+        }
+        if ($script:ResumedVMPath) {
+            $VMPath = $script:ResumedVMPath
+            WriteLog "RESUME: Using VMPath from checkpoint: $VMPath"
+        }
+    }
+
     #Search for cached VHDX and skip VHDX creation if there's a cached version
-    if ($AllowVHDXCaching) {
+    if (-not $cachedVHDXFileFound -and $AllowVHDXCaching) {
         WriteLog 'AllowVHDXCaching is true, checking for cached VHDX file'
         if (Test-Path -Path $VHDXCacheFolder) {
             WriteLog "Found $VHDXCacheFolder"
@@ -4621,9 +4660,17 @@ if ($InstallApps) {
     }
 }
 
+# === PHASE: FFU Capture ===
+# Check if FFU capture was already completed in checkpoint
+$skipFFUCapture = $false
+if ($script:IsResuming -and (Test-PhaseAlreadyComplete -PhaseName 'FFUCapture' -Checkpoint $script:ResumeCheckpoint)) {
+    WriteLog "RESUME: Skipping FFU Capture phase - already completed"
+    $skipFFUCapture = $true
+}
+
 # === CANCELLATION CHECKPOINT 6: Before FFU Capture ===
 # Check before starting DISM FFU capture (long-running, cannot be interrupted)
-if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "FFU Capture" -InvokeCleanup) {
+if (-not $skipFFUCapture -and (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "FFU Capture" -InvokeCleanup)) {
     WriteLog "Build cancelled by user at: FFU Capture"
     return
 }
@@ -4654,6 +4701,7 @@ if ($script:CheckpointEnabled -and (-not $InstallApps)) {
 }
 
 #Capture FFU file
+if (-not $skipFFUCapture) {
 try {
     #Check for FFU Folder and create it if it's missing
     If (-not (Test-Path -Path $FFUCaptureLocation)) {
@@ -4825,6 +4873,8 @@ Catch {
     throw $_
 
 }
+} # End of if (-not $skipFFUCapture)
+
 #Clean up ffu_user and Share and clean up apps
 If ($InstallApps) {
     try {
@@ -4867,9 +4917,17 @@ catch {
 }
 
 
+# === PHASE: Deployment Media ===
+# Check if deployment media was already created in checkpoint
+$skipDeploymentMedia = $false
+if ($script:IsResuming -and (Test-PhaseAlreadyComplete -PhaseName 'DeploymentMedia' -Checkpoint $script:ResumeCheckpoint)) {
+    WriteLog "RESUME: Skipping Deployment Media phase - already completed"
+    $skipDeploymentMedia = $true
+}
+
 # === CANCELLATION CHECKPOINT 7: Before Deployment Media Creation ===
 # Check before creating deployment ISO
-if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Deployment Media" -InvokeCleanup) {
+if (-not $skipDeploymentMedia -and (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "Deployment Media" -InvokeCleanup)) {
     WriteLog "Build cancelled by user at: Deployment Media"
     return
 }
@@ -4899,7 +4957,7 @@ if ($script:CheckpointEnabled) {
 }
 
 #Create Deployment Media
-If ($CreateDeploymentMedia) {
+If ($CreateDeploymentMedia -and -not $skipDeploymentMedia) {
     Set-Progress -Percentage 91 -Message "Creating deployment media..."
     try {
         New-PEMedia -Capture $false -Deploy $true -adkPath $adkPath -FFUDevelopmentPath $FFUDevelopmentPath `
@@ -4917,9 +4975,17 @@ If ($CreateDeploymentMedia) {
     }
 }
 
+# === PHASE: USB Creation ===
+# Check if USB creation was already completed in checkpoint
+$skipUSBCreation = $false
+if ($script:IsResuming -and (Test-PhaseAlreadyComplete -PhaseName 'USBCreation' -Checkpoint $script:ResumeCheckpoint)) {
+    WriteLog "RESUME: Skipping USB Creation phase - already completed"
+    $skipUSBCreation = $true
+}
+
 # === CANCELLATION CHECKPOINT 8: Before USB Drive Creation ===
 # Check before partitioning and copying files to USB drive
-if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "USB Drive Creation" -InvokeCleanup) {
+if (-not $skipUSBCreation -and (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "USB Drive Creation" -InvokeCleanup)) {
     WriteLog "Build cancelled by user at: USB Drive Creation"
     return
 }
@@ -4947,7 +5013,7 @@ if ($script:CheckpointEnabled) {
         -FFUDevelopmentPath $FFUDevelopmentPath
 }
 
-If ($BuildUSBDrive) {
+If ($BuildUSBDrive -and -not $skipUSBCreation) {
     Set-Progress -Percentage 95 -Message "Building USB drive..."
     try {
         If (Test-Path -Path $DeployISO) {
