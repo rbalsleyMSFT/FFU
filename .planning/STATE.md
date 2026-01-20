@@ -5,17 +5,17 @@
 See: .planning/PROJECT.md (updated 2026-01-20)
 
 **Core value:** Enable rapid, reliable Windows deployment through pre-configured FFU images
-**Current focus:** v1.8.1 Bug Fixes
+**Current focus:** v1.8.1 Bug Fixes — MILESTONE COMPLETE
 
 ## Current Position
 
 **Milestone:** v1.8.1 Bug Fixes
-**Phase:** 12 - VHDX Drive Letter Stability (in progress)
-**Plan:** 02 of 3 complete
-**Status:** Plan 12-02 complete, ready for 12-03
-**Last activity:** 2026-01-20 - Completed 12-02-PLAN.md
+**Phase:** 12 - VHDX Drive Letter Stability (complete)
+**Plan:** —
+**Status:** All phases complete, milestone ready for audit
+**Last activity:** 2026-01-20 — Phase 12 verified
 
-Progress: 80% (1/2 phases complete, 2/3 plans in phase 12)
+Progress: 100% (2/2 phases complete)
 
 ## Completed Milestones
 
@@ -25,19 +25,14 @@ Progress: 80% (1/2 phases complete, 2/3 plans in phase 12)
 
 ## Recent Activity
 
-- 2026-01-20: **PLAN 12-02 COMPLETE** - BuildFFUVM.ps1 Integration
-  - Integrated Set-OSPartitionDriveLetter into Invoke-MountScratchDisk
-  - Enhanced HyperVProvider.MountVirtualDisk with retry and validation
-  - Enhanced VMwareProvider.MountVirtualDisk with validation
-  - All mount operations now guarantee drive letter stability
-  - Commits: cd557bd, e833763, 5c370cd, 8e24e24
-- 2026-01-20: **PLAN 12-01 COMPLETE** - Set-OSPartitionDriveLetter Utility
-  - New centralized function in FFU.Imaging for drive letter assignment
-  - Handles already-assigned and missing drive letter cases
-  - Preferred letter (W) with Z-to-D fallback
-  - Retry logic (3 attempts) for transient failures
+- 2026-01-20: **PHASE 12 COMPLETE** - VHDX Drive Letter Stability
+  - 2 plans executed, verification passed (8/8 must-haves)
+  - Set-OSPartitionDriveLetter utility function in FFU.Imaging
+  - Integrated into Invoke-MountScratchDisk with NoteProperty attachment
+  - HyperVProvider MountVirtualDisk with retry and validation
+  - VMwareProvider MountVirtualDisk with validation
   - 17 unit tests passing
-  - Commits: dd4f0e4, c5ddefa, 92df108
+  - Commits: dd4f0e4, c5ddefa, 92df108, e37b34a, cd557bd, e833763, 5c370cd, 8e24e24, dc7e5df
 - 2026-01-20: **PHASE 11 COMPLETE** - Windows Update Preview Filtering
   - 2 plans executed, verification passed
   - Config schema with IncludePreviewUpdates (default: false)
@@ -45,6 +40,8 @@ Progress: 80% (1/2 phases complete, 2/3 plans in phase 12)
   - UI checkbox in Updates tab
   - Build script filtering logic for CU and .NET searches
   - Commits: 99ecc47, d086bbe, 262a459, 20c7754, be1f628, b7ba336, e3ac4b4
+- 2026-01-20: **ROADMAP CREATED** for v1.8.1
+- 2026-01-20: **MILESTONE v1.8.1 STARTED**
 
 ## Key Decisions from v1.8.1
 
@@ -74,9 +71,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Plan 12-02 complete
+**Stopped at:** Phase 12 complete, milestone ready for audit
 **Resume file:** None
-**Next action:** Execute plan 12-03 (Call-site integration)
+**Next action:** `/gsd:audit-milestone` to verify requirements, cross-phase integration, E2E flows
 
 ---
 *State updated: 2026-01-20*

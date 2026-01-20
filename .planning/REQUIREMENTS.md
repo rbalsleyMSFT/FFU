@@ -16,9 +16,9 @@ Requirements for v1.8.1 release. Each maps to roadmap phases.
 
 ### VHDX Operations
 
-- [ ] **VHDX-01**: OS partition drive letter persists through unattend file copy and verification
-- [ ] **VHDX-02**: Drive letter stability works with Hyper-V provider
-- [ ] **VHDX-03**: Drive letter stability works with VMware provider
+- [x] **VHDX-01**: OS partition drive letter persists through unattend file copy and verification
+- [x] **VHDX-02**: Drive letter stability works with Hyper-V provider
+- [x] **VHDX-03**: Drive letter stability works with VMware provider
 
 ## v2 Requirements
 
@@ -52,9 +52,9 @@ Which phases cover which requirements. Updated by create-roadmap.
 | UPD-02 | 11 | Complete |
 | UPD-03 | 11 | Complete |
 | UPD-04 | 11 | Complete |
-| VHDX-01 | 12 | Pending |
-| VHDX-02 | 12 | Pending |
-| VHDX-03 | 12 | Pending |
+| VHDX-01 | 12 | Complete |
+| VHDX-02 | 12 | Complete |
+| VHDX-03 | 12 | Complete |
 
 **Coverage:**
 - v1 requirements: 7 total
@@ -63,4 +63,4 @@ Which phases cover which requirements. Updated by create-roadmap.
 
 ---
 *Requirements defined: 2026-01-20*
-*Last updated: 2026-01-20 — Phase 11 requirements complete*
+*Last updated: 2026-01-20 — Phase 12 requirements complete (all v1 requirements complete)*
