@@ -158,10 +158,18 @@ Plans:
 ### Phase 10: Dependency Resilience
 **Goal:** Add fallbacks for at-risk external dependencies
 **Requirements:** DEP-01, DEP-02, DEP-03
+**Plans:** 3 plans
+**Status:** PLANNED (2026-01-20)
+
 **Success Criteria:**
 1. vmrun.exe fallback works when vmxtoolkit fails
 2. Lenovo catalogv2.xml fallback provides partial driver coverage
 3. ADK WIMMount auto-recovery handles more failure scenarios
+
+Plans:
+- [ ] 10-01-PLAN.md - VMware vmxtoolkit fallback with filesystem search (DEP-01) (Wave 1)
+- [ ] 10-02-PLAN.md - Lenovo catalogv2.xml fallback for PSREF API (DEP-02) (Wave 1)
+- [ ] 10-03-PLAN.md - Enhanced WIMMount auto-recovery scenarios (DEP-03) (Wave 1)
 
 ---
 
@@ -178,7 +186,7 @@ Plans:
 | 7 | Feature - Build Cancellation ✓ | 1 | 3 plans (COMPLETE) |
 | 8 | Feature - Progress Checkpoint ✓ | 1 | 3 plans (COMPLETE) |
 | 9 | Feature - Config Migration ✓ | 1 | 3 plans (COMPLETE) |
-| 10 | Dependency Resilience | 3 | TBD |
+| 10 | Dependency Resilience | 3 | 3 plans (PLANNED) |
 
 **Total:** 26 requirements across 10 phases
 
@@ -202,3 +210,4 @@ Plans:
 *Phase 8 complete: 2026-01-19*
 *Phase 9 planned: 2026-01-20*
 *Phase 9 complete: 2026-01-20*
+*Phase 10 planned: 2026-01-20*
