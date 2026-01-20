@@ -11,11 +11,11 @@ See: .planning/PROJECT.md (updated 2026-01-20)
 
 **Milestone:** v1.8.1 Bug Fixes
 **Phase:** 12 - VHDX Drive Letter Stability (in progress)
-**Plan:** 01 of 3 complete
-**Status:** Plan 12-01 complete, ready for 12-02
-**Last activity:** 2026-01-20 - Completed 12-01-PLAN.md
+**Plan:** 02 of 3 complete
+**Status:** Plan 12-02 complete, ready for 12-03
+**Last activity:** 2026-01-20 - Completed 12-02-PLAN.md
 
-Progress: 67% (1/2 phases complete, 1/3 plans in phase 12)
+Progress: 80% (1/2 phases complete, 2/3 plans in phase 12)
 
 ## Completed Milestones
 
@@ -25,6 +25,12 @@ Progress: 67% (1/2 phases complete, 1/3 plans in phase 12)
 
 ## Recent Activity
 
+- 2026-01-20: **PLAN 12-02 COMPLETE** - BuildFFUVM.ps1 Integration
+  - Integrated Set-OSPartitionDriveLetter into Invoke-MountScratchDisk
+  - Enhanced HyperVProvider.MountVirtualDisk with retry and validation
+  - Enhanced VMwareProvider.MountVirtualDisk with validation
+  - All mount operations now guarantee drive letter stability
+  - Commits: cd557bd, e833763, 5c370cd, 8e24e24
 - 2026-01-20: **PLAN 12-01 COMPLETE** - Set-OSPartitionDriveLetter Utility
   - New centralized function in FFU.Imaging for drive letter assignment
   - Handles already-assigned and missing drive letter cases
@@ -39,15 +45,6 @@ Progress: 67% (1/2 phases complete, 1/3 plans in phase 12)
   - UI checkbox in Updates tab
   - Build script filtering logic for CU and .NET searches
   - Commits: 99ecc47, d086bbe, 262a459, 20c7754, be1f628, b7ba336, e3ac4b4
-- 2026-01-20: **ROADMAP CREATED** for v1.8.1
-  - Phase 11: Windows Update Preview Filtering (UPD-01 to UPD-04)
-  - Phase 12: VHDX Drive Letter Stability (VHDX-01 to VHDX-03)
-- 2026-01-20: **MILESTONE v1.8.1 STARTED**
-  - Windows Update Preview Filtering
-  - OS Partition Drive Letter Stability
-- 2026-01-20: **MILESTONE v1.8.0 SHIPPED**
-  - Archived to `.planning/milestones/v1.8.0-ROADMAP.md`
-  - Tagged: v1.8.0
 
 ## Key Decisions from v1.8.1
 
@@ -59,6 +56,9 @@ Progress: 67% (1/2 phases complete, 1/3 plans in phase 12)
 | D-12-01-01 | Place function after New-RecoveryPartition in FFU.Imaging.psm1 | Logical grouping with partition functions | 12-01 |
 | D-12-01-02 | Use GPT type for OS partition detection | More reliable than labels which can change | 12-01 |
 | D-12-01-03 | Default preferred letter to W | Consistent with New-OSPartition initial assignment | 12-01 |
+| D-12-02-01 | Use NoteProperty to attach drive letter to disk object | Maintains backward compatibility | 12-02 |
+| D-12-02-02 | Add retry logic with exponential backoff to HyperVProvider | Handles transient failures during disk operations | 12-02 |
+| D-12-02-03 | Add drive letter normalization to VMwareProvider | Ensures consistent X:\ format | 12-02 |
 
 ## Open Issues
 
@@ -74,9 +74,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** Plan 12-01 complete
+**Stopped at:** Plan 12-02 complete
 **Resume file:** None
-**Next action:** Execute plan 12-02 (BuildFFUVM.ps1 integration)
+**Next action:** Execute plan 12-03 (Call-site integration)
 
 ---
 *State updated: 2026-01-20*
