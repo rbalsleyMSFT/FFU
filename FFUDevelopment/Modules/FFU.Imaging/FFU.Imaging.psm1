@@ -1541,6 +1541,141 @@ function New-RecoveryPartition {
     $recoveryPartition
 }
 
+function Set-OSPartitionDriveLetter {
+    <#
+    .SYNOPSIS
+    Assigns a drive letter to the OS partition on a mounted disk if not already assigned.
+
+    .DESCRIPTION
+    Ensures the OS partition (identified by GPT type {ebd0a0a2-b9e5-4433-87c0-68b6b72699c7})
+    has a drive letter assigned. If already assigned, returns the existing letter.
+    If not assigned, attempts to assign the preferred letter (default: W), falling back
+    to other available letters (Z downward) if the preferred letter is in use.
+
+    This function addresses the VHDX drive letter stability issue where drive letter
+    assignments are lost when a VHD/VHDX is dismounted and remounted. Should be called
+    after any mount operation to ensure a stable drive letter.
+
+    .PARAMETER Disk
+    The disk object (CimInstance from Get-Disk or PSCustomObject from diskpart fallback)
+    containing the OS partition.
+
+    .PARAMETER PreferredLetter
+    The preferred drive letter to assign if none is currently assigned. Default: 'W'.
+    If the preferred letter is in use, the function falls back to available letters
+    starting from Z and working downward to D.
+
+    .PARAMETER RetryCount
+    Number of retry attempts for drive letter assignment. Default: 3.
+    Helps with transient failures during Windows drive letter operations.
+
+    .OUTPUTS
+    [char] The assigned or existing drive letter.
+
+    .EXAMPLE
+    # Mount VHDX and ensure drive letter
+    $disk = Mount-VHD -Path "C:\Image.vhdx" -Passthru | Get-Disk
+    $driveLetter = Set-OSPartitionDriveLetter -Disk $disk
+    # Use $driveLetter for file operations
+
+    .EXAMPLE
+    # Mount with specific preferred letter
+    $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'X'
+
+    .NOTES
+    - Drive letter assignments to VHD/VHDX partitions are ephemeral
+    - Always call this function after any mount operation
+    - The OS partition is identified by GPT type (Basic Data Partition)
+    #>
+    [CmdletBinding()]
+    [OutputType([char])]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Disk,
+
+        [Parameter(Mandatory = $false)]
+        [char]$PreferredLetter = 'W',
+
+        [Parameter(Mandatory = $false)]
+        [int]$RetryCount = 3
+    )
+
+    # Get disk number from object (works with both CimInstance and PSCustomObject)
+    $diskNumber = if ($Disk.DiskNumber) { $Disk.DiskNumber } else { $Disk.Number }
+    WriteLog "Set-OSPartitionDriveLetter: Checking disk $diskNumber for OS partition drive letter"
+
+    # Find OS partition by GPT type (Basic Data Partition - where Windows is installed)
+    $osPartition = $Disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+
+    if (-not $osPartition) {
+        throw "Set-OSPartitionDriveLetter: No OS partition (GPT type {ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}) found on disk $diskNumber"
+    }
+
+    WriteLog "  Found OS partition: Partition $($osPartition.PartitionNumber), Size=$([math]::Round($osPartition.Size/1GB, 2))GB"
+
+    # Check if drive letter is already assigned
+    $currentLetter = $osPartition.DriveLetter
+
+    if (-not [string]::IsNullOrWhiteSpace($currentLetter)) {
+        WriteLog "  OS partition already has drive letter: $currentLetter (no action needed)"
+        return [char]$currentLetter
+    }
+
+    WriteLog "  OS partition has no drive letter assigned, assigning..."
+
+    # Get list of used drive letters
+    $usedLetters = (Get-Volume).DriveLetter | Where-Object { $_ }
+
+    # Build list of available letters (Z downward to D, avoiding A-C which are reserved)
+    $availableLetters = [char[]](90..68) | Where-Object { $_ -notin $usedLetters }
+
+    if ($availableLetters.Count -eq 0) {
+        throw "Set-OSPartitionDriveLetter: No available drive letters (D-Z all in use)"
+    }
+
+    # Select target letter: prefer specified letter if available, otherwise first available
+    $targetLetter = if ($PreferredLetter -in $availableLetters) {
+        WriteLog "  Using preferred drive letter: $PreferredLetter"
+        $PreferredLetter
+    } else {
+        $fallback = $availableLetters | Select-Object -First 1
+        WriteLog "  Preferred letter $PreferredLetter is in use, falling back to: $fallback"
+        $fallback
+    }
+
+    # Assign drive letter with retry logic
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        try {
+            WriteLog "  Attempt $attempt of $RetryCount`: Assigning drive letter $targetLetter to partition $($osPartition.PartitionNumber)"
+
+            $osPartition | Set-Partition -NewDriveLetter $targetLetter -ErrorAction Stop
+
+            # Wait for Windows to complete the assignment
+            Start-Sleep -Milliseconds 500
+
+            # Re-fetch partition to verify assignment
+            $verifyPartition = Get-Partition -DriveLetter $targetLetter -ErrorAction Stop
+
+            if ($verifyPartition) {
+                WriteLog "  Successfully assigned and verified drive letter: $targetLetter"
+                return [char]$targetLetter
+            }
+
+            throw "Partition re-fetch succeeded but verification failed"
+        }
+        catch {
+            WriteLog "  WARNING: Attempt $attempt failed: $($_.Exception.Message)"
+
+            if ($attempt -eq $RetryCount) {
+                throw "Set-OSPartitionDriveLetter: Failed to assign drive letter after $RetryCount attempts. Last error: $($_.Exception.Message)"
+            }
+
+            # Wait before retry
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+
 function Add-BootFiles {
     param(
         [Parameter(Mandatory = $true)]
