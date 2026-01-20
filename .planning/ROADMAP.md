@@ -10,7 +10,7 @@
 |-------|------|--------------|-------|--------|
 | 11 | Windows Update Preview Filtering | UPD-01, UPD-02, UPD-03, UPD-04 | 2 | ✓ Complete |
 | 12 | VHDX Drive Letter Stability | VHDX-01, VHDX-02, VHDX-03 | 2 | ✓ Complete |
-| 13 | Fix UI Default for IncludePreviewUpdates | UPD-02 (gap closure) | 1 | Ready |
+| 13 | Fix UI Default for IncludePreviewUpdates | UPD-02 (gap closure) | 1 | ✓ Complete |
 
 **Total:** 3 phases covering 7 requirements
 
@@ -100,13 +100,15 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 13-01-PLAN.md — Add IncludePreviewUpdates to Get-GeneralDefaults
+- [x] 13-01-PLAN.md — Add IncludePreviewUpdates to Get-GeneralDefaults
 
 **Success Criteria:**
-- [ ] Get-GeneralDefaults includes `IncludePreviewUpdates = $false`
-- [ ] Fresh UI launch initializes checkbox to unchecked (false)
-- [ ] Existing saved configs continue to work
-- [ ] Phase 11 E2E flow passes completely
+- [x] Get-GeneralDefaults includes `IncludePreviewUpdates = $false`
+- [x] Fresh UI launch initializes checkbox to unchecked (false)
+- [x] Existing saved configs continue to work
+- [x] Phase 11 E2E flow passes completely
+
+**Completed:** 2026-01-20
 
 **Key Files:**
 - `FFUUI.Core/FFUUI.Core.psm1` - Get-GeneralDefaults function
@@ -137,3 +139,4 @@ Plans:
 *Phase 12 complete: 2026-01-20*
 *Phase 13 added: 2026-01-20 (gap closure from audit)*
 *Phase 13 planned: 2026-01-20*
+*Phase 13 complete: 2026-01-20*

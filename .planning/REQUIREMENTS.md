@@ -49,7 +49,7 @@ Which phases cover which requirements. Updated by create-roadmap.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | UPD-01 | 11 | Complete |
-| UPD-02 | 11, 13 | Gap closure in 13 |
+| UPD-02 | 11, 13 | Complete |
 | UPD-03 | 11 | Complete |
 | UPD-04 | 11 | Complete |
 | VHDX-01 | 12 | Complete |
@@ -59,8 +59,8 @@ Which phases cover which requirements. Updated by create-roadmap.
 **Coverage:**
 - v1 requirements: 7 total
 - Mapped to phases: 7 (100%)
-- Gap closure needed: 1 (UPD-02 in Phase 13)
+- All requirements complete
 
 ---
 *Requirements defined: 2026-01-20*
-*Last updated: 2026-01-20 — Phase 13 added for UPD-02 gap closure*
+*Last updated: 2026-01-20 — All requirements complete (Phase 13 closed UPD-02 gap)*
