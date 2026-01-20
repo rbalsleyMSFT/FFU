@@ -9,7 +9,7 @@
 | Phase | Name | Requirements | Plans | Status |
 |-------|------|--------------|-------|--------|
 | 11 | Windows Update Preview Filtering | UPD-01, UPD-02, UPD-03, UPD-04 | 2 | ✓ Complete |
-| 12 | VHDX Drive Letter Stability | VHDX-01, VHDX-02, VHDX-03 | 0 | Not Started |
+| 12 | VHDX Drive Letter Stability | VHDX-01, VHDX-02, VHDX-03 | 2 | Planned |
 
 **Total:** 2 phases covering 7 requirements
 
@@ -60,6 +60,12 @@ Plans:
 - VHDX-02: Drive letter stability works with Hyper-V provider
 - VHDX-03: Drive letter stability works with VMware provider
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 12-01-PLAN.md - Create Set-OSPartitionDriveLetter utility function in FFU.Imaging
+- [ ] 12-02-PLAN.md - Integrate drive letter guarantee into mount functions and verify providers
+
 **Success Criteria:**
 - [ ] Drive letter remains assigned throughout unattend copy workflow
 - [ ] Verification step can access the same drive letter used for copy
@@ -94,3 +100,4 @@ Plans:
 *Roadmap created: 2026-01-20*
 *Phase 11 planned: 2026-01-20*
 *Phase 11 complete: 2026-01-20*
+*Phase 12 planned: 2026-01-20*
