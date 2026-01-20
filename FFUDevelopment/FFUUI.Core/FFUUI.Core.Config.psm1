@@ -107,6 +107,7 @@ function Get-UIConfig {
         UpdateLatestNet                = $State.Controls.chkUpdateLatestNet.IsChecked
         UpdateOneDrive                 = $State.Controls.chkUpdateOneDrive.IsChecked
         UpdatePreviewCU                = $State.Controls.chkUpdatePreviewCU.IsChecked
+        IncludePreviewUpdates          = $State.Controls.chkIncludePreviewUpdates.IsChecked
         UserAppListPath                = "$($State.Controls.txtApplicationPath.Text)\UserAppList.json"
         USBDriveList                   = @{}
         Username                       = $State.Controls.txtUsername.Text
@@ -561,6 +562,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkUpdateLatestMSRT' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UpdateLatestMSRT' -State $State
     Set-UIValue -ControlName 'chkUpdateLatestMicrocode' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UpdateLatestMicrocode' -State $State
     Set-UIValue -ControlName 'chkUpdatePreviewCU' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UpdatePreviewCU' -State $State
+    Set-UIValue -ControlName 'chkIncludePreviewUpdates' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'IncludePreviewUpdates' -State $State
 
     # Applications tab
     Set-UIValue -ControlName 'chkInstallApps' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InstallApps' -State $State
