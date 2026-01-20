@@ -4,28 +4,27 @@
 
 .DESCRIPTION
     Provides VMware Workstation Pro specific implementation of the hypervisor
-    provider interface. Uses vmrest REST API for VM operations and diskpart
-    for VHD operations (no Hyper-V dependency).
+    provider interface. Uses vmrun.exe command-line tool for VM operations
+    (with optional vmxtoolkit PowerShell module support) and diskpart for VHD
+    operations. No REST API (vmrest) dependency.
 
 .NOTES
     Module: FFU.Hypervisor
-    Version: 1.0.0
-    Dependencies: VMware Workstation Pro 17.x
+    Version: 1.3.0
+    Dependencies: VMware Workstation Pro 17.x, vmxtoolkit (optional enhancement)
 #>
 
 class VMwareProvider : IHypervisorProvider {
 
     # VMware-specific properties
-    hidden [int]$Port = 8697
-    hidden [PSCredential]$Credential
     hidden [string]$VMwarePath
-    hidden [bool]$ServiceStarted = $false
+    hidden [bool]$VmxToolkitAvailable = $false
 
     # Constructor
     VMwareProvider() {
         $this.Name = 'VMware'
         $this.Version = $this.GetVMwareVersion()
-        $this.Description = 'VMware Workstation Pro hypervisor provider'
+        $this.Description = 'VMware Workstation Pro hypervisor provider (vmrun/vmxtoolkit)'
 
         $this.Capabilities = @{
             SupportsTPM = $false                    # vTPM requires encryption (breaks vmrun automation)
@@ -34,7 +33,7 @@ class VMwareProvider : IHypervisorProvider {
             SupportsDynamicMemory = $false          # VMware uses static memory
             SupportsCheckpoints = $true             # Snapshots
             SupportsNestedVirtualization = $true
-            SupportedDiskFormats = @('VMDK')        # VMDK required for bootable VMs (VHD not bootable)
+            SupportedDiskFormats = @('VMDK', 'VHD')  # VMware 10+ supports VHD files directly
             MaxMemoryGB = 128
             MaxProcessors = 32
             # NOTE: VMware vTPM requires VM encryption to function. Encrypted VMs cannot
@@ -45,29 +44,63 @@ class VMwareProvider : IHypervisorProvider {
 
         # Auto-detect VMware installation
         $this.VMwarePath = $this.DetectVMwarePath()
+
+        # Check if vmxtoolkit module is available
+        $this.VmxToolkitAvailable = $this.CheckVmxToolkit()
     }
 
-    # Constructor with custom port
-    VMwareProvider([int]$Port) {
-        $this.Name = 'VMware'
-        $this.Version = $this.GetVMwareVersion()
-        $this.Description = 'VMware Workstation Pro hypervisor provider'
-        $this.Port = $Port
+    # Check if vmxtoolkit PowerShell module is available
+    hidden [bool] CheckVmxToolkit() {
+        try {
+            $module = Get-Module -ListAvailable -Name 'vmxtoolkit' -ErrorAction SilentlyContinue
+            if ($module) {
+                WriteLog "vmxtoolkit module available: v$($module.Version)"
+                return $true
+            }
+            WriteLog "vmxtoolkit module not found - using direct vmrun.exe"
+            return $false
+        }
+        catch {
+            return $false
+        }
+    }
 
-        $this.Capabilities = @{
-            SupportsTPM = $false                    # vTPM requires encryption (breaks vmrun automation)
-            SupportsSecureBoot = $true              # UEFI Secure Boot supported
-            SupportsGeneration2 = $true             # Similar to Hyper-V Gen2
-            SupportsDynamicMemory = $false          # VMware uses static memory
-            SupportsCheckpoints = $true             # Snapshots
-            SupportsNestedVirtualization = $true
-            SupportedDiskFormats = @('VMDK')        # VMDK required for bootable VMs (VHD not bootable)
-            MaxMemoryGB = 128
-            MaxProcessors = 32
-            TPMNote = 'VMware vTPM requires encryption which breaks automation. Disabled for FFU builds.'
+    # Search filesystem for VMX files when vmxtoolkit is unavailable
+    # This enables VM discovery even without vmxtoolkit by scanning common VM storage locations
+    hidden [string[]] SearchVMXFilesystem([string]$VMName = $null) {
+        $searchPaths = @()
+
+        # VMware default VM directory from preferences
+        $prefsPath = Join-Path $env:APPDATA 'VMware\preferences.ini'
+        if (Test-Path $prefsPath) {
+            $prefs = Get-Content $prefsPath -ErrorAction SilentlyContinue
+            $defaultVMPath = $prefs | Where-Object { $_ -match 'prefvmx\.defaultVMPath\s*=\s*"([^"]+)"' } |
+                ForEach-Object { $Matches[1] }
+            if ($defaultVMPath -and (Test-Path $defaultVMPath)) {
+                $searchPaths += $defaultVMPath
+            }
         }
 
-        $this.VMwarePath = $this.DetectVMwarePath()
+        # Common default locations
+        $commonPaths = @(
+            (Join-Path $env:USERPROFILE 'Documents\Virtual Machines'),
+            (Join-Path $env:USERPROFILE 'Virtual Machines'),
+            'C:\VMs',
+            'D:\VMs'
+        )
+        $searchPaths += $commonPaths | Where-Object { Test-Path $_ }
+
+        # Search for VMX files
+        $vmxFiles = @()
+        foreach ($path in ($searchPaths | Select-Object -Unique)) {
+            $found = Get-ChildItem -Path $path -Filter '*.vmx' -Recurse -Depth 2 -ErrorAction SilentlyContinue
+            if ($VMName) {
+                $found = $found | Where-Object { $_.BaseName -eq $VMName }
+            }
+            $vmxFiles += $found.FullName
+        }
+
+        return $vmxFiles
     }
 
     # Detect VMware Workstation installation path
@@ -119,22 +152,6 @@ class VMwareProvider : IHypervisorProvider {
         }
     }
 
-    # Set credentials for vmrest API authentication
-    [void] SetCredential([PSCredential]$Credential) {
-        $this.Credential = $Credential
-    }
-
-    # Ensure vmrest service is running
-    hidden [void] EnsureVMrestRunning() {
-        if (-not $this.ServiceStarted) {
-            $result = Start-VMrestService -Port $this.Port -VMwarePath $this.VMwarePath -Credential $this.Credential
-            if (-not $result.Success) {
-                throw "Failed to start vmrest service: $($result.Error)"
-            }
-            $this.ServiceStarted = $true
-        }
-    }
-
     #region VM Lifecycle Methods
 
     [VMInfo] CreateVM([VMConfiguration]$Config) {
@@ -147,42 +164,47 @@ class VMwareProvider : IHypervisorProvider {
         try {
             WriteLog "Creating VMware VM: $($Config.Name)"
 
-            # Ensure vmrest is running
-            $this.EnsureVMrestRunning()
-
             # Create VM folder
             $vmPath = $Config.Path
             if (-not (Test-Path $vmPath)) {
                 New-Item -Path $vmPath -ItemType Directory -Force | Out-Null
             }
 
-            # Determine disk path - VMware requires VMDK format for bootable VMs
+            # Determine disk path
+            # NOTE: VMware Workstation 10+ supports VHD files directly as virtual disks.
+            # The FFU build creates a VHD with Windows pre-installed, so we use it as-is.
             $diskPath = $Config.VirtualDiskPath
             if ([string]::IsNullOrEmpty($diskPath)) {
-                # Always use VMDK for VMware (VHD is not bootable in VMware)
+                # No disk path specified - create a new VMDK
                 $diskPath = Join-Path $vmPath "$($Config.Name).vmdk"
             }
-            elseif ($diskPath.EndsWith('.vhd', [StringComparison]::OrdinalIgnoreCase)) {
-                # Convert VHD path to VMDK - VMware cannot boot from VHD
-                WriteLog "WARNING: VMware cannot boot from VHD files. Changing disk format to VMDK."
-                $diskPath = [System.IO.Path]::ChangeExtension($diskPath, '.vmdk')
-            }
 
-            # Create virtual disk if it doesn't exist
+            # Check if disk exists (VHD or VMDK)
             if (-not (Test-Path $diskPath)) {
+                # Disk doesn't exist at specified path
+                # For FFU builds, the VHD should already exist from New-ScratchVhd
                 $sizeGB = [int]($Config.DiskSizeBytes / 1GB)
                 if ($sizeGB -eq 0) { $sizeGB = 128 }  # Default 128GB
 
                 if ($diskPath.EndsWith('.vmdk', [StringComparison]::OrdinalIgnoreCase)) {
-                    # Create VMDK using VMware's vdiskmanager (native format, best performance)
+                    # Create VMDK using VMware's vdiskmanager
                     WriteLog "Creating VMDK disk for VMware VM: $diskPath ($sizeGB GB)"
                     $diskPath = New-VMDKWithVdiskmanager -Path $diskPath -SizeGB $sizeGB -Type Dynamic -VMwarePath $this.VMwarePath
                 }
+                elseif ($diskPath.EndsWith('.vhd', [StringComparison]::OrdinalIgnoreCase)) {
+                    # VHD not found - this is an error for FFU builds since VHD should exist
+                    throw "VHD file not found: $diskPath. The VHD should have been created by New-ScratchVhd during the build process."
+                }
                 else {
-                    # Fallback to VHD for non-boot scenarios (should not happen for VMs)
-                    WriteLog "WARNING: Creating VHD disk - this is not bootable in VMware"
+                    # Unknown format - create VHD as fallback
+                    WriteLog "WARNING: Creating VHD disk: $diskPath"
                     $diskPath = New-VHDWithDiskpart -Path $diskPath -SizeGB $sizeGB -Type Dynamic
                 }
+            }
+            else {
+                WriteLog "Using existing disk: $diskPath"
+                $fileSize = (Get-Item $diskPath).Length
+                WriteLog "  Disk size: $([math]::Round($fileSize / 1GB, 2)) GB"
             }
 
             # Create VMX file
@@ -239,28 +261,61 @@ class VMwareProvider : IHypervisorProvider {
         }
     }
 
-    [void] StartVM([VMInfo]$VM) {
+    [string] StartVM([VMInfo]$VM) {
         # Default overload - runs headless (nogui)
-        $this.StartVM($VM, $false)
+        return $this.StartVM($VM, $false)
     }
 
-    [void] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
-        try {
-            $this.EnsureVMrestRunning()
+    [string] StartVM([VMInfo]$VM, [bool]$ShowConsole) {
+        <#
+        .SYNOPSIS
+            Start the VM and return its status
 
-            $vmId = $this.ResolveVMId($VM)
+        .DESCRIPTION
+            Starts the VM using vmrun.exe. Returns the status of the VM after startup:
+            - 'Running': VM started and is currently running
+            - 'Completed': VM started, ran to completion, and shut down (GUI mode only)
+
+            In GUI mode (ShowConsole=true), vmrun blocks until the VM shuts down.
+            If the VM completes its work and shuts down, 'Completed' is returned.
+            This allows the caller to skip the shutdown polling loop.
+
+        .OUTPUTS
+            String: 'Running' or 'Completed'
+        #>
+        try {
             $vmxPath = $this.ResolveVMXPath($VM)
+
+            if ([string]::IsNullOrEmpty($vmxPath)) {
+                throw "Cannot start VM '$($VM.Name)': VMX path not found"
+            }
 
             if ($ShowConsole) {
                 WriteLog "Starting VM with console window visible (gui mode)"
+                WriteLog "NOTE: vmrun gui blocks until VM shuts down"
             }
             else {
                 WriteLog "Starting VM in headless mode (nogui) - use -ShowVMConsole `$true to see console"
             }
 
-            Set-VMwarePowerState -VMId $vmId -State 'on' -VMXPath $vmxPath -Port $this.Port -Credential $this.Credential -ShowConsole $ShowConsole
+            # Use vmxtoolkit if available, otherwise direct vmrun
+            # Both paths now return a result with Status property
+            $result = $null
+            if ($this.VmxToolkitAvailable) {
+                $result = $this.StartVMWithVmxToolkit($vmxPath, $ShowConsole)
+            }
+            else {
+                $result = Set-VMwarePowerStateWithVmrun -VMXPath $vmxPath -State 'on' -ShowConsole $ShowConsole
+            }
 
-            WriteLog "VMware VM '$($VM.Name)' started"
+            # Check if VM completed during startup (GUI mode behavior)
+            if ($result -and $result.Status -eq 'Completed') {
+                WriteLog "VMware VM '$($VM.Name)' started, ran, and completed during vmrun wait"
+                return 'Completed'
+            }
+
+            WriteLog "VMware VM '$($VM.Name)' started and is running"
+            return 'Running'
         }
         catch {
             WriteLog "ERROR: Failed to start VM '$($VM.Name)': $($_.Exception.Message)"
@@ -268,15 +323,48 @@ class VMwareProvider : IHypervisorProvider {
         }
     }
 
+    # Start VM using vmxtoolkit module
+    hidden [hashtable] StartVMWithVmxToolkit([string]$VMXPath, [bool]$ShowConsole) {
+        try {
+            Import-Module vmxtoolkit -ErrorAction Stop
+
+            $vmx = Get-VMX -Path (Split-Path $VMXPath -Parent) -ErrorAction Stop |
+                   Where-Object { $_.VMXPath -eq $VMXPath } |
+                   Select-Object -First 1
+
+            if (-not $vmx) {
+                WriteLog "vmxtoolkit: VM not found, falling back to direct vmrun"
+                return Set-VMwarePowerStateWithVmrun -VMXPath $VMXPath -State 'on' -ShowConsole $ShowConsole
+            }
+
+            # vmxtoolkit's Start-VMX doesn't support gui/nogui - use vmrun for better control
+            # but we can still use vmxtoolkit for other operations
+            WriteLog "vmxtoolkit: Starting VM using vmrun for gui/nogui control"
+            return Set-VMwarePowerStateWithVmrun -VMXPath $VMXPath -State 'on' -ShowConsole $ShowConsole
+        }
+        catch {
+            WriteLog "vmxtoolkit start failed: $($_.Exception.Message) - falling back to vmrun"
+            return Set-VMwarePowerStateWithVmrun -VMXPath $VMXPath -State 'on' -ShowConsole $ShowConsole
+        }
+    }
+
     [void] StopVM([VMInfo]$VM, [bool]$Force) {
         try {
-            $this.EnsureVMrestRunning()
-
-            $vmId = $this.ResolveVMId($VM)
             $vmxPath = $this.ResolveVMXPath($VM)
+
+            if ([string]::IsNullOrEmpty($vmxPath)) {
+                throw "Cannot stop VM '$($VM.Name)': VMX path not found"
+            }
+
             $state = if ($Force) { 'off' } else { 'shutdown' }
 
-            Set-VMwarePowerState -VMId $vmId -State $state -VMXPath $vmxPath -Port $this.Port -Credential $this.Credential
+            # Use vmxtoolkit if available, otherwise direct vmrun
+            if ($this.VmxToolkitAvailable) {
+                $this.StopVMWithVmxToolkit($vmxPath, $Force)
+            }
+            else {
+                Set-VMwarePowerStateWithVmrun -VMXPath $vmxPath -State $state
+            }
 
             WriteLog "VMware VM '$($VM.Name)' stopped (force=$Force)"
         }
@@ -286,9 +374,43 @@ class VMwareProvider : IHypervisorProvider {
         }
     }
 
+    # Stop VM using vmxtoolkit module
+    hidden [void] StopVMWithVmxToolkit([string]$VMXPath, [bool]$Force) {
+        try {
+            Import-Module vmxtoolkit -ErrorAction Stop
+
+            $vmx = Get-VMX -Path (Split-Path $VMXPath -Parent) -ErrorAction Stop |
+                   Where-Object { $_.VMXPath -eq $VMXPath } |
+                   Select-Object -First 1
+
+            if (-not $vmx) {
+                WriteLog "vmxtoolkit: VM not found, falling back to direct vmrun"
+                $state = if ($Force) { 'off' } else { 'shutdown' }
+                Set-VMwarePowerStateWithVmrun -VMXPath $VMXPath -State $state
+                return
+            }
+
+            # vmxtoolkit's Stop-VMX always does hard stop
+            # For soft shutdown, use vmrun directly
+            if ($Force) {
+                Stop-VMX -VMX $vmx -ErrorAction Stop | Out-Null
+                WriteLog "vmxtoolkit: VM stopped (hard)"
+            }
+            else {
+                WriteLog "vmxtoolkit: Using vmrun for graceful shutdown"
+                Set-VMwarePowerStateWithVmrun -VMXPath $VMXPath -State 'shutdown'
+            }
+        }
+        catch {
+            WriteLog "vmxtoolkit stop failed: $($_.Exception.Message) - falling back to vmrun"
+            $state = if ($Force) { 'off' } else { 'shutdown' }
+            Set-VMwarePowerStateWithVmrun -VMXPath $VMXPath -State $state
+        }
+    }
+
     [void] RemoveVM([VMInfo]$VM, [bool]$RemoveDisks) {
         try {
-            # Stop VM if running (using vmrun - no REST API needed)
+            # Stop VM if running
             $state = $this.GetVMState($VM)
             if ($state -eq [VMState]::Running) {
                 WriteLog "Stopping running VM before removal..."
@@ -298,25 +420,6 @@ class VMwareProvider : IHypervisorProvider {
 
             # Get VMX path for file deletion
             $vmxPath = $this.ResolveVMXPath($VM)
-
-            # Try to unregister from vmrest if we have credentials (optional, may fail with 401)
-            # Note: We skip registration in CreateVM, so unregistration may not be needed
-            if ($this.Credential) {
-                try {
-                    $vmId = $this.ResolveVMId($VM)
-                    Unregister-VMwareVM -VMId $vmId -Port $this.Port -Credential $this.Credential
-                    WriteLog "VM unregistered from vmrest"
-                }
-                catch {
-                    # 401 errors or "not registered" are expected when we skip registration
-                    if ($_.Exception.Message -match '401' -or $_.Exception.Message -match 'Unauthorized' -or $_.Exception.Message -match 'not found') {
-                        WriteLog "Skipping unregister (VM was not registered or no auth): $($_.Exception.Message)"
-                    }
-                    else {
-                        WriteLog "WARNING: Unregister failed (continuing with file cleanup): $($_.Exception.Message)"
-                    }
-                }
-            }
 
             # Remove files if requested
             if ($RemoveDisks) {
@@ -351,13 +454,35 @@ class VMwareProvider : IHypervisorProvider {
     #region VM Information Methods
 
     [string] GetVMIPAddress([VMInfo]$VM) {
+        # Note: VM IP discovery is NOT used in the FFU build process.
+        # The build uses the HOST's IP address for network shares.
+        # This method is provided for completeness but may return null.
         try {
-            $this.EnsureVMrestRunning()
+            $vmxPath = $this.ResolveVMXPath($VM)
 
-            $vmId = $this.ResolveVMId($VM)
-            $ip = Get-VMwareVMIPAddress -VMId $vmId -Port $this.Port -Credential $this.Credential -TimeoutSeconds 120
+            # Try vmxtoolkit if available
+            if ($this.VmxToolkitAvailable) {
+                try {
+                    Import-Module vmxtoolkit -ErrorAction Stop
+                    $vmx = Get-VMX -Path (Split-Path $vmxPath -Parent) -ErrorAction SilentlyContinue |
+                           Where-Object { $_.VMXPath -eq $vmxPath } |
+                           Select-Object -First 1
 
-            return $ip
+                    if ($vmx) {
+                        $ipInfo = Get-VMXIPAddress -VMX $vmx -ErrorAction SilentlyContinue
+                        if ($ipInfo -and $ipInfo.IPAddress) {
+                            return $ipInfo.IPAddress
+                        }
+                    }
+                }
+                catch {
+                    WriteLog "vmxtoolkit IP lookup failed: $($_.Exception.Message)"
+                }
+            }
+
+            # vmrun doesn't have a direct IP query - VMware Tools guest info required
+            WriteLog "WARNING: IP address discovery requires VMware Tools in guest OS"
+            return $null
         }
         catch {
             WriteLog "WARNING: Failed to get IP for VM '$($VM.Name)': $($_.Exception.Message)"
@@ -367,34 +492,14 @@ class VMwareProvider : IHypervisorProvider {
 
     [VMState] GetVMState([VMInfo]$VM) {
         try {
-            $this.EnsureVMrestRunning()
-
-            $vmId = $this.ResolveVMId($VM)
-
-            # Try REST API first if we have credentials
-            if ($this.Credential) {
-                try {
-                    $powerState = Get-VMwarePowerState -VMId $vmId -Port $this.Port -Credential $this.Credential
-                    return [VMInfo]::ConvertVMwareState($powerState)
-                }
-                catch {
-                    # Check if this is a 401 Unauthorized - fall back to vmrun
-                    if ($_.Exception.Message -match '401' -or $_.Exception.Message -match 'Unauthorized') {
-                        WriteLog "REST API returned 401 for GetVMState - falling back to vmrun"
-                    }
-                    else {
-                        throw  # Re-throw non-401 errors
-                    }
-                }
-            }
-
-            # Fallback to vmrun.exe (doesn't require authentication)
             $vmxPath = $this.ResolveVMXPath($VM)
-            if (-not $vmxPath) {
-                WriteLog "WARNING: Cannot determine VMX path for vmrun fallback"
+
+            if ([string]::IsNullOrEmpty($vmxPath)) {
+                WriteLog "WARNING: Cannot determine VMX path for state check"
                 return [VMState]::Unknown
             }
 
+            # Use nvram file lock detection (most reliable method)
             $powerState = Get-VMwarePowerStateWithVmrun -VMXPath $vmxPath
             return [VMInfo]::ConvertVMwareState($powerState)
         }
@@ -405,67 +510,177 @@ class VMwareProvider : IHypervisorProvider {
     }
 
     [VMInfo] GetVM([string]$Name) {
+        # Search for VM by name using vmxtoolkit or file system
         try {
-            $this.EnsureVMrestRunning()
+            # Try vmxtoolkit first if available
+            if ($this.VmxToolkitAvailable) {
+                try {
+                    Import-Module vmxtoolkit -ErrorAction Stop
+                    $vmx = Get-VMX -ErrorAction SilentlyContinue | Where-Object { $_.VMXName -eq $Name }
 
-            $vms = Get-VMwareVMList -Port $this.Port -Credential $this.Credential
+                    if ($vmx) {
+                        $vmInfo = [VMInfo]::new()
+                        $vmInfo.Name = $Name
+                        $vmInfo.Id = $Name
+                        $vmInfo.HypervisorType = 'VMware'
+                        $vmInfo.VMwareId = $Name
+                        $vmInfo.VMXPath = $vmx.VMXPath
+                        $vmInfo.ConfigurationPath = $vmx.VMXPath
 
-            foreach ($vm in $vms) {
-                # VMware REST API returns path, we need to match by name
-                $vmxPath = $vm.path
-                if ($vmxPath) {
+                        # Get power state
+                        $powerState = Get-VMwarePowerStateWithVmrun -VMXPath $vmx.VMXPath
+                        $vmInfo.State = [VMInfo]::ConvertVMwareState($powerState)
+
+                        return $vmInfo
+                    }
+                }
+                catch {
+                    WriteLog "vmxtoolkit GetVM failed: $($_.Exception.Message)"
+                }
+            }
+
+            # Fallback: Use vmrun list to find running VMs matching the name
+            $vmrunPath = Get-VmrunPath
+            if ($vmrunPath) {
+                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName = $vmrunPath
+                $psi.Arguments = "-T ws list"
+                $psi.UseShellExecute = $false
+                $psi.RedirectStandardOutput = $true
+                $psi.CreateNoWindow = $true
+
+                $process = [System.Diagnostics.Process]::Start($psi)
+                $output = $process.StandardOutput.ReadToEnd()
+                $process.WaitForExit()
+
+                $lines = $output -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notmatch '^Total running VMs:' }
+
+                foreach ($vmxPath in $lines) {
                     $vmName = [System.IO.Path]::GetFileNameWithoutExtension($vmxPath)
                     if ($vmName -eq $Name) {
                         $vmInfo = [VMInfo]::new()
                         $vmInfo.Name = $vmName
-                        $vmInfo.Id = $vm.id
+                        $vmInfo.Id = $vmName
                         $vmInfo.HypervisorType = 'VMware'
-                        $vmInfo.VMwareId = $vm.id
+                        $vmInfo.VMwareId = $vmName
                         $vmInfo.VMXPath = $vmxPath
                         $vmInfo.ConfigurationPath = $vmxPath
-
-                        # Get power state
-                        $powerState = Get-VMwarePowerState -VMId $vm.id -Port $this.Port -Credential $this.Credential
-                        $vmInfo.State = [VMInfo]::ConvertVMwareState($powerState)
-
-                        # Get IP if running
-                        if ($vmInfo.State -eq [VMState]::Running) {
-                            $ip = Get-VMwareVMIPAddress -VMId $vm.id -Port $this.Port -Credential $this.Credential -TimeoutSeconds 10
-                            if ($ip) {
-                                $vmInfo.IPAddress = $ip
-                            }
-                        }
+                        $vmInfo.State = [VMState]::Running  # It's in vmrun list, so it's running
 
                         return $vmInfo
                     }
                 }
             }
 
+            # Fallback: Search filesystem for VMX files (finds stopped VMs without vmxtoolkit)
+            $vmxPaths = $this.SearchVMXFilesystem($Name)
+            if ($vmxPaths) {
+                $vmxPath = $vmxPaths | Select-Object -First 1
+                $vmInfo = [VMInfo]::new()
+                $vmInfo.Name = $Name
+                $vmInfo.Id = $Name
+                $vmInfo.HypervisorType = 'VMware'
+                $vmInfo.VMwareId = $Name
+                $vmInfo.VMXPath = $vmxPath
+                $vmInfo.ConfigurationPath = $vmxPath
+
+                # Check power state
+                $powerState = Get-VMwarePowerStateWithVmrun -VMXPath $vmxPath
+                $vmInfo.State = [VMInfo]::ConvertVMwareState($powerState)
+
+                WriteLog "Found VM '$Name' via filesystem search: $vmxPath"
+                return $vmInfo
+            }
+
             return $null
         }
         catch {
+            WriteLog "WARNING: GetVM failed: $($_.Exception.Message)"
             return $null
         }
     }
 
     [VMInfo[]] GetAllVMs() {
+        # Get all VMs using vmxtoolkit or vmrun list
         try {
-            $this.EnsureVMrestRunning()
-
-            $vms = Get-VMwareVMList -Port $this.Port -Credential $this.Credential
             $results = @()
 
-            foreach ($vm in $vms) {
-                $vmInfo = [VMInfo]::new()
-                $vmInfo.Id = $vm.id
-                $vmInfo.HypervisorType = 'VMware'
-                $vmInfo.VMwareId = $vm.id
+            # Try vmxtoolkit first if available
+            if ($this.VmxToolkitAvailable) {
+                try {
+                    Import-Module vmxtoolkit -ErrorAction Stop
+                    $vms = Get-VMX -ErrorAction SilentlyContinue
 
-                if ($vm.path) {
-                    $vmInfo.Name = [System.IO.Path]::GetFileNameWithoutExtension($vm.path)
-                    $vmInfo.VMXPath = $vm.path
-                    $vmInfo.ConfigurationPath = $vm.path
+                    foreach ($vmx in $vms) {
+                        $vmInfo = [VMInfo]::new()
+                        $vmInfo.Name = $vmx.VMXName
+                        $vmInfo.Id = $vmx.VMXName
+                        $vmInfo.HypervisorType = 'VMware'
+                        $vmInfo.VMwareId = $vmx.VMXName
+                        $vmInfo.VMXPath = $vmx.VMXPath
+                        $vmInfo.ConfigurationPath = $vmx.VMXPath
+
+                        $results += $vmInfo
+                    }
+
+                    return $results
                 }
+                catch {
+                    WriteLog "vmxtoolkit GetAllVMs failed: $($_.Exception.Message)"
+                }
+            }
+
+            # Fallback: Use vmrun list to get running VMs only
+            $vmrunPath = Get-VmrunPath
+            if ($vmrunPath) {
+                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName = $vmrunPath
+                $psi.Arguments = "-T ws list"
+                $psi.UseShellExecute = $false
+                $psi.RedirectStandardOutput = $true
+                $psi.CreateNoWindow = $true
+
+                $process = [System.Diagnostics.Process]::Start($psi)
+                $output = $process.StandardOutput.ReadToEnd()
+                $process.WaitForExit()
+
+                $lines = $output -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notmatch '^Total running VMs:' }
+
+                foreach ($vmxPath in $lines) {
+                    $vmInfo = [VMInfo]::new()
+                    $vmInfo.Name = [System.IO.Path]::GetFileNameWithoutExtension($vmxPath)
+                    $vmInfo.Id = $vmInfo.Name
+                    $vmInfo.HypervisorType = 'VMware'
+                    $vmInfo.VMwareId = $vmInfo.Name
+                    $vmInfo.VMXPath = $vmxPath
+                    $vmInfo.ConfigurationPath = $vmxPath
+                    $vmInfo.State = [VMState]::Running
+
+                    $results += $vmInfo
+                }
+            }
+
+            # Add VMs found via filesystem that aren't already in results (finds stopped VMs)
+            $vmxPaths = $this.SearchVMXFilesystem()
+            foreach ($vmxPath in $vmxPaths) {
+                $vmName = [System.IO.Path]::GetFileNameWithoutExtension($vmxPath)
+
+                # Skip if already found via vmrun list
+                if ($results | Where-Object { $_.VMXPath -eq $vmxPath }) {
+                    continue
+                }
+
+                $vmInfo = [VMInfo]::new()
+                $vmInfo.Name = $vmName
+                $vmInfo.Id = $vmName
+                $vmInfo.HypervisorType = 'VMware'
+                $vmInfo.VMwareId = $vmName
+                $vmInfo.VMXPath = $vmxPath
+                $vmInfo.ConfigurationPath = $vmxPath
+
+                # Check power state (likely Off since not in vmrun list)
+                $powerState = Get-VMwarePowerStateWithVmrun -VMXPath $vmxPath
+                $vmInfo.State = [VMInfo]::ConvertVMwareState($powerState)
 
                 $results += $vmInfo
             }
@@ -473,11 +688,13 @@ class VMwareProvider : IHypervisorProvider {
             return $results
         }
         catch {
+            WriteLog "WARNING: GetAllVMs failed: $($_.Exception.Message)"
             return @()
         }
     }
 
     # Helper to resolve VM ID from VMInfo
+    # Note: With vmxtoolkit/vmrun approach, we use VM name as ID
     hidden [string] ResolveVMId([VMInfo]$VM) {
         if (-not [string]::IsNullOrEmpty($VM.VMwareId)) {
             return $VM.VMwareId
@@ -487,13 +704,11 @@ class VMwareProvider : IHypervisorProvider {
             return $VM.Id
         }
 
-        # Try to find by name
-        $foundVM = $this.GetVM($VM.Name)
-        if ($foundVM -and $foundVM.VMwareId) {
-            return $foundVM.VMwareId
+        if (-not [string]::IsNullOrEmpty($VM.Name)) {
+            return $VM.Name
         }
 
-        throw "Cannot resolve VMware VM ID for '$($VM.Name)'"
+        throw "Cannot resolve VMware VM ID for VM"
     }
 
     # Helper to resolve VMX path from VMInfo (needed for vmrun.exe fallback)
@@ -571,6 +786,10 @@ class VMwareProvider : IHypervisorProvider {
 
     [void] AttachISO([VMInfo]$VM, [string]$ISOPath) {
         try {
+            WriteLog "=== Configuring capture boot for VMware VM ==="
+            WriteLog "  VM Name: $($VM.Name)"
+            WriteLog "  ISO Path: $ISOPath"
+
             if (-not (Test-Path $ISOPath)) {
                 throw "ISO file not found: $ISOPath"
             }
@@ -584,12 +803,94 @@ class VMwareProvider : IHypervisorProvider {
             if ([string]::IsNullOrEmpty($vmxPath) -or -not (Test-Path $vmxPath)) {
                 throw "VMX file not found for VM '$($VM.Name)'"
             }
+            WriteLog "  VMX Path: $vmxPath"
 
+            # CRITICAL: Delete NVRAM file to reset boot order
+            # VMware caches boot order in NVRAM from first boot. When the VM boots Windows
+            # the first time (hdd,cdrom), NVRAM records "boot from HDD". Even when we change
+            # the VMX bios.bootOrder to "cdrom,hdd", VMware uses the NVRAM cached value.
+            # By deleting NVRAM, VMware is forced to read boot order from the VMX file.
+            $vmFolder = Split-Path $vmxPath -Parent
+            $vmName = [System.IO.Path]::GetFileNameWithoutExtension($vmxPath)
+            $nvramPath = Join-Path $vmFolder "$vmName.nvram"
+
+            if (Test-Path $nvramPath) {
+                WriteLog "  Deleting NVRAM file to reset boot order: $nvramPath"
+                Remove-Item -Path $nvramPath -Force
+                WriteLog "  NVRAM deleted - VMware will read boot order from VMX on next boot"
+            }
+            else {
+                WriteLog "  No NVRAM file found (VMware 25.0.0+ may not create one)"
+            }
+
+            # Set-VMwareBootISO logs before/after boot order internally
+            WriteLog "  Step 1: Configuring boot ISO and boot order..."
             Set-VMwareBootISO -VMXPath $vmxPath -ISOPath $ISOPath
+            WriteLog "  Step 1 COMPLETE: VMX file updated"
+
+            # Verify changes persisted to disk
+            WriteLog "  Step 2: Verifying VMX configuration persisted..."
+            $vmxContent = Get-Content $vmxPath -Raw
+
+            # Check boot order
+            $bootOrderVerified = $false
+            if ($vmxContent -match 'bios\.bootOrder\s*=\s*"([^"]*)"') {
+                $bootOrder = $Matches[1]
+                WriteLog "  AFTER - Boot order in VMX: $bootOrder"
+                if ($bootOrder -like 'cdrom*') {
+                    WriteLog "  VERIFIED: Boot order starts with 'cdrom'"
+                    $bootOrderVerified = $true
+                }
+                else {
+                    WriteLog "  WARNING: Boot order does not start with 'cdrom'!"
+                    WriteLog "  WARNING: Expected 'cdrom,hdd' but found '$bootOrder'"
+                }
+            }
+            else {
+                WriteLog "  WARNING: Could not find bios.bootOrder in VMX file"
+            }
+
+            # Check ISO path is set
+            $isoPathVerified = $false
+            if ($vmxContent -match 'sata0:0\.fileName\s*=\s*"([^"]*)"') {
+                $vmxIsoPath = $Matches[1]
+                WriteLog "  AFTER - ISO path in VMX: $vmxIsoPath"
+                if ($vmxIsoPath -eq $ISOPath) {
+                    WriteLog "  VERIFIED: ISO path matches expected value"
+                    $isoPathVerified = $true
+                }
+                else {
+                    WriteLog "  WARNING: ISO path mismatch!"
+                    WriteLog "  WARNING: Expected '$ISOPath' but found '$vmxIsoPath'"
+                }
+            }
+            else {
+                WriteLog "  WARNING: Could not find sata0:0.fileName in VMX file"
+            }
+
+            # Check CD-ROM is connected
+            if ($vmxContent -match 'sata0:0\.startConnected\s*=\s*"([^"]*)"') {
+                $startConnected = $Matches[1]
+                WriteLog "  AFTER - CD-ROM startConnected: $startConnected"
+                if ($startConnected -ne 'TRUE') {
+                    WriteLog "  WARNING: CD-ROM startConnected is not TRUE!"
+                }
+            }
+
+            # Final verification summary
+            if ($bootOrderVerified -and $isoPathVerified) {
+                WriteLog "  VERIFIED: VM will boot from capture ISO (WinPE)"
+            }
+            else {
+                WriteLog "  WARNING: Boot configuration may not be correct - check VM console during boot"
+            }
+
+            WriteLog "=== Capture boot configuration complete ==="
             WriteLog "Attached ISO to VM '$($VM.Name)': $ISOPath"
         }
         catch {
-            WriteLog "ERROR: Failed to attach ISO: $($_.Exception.Message)"
+            WriteLog "ERROR: Failed to configure capture boot: $($_.Exception.Message)"
+            WriteLog "ERROR: Stack trace: $($_.ScriptStackTrace)"
             throw
         }
     }
@@ -625,17 +926,13 @@ class VMwareProvider : IHypervisorProvider {
                 return $false
             }
 
-            # Check vmrun exists
+            # Check vmrun exists (required for all operations)
             $vmrunPath = Join-Path $this.VMwarePath 'vmrun.exe'
             if (-not (Test-Path $vmrunPath)) {
                 return $false
             }
 
-            # Check vmrest exists
-            $vmrestPath = Join-Path $this.VMwarePath 'vmrest.exe'
-            if (-not (Test-Path $vmrestPath)) {
-                return $false
-            }
+            # Note: vmrest is no longer required - we use vmrun/vmxtoolkit
 
             return $true
         }
@@ -664,50 +961,34 @@ class VMwareProvider : IHypervisorProvider {
             $result.Details['InstallPath'] = $this.VMwarePath
         }
 
-        # Check vmrun
+        # Check vmrun (required)
         if ($this.VMwarePath) {
             $vmrunPath = Join-Path $this.VMwarePath 'vmrun.exe'
             if (-not (Test-Path $vmrunPath)) {
-                $result.Issues += "vmrun.exe not found"
+                $result.Issues += "vmrun.exe not found (required for VM operations)"
             }
             else {
                 $result.Details['vmrun'] = 'Available'
             }
         }
 
-        # Check vmrest
-        if ($this.VMwarePath) {
-            $vmrestPath = Join-Path $this.VMwarePath 'vmrest.exe'
-            if (-not (Test-Path $vmrestPath)) {
-                $result.Issues += "vmrest.exe not found (required for REST API)"
-            }
-            else {
-                $result.Details['vmrest'] = 'Available'
-            }
-        }
-
-        # Check vmrest credentials
-        # VMware 17.x uses 'vmrest.cfg', older versions use '.vmrestCfg'
-        $configPaths = @(
-            (Join-Path $env:USERPROFILE 'vmrest.cfg'),
-            (Join-Path $env:USERPROFILE '.vmrestCfg')
-        )
-        $credentialsFound = $configPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $credentialsFound) {
-            $result.Issues += "vmrest credentials not configured. Run 'vmrest.exe -C' to set up."
+        # Check vmxtoolkit (optional enhancement)
+        if ($this.VmxToolkitAvailable) {
+            $module = Get-Module -ListAvailable -Name 'vmxtoolkit' -ErrorAction SilentlyContinue
+            $result.Details['vmxtoolkit'] = "v$($module.Version)"
         }
         else {
-            $result.Details['vmrestCredentials'] = 'Configured'
+            $result.Details['vmxtoolkit'] = 'Not installed (optional)'
         }
 
         # Check version
         if ($this.Version -ne '0.0.0') {
             $result.Details['Version'] = $this.Version
 
-            # Check minimum version (17.0 required)
+            # Check minimum version (17.0 recommended)
             $majorVersion = [int]($this.Version.Split('.')[0])
             if ($majorVersion -lt 17) {
-                $result.Issues += "VMware Workstation 17.x or later required (found: $($this.Version))"
+                $result.Issues += "VMware Workstation 17.x or later recommended (found: $($this.Version))"
             }
         }
 
@@ -750,8 +1031,9 @@ class VMwareProvider : IHypervisorProvider {
 
 # Helper function to create VMware provider instance
 function New-VMwareProvider {
-    param(
-        [int]$Port = 8697
-    )
-    return [VMwareProvider]::new($Port)
+    [CmdletBinding()]
+    [OutputType([VMwareProvider])]
+    param()
+
+    return [VMwareProvider]::new()
 }
