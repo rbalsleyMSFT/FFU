@@ -26,6 +26,9 @@
     # Assemblies to load
     RequiredAssemblies = @()
 
+    # Help info URI
+    HelpInfoURI = 'https://github.com/rbalsleyMSFT/FFU/wiki/Config-Migration'
+
     # Functions to export
     FunctionsToExport = @(
         'Get-FFUConfigSchemaVersion'
@@ -58,6 +61,9 @@
             # License URI
             LicenseUri = 'https://opensource.org/licenses/MIT'
 
+            # Project URI
+            ProjectUri = 'https://github.com/rbalsleyMSFT/FFU'
+
             # Release notes
             ReleaseNotes = @'
 Version 1.0.0 (Initial Release)
@@ -72,6 +78,8 @@ Version 1.0.0 (Initial Release)
   - CopyOfficeConfigXML: Removed with warning (requires OfficeConfigXMLFile)
 - ConvertTo-HashtableRecursive re-exported for PS5.1 compatibility
 - Backup creation before migration with timestamp suffix
+- UI integration: FFUUI.Core.Config imports module for auto-load migration
+- CLI integration: BuildFFUVM.ps1 prompts for migration with Y/N confirmation
 '@
         }
     }
