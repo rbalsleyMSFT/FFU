@@ -1248,6 +1248,12 @@ attach vdisk
             }
 
             WriteLog "VHD mounted successfully at Disk $($disk.Number)"
+
+            # Guarantee drive letter assignment using centralized utility
+            $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'W'
+            $disk | Add-Member -NotePropertyName 'OSPartitionDriveLetter' -NotePropertyValue $driveLetter -Force
+            WriteLog "Guaranteed OS partition drive letter: $driveLetter"
+
             return $disk
         }
         finally {
@@ -1260,6 +1266,12 @@ attach vdisk
         WriteLog "Using Mount-VHD for VHDX file"
         $disk = Mount-VHD -Path $DiskPath -Passthru | Get-Disk
         WriteLog "VHDX mounted successfully at Disk $($disk.Number)"
+
+        # Guarantee drive letter assignment using centralized utility
+        $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'W'
+        $disk | Add-Member -NotePropertyName 'OSPartitionDriveLetter' -NotePropertyValue $driveLetter -Force
+        WriteLog "Guaranteed OS partition drive letter: $driveLetter"
+
         return $disk
     }
 }
