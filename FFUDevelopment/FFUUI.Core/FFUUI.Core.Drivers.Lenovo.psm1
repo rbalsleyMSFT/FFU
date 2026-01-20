@@ -2,8 +2,33 @@
 .SYNOPSIS
     Provides functions for discovering, downloading, and processing Lenovo drivers.
 .DESCRIPTION
-    This module contains the logic specific to handling Lenovo drivers for the FFU Builder UI. It includes functions to query the Lenovo PSREF (Product Specification Reference) API to find and list available system models based on user search terms. It also provides the core background task for downloading all relevant driver packages for a selected model and Windows release. The download process involves parsing XML catalogs, downloading individual driver executables, silently extracting their contents, and organizing them into a structured folder. The module includes robust error handling, long path mitigation by using temporary extraction locations, and an option to compress the final driver set into a WIM archive.
+    This module contains the logic specific to handling Lenovo drivers for the FFU Builder UI.
+    It includes functions to query the Lenovo PSREF (Product Specification Reference) API to find
+    and list available system models based on user search terms.
+
+    FALLBACK BEHAVIOR: When PSREF API authentication fails (401/403 errors or token retrieval
+    failure), the module automatically falls back to catalogv2.xml which provides enterprise
+    model coverage (ThinkPad, ThinkCentre, ThinkStation). Note that catalogv2.xml has PARTIAL
+    coverage - consumer models (300w, 500w, 100e, etc.) are not included.
+
+    The module also provides the core background task for downloading all relevant driver packages
+    for a selected model and Windows release. The download process involves parsing XML catalogs,
+    downloading individual driver executables, silently extracting their contents, and organizing
+    them into a structured folder. The module includes robust error handling, long path mitigation
+    by using temporary extraction locations, and an option to compress the final driver set into
+    a WIM archive.
+
+.NOTES
+    Version: 1.1.0
+    - 1.1.0: Added catalogv2.xml fallback when PSREF API fails
+    - 1.0.0: Initial version with PSREF API support
 #>
+
+# Import catalog fallback module for PSREF API fallback
+$catalogFallbackPath = Join-Path $PSScriptRoot 'FFUUI.Core.Drivers.Lenovo.CatalogFallback.psm1'
+if (Test-Path $catalogFallbackPath) {
+    Import-Module $catalogFallbackPath -Force -ErrorAction SilentlyContinue
+}
 
 # Function to get the list of Lenovo models using the PSREF API
 function Get-LenovoDriversModelList {
@@ -89,8 +114,52 @@ function Get-LenovoDriversModelList {
     }
     catch {
         WriteLog "Error querying Lenovo PSREF API: $($_.Exception.Message)"
-        # Return empty list on error
+
+        # Attempt fallback to catalogv2.xml
+        WriteLog "Attempting fallback to catalogv2.xml catalog..."
+        try {
+            if (Get-Command -Name Get-LenovoCatalogV2Models -ErrorAction SilentlyContinue) {
+                $fallbackModels = Get-LenovoCatalogV2Models -ModelSearchTerm $ModelSearchTerm -FFUDevelopmentPath $ffuDevelopmentPath
+                if ($fallbackModels -and $fallbackModels.Count -gt 0) {
+                    WriteLog "PSREF API failed, using catalogv2.xml fallback ($($fallbackModels.Count) models found)"
+                    WriteLog "NOTE: Fallback mode has partial coverage - consumer models (300w, 500w, 100e) not available"
+                    foreach ($model in $fallbackModels) {
+                        $models.Add($model)
+                    }
+                }
+                else {
+                    WriteLog "No models found in PSREF API or catalogv2.xml fallback for '$ModelSearchTerm'"
+                }
+            }
+            else {
+                WriteLog "Catalog fallback module not available"
+            }
+        }
+        catch {
+            WriteLog "Fallback to catalogv2.xml also failed: $($_.Exception.Message)"
+        }
     }
+
+    # If PSREF returned results but none matched, also check catalogv2.xml
+    # This handles cases where PSREF works but model is only in catalogv2.xml
+    if ($models.Count -eq 0) {
+        WriteLog "No models found in PSREF, checking catalogv2.xml fallback..."
+        try {
+            if (Get-Command -Name Get-LenovoCatalogV2Models -ErrorAction SilentlyContinue) {
+                $fallbackModels = Get-LenovoCatalogV2Models -ModelSearchTerm $ModelSearchTerm -FFUDevelopmentPath $ffuDevelopmentPath
+                if ($fallbackModels -and $fallbackModels.Count -gt 0) {
+                    WriteLog "Found $($fallbackModels.Count) models in catalogv2.xml (fallback mode - partial coverage)"
+                    foreach ($model in $fallbackModels) {
+                        $models.Add($model)
+                    }
+                }
+            }
+        }
+        catch {
+            WriteLog "catalogv2.xml lookup failed: $($_.Exception.Message)"
+        }
+    }
+
     $models
 }
 # Function to download and extract drivers for a specific Lenovo model (Background Task)
