@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.8.2",
-    "buildDate": "2026-01-20",
+    "version": "1.8.3",
+    "buildDate": "2026-01-21",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -24,9 +24,9 @@
             "description": "Structured logging with levels, JSON output, session correlation"
         },
         "FFUUI.Core": {
-            "version": "0.0.11",
+            "version": "0.0.12",
             "path": "FFUUI.Core/FFUUI.Core.psd1",
-            "description": "WPF UI framework with VMware bridged network IP auto-detection and preservation, hypervisor selection, VM shutdown timeout setting"
+            "description": "WPF UI framework with VMware network settings (NetworkType/NicType dropdowns), bridged network IP auto-detection, hypervisor selection, VM shutdown timeout"
         },
         "FFU.Core": {
             "version": "1.0.16",

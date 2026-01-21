@@ -12,7 +12,7 @@
 RootModule = 'FFUUI.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.7'
+ModuleVersion = '0.0.12'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -119,6 +119,45 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.12: VMware NetworkType and NicType UI settings
+- ADDED: VMware Network Type dropdown (NAT/Bridged/Host-Only)
+- ADDED: VMware NIC Type dropdown (E1000E/VMXNET3/E1000)
+- Both dropdowns visible only when VMware Workstation Pro selected
+- Config save/load support for VMwareNetworkType and VMwareNicType
+- Defaults: NAT for network type, E1000E for NIC type
+- E1000E recommended for WinPE compatibility, VMXNET3 for best performance
+
+v0.0.11: VM Shutdown Timeout UI + REST API cleanup
+- ADDED: VMShutdownTimeoutMinutes control in VM Settings tab (5-120 minutes)
+- CHANGED: Default timeout increased from 20 to 60 minutes for larger builds
+- REMOVED: VMware REST API credential UI (vmrest.exe no longer used)
+- REMOVED: vmrest configuration button and credential status indicator
+- FIXED: VM Settings tab spacing issues (proper grid rows instead of margin offsets)
+- The FFU.Hypervisor module now uses vmrun.exe directly without authentication
+
+v0.0.10: VMware bridged network IP auto-detection
+- NEW: Get-VMwareHostIPAddress function for automatic host IP detection
+- FIXED: VMHostIPAddress now preserved when switching from Hyper-V to VMware
+- If Hyper-V vSwitch IP is already populated, it's valid for VMware too (same physical adapter)
+- Auto-detection fallback for VMware-only systems (detects primary adapter via default route)
+- Enhanced CaptureFFU.ps1 diagnostics with network segment comparison
+- BuildFFUVM.ps1 now logs network adapters and validates VMHostIPAddress for VMware
+- Resolves Error 53 (network path not found) when using VMware bridged networking
+
+v0.0.9: Force VMware Driver Download checkbox
+- Added "Re-download VMware network drivers" checkbox in VM Settings tab
+- Visible only when VMware Workstation Pro is selected as hypervisor
+- Forces fresh download of Intel e1000e drivers even if folder exists
+- Useful when previous download failed or drivers appear corrupted
+- Config save/load support for ForceVMwareDriverDownload setting
+
+v0.0.8: VMware REST API credential input fields
+- Added Username and Password fields to VM Settings tab for VMware
+- Credentials are saved to config and loaded on startup
+- Status indicator shows: "Ready", "Using vmrest.cfg", or "Enter credentials"
+- Credentials passed to VMwareProvider for REST API authentication
+- Eliminates need for vmrun.exe fallback when credentials are entered
+
 v0.0.7: ShowVMConsole option for VMware
 - Added "Show VM Console" checkbox in VM Settings (VMware only)
 - Allows viewing Windows installation progress during build
