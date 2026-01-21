@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule = 'FFU.ConfigMigration.psm1'
-    ModuleVersion = '1.0.1'
+    ModuleVersion = '1.1.0'
     GUID = '9a3eab81-2f9c-44dc-a26e-bbb11086668b'
 
     # Author information
@@ -66,6 +66,11 @@
 
             # Release notes
             ReleaseNotes = @'
+Version 1.1.0
+- Added v1.2 schema migration for VMwareSettings (NetworkType=nat, NicType=e1000e)
+- Configs without VMwareSettings now get default values for VMware Workstation Pro support
+- Handles both missing VMwareSettings and partial VMwareSettings (missing properties filled in)
+
 Version 1.0.1
 - Added migration support for IncludePreviewUpdates property (v1.1 schema)
 - Configs without IncludePreviewUpdates now get default value of false

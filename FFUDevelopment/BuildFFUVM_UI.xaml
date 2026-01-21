@@ -101,6 +101,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="200"/>
@@ -130,56 +132,74 @@
                             <TextBlock Text="Force Driver Download" ToolTip="When enabled, always re-download Intel e1000e network drivers even if VMwareDrivers folder already contains drivers."/>
                         </StackPanel>
                         <CheckBox x:Name="chkForceVMwareDrivers" Grid.Row="3" Grid.Column="1" Content="Re-download VMware network drivers (e1000e)" Margin="5" VerticalAlignment="Center" IsChecked="False" Visibility="Collapsed" ToolTip="When enabled, forces a fresh download of Intel e1000e drivers for WinPE network support, replacing any existing drivers. Use this if drivers appear corrupted or a previous download failed."/>
-                        <!-- Row 4: VM Switch Name (Hyper-V only) -->
-                        <StackPanel x:Name="pnlVMSwitchLabel" Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <!-- Row 4: VMware Network Type (VMware only) -->
+                        <StackPanel x:Name="pnlVMwareNetworkTypeLabel" Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
+                            <TextBlock Text="VMware Network Type" ToolTip="Select the network connection type for VMware VMs. NAT (default) shares host IP, Bridged connects directly to physical network, Host-Only isolates VM from external networks."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbVMwareNetworkType" Grid.Row="4" Grid.Column="1" Margin="5" Width="200" VerticalAlignment="Center" HorizontalAlignment="Left" Visibility="Collapsed" IsEnabled="False" ToolTip="Select the network connection type for VMware VMs. NAT (default) shares host IP, Bridged connects directly to physical network, Host-Only isolates VM from external networks.">
+                            <ComboBoxItem Content="NAT" Tag="nat" IsSelected="True"/>
+                            <ComboBoxItem Content="Bridged" Tag="bridged"/>
+                            <ComboBoxItem Content="Host-Only" Tag="hostonly"/>
+                        </ComboBox>
+                        <!-- Row 5: VMware NIC Type (VMware only) -->
+                        <StackPanel x:Name="pnlVMwareNicTypeLabel" Grid.Row="5" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
+                            <TextBlock Text="VMware NIC Type" ToolTip="Select the virtual network adapter type. E1000E (default) is recommended for WinPE compatibility. VMXNET3 offers best performance but requires VMware Tools drivers."/>
+                        </StackPanel>
+                        <ComboBox x:Name="cmbVMwareNicType" Grid.Row="5" Grid.Column="1" Margin="5" Width="200" VerticalAlignment="Center" HorizontalAlignment="Left" Visibility="Collapsed" IsEnabled="False" ToolTip="Select the virtual network adapter type. E1000E (default) is recommended for WinPE compatibility. VMXNET3 offers best performance but requires VMware Tools drivers.">
+                            <ComboBoxItem Content="E1000E" Tag="e1000e" IsSelected="True"/>
+                            <ComboBoxItem Content="VMXNET3" Tag="vmxnet3"/>
+                            <ComboBoxItem Content="E1000" Tag="e1000"/>
+                        </ComboBox>
+                        <!-- Row 6: VM Switch Name (Hyper-V only) -->
+                        <StackPanel x:Name="pnlVMSwitchLabel" Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Switch Name" ToolTip="Name of the Hyper-V virtual switch. Required when InstallApps is enabled with Hyper-V. The default is '*external*', but you will likely need to change this."/>
                         </StackPanel>
-                        <ComboBox x:Name="cmbVMSwitchName" Grid.Row="4" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Name of the Hyper-V virtual switch. Required when InstallApps is enabled with Hyper-V."/>
-                        <!-- Row 5: Custom VM Switch Name -->
-                        <TextBox x:Name="txtCustomVMSwitchName" Grid.Row="5" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Visibility="Collapsed" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
-                        <!-- Row 6: VM Host IP Address -->
-                        <StackPanel Grid.Row="6" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <ComboBox x:Name="cmbVMSwitchName" Grid.Row="6" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Name of the Hyper-V virtual switch. Required when InstallApps is enabled with Hyper-V."/>
+                        <!-- Row 7: Custom VM Switch Name -->
+                        <TextBox x:Name="txtCustomVMSwitchName" Grid.Row="7" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Visibility="Collapsed" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
+                        <!-- Row 8: VM Host IP Address -->
+                        <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Host IP Address" ToolTip="IP address of the host for FFU capture. Required when InstallApps is enabled. You must manually configure this."/>
                         </StackPanel>
-                        <TextBox x:Name="txtVMHostIPAddress" Grid.Row="6" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
-                        <!-- Row 7: Disk Size (GB) -->
-                        <StackPanel Grid.Row="7" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtVMHostIPAddress" Grid.Row="8" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                        <!-- Row 9: Disk Size (GB) -->
+                        <StackPanel Grid.Row="9" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                         </StackPanel>
-                        <TextBox x:Name="txtDiskSize" Grid.Row="7" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="50" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
-                        <!-- Row 8: Memory (GB) -->
-                        <StackPanel Grid.Row="8" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtDiskSize" Grid.Row="9" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="50" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
+                        <!-- Row 10: Memory (GB) -->
+                        <StackPanel Grid.Row="10" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Memory (GB)" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
                         </StackPanel>
-                        <TextBox x:Name="txtMemory" Grid.Row="8" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
-                        <!-- Row 9: Processors -->
-                        <StackPanel Grid.Row="9" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtMemory" Grid.Row="10" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
+                        <!-- Row 11: Processors -->
+                        <StackPanel Grid.Row="11" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Processors" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
                         </StackPanel>
-                        <TextBox x:Name="txtProcessors" Grid.Row="9" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
-                        <!-- Row 10: VM Location -->
-                        <StackPanel Grid.Row="10" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtProcessors" Grid.Row="11" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="4" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
+                        <!-- Row 12: VM Location -->
+                        <StackPanel Grid.Row="12" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Location" ToolTip="Location where the virtual disk and VM files will be created. Default is FFUDevelopmentPath\VM."/>
                         </StackPanel>
-                        <TextBox x:Name="txtVMLocation" Grid.Row="10" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="{x:Static sys:Environment.CurrentDirectory}" ToolTip="Location where the virtual disk and VM files will be created. Default is FFUDevelopmentPath\VM."/>
-                        <!-- Row 11: VM Name Prefix -->
-                        <StackPanel Grid.Row="11" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtVMLocation" Grid.Row="12" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="{x:Static sys:Environment.CurrentDirectory}" ToolTip="Location where the virtual disk and VM files will be created. Default is FFUDevelopmentPath\VM."/>
+                        <!-- Row 13: VM Name Prefix -->
+                        <StackPanel Grid.Row="13" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Name Prefix" ToolTip="Prefix for the VM Name. The default is _FFU."/>
                         </StackPanel>
-                        <TextBox x:Name="txtVMNamePrefix" Grid.Row="11" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Prefix for the VM Name. The default is _FFU."/>
-                        <!-- Row 12: Logical Sector Size -->
-                        <StackPanel Grid.Row="12" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <TextBox x:Name="txtVMNamePrefix" Grid.Row="13" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Prefix for the VM Name. The default is _FFU."/>
+                        <!-- Row 14: Logical Sector Size -->
+                        <StackPanel Grid.Row="14" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Logical Sector Size" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
                         </StackPanel>
-                        <ComboBox x:Name="cmbLogicalSectorSize" Grid.Row="12" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
+                        <ComboBox x:Name="cmbLogicalSectorSize" Grid.Row="14" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Left" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
                             <ComboBoxItem Content="512" IsSelected="True"/>
                             <ComboBoxItem Content="4096"/>
                         </ComboBox>
-                        <!-- Row 13: VM Shutdown Timeout -->
-                        <StackPanel Grid.Row="13" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                        <!-- Row 15: VM Shutdown Timeout -->
+                        <StackPanel Grid.Row="15" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="VM Shutdown Timeout" ToolTip="Maximum time in minutes to wait for VM to complete FFU capture and shut down. Increase for slower systems or larger images."/>
                         </StackPanel>
-                        <StackPanel Grid.Row="13" Grid.Column="1" Orientation="Horizontal" Margin="5" VerticalAlignment="Center">
+                        <StackPanel Grid.Row="15" Grid.Column="1" Orientation="Horizontal" Margin="5" VerticalAlignment="Center">
                             <TextBox x:Name="txtVMShutdownTimeout" Width="60" Text="60" ToolTip="Maximum time in minutes to wait for VM shutdown (5-120 minutes)."/>
                             <TextBlock Text=" minutes" VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>

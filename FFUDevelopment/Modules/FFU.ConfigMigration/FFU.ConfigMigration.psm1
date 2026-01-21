@@ -24,7 +24,7 @@
 #region Version Constant
 
 # Single source of truth for current schema version
-$script:CurrentConfigSchemaVersion = "1.1"
+$script:CurrentConfigSchemaVersion = "1.2"
 
 #endregion Version Constant
 
@@ -439,6 +439,27 @@ function Invoke-FFUConfigMigration {
     if (-not $migrated.ContainsKey('IncludePreviewUpdates')) {
         $migrated['IncludePreviewUpdates'] = $false
         $changes += "Added default 'IncludePreviewUpdates=false' (preview updates excluded by default)"
+    }
+    #endregion
+
+    #region Migration: Add VMwareSettings defaults (v1.2)
+    if (-not $migrated.ContainsKey('VMwareSettings')) {
+        $migrated['VMwareSettings'] = @{
+            NetworkType = 'nat'
+            NicType = 'e1000e'
+        }
+        $changes += "Added default 'VMwareSettings' (NetworkType=nat, NicType=e1000e)"
+    }
+    elseif ($migrated['VMwareSettings'] -is [hashtable]) {
+        # VMwareSettings exists but may be missing properties - ensure both keys exist
+        if (-not $migrated['VMwareSettings'].ContainsKey('NetworkType')) {
+            $migrated['VMwareSettings']['NetworkType'] = 'nat'
+            $changes += "Added missing 'VMwareSettings.NetworkType=nat'"
+        }
+        if (-not $migrated['VMwareSettings'].ContainsKey('NicType')) {
+            $migrated['VMwareSettings']['NicType'] = 'e1000e'
+            $changes += "Added missing 'VMwareSettings.NicType=e1000e'"
+        }
     }
     #endregion
 
