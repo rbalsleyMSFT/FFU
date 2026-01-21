@@ -527,6 +527,20 @@ param(
     # When false (default), the VM runs in headless/nogui mode for automation
     [Parameter(Mandatory = $false)]
     [bool]$ShowVMConsole = $false,
+    # VMwareNetworkType: Network connection type for VMware VMs (bridged, nat, hostonly)
+    # - bridged: VM shares host's physical network (default, recommended for FFU builds)
+    # - nat: VM uses NAT through VMware's virtual NAT device
+    # - hostonly: VM only connects to host-only network
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('bridged', 'nat', 'hostonly')]
+    [string]$VMwareNetworkType = 'bridged',
+    # VMwareNicType: Virtual NIC adapter type for VMware VMs
+    # - e1000e: Intel 82574L emulation (default, best WinPE compatibility)
+    # - vmxnet3: VMware paravirtual (higher performance, requires drivers)
+    # - e1000: Older Intel PRO/1000 MT emulation
+    [Parameter(Mandatory = $false)]
+    [ValidateSet('e1000e', 'vmxnet3', 'e1000')]
+    [string]$VMwareNicType = 'e1000e',
     # VMShutdownTimeoutMinutes: Maximum time to wait for VM shutdown before forcing power off
     # If the VM doesn't shutdown gracefully within this time, it will be forcibly powered off
     # Default is 60 minutes (from FFUConstants::DefaultVMShutdownTimeoutMinutes)
@@ -803,6 +817,17 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
                 $hashtableValue[$prop.Name] = $prop.Value
             }
             $value = $hashtableValue
+        }
+
+        # Handle VMwareSettings object - extract nested properties to script parameters
+        if ($key -eq 'VMwareSettings' -and ($value -is [System.Management.Automation.PSCustomObject])) {
+            if ($value.DefaultNetworkType -and -not $PSBoundParameters.ContainsKey('VMwareNetworkType')) {
+                Set-Variable -Name 'VMwareNetworkType' -Value $value.DefaultNetworkType -Scope 0
+            }
+            if ($value.NicType -and -not $PSBoundParameters.ContainsKey('VMwareNicType')) {
+                Set-Variable -Name 'VMwareNicType' -Value $value.NicType -Scope 0
+            }
+            continue
         }
 
         # Check if this key matches a parameter in the script
@@ -4644,7 +4669,9 @@ if ($InstallApps) {
                                         -DiskFormat $diskFormat -EnableTPM $true `
                                         -EnableSecureBoot $true -Generation 2 `
                                         -AutomaticCheckpoints $false -DynamicMemory $false `
-                                        -NetworkSwitchName $VMSwitchName
+                                        -NetworkSwitchName $VMSwitchName `
+                                        -VMwareNetworkType $VMwareNetworkType `
+                                        -VMwareNicType $VMwareNicType
 
         WriteLog "VMConfiguration: $($vmConfig.ToString())"
 

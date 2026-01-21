@@ -232,7 +232,8 @@ class VMwareProvider : IHypervisorProvider {
                 -Processors $Config.ProcessorCount `
                 -DiskPath $diskPath `
                 -ISOPath $Config.ISOPath `
-                -NetworkType 'bridged' `
+                -NetworkType ($Config.VMwareNetworkType ?? 'bridged') `
+                -NicType ($Config.VMwareNicType ?? 'e1000e') `
                 -EnableTPM $Config.EnableTPM `
                 -EnableSecureBoot $Config.EnableSecureBoot
 

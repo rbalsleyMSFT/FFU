@@ -6,7 +6,7 @@
     RootModule = 'FFU.Hypervisor.psm1'
 
     # Version number of this module
-    ModuleVersion = '1.3.0'
+    ModuleVersion = '1.3.1'
 
     # ID used to uniquely identify this module
     GUID = 'a8e2c3f1-5d7b-4e9a-bc12-3f4d5e6a7b8c'
@@ -79,6 +79,15 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.3.1 (2026-01-20)
+- NEW: VMware network configuration is now user-configurable (RTS-99)
+- Added VMwareNetworkType property to VMConfiguration (bridged, nat, hostonly)
+- Added VMwareNicType property to VMConfiguration (e1000e, vmxnet3, e1000)
+- New-VMConfiguration factory accepts -VMwareNetworkType and -VMwareNicType parameters
+- VMwareProvider reads from config instead of hardcoding 'bridged'
+- BuildFFUVM.ps1 loads VMwareSettings from config file
+- Maintains backward compatibility (defaults to bridged/e1000e)
+
 v1.3.0 (2026-01-19)
 - NEW: Event-driven VM state monitoring for Hyper-V (PERF-02)
 - Added Wait-VMStateChange function using Register-CimIndicationEvent

@@ -46,6 +46,10 @@
 .PARAMETER AutomaticCheckpoints
     Enable automatic checkpoints. Default is $false.
 
+.PARAMETER NetworkSwitchName
+    Name of the virtual switch to connect the VM's network adapter to.
+    If not specified, the network adapter will not be connected to any switch.
+
 .EXAMPLE
     $config = New-VMConfiguration -Name "FFU-Build" -Path "C:\VMs\FFU" `
                                   -MemoryBytes 8GB -ProcessorCount 4 `
@@ -114,7 +118,18 @@ function New-VMConfiguration {
         [bool]$DynamicMemory = $false,
 
         [Parameter(Mandatory = $false)]
-        [bool]$AutomaticCheckpoints = $false
+        [bool]$AutomaticCheckpoints = $false,
+
+        [Parameter(Mandatory = $false)]
+        [string]$NetworkSwitchName,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('bridged', 'nat', 'hostonly')]
+        [string]$VMwareNetworkType = 'bridged',
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('e1000e', 'vmxnet3', 'e1000')]
+        [string]$VMwareNicType = 'e1000e'
     )
 
     process {
@@ -138,6 +153,19 @@ function New-VMConfiguration {
         $config.EnableSecureBoot = $EnableSecureBoot
         $config.DynamicMemory = $DynamicMemory
         $config.AutomaticCheckpoints = $AutomaticCheckpoints
+
+        # Set network switch name if provided
+        if ($PSBoundParameters.ContainsKey('NetworkSwitchName') -and -not [string]::IsNullOrEmpty($NetworkSwitchName)) {
+            $config.NetworkSwitchName = $NetworkSwitchName
+        }
+
+        # Set VMware-specific network settings
+        if ($PSBoundParameters.ContainsKey('VMwareNetworkType')) {
+            $config.VMwareNetworkType = $VMwareNetworkType
+        }
+        if ($PSBoundParameters.ContainsKey('VMwareNicType')) {
+            $config.VMwareNicType = $VMwareNicType
+        }
 
         # Set disk format - auto-detect from path if not specified
         if ($PSBoundParameters.ContainsKey('DiskFormat')) {

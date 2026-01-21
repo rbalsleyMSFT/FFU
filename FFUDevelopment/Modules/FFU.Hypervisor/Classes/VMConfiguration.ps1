@@ -26,6 +26,8 @@ class VMConfiguration {
     [string]$GuestOS = 'windows11-64'
     [string]$NetworkType = 'External'
     [string]$NetworkSwitchName = $null
+    [string]$VMwareNetworkType = 'bridged'    # bridged, nat, hostonly (VMware only)
+    [string]$VMwareNicType = 'e1000e'         # e1000e, vmxnet3, e1000 (VMware only)
     [string]$ISOPath = $null
     [bool]$StartConnected = $true
     [bool]$AutomaticCheckpoints = $false
