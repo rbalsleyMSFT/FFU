@@ -978,9 +978,6 @@ function Update-HypervisorStatus {
         $statusText = $State.Controls.txtHypervisorStatus
         $vmSwitchLabel = $State.Controls.pnlVMSwitchLabel
         $vmSwitchCombo = $State.Controls.cmbVMSwitchName
-        $vmwareSetupLabel = $State.Controls.pnlVMwareSetupLabel
-        $vmwareSetupPanel = $State.Controls.pnlVMwareSetup
-        $vmwareCredStatus = $State.Controls.txtVMwareCredStatus
 
         if ($null -eq $statusText) {
             WriteLog "Update-HypervisorStatus: txtHypervisorStatus control not found."
@@ -1000,23 +997,6 @@ function Update-HypervisorStatus {
         }
 
         WriteLog "Update-HypervisorStatus: Checking availability for '$hypervisorType'..."
-
-        # Check VMware REST API credentials status
-        # VMware 17.x uses 'vmrest.cfg', older versions use '.vmrestCfg'
-        $vmrestCredentialsConfigured = $false
-        $vmrestConfigPaths = @(
-            (Join-Path $env:USERPROFILE 'vmrest.cfg'),      # VMware 17.x
-            (Join-Path $env:USERPROFILE '.vmrestCfg')       # Legacy/older versions
-        )
-        foreach ($vmrestConfigPath in $vmrestConfigPaths) {
-            if (Test-Path $vmrestConfigPath) {
-                $content = Get-Content $vmrestConfigPath -Raw -ErrorAction SilentlyContinue
-                if ($content -match 'username' -and $content -match 'password') {
-                    $vmrestCredentialsConfigured = $true
-                    break
-                }
-            }
-        }
 
         # Try to import FFU.Hypervisor module for availability check
         $moduleLoaded = $false
@@ -1119,16 +1099,9 @@ function Update-HypervisorStatus {
             $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
         }
 
-        # Show/hide VMware specific controls (REST API setup and ShowVMConsole are VMware only)
+        # Show/hide VMware specific controls (ShowVMConsole and Force Driver Download are VMware only)
         $showVMwareControls = ($hypervisorType -eq 'VMware')
         $vmwareVisibility = if ($showVMwareControls) { 'Visible' } else { 'Collapsed' }
-
-        if ($null -ne $vmwareSetupLabel) {
-            $vmwareSetupLabel.Visibility = $vmwareVisibility
-        }
-        if ($null -ne $vmwareSetupPanel) {
-            $vmwareSetupPanel.Visibility = $vmwareVisibility
-        }
 
         # Show/hide ShowVMConsole option (VMware only - Hyper-V uses Hyper-V Manager for console)
         $showVMConsoleLabel = $State.Controls.pnlShowVMConsoleLabel
@@ -1140,20 +1113,60 @@ function Update-HypervisorStatus {
             $showVMConsoleChk.Visibility = $vmwareVisibility
         }
 
-        # Update VMware credential status text
-        # Note: We can only check credentials in the current user's profile.
-        # Enterprise users with separate admin accounts need to configure
-        # credentials for the admin account separately via elevated prompt.
-        if ($null -ne $vmwareCredStatus -and $showVMwareControls) {
-            if ($vmrestCredentialsConfigured) {
-                $vmwareCredStatus.Text = "Configured (current user)"
-                $vmwareCredStatus.Foreground = [System.Windows.Media.Brushes]::Green
-                $vmwareCredStatus.ToolTip = "Credentials configured for current user profile ($env:USERNAME). If builds run with a separate admin account, ensure that account also has credentials configured."
+        # Show/hide Force VMware Drivers checkbox (VMware only)
+        $forceVMwareDriversLabel = $State.Controls.pnlForceVMwareDriversLabel
+        $forceVMwareDriversChk = $State.Controls.chkForceVMwareDrivers
+        if ($null -ne $forceVMwareDriversLabel) {
+            $forceVMwareDriversLabel.Visibility = $vmwareVisibility
+        }
+        if ($null -ne $forceVMwareDriversChk) {
+            $forceVMwareDriversChk.Visibility = $vmwareVisibility
+        }
+
+        # Show/hide and enable/disable VMware Network Type dropdown (VMware only)
+        $vmwareNetworkTypeLabel = $State.Controls.pnlVMwareNetworkTypeLabel
+        $vmwareNetworkTypeCombo = $State.Controls.cmbVMwareNetworkType
+        if ($null -ne $vmwareNetworkTypeLabel) {
+            $vmwareNetworkTypeLabel.Visibility = $vmwareVisibility
+        }
+        if ($null -ne $vmwareNetworkTypeCombo) {
+            $vmwareNetworkTypeCombo.Visibility = $vmwareVisibility
+            $vmwareNetworkTypeCombo.IsEnabled = $showVMwareControls
+        }
+
+        # Show/hide and enable/disable VMware NIC Type dropdown (VMware only)
+        $vmwareNicTypeLabel = $State.Controls.pnlVMwareNicTypeLabel
+        $vmwareNicTypeCombo = $State.Controls.cmbVMwareNicType
+        if ($null -ne $vmwareNicTypeLabel) {
+            $vmwareNicTypeLabel.Visibility = $vmwareVisibility
+        }
+        if ($null -ne $vmwareNicTypeCombo) {
+            $vmwareNicTypeCombo.Visibility = $vmwareVisibility
+            $vmwareNicTypeCombo.IsEnabled = $showVMwareControls
+        }
+
+        # VMware Host IP Address handling
+        # Key insight: If Hyper-V vSwitch IP is already populated, it's valid for VMware too
+        # (both use the same physical adapter). Only use fallback detection if IP is empty.
+        if ($showVMwareControls -and $null -ne $State.Controls.txtVMHostIPAddress) {
+            $currentIP = $State.Controls.txtVMHostIPAddress.Text
+
+            if ([string]::IsNullOrWhiteSpace($currentIP)) {
+                # IP is empty - use fallback detection (for VMware-only systems without Hyper-V)
+                WriteLog "Update-HypervisorStatus: VMHostIPAddress is empty for VMware, attempting auto-detection..."
+                $vmwareHostIP = Get-VMwareHostIPAddress
+                if (-not [string]::IsNullOrWhiteSpace($vmwareHostIP)) {
+                    $State.Controls.txtVMHostIPAddress.Text = $vmwareHostIP
+                    WriteLog "Update-HypervisorStatus: Auto-populated VMHostIPAddress for VMware: $vmwareHostIP"
+                }
+                else {
+                    WriteLog "Update-HypervisorStatus: WARNING - Could not auto-detect host IP for VMware. User must enter manually or select a VM Switch first."
+                }
             }
             else {
-                $vmwareCredStatus.Text = "Not configured"
-                $vmwareCredStatus.Foreground = [System.Windows.Media.Brushes]::Orange
-                $vmwareCredStatus.ToolTip = "Click 'Configure Credentials...' to set up vmrest credentials for your current user profile."
+                # IP already exists (from vSwitch selection or user entry) - PRESERVE IT
+                # This is the common case when Hyper-V is also installed with an External vSwitch
+                WriteLog "Update-HypervisorStatus: VMHostIPAddress preserved for VMware: $currentIP (from vSwitch or user entry)"
             }
         }
 

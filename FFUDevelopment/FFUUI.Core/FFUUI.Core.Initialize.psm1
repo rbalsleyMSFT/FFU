@@ -115,6 +115,11 @@ function Initialize-UIControls {
     $State.Controls.chkShowVMConsole = $window.FindName('chkShowVMConsole')
     $State.Controls.pnlForceVMwareDriversLabel = $window.FindName('pnlForceVMwareDriversLabel')
     $State.Controls.chkForceVMwareDrivers = $window.FindName('chkForceVMwareDrivers')
+    # VMware network settings controls
+    $State.Controls.pnlVMwareNetworkTypeLabel = $window.FindName('pnlVMwareNetworkTypeLabel')
+    $State.Controls.cmbVMwareNetworkType = $window.FindName('cmbVMwareNetworkType')
+    $State.Controls.pnlVMwareNicTypeLabel = $window.FindName('pnlVMwareNicTypeLabel')
+    $State.Controls.cmbVMwareNicType = $window.FindName('cmbVMwareNicType')
     $State.Controls.pnlVMSwitchLabel = $window.FindName('pnlVMSwitchLabel')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
     $State.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')

@@ -30,6 +30,23 @@ function Get-UIConfig {
         }
         ShowVMConsole                  = $State.Controls.chkShowVMConsole.IsChecked
         ForceVMwareDriverDownload      = $State.Controls.chkForceVMwareDrivers.IsChecked
+        # VMware network settings - extract Tag value from selected ComboBoxItem
+        VMwareNetworkType              = if ($null -ne $State.Controls.cmbVMwareNetworkType -and $null -ne $State.Controls.cmbVMwareNetworkType.SelectedItem) {
+            $selectedItem = $State.Controls.cmbVMwareNetworkType.SelectedItem
+            if ($selectedItem -is [System.Windows.Controls.ComboBoxItem]) {
+                $selectedItem.Tag
+            } else {
+                'nat'  # default
+            }
+        } else { 'nat' }
+        VMwareNicType                  = if ($null -ne $State.Controls.cmbVMwareNicType -and $null -ne $State.Controls.cmbVMwareNicType.SelectedItem) {
+            $selectedItem = $State.Controls.cmbVMwareNicType.SelectedItem
+            if ($selectedItem -is [System.Windows.Controls.ComboBoxItem]) {
+                $selectedItem.Tag
+            } else {
+                'e1000e'  # default
+            }
+        } else { 'e1000e' }
         AppsScriptVariables            = if ($State.Controls.chkDefineAppsScriptVariables.IsChecked) {
             $vars = @{}
             foreach ($item in $State.Data.appsScriptVariablesDataList) {
@@ -442,6 +459,44 @@ function Update-UIFromConfig {
     }
     Set-UIValue -ControlName 'chkShowVMConsole' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'ShowVMConsole' -State $State
     Set-UIValue -ControlName 'chkForceVMwareDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'ForceVMwareDriverDownload' -State $State
+
+    # Load VMware Network Type selection (nat/bridged/hostonly)
+    if ($ConfigContent.PSObject.Properties.Match('VMwareNetworkType').Count -gt 0) {
+        $vmwareNetworkType = $ConfigContent.VMwareNetworkType
+        if ($null -ne $State.Controls.cmbVMwareNetworkType -and -not [string]::IsNullOrWhiteSpace($vmwareNetworkType)) {
+            # Find the ComboBoxItem with matching Tag value
+            $itemToSelect = $null
+            foreach ($item in $State.Controls.cmbVMwareNetworkType.Items) {
+                if ($item -is [System.Windows.Controls.ComboBoxItem] -and $item.Tag -eq $vmwareNetworkType) {
+                    $itemToSelect = $item
+                    break
+                }
+            }
+            if ($null -ne $itemToSelect) {
+                $State.Controls.cmbVMwareNetworkType.SelectedItem = $itemToSelect
+                WriteLog "LoadConfig: Set VMwareNetworkType to '$vmwareNetworkType'."
+            }
+        }
+    }
+
+    # Load VMware NIC Type selection (e1000e/vmxnet3/e1000)
+    if ($ConfigContent.PSObject.Properties.Match('VMwareNicType').Count -gt 0) {
+        $vmwareNicType = $ConfigContent.VMwareNicType
+        if ($null -ne $State.Controls.cmbVMwareNicType -and -not [string]::IsNullOrWhiteSpace($vmwareNicType)) {
+            # Find the ComboBoxItem with matching Tag value
+            $itemToSelect = $null
+            foreach ($item in $State.Controls.cmbVMwareNicType.Items) {
+                if ($item -is [System.Windows.Controls.ComboBoxItem] -and $item.Tag -eq $vmwareNicType) {
+                    $itemToSelect = $item
+                    break
+                }
+            }
+            if ($null -ne $itemToSelect) {
+                $State.Controls.cmbVMwareNicType.SelectedItem = $itemToSelect
+                WriteLog "LoadConfig: Set VMwareNicType to '$vmwareNicType'."
+            }
+        }
+    }
 
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
     Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
