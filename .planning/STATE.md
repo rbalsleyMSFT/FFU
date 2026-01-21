@@ -53,7 +53,7 @@ None.
 **Last session:** 2026-01-21
 **Stopped at:** Completed 14-02-PLAN.md
 **Resume file:** None
-**Next action:** Milestone v1.8.3 complete. Ready to ship or start next milestone.
+**Next action:** `/gsd:audit-milestone` to verify requirements and cross-phase integration, or `/gsd:complete-milestone` to archive directly.
 
 ---
 *State updated: 2026-01-21*
