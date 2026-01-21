@@ -58,9 +58,16 @@ Enable rapid, reliable Windows deployment through pre-configured FFU images with
 
 ### Active
 
-**Current Milestone:** None — ready for next milestone planning
+**Current Milestone:** v1.8.2 VMware UI Settings
 
-**Deferred bugs (not in v1.8.1 scope):**
+**Goal:** Expose VMware network configuration in the UI and migrate existing configs.
+
+**Target features:**
+- VMware NetworkType dropdown in UI (bridged/nat/hostonly)
+- VMware NicType dropdown in UI (e1000e/vmxnet3/e1000)
+- Config migration to add VMwareSettings defaults to existing configs (schema v1.1 → v1.2)
+
+**Deferred bugs (not in scope):**
 - HP driver extraction exit code 1168 (all HP models)
 - Dell CatalogPC.xml missing
 - expand.exe fails on large MSU files (fallback works)
@@ -113,4 +120,4 @@ Key files:
 | Retry with exponential backoff for mounts | Handles transient disk operation failures | ✓ Good |
 
 ---
-*Last updated: 2026-01-20 after v1.8.1 milestone shipped*
+*Last updated: 2026-01-20 after v1.8.2 milestone started*

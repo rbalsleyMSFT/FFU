@@ -5,18 +5,18 @@
 See: .planning/PROJECT.md (updated 2026-01-20)
 
 **Core value:** Enable rapid, reliable Windows deployment through pre-configured FFU images
-**Current focus:** Ready for next milestone planning
+**Current focus:** v1.8.2 VMware UI Settings
 
 ## Current Position
 
-**Milestone:** None — v1.8.1 shipped
-**Phase:** Ready for next milestone
-**Plan:** N/A
-**Status:** Ready to plan
-**Last activity:** 2026-01-20 — v1.8.1 milestone complete
+**Milestone:** v1.8.2 VMware UI Settings
+**Phase:** Not started (run /gsd:define-requirements)
+**Plan:** —
+**Status:** Defining requirements
+**Last activity:** 2026-01-20 — Milestone v1.8.2 started
 
-Progress: Milestone complete
-[##########] 100%
+Progress: Starting milestone
+[----------] 0%
 
 ## Completed Milestones
 
@@ -27,24 +27,10 @@ Progress: Milestone complete
 
 ## Recent Activity
 
-- 2026-01-20: **MILESTONE v1.8.1 SHIPPED**
-  - 3 phases, 5 plans, 7 requirements
-  - Windows Update preview filtering (config/UI/build script)
-  - VHDX drive letter stability (utility function/provider validation)
-  - UI default initialization fix (Get-GeneralDefaults)
-  - Git tag: v1.8.1
-- 2026-01-20: v1.8.0 milestone shipped
-
-## Key Decisions from v1.8.1
-
-See `.planning/milestones/v1.8.1-ROADMAP.md` for full decision log.
-
-## Open Issues
-
-**Deferred bugs (not in scope):**
-- HP Driver extraction exit code 1168 (all HP models)
-- Dell CatalogPC.xml missing
-- expand.exe fails on large MSU files (fallback works)
+- 2026-01-20: **MILESTONE v1.8.2 STARTED**
+  - VMware NetworkType + NicType UI controls
+  - Config migration (schema v1.1 → v1.2)
+- 2026-01-20: v1.8.1 milestone shipped (Jira epics closed: RTS-82, RTS-97, RTS-99)
 
 ## Blockers
 
@@ -53,9 +39,9 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-01-20
-**Stopped at:** v1.8.1 milestone complete
+**Stopped at:** Milestone v1.8.2 initialized
 **Resume file:** None
-**Next action:** `/gsd:discuss-milestone` to plan next milestone
+**Next action:** `/gsd:define-requirements` to scope the milestone
 
 ---
 *State updated: 2026-01-20*
