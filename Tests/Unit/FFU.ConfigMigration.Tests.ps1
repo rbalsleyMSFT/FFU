@@ -66,9 +66,9 @@ Describe 'Get-FFUConfigSchemaVersion' {
         $result | Should -BeOfType [string]
     }
 
-    It 'returns "1.0" as current version' {
+    It 'returns "1.2" as current version' {
         $result = Get-FFUConfigSchemaVersion
-        $result | Should -Be '1.0'
+        $result | Should -Be '1.2'
     }
 
     It 'returns same value on multiple calls (consistent)' {
@@ -99,12 +99,12 @@ Describe 'Test-FFUConfigVersion' {
 
         It 'detects current version config as NeedsMigration=$false' {
             $config = @{
-                configSchemaVersion = '1.0'
+                configSchemaVersion = '1.2'
                 FFUDevelopmentPath = 'C:\FFU'
             }
             $result = Test-FFUConfigVersion -Config $config
             $result.NeedsMigration | Should -BeFalse
-            $result.ConfigVersion | Should -Be '1.0'
+            $result.ConfigVersion | Should -Be '1.2'
         }
 
         It 'detects older version config as NeedsMigration=$true' {
@@ -140,7 +140,7 @@ Describe 'Test-FFUConfigVersion' {
         }
 
         It 'returns correct VersionDifference for current config' {
-            $config = @{ configSchemaVersion = '1.0' }
+            $config = @{ configSchemaVersion = '1.2' }
             $result = Test-FFUConfigVersion -Config $config
             $result.VersionDifference | Should -Be 0
         }
@@ -271,9 +271,11 @@ Describe 'Invoke-FFUConfigMigration' {
 
         It 'returns unchanged config when already at target version' {
             $config = @{
-                configSchemaVersion = '1.0'
+                configSchemaVersion = '1.2'
                 FFUDevelopmentPath = 'C:\FFU'
                 InstallApps = $true
+                IncludePreviewUpdates = $false
+                VMwareSettings = @{ NetworkType = 'nat'; NicType = 'e1000e' }
             }
             $result = Invoke-FFUConfigMigration -Config $config
             $result.Config.FFUDevelopmentPath | Should -Be 'C:\FFU'
@@ -300,13 +302,13 @@ Describe 'Invoke-FFUConfigMigration' {
         It 'sets ToVersion to target version' {
             $config = @{ FFUDevelopmentPath = 'C:\FFU' }
             $result = Invoke-FFUConfigMigration -Config $config
-            $result.ToVersion | Should -Be '1.0'
+            $result.ToVersion | Should -Be '1.2'
         }
 
         It 'sets configSchemaVersion in migrated config' {
             $config = @{ FFUDevelopmentPath = 'C:\FFU' }
             $result = Invoke-FFUConfigMigration -Config $config
-            $result.Config.configSchemaVersion | Should -Be '1.0'
+            $result.Config.configSchemaVersion | Should -Be '1.2'
         }
     }
 
@@ -576,8 +578,10 @@ Describe 'Invoke-FFUConfigMigration' {
 
         It 'returns empty changes array when no migration needed' {
             $config = @{
-                configSchemaVersion = '1.0'
+                configSchemaVersion = '1.2'
                 FFUDevelopmentPath = 'C:\FFU'
+                IncludePreviewUpdates = $false
+                VMwareSettings = @{ NetworkType = 'nat'; NicType = 'e1000e' }
             }
             $result = Invoke-FFUConfigMigration -Config $config
             $result.Changes | Should -HaveCount 0
@@ -592,7 +596,8 @@ Describe 'Invoke-FFUConfigMigration' {
                 Threads = 4
             }
             $result = Invoke-FFUConfigMigration -Config $config
-            $result.Changes | Should -HaveCount 4
+            # 4 deprecated properties + IncludePreviewUpdates default + VMwareSettings default = 6
+            $result.Changes | Should -HaveCount 6
         }
 
         It 'WARNING prefix for properties requiring manual action' {
@@ -649,12 +654,18 @@ Describe 'Invoke-FFUConfigMigration' {
             $result.Config.CustomProperty | Should -Be 'preserved'
 
             # Verify version set
-            $result.Config.configSchemaVersion | Should -Be '1.0'
+            $result.Config.configSchemaVersion | Should -Be '1.2'
             $result.FromVersion | Should -Be '0.0'
-            $result.ToVersion | Should -Be '1.0'
+            $result.ToVersion | Should -Be '1.2'
 
-            # Verify change count (5 removed + 1 migrated = 6)
-            $result.Changes.Count | Should -Be 6
+            # Verify new defaults added
+            $result.Config.IncludePreviewUpdates | Should -BeFalse
+            $result.Config.VMwareSettings | Should -Not -BeNullOrEmpty
+            $result.Config.VMwareSettings.NetworkType | Should -Be 'nat'
+            $result.Config.VMwareSettings.NicType | Should -Be 'e1000e'
+
+            # Verify change count (5 removed + 1 migrated + 1 IncludePreviewUpdates + 1 VMwareSettings = 8)
+            $result.Changes.Count | Should -Be 8
         }
     }
 }
