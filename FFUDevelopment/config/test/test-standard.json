@@ -43,5 +43,9 @@
   "AppsISO": "",
   "AppsPath": "",
 
-  "VMShutdownTimeoutMinutes": 20
+  "VMShutdownTimeoutMinutes": 60,
+
+  "HypervisorType": "HyperV",
+  "VMwareNetworkType": "nat",
+  "VMwareNicType": "e1000e"
 }
