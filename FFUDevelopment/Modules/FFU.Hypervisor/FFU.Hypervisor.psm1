@@ -50,7 +50,8 @@ foreach ($function in $privateFunctions) {
         . $function.FullName
     }
     catch {
-        Write-Warning "Failed to load private function $($function.Name): $($_.Exception.Message)"
+        # Uses [Console]::Error.WriteLine instead of Write-Warning for ThreadJob runspace compatibility (v1.3.3)
+        [Console]::Error.WriteLine("WARNING: Failed to load private function $($function.Name): $($_.Exception.Message)")
     }
 }
 
@@ -75,7 +76,8 @@ foreach ($function in $publicFunctions) {
         . $function.FullName
     }
     catch {
-        Write-Warning "Failed to load public function $($function.Name): $($_.Exception.Message)"
+        # Uses [Console]::Error.WriteLine instead of Write-Warning for ThreadJob runspace compatibility (v1.3.3)
+        [Console]::Error.WriteLine("WARNING: Failed to load public function $($function.Name): $($_.Exception.Message)")
     }
 }
 
@@ -404,11 +406,13 @@ function Test-VMStateRunning {
 #region Module Initialization
 
 # Verify WriteLog function is available from FFU.Core
-if (-not (Get-Command 'WriteLog' -ErrorAction SilentlyContinue)) {
+# Uses $function: drive instead of Get-Command for ThreadJob compatibility (v1.3.4)
+if (-not $function:WriteLog) {
     # Create a simple WriteLog fallback if FFU.Core isn't loaded
+    # Use [Console]::WriteLine instead of Write-Host for ThreadJob compatibility
     function script:WriteLog {
         param([string]$Message)
-        Write-Host "[FFU.Hypervisor] $Message"
+        [Console]::WriteLine("[FFU.Hypervisor] $Message")
     }
 }
 

@@ -18,8 +18,14 @@ BeforeAll {
     # Get paths relative to test file location
     $TestRoot = Split-Path $PSScriptRoot -Parent
     $ProjectRoot = Split-Path $TestRoot -Parent
-    $ModulePath = Join-Path $ProjectRoot 'FFUDevelopment\Modules\FFU.Drivers'
-    $CoreModulePath = Join-Path $ProjectRoot 'FFUDevelopment\Modules\FFU.Core'
+    $ModulesPath = Join-Path $ProjectRoot 'FFUDevelopment\Modules'
+    $ModulePath = Join-Path $ModulesPath 'FFU.Drivers'
+    $CoreModulePath = Join-Path $ModulesPath 'FFU.Core'
+
+    # Add Modules folder to PSModulePath for RequiredModules resolution
+    if ($env:PSModulePath -notlike "*$ModulesPath*") {
+        $env:PSModulePath = "$ModulesPath;$env:PSModulePath"
+    }
 
     # Remove modules if loaded
     Get-Module -Name 'FFU.Drivers', 'FFU.Core' | Remove-Module -Force -ErrorAction SilentlyContinue

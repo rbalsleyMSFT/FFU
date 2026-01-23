@@ -18,10 +18,16 @@ BeforeAll {
     # Get paths relative to test file location
     $TestRoot = Split-Path $PSScriptRoot -Parent
     $ProjectRoot = Split-Path $TestRoot -Parent
-    $ModulePath = Join-Path $ProjectRoot 'FFUDevelopment\Modules\FFU.Media'
-    $CoreModulePath = Join-Path $ProjectRoot 'FFUDevelopment\Modules\FFU.Core'
-    $ADKModulePath = Join-Path $ProjectRoot 'FFUDevelopment\Modules\FFU.ADK'
-    $ConstantsModulePath = Join-Path $ProjectRoot 'FFUDevelopment\Modules\FFU.Constants'
+    $ModulesPath = Join-Path $ProjectRoot 'FFUDevelopment\Modules'
+    $ModulePath = Join-Path $ModulesPath 'FFU.Media'
+    $CoreModulePath = Join-Path $ModulesPath 'FFU.Core'
+    $ADKModulePath = Join-Path $ModulesPath 'FFU.ADK'
+    $ConstantsModulePath = Join-Path $ModulesPath 'FFU.Constants'
+
+    # Add Modules folder to PSModulePath for RequiredModules resolution
+    if ($env:PSModulePath -notlike "*$ModulesPath*") {
+        $env:PSModulePath = "$ModulesPath;$env:PSModulePath"
+    }
 
     # Remove modules if loaded
     Get-Module -Name 'FFU.Media', 'FFU.ADK', 'FFU.Core', 'FFU.Constants' | Remove-Module -Force -ErrorAction SilentlyContinue

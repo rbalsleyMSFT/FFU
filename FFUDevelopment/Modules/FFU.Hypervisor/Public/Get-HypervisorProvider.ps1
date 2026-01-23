@@ -9,19 +9,12 @@
 .PARAMETER Type
     The type of hypervisor provider to return:
     - 'HyperV': Microsoft Hyper-V provider
-    - 'VMware': VMware Workstation Pro provider
+    - 'VMware': VMware Workstation Pro provider (uses vmrun/vmxtoolkit)
     - 'Auto': Automatically detect and return the best available provider
 
 .PARAMETER Validate
     If specified, validates that the provider is available before returning it.
     Throws an error if the requested provider is not available.
-
-.PARAMETER Credential
-    Optional PSCredential for VMware REST API authentication.
-    Required for VMware provider to make authenticated API calls.
-
-.PARAMETER Port
-    Optional port number for VMware REST API (default: 8697).
 
 .EXAMPLE
     $provider = Get-HypervisorProvider -Type 'HyperV'
@@ -32,16 +25,16 @@
     # Returns the first available provider
 
 .EXAMPLE
-    $cred = Get-Credential
-    $provider = Get-HypervisorProvider -Type 'VMware' -Credential $cred
-    # Returns VMware provider with credentials for API authentication
+    $provider = Get-HypervisorProvider -Type 'VMware'
+    # Returns VMware provider (uses vmrun.exe, no credentials needed)
 
 .OUTPUTS
     IHypervisorProvider
 
 .NOTES
     Module: FFU.Hypervisor
-    Version: 1.1.0
+    Version: 1.2.0
+    VMware provider uses vmrun.exe/vmxtoolkit (no REST API/credentials required)
 #>
 function Get-HypervisorProvider {
     [CmdletBinding()]
@@ -52,13 +45,7 @@ function Get-HypervisorProvider {
         [string]$Type = 'Auto',
 
         [Parameter(Mandatory = $false)]
-        [switch]$Validate,
-
-        [Parameter(Mandatory = $false)]
-        [PSCredential]$Credential,
-
-        [Parameter(Mandatory = $false)]
-        [int]$Port = 8697
+        [switch]$Validate
     )
 
     process {
@@ -69,10 +56,8 @@ function Get-HypervisorProvider {
                 $provider = [HyperVProvider]::new()
             }
             'VMware' {
-                $provider = [VMwareProvider]::new($Port)
-                if ($Credential) {
-                    $provider.SetCredential($Credential)
-                }
+                # VMware provider uses vmrun.exe/vmxtoolkit - no credentials needed
+                $provider = [VMwareProvider]::new()
             }
             'Auto' {
                 # Try providers in order of preference: Hyper-V first, then VMware
@@ -83,11 +68,8 @@ function Get-HypervisorProvider {
                 }
                 else {
                     # Try VMware if Hyper-V is not available
-                    $vmware = [VMwareProvider]::new($Port)
+                    $vmware = [VMwareProvider]::new()
                     if ($vmware.TestAvailable()) {
-                        if ($Credential) {
-                            $vmware.SetCredential($Credential)
-                        }
                         $provider = $vmware
                         WriteLog "Auto-detected hypervisor: VMware Workstation"
                     }

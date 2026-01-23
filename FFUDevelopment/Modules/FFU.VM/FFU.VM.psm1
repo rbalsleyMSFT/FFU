@@ -1252,7 +1252,8 @@ function Set-CaptureFFU {
             WriteLog "User account $Username created successfully"
 
             # Register cleanup for user account in case of failure
-            if (Get-Command Register-UserAccountCleanup -ErrorAction SilentlyContinue) {
+            # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.3)
+            if ($ExecutionContext.InvokeCommand.GetCommand('Register-UserAccountCleanup', 'Function')) {
                 $null = Register-UserAccountCleanup -Username $Username
                 WriteLog "Registered user account cleanup handler"
             }
@@ -1292,7 +1293,8 @@ function Set-CaptureFFU {
             WriteLog "SMB share $ShareName created successfully"
 
             # Register cleanup for network share in case of failure
-            if (Get-Command Register-NetworkShareCleanup -ErrorAction SilentlyContinue) {
+            # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.3)
+            if ($ExecutionContext.InvokeCommand.GetCommand('Register-NetworkShareCleanup', 'Function')) {
                 $null = Register-NetworkShareCleanup -ShareName $ShareName
                 WriteLog "Registered network share cleanup handler"
             }
@@ -1816,6 +1818,130 @@ function Remove-FFUBuildArtifacts {
     WriteLog "FFU build artifact cleanup complete"
 }
 
+function Remove-FFUVMWithProvider {
+    <#
+    .SYNOPSIS
+    Removes FFU VM using the hypervisor provider with fallback to Remove-FFUVM
+
+    .DESCRIPTION
+    Hypervisor-agnostic VM cleanup helper that:
+    1. Uses the provided hypervisor provider if available
+    2. Falls back to Remove-FFUVM for Hyper-V-specific cleanup if provider fails
+    3. Always calls Remove-FFUBuildArtifacts for non-VM cleanup
+
+    This function is exported from FFU.VM to ensure availability in ThreadJob
+    contexts where script-scope functions are not accessible.
+
+    .PARAMETER VM
+    The VMInfo object returned from CreateVM (optional - can cleanup by name if null)
+
+    .PARAMETER VMName
+    Name of the VM to remove
+
+    .PARAMETER VMPath
+    Path to the VM configuration directory
+
+    .PARAMETER InstallApps
+    Whether apps were installed (affects VHDX cleanup)
+
+    .PARAMETER VhdxDisk
+    VHDX disk object for cleanup
+
+    .PARAMETER FFUDevelopmentPath
+    Root FFUDevelopment path
+
+    .PARAMETER HypervisorProvider
+    The hypervisor provider object (was $script:HypervisorProvider in BuildFFUVM.ps1)
+
+    .EXAMPLE
+    Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
+                             -InstallApps $true -FFUDevelopmentPath $FFUDevelopmentPath `
+                             -HypervisorProvider $provider
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        $VM,
+
+        [Parameter(Mandatory = $false)]
+        [string]$VMName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$VMPath,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$InstallApps,
+
+        [Parameter(Mandatory = $false)]
+        $VhdxDisk,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath,
+
+        [Parameter(Mandatory = $false)]
+        $HypervisorProvider
+    )
+
+    WriteLog "Starting hypervisor-agnostic VM cleanup"
+
+    $vmRemoved = $false
+
+    # Try hypervisor provider first if available
+    if ($null -ne $HypervisorProvider) {
+        try {
+            if ($null -ne $VM) {
+                WriteLog "Removing VM via hypervisor provider: $($VM.Name)"
+                $HypervisorProvider.RemoveVM($VM, $true)  # $true = remove disks
+                $vmRemoved = $true
+                WriteLog "VM removed via hypervisor provider"
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($VMName)) {
+                # Try to get VM by name from provider
+                WriteLog "Attempting to get VM '$VMName' from provider for cleanup"
+                $existingVM = $HypervisorProvider.GetVM($VMName)
+                if ($null -ne $existingVM) {
+                    WriteLog "Found VM, removing via hypervisor provider"
+                    $HypervisorProvider.RemoveVM($existingVM, $true)
+                    $vmRemoved = $true
+                    WriteLog "VM removed via hypervisor provider"
+                }
+                else {
+                    WriteLog "VM '$VMName' not found by provider - may already be removed"
+                    $vmRemoved = $true  # Consider it success if VM doesn't exist
+                }
+            }
+        }
+        catch {
+            WriteLog "WARNING: Hypervisor provider cleanup failed: $($_.Exception.Message)"
+            WriteLog "Falling back to Remove-FFUVM for cleanup"
+        }
+    }
+
+    # Fall back to Remove-FFUVM if provider cleanup failed or not available
+    if (-not $vmRemoved) {
+        WriteLog "Using Remove-FFUVM for Hyper-V-specific cleanup"
+        try {
+            Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
+                         -VhdxDisk $VhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+        catch {
+            WriteLog "WARNING: Remove-FFUVM failed: $($_.Exception.Message)"
+        }
+    }
+    else {
+        # Provider removed VM, but we still need to clean up build artifacts
+        WriteLog "Running Remove-FFUBuildArtifacts for remaining cleanup"
+        try {
+            Remove-FFUBuildArtifacts -VMPath $VMPath -FFUDevelopmentPath $FFUDevelopmentPath
+        }
+        catch {
+            WriteLog "WARNING: Remove-FFUBuildArtifacts failed: $($_.Exception.Message)"
+        }
+    }
+
+    WriteLog "VM cleanup complete"
+}
+
 # Export module members
 Export-ModuleMember -Function @(
     'Get-LocalUserAccount',
@@ -1826,6 +1952,7 @@ Export-ModuleMember -Function @(
     'New-FFUVM',
     'Remove-FFUVM',
     'Remove-FFUBuildArtifacts',
+    'Remove-FFUVMWithProvider',
     'Get-FFUEnvironment',
     'Set-CaptureFFU',
     'Remove-FFUUserShare',

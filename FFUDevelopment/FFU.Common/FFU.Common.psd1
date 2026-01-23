@@ -12,7 +12,7 @@
 RootModule = 'FFU.Common.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.9'
+ModuleVersion = '0.0.12'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -115,6 +115,20 @@ PrivateData = @{
 
         # ReleaseNotes of this module
         ReleaseNotes = @'
+v0.0.11: ThreadJob runspace isolation fix - "Write-Warning is not recognized" error
+- Fixed: Build failures with "The term 'Write-Warning' is not recognized" when running via UI
+- Root cause: WriteLog fallback warning used Write-Warning cmdlet which may not be available in ThreadJob runspaces
+- Solution: Replaced Write-Warning with [Console]::Error.WriteLine() in FFU.Common.Core.psm1
+- Also fixed fallback WriteLog in FFU.Common.Download.psm1: Write-Host → [Console]::WriteLine()
+- Same class of issue as v0.0.9 (Get-Date) and v0.0.10 (Write-Host) fixes
+- Affects builds launched from BuildFFUVM_UI.ps1 which uses Start-ThreadJob
+
+v0.0.10: ThreadJob runspace isolation fix - "Write-Host is not recognized" error
+- Fixed: Build failures with "The term 'Write-Host' is not recognized" during unattend copy verification
+- Root cause: WriteLog catch block used Write-Host cmdlet which may not be available in ThreadJob runspaces
+- Solution: Replaced Write-Host with [Console]::Error.WriteLine() for error output
+- Same class of issue as v0.0.9 Get-Date fix
+
 v0.0.9: ThreadJob runspace isolation fix - "Get-Date is not recognized" error
 - Fixed: Build failures with "The term 'Get-Date' is not recognized" when running via UI
 - Root cause: Get-Date cmdlet requires Microsoft.PowerShell.Utility module which can become

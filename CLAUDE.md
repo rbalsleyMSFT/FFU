@@ -103,6 +103,48 @@ Reference: BuildFFUVM.ps1 contains inline comments at lines 7-18 explaining this
 12. Update CLAUDE.md if architecture/patterns changed
 13. Update `CHANGELOG_FORK.md` with new fixes/enhancements
 
+## GSD Command Integration
+
+When using `/gsd:*` commands in this project, the following FFUBuilder-specific requirements MUST be followed. **These rules apply universally** whether using `/implement` or `/gsd:*` commands.
+
+### During `/gsd:execute-plan` or `/gsd:execute-phase`
+
+1. **Code Standards**: All PowerShell code must follow [PowerShell Style Standards](#powershell-style-standards)
+2. **Error Handling**: Use try/catch patterns from [IMPLEMENTATION_PATTERNS.md](docs/IMPLEMENTATION_PATTERNS.md)
+3. **Cleanup Registration**: Register cleanup actions for new resources (see PM Checklist)
+
+### After Code Changes (BLOCKING)
+
+Before marking any GSD plan/phase as complete:
+
+1. **Run verify-app**: Invoke `verify-app` agent for automated verification
+   ```
+   Invoke: Task tool with subagent_type="general-purpose"
+   Prompt: "Act as verify-app agent (read .claude/agents/verify-app.md). Run full regression verification."
+   ```
+2. **Update Versions**: Bump affected .psd1 manifests + version.json (see [Version Increment Checklist](#version-increment-checklist))
+3. **Run Tests**: Ensure all Pester tests pass
+4. **PSScriptAnalyzer**: No new errors
+
+**HALT CONDITIONS**: If any of the above fail, the GSD plan/phase CANNOT be marked complete. Return to implementation and fix issues.
+
+### `/gsd:verify-work` Enhancement
+
+When `/gsd:verify-work` is invoked in this project:
+
+1. **First**: Run automated verification (verify-app workflow)
+2. **Then**: Proceed to conversational UAT if automated checks pass
+3. **Report**: Include both automated test results AND UAT findings
+
+### Version Management
+
+Any GSD phase that modifies code requires:
+
+- Module `.psd1` version bump (see [Module Version Locations](docs/PM_CHECKLIST.md#module-version-locations))
+- `version.json` update (main version PATCH bump minimum)
+- Release notes in `.psd1`
+- `CHANGELOG_FORK.md` entry
+
 ## Versioning Policy
 
 **Current Version:** 1.3.0
@@ -323,6 +365,40 @@ Invoke-Pester -Path 'Tests/Unit/Module.Dependencies.Tests.ps1' -Output Detailed
   - **Avoids TelemetryAPI errors:** Cross-version compatible implementations of New-LocalUser, Get-LocalUser, Remove-LocalUser
   - **UI works in both versions:** BuildFFUVM_UI.ps1 supports PowerShell 5.1+ (recommended: PowerShell 7+ for best performance)
 - **DISM, expand.exe, BITS** for image manipulation and downloads
+
+### ThreadJob Compatibility
+
+The UI runs builds via `Start-ThreadJob` for credential inheritance and responsive UI. ThreadJob runspaces have **limited cmdlet availability** - `Microsoft.PowerShell.Core` and `Microsoft.PowerShell.Utility` cmdlets can become temporarily unavailable during heavy operations.
+
+**Avoid in code that runs during builds:**
+| Cmdlet | .NET/PowerShell Alternative |
+|--------|------------------|
+| `Get-Date` | `[DateTime]::Now` |
+| `Write-Host` | `[Console]::WriteLine()` |
+| `Write-Warning` | `[Console]::Error.WriteLine()` or safe logging pattern |
+| `Get-Command FuncName` | `$function:FuncName` (for functions) |
+| `Get-Command CmdletName` | try/catch around actual cmdlet call |
+| `Get-Command exe.exe` | `Find-ExecutableInPath 'exe.exe'` (FFU.Common.Core) |
+
+**Safe Logging Pattern (for warning messages):**
+```powershell
+# Uses $function: drive instead of Get-Command for ThreadJob compatibility (v0.0.12)
+$warningMsg = "Your warning message here"
+if ($function:WriteLog) {
+    WriteLog "WARNING: $warningMsg"
+}
+else {
+    Write-Verbose "WARNING: $warningMsg"
+}
+```
+
+**Why ThreadJob?** Credential inheritance for network shares. `Start-Job` would require explicit credential passing (security concern).
+
+**Fix History:**
+- v0.0.9: Get-Date → [DateTime]::Now
+- v0.0.10: Write-Host → [Console]::WriteLine
+- v0.0.11: Write-Warning → [Console]::Error.WriteLine
+- v0.0.12: Get-Command → $function: / try-catch / Find-ExecutableInPath
 
 ## Development Commands
 

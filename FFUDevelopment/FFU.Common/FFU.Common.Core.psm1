@@ -179,8 +179,9 @@ function WriteLog {
             Write-Verbose $LogText
         }
         catch {
-            # Use Write-Host for console visibility as Write-Warning might also try to log
-            Write-Host "WARNING: Error writing to log file '$($script:CommonCoreLogFilePath)': $($_.Exception.Message)" -ForegroundColor Yellow
+            # Use [Console]::Error.WriteLine for console visibility in ThreadJob contexts
+            # Write-Host cmdlet may not be available in ThreadJob runspaces (same as Get-Date issue)
+            [Console]::Error.WriteLine("WARNING: Error writing to log file '$($script:CommonCoreLogFilePath)': $($_.Exception.Message)")
         }
         finally {
             if ($null -ne $streamWriter) {
@@ -222,8 +223,10 @@ function WriteLog {
     }
 
     # Warn only if we couldn't write anywhere (neither file nor queue)
+    # Uses [Console]::Error.WriteLine instead of Write-Warning for ThreadJob runspace compatibility
+    # (same class of issue as v0.0.9 Get-Date and v0.0.10 Write-Host fixes)
     if (-not $wroteToFile -and -not $wroteToQueue) {
-        Write-Warning "CommonCoreLogFilePath not set and no messaging queue. Message: $LogText"
+        [Console]::Error.WriteLine("WARNING: CommonCoreLogFilePath not set and no messaging queue. Message: $LogText")
     }
 }
 
@@ -422,7 +425,9 @@ function Start-BitsTransferWithRetry {
     if ($UseResilientDownload) {
         try {
             # Check if Start-ResilientDownload is available from FFU.Common.Download module
-            if (Get-Command Start-ResilientDownload -ErrorAction SilentlyContinue) {
+            # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v0.0.13)
+            # Note: $function: syntax doesn't work with hyphenated function names
+            if ($ExecutionContext.InvokeCommand.GetCommand('Start-ResilientDownload', 'Function')) {
                 WriteLog "Using resilient multi-method download system"
 
                 $downloadParams = @{
@@ -574,6 +579,44 @@ function ConvertTo-SafeName {
         $sanitized = 'Unnamed'
     }
     $sanitized
+}
+
+function Find-ExecutableInPath {
+    <#
+    .SYNOPSIS
+        Finds an executable in the system PATH without using Get-Command.
+    .DESCRIPTION
+        ThreadJob-safe alternative to Get-Command for finding executables.
+        Get-Command can become unavailable in ThreadJob runspaces during heavy
+        operations (same issue as Get-Date, Write-Host, Write-Warning).
+
+        This function manually searches the PATH environment variable using
+        .NET System.IO.File methods which are always available.
+    .PARAMETER Name
+        The name of the executable to find (e.g., 'curl.exe', 'git.exe').
+    .EXAMPLE
+        $curlPath = Find-ExecutableInPath -Name 'curl.exe'
+        if ($curlPath) { & $curlPath --version }
+    .OUTPUTS
+        [string] Full path to the executable if found, $null otherwise.
+    .NOTES
+        Added in v0.0.12 for ThreadJob cmdlet compatibility (Get-Command fix).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    foreach ($dir in $env:PATH -split ';') {
+        if ([string]::IsNullOrWhiteSpace($dir)) { continue }
+        $fullPath = Join-Path $dir $Name
+        if ([System.IO.File]::Exists($fullPath)) {
+            return $fullPath
+        }
+    }
+    return $null
 }
 
 function Get-FFUBuilderVersion {

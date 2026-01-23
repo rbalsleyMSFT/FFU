@@ -122,7 +122,8 @@ function New-PEMedia {
     WriteLog 'Mounting complete'
 
     # Register cleanup for DISM mount in case of failure
-    if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.1)
+    if ($ExecutionContext.InvokeCommand.GetCommand('Register-DISMMountCleanup', 'Function')) {
         $null = Register-DISMMountCleanup -MountPath "$WinPEFFUPath\mount"
         WriteLog "Registered DISM mount cleanup handler"
     }

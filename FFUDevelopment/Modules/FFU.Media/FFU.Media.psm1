@@ -199,8 +199,8 @@ function Invoke-DISMPreFlightCleanup {
     # Step 7: Report results
     if ($errors.Count -gt 0) {
         WriteLog "=== DISM Pre-Flight Cleanup COMPLETED with $($errors.Count) error(s) ==="
-        foreach ($error in $errors) {
-            WriteLog "ERROR: $error"
+        foreach ($errMsg in $errors) {
+            WriteLog "ERROR: $errMsg"
         }
         return $false
     } else {
@@ -545,7 +545,8 @@ function New-WinPEMediaNative {
         WriteLog "  NOTE: Both native PowerShell cmdlets AND ADK dism.exe require WIMMount service"
 
         # Check if Test-FFUWimMount is available (from FFU.Preflight module)
-        if (Get-Command Test-FFUWimMount -ErrorAction SilentlyContinue) {
+        # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.1)
+        if ($ExecutionContext.InvokeCommand.GetCommand('Test-FFUWimMount', 'Function')) {
             $wimMountCheck = Test-FFUWimMount -AttemptRemediation
             if ($wimMountCheck.Status -ne 'Passed') {
                 $errorMsg = "WIMMount service validation failed: $($wimMountCheck.Message)"
@@ -569,7 +570,8 @@ function New-WinPEMediaNative {
         WriteLog "  MountPath: $mountPath"
 
         # Register cleanup action if available
-        if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+        # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.1)
+        if ($ExecutionContext.InvokeCommand.GetCommand('Register-DISMMountCleanup', 'Function')) {
             WriteLog "  Registering DISM mount cleanup action..."
             $null = Register-DISMMountCleanup -MountPath $mountPath
         }
@@ -811,7 +813,14 @@ function New-PEMedia {
         [bool]$CompressDownloadedDriversToWim,
 
         [Parameter(Mandatory = $false)]
-        [bool]$UseNativeMethod = $true
+        [bool]$UseNativeMethod = $true,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('HyperV', 'VMware')]
+        [string]$HypervisorType = 'HyperV',
+
+        [Parameter(Mandatory = $false)]
+        [switch]$ForceVMwareDriverDownload
     )
     #Need to use the Deployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
@@ -887,7 +896,8 @@ function New-PEMedia {
     WriteLog 'Mounting complete'
 
     # Register cleanup for DISM mount in case of failure
-    if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.1)
+    if ($ExecutionContext.InvokeCommand.GetCommand('Register-DISMMountCleanup', 'Function')) {
         $null = Register-DISMMountCleanup -MountPath $mountPath
     }
 
@@ -924,6 +934,119 @@ function New-PEMedia {
         WriteLog "Copying $FFUDevelopmentPath\WinPECaptureFFUFiles\* to WinPE capture media"
         Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
         WriteLog "Copy complete"
+
+        # VMware WinPE Network Driver Injection
+        # VMware Workstation Pro uses e1000e (Intel 82574L) emulated NIC by default
+        # WinPE doesn't include e1000e drivers, so we need to inject them for network connectivity
+        if ($HypervisorType -eq 'VMware') {
+            WriteLog "Hypervisor type is VMware - checking for network driver injection..."
+            $vmwareDriversPath = Join-Path $FFUDevelopmentPath "VMwareDrivers"
+            WriteLog "VMwareDrivers path: $vmwareDriversPath"
+            WriteLog "VMwareDrivers exists: $(Test-Path $vmwareDriversPath)"
+
+            # Check for existing INF files (not just folder existence)
+            $existingInfFiles = @()
+            if (Test-Path $vmwareDriversPath) {
+                $existingInfFiles = @(Get-ChildItem -Path $vmwareDriversPath -Filter "*.inf" -Recurse -ErrorAction SilentlyContinue)
+            }
+            WriteLog "Existing INF files found: $($existingInfFiles.Count)"
+
+            # Determine if download is needed: no INF files OR force download requested
+            $needsDownload = ($existingInfFiles.Count -eq 0) -or $ForceVMwareDriverDownload
+            if ($ForceVMwareDriverDownload) {
+                WriteLog "ForceVMwareDriverDownload is enabled - will re-download drivers"
+            }
+            WriteLog "Download required: $needsDownload"
+
+            if ($needsDownload) {
+                # Clean up empty/corrupted folder before fresh download
+                if (Test-Path $vmwareDriversPath) {
+                    WriteLog "Removing existing VMwareDrivers folder before fresh download..."
+                    try {
+                        Remove-Item -Path $vmwareDriversPath -Recurse -Force -ErrorAction Stop
+                        WriteLog "Cleanup complete"
+                    }
+                    catch {
+                        WriteLog "WARNING: Failed to clean up VMwareDrivers folder: $($_.Exception.Message)"
+                    }
+                }
+
+                WriteLog "Creating VMwareDrivers directory and downloading Intel e1000e drivers..."
+                try {
+                    New-Item -Path $vmwareDriversPath -ItemType Directory -Force | Out-Null
+                    WriteLog "Directory created: $(Test-Path $vmwareDriversPath)"
+                }
+                catch {
+                    WriteLog "ERROR: Failed to create VMwareDrivers directory: $($_.Exception.Message)"
+                }
+
+                try {
+                    WriteLog "Starting Intel e1000e driver download..."
+                    $downloadedPath = Get-IntelEthernetDrivers -DestinationPath $vmwareDriversPath
+                    WriteLog "Intel e1000e drivers downloaded to: $downloadedPath"
+
+                    # Post-download verification
+                    $downloadedInf = Get-ChildItem -Path $vmwareDriversPath -Filter "*.inf" -Recurse -ErrorAction SilentlyContinue
+                    WriteLog "Post-download verification: Found $($downloadedInf.Count) INF files"
+                    if ($downloadedInf.Count -eq 0) {
+                        WriteLog "WARNING: Download reported success but no INF files found in $vmwareDriversPath!"
+                        WriteLog "Checking directory contents..."
+                        $allFiles = Get-ChildItem -Path $vmwareDriversPath -Recurse -ErrorAction SilentlyContinue
+                        WriteLog "Total files in VMwareDrivers: $($allFiles.Count)"
+                        foreach ($f in $allFiles) {
+                            WriteLog "  - $($f.FullName)"
+                        }
+                    }
+                    else {
+                        foreach ($inf in $downloadedInf) {
+                            WriteLog "  - Found: $($inf.FullName)"
+                        }
+                    }
+                }
+                catch {
+                    WriteLog "WARNING: Failed to download Intel e1000e drivers: $($_.Exception.Message)"
+                    WriteLog "VMware capture may fail without network drivers. Manual driver installation required."
+                    WriteLog "Download drivers from: https://www.intel.com/content/www/us/en/download/15084/"
+                }
+            }
+            else {
+                WriteLog "VMwareDrivers folder contains $($existingInfFiles.Count) INF file(s) - skipping download"
+                foreach ($inf in $existingInfFiles) {
+                    WriteLog "  - $($inf.FullName)"
+                }
+            }
+
+            # Inject VMware network drivers into capture media
+            if (Test-Path $vmwareDriversPath) {
+                $infFiles = Get-ChildItem -Path $vmwareDriversPath -Filter "*.inf" -Recurse -ErrorAction SilentlyContinue
+                WriteLog "Pre-injection check: Found $($infFiles.Count) INF files in VMwareDrivers"
+                if ($infFiles.Count -gt 0) {
+                    WriteLog "Adding VMware network drivers ($($infFiles.Count) INF files) to WinPE capture media..."
+                    WriteLog "Injecting drivers from: $vmwareDriversPath"
+                    foreach ($inf in $infFiles) {
+                        WriteLog "  - $($inf.FullName)"
+                    }
+                    WriteLog "Target WinPE mount: $WinPEFFUPath\mount"
+                    try {
+                        Add-WindowsDriver -Path "$WinPEFFUPath\mount" -Driver $vmwareDriversPath -Recurse -ErrorAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+                        WriteLog "VMware network drivers injected successfully into capture media"
+                    }
+                    catch {
+                        WriteLog "WARNING: Some VMware drivers failed to inject: $($_.Exception.Message)"
+                        WriteLog "Capture network connectivity may be affected"
+                    }
+                }
+                else {
+                    WriteLog "WARNING: VMwareDrivers folder exists but contains no INF files after download attempt"
+                    WriteLog "VMware capture may fail without network drivers. Manual driver installation required."
+                    WriteLog "Download drivers from: https://www.intel.com/content/www/us/en/download/15084/"
+                }
+            }
+            else {
+                WriteLog "WARNING: VMwareDrivers folder does not exist after download attempt!"
+            }
+        }
+
         #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
         #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
         # $WinPEISOName = 'WinPE_FFU_Capture.iso'

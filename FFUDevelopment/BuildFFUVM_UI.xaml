@@ -103,6 +103,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="200"/>
@@ -124,9 +125,9 @@
                         <TextBlock x:Name="txtHypervisorStatus" Grid.Row="1" Grid.Column="1" Margin="5" VerticalAlignment="Center" Text="Checking..." Foreground="Gray" ToolTip="Shows the availability status of the selected hypervisor."/>
                         <!-- Row 2: Show VM Console (VMware only) -->
                         <StackPanel x:Name="pnlShowVMConsoleLabel" Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
-                            <TextBlock Text="Show VM Console" ToolTip="When enabled, the VMware VM window will be visible during the build, allowing you to follow Windows installation progress. When disabled (default), the VM runs in headless mode."/>
+                            <TextBlock Text="Show VM Console" ToolTip="When enabled (default), the VMware VM window will be visible during the build, allowing you to follow Windows installation progress. When disabled, the VM runs in headless mode."/>
                         </StackPanel>
-                        <CheckBox x:Name="chkShowVMConsole" Grid.Row="2" Grid.Column="1" Content="Display VM window during build (VMware only)" Margin="5" VerticalAlignment="Center" IsChecked="False" Visibility="Collapsed" ToolTip="When enabled, the VMware VM window will be visible during the build, allowing you to follow Windows installation progress. When disabled (default), the VM runs in headless mode for automation."/>
+                        <CheckBox x:Name="chkShowVMConsole" Grid.Row="2" Grid.Column="1" Content="Display VM window during build (VMware only)" Margin="5" VerticalAlignment="Center" IsChecked="True" Visibility="Collapsed" ToolTip="When enabled (default), the VMware VM window will be visible during the build, allowing you to follow Windows installation progress. When disabled, the VM runs in headless mode for automation."/>
                         <!-- Row 3: Force VMware Driver Download (VMware only) -->
                         <StackPanel x:Name="pnlForceVMwareDriversLabel" Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5" Visibility="Collapsed">
                             <TextBlock Text="Force Driver Download" ToolTip="When enabled, always re-download Intel e1000e network drivers even if VMwareDrivers folder already contains drivers."/>
@@ -202,6 +203,14 @@
                         <StackPanel Grid.Row="15" Grid.Column="1" Orientation="Horizontal" Margin="5" VerticalAlignment="Center">
                             <TextBox x:Name="txtVMShutdownTimeout" Width="60" Text="60" ToolTip="Maximum time in minutes to wait for VM shutdown (5-120 minutes)."/>
                             <TextBlock Text=" minutes" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        </StackPanel>
+                        <!-- Row 16: FFU File Lock Wait -->
+                        <StackPanel Grid.Row="16" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
+                            <TextBlock Text="FFU File Lock Wait" ToolTip="Time to wait after FFU capture before accessing the file. Helps prevent file lock errors from Windows Defender or indexing services. Increase if experiencing file lock errors."/>
+                        </StackPanel>
+                        <StackPanel Grid.Row="16" Grid.Column="1" Orientation="Horizontal" Margin="5" VerticalAlignment="Center">
+                            <TextBox x:Name="txtFFUFileLockWait" Width="60" Text="120" ToolTip="Time in seconds to wait after FFU capture (30-600 seconds). Default is 120 seconds (2 minutes)."/>
+                            <TextBlock Text=" seconds" VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>

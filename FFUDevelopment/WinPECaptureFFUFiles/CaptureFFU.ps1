@@ -520,9 +520,11 @@ Network path not found (Error 53)
 
 This usually means:
   - Host IP address is incorrect or unreachable
-  - VM network switch is Internal/Private (should be External)
+  - VM network switch is Internal/Private (should be External/Bridged)
   - Windows Firewall is blocking SMB traffic (port 445/TCP)
   - Network cable disconnected (if using External switch)
+  - VMware: Hyper-V External switch may be causing network adapter conflict
+    (Pre-flight check should have detected this - see Test-FFUHyperVSwitchConflict)
 "@
                     }
                     67 { "Share name not found. Verify share '$ShareName' exists on host." }
@@ -642,6 +644,61 @@ See: https://github.com/rbalsleyMSFT/FFU/issues/122
         Write-Host "  DNS resolution failed (not critical when using IP): $_" -ForegroundColor Yellow
     }
 
+    Write-Host "`n7. Network Segment Analysis (VMware Bridged):" -ForegroundColor Cyan
+    try {
+        $hostIP = $SharePath.Split('\')[2]
+
+        # Get this VM's IP address
+        $myIPInfo = Get-WmiIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1
+
+        if ($myIPInfo -and $hostIP) {
+            Write-Host "  VM IP Address: $($myIPInfo.IPAddress)" -ForegroundColor White
+            Write-Host "  Target Host IP: $hostIP" -ForegroundColor White
+
+            # Compare network segments (first 3 octets for typical /24 networks)
+            $mySegment = ($myIPInfo.IPAddress -split '\.')[0..2] -join '.'
+            $hostSegment = ($hostIP -split '\.')[0..2] -join '.'
+            $sameSegment = $mySegment -eq $hostSegment
+
+            Write-Host "  VM Network Segment: $mySegment.x" -ForegroundColor Gray
+            Write-Host "  Host Network Segment: $hostSegment.x" -ForegroundColor Gray
+
+            if ($sameSegment) {
+                Write-Host "  [OK] Same network segment - bridged networking appears configured correctly" -ForegroundColor Green
+            }
+            else {
+                Write-Host "  [WARNING] Different network segments detected!" -ForegroundColor Red
+                Write-Host ""
+                Write-Host "  This may indicate one of these issues:" -ForegroundColor Yellow
+                Write-Host "    - VMware bridged network is using the WRONG physical adapter" -ForegroundColor Yellow
+                Write-Host "    - Host IP address in config is WRONG (from Hyper-V vSwitch instead of actual host)" -ForegroundColor Yellow
+                Write-Host "    - VM is connected to NAT instead of bridged network" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "  RESOLUTION FOR VMWARE:" -ForegroundColor Yellow
+                Write-Host "    1. Run 'ipconfig' on the HOST machine" -ForegroundColor White
+                Write-Host "    2. Find your primary network adapter's IP address" -ForegroundColor White
+                Write-Host "    3. Manually enter that IP in FFU Builder 'VM Host IP Address' field" -ForegroundColor White
+                Write-Host "    4. Rebuild FFU with the corrected IP" -ForegroundColor White
+            }
+
+            # Check gateway for additional context
+            $gwInfo = Get-WmiDefaultGateway | Select-Object -First 1
+            if ($gwInfo) {
+                Write-Host "  Default Gateway: $($gwInfo.NextHop)" -ForegroundColor Gray
+                $gwPing = Test-HostConnection -ComputerName $gwInfo.NextHop -Count 1 -Quiet
+                $gwStatus = if ($gwPing) { "reachable" } else { "UNREACHABLE" }
+                $gwColor = if ($gwPing) { "Green" } else { "Red" }
+                Write-Host "  Gateway Status: $gwStatus" -ForegroundColor $gwColor
+            }
+        }
+        else {
+            Write-Host "  Could not determine VM IP or host IP for segment comparison" -ForegroundColor Yellow
+        }
+    }
+    catch {
+        Write-Host "  Network segment analysis failed: $_" -ForegroundColor Yellow
+    }
+
     Write-Host "`n========== TROUBLESHOOTING GUIDE ==========" -ForegroundColor Yellow
     Write-Host "`nMost Common Solutions (try in order):" -ForegroundColor White
     Write-Host ""
@@ -671,6 +728,8 @@ See: https://github.com/rbalsleyMSFT/FFU/issues/122
     Write-Host "   On host: Get-Service -Name LanmanServer"
     Write-Host "   Should be Running. If not: Start-Service LanmanServer"
     Write-Host ""
+
+    Write-Host ""
     Write-Host "For more help, see: https://github.com/rbalsleyMSFT/FFU/issues" -ForegroundColor White
     Write-Host "============================================`n"
 
@@ -689,6 +748,56 @@ try {
     Write-Host "  Share: \\$VMHostIPAddress\$ShareName"
     Write-Host "  User: $UserName"
     Write-Host ""
+
+    # Early diagnostic: Check for network adapters BEFORE attempting connection
+    Write-Host "Network Adapter Pre-Check:" -ForegroundColor Cyan
+    $earlyAdapters = Get-WmiNetworkAdapter
+    if ($earlyAdapters.Count -eq 0 -or $null -eq $earlyAdapters) {
+        Write-Host "  [CRITICAL] No network adapters found!" -ForegroundColor Red
+        Write-Host "" -ForegroundColor Yellow
+        Write-Host "  This typically indicates MISSING WinPE NETWORK DRIVERS." -ForegroundColor Yellow
+        Write-Host "" -ForegroundColor Yellow
+        Write-Host "  For VMware Workstation Pro:" -ForegroundColor Yellow
+        Write-Host "    - Intel e1000e drivers must be injected into WinPE capture media" -ForegroundColor Yellow
+        Write-Host "    - Ensure HypervisorType is set to 'VMware' when creating capture media" -ForegroundColor Yellow
+        Write-Host "    - Verify VMwareDrivers folder exists and contains driver INF files" -ForegroundColor Yellow
+        Write-Host "" -ForegroundColor Yellow
+        Write-Host "  REMEDIATION STEPS:" -ForegroundColor Yellow
+        Write-Host "    1. Rebuild WinPE capture media with VMware driver injection enabled" -ForegroundColor White
+        Write-Host "    2. Or manually add Intel e1000e drivers from:" -ForegroundColor White
+        Write-Host "       https://www.intel.com/content/www/us/en/content-details/30080/" -ForegroundColor Cyan
+        Write-Host "" -ForegroundColor Yellow
+
+        # Check loaded drivers for additional diagnostics
+        Write-Host "  Checking loaded network drivers (pnputil)..." -ForegroundColor Yellow
+        try {
+            $driverOutput = pnputil /enum-drivers 2>&1
+            $networkDrivers = $driverOutput | Select-String -Pattern "e1000|intel|network|ethernet" -CaseSensitive:$false
+            if ($networkDrivers.Count -gt 0) {
+                Write-Host "  Found network-related drivers:" -ForegroundColor Green
+                foreach ($driver in $networkDrivers) {
+                    Write-Host "    $driver" -ForegroundColor Gray
+                }
+            }
+            else {
+                Write-Host "  No network drivers found in WinPE image" -ForegroundColor Red
+            }
+        }
+        catch {
+            Write-Host "  Could not enumerate drivers: $_" -ForegroundColor Gray
+        }
+        Write-Host ""
+    }
+    else {
+        Write-Host "  Found $($earlyAdapters.Count) network adapter(s):" -ForegroundColor Green
+        foreach ($adapter in $earlyAdapters) {
+            $statusColor = if ($adapter.Status -eq 'Up') { 'Green' } elseif ($adapter.Status -eq 'Connecting') { 'Yellow' } else { 'Red' }
+            Write-Host "    - $($adapter.Name): $($adapter.Status)" -ForegroundColor $statusColor
+            Write-Host "      Description: $($adapter.InterfaceDescription)" -ForegroundColor Gray
+            Write-Host "      MAC: $($adapter.MacAddress)" -ForegroundColor Gray
+        }
+        Write-Host ""
+    }
 
     # Step 1: Wait for network to be ready (max 60 seconds)
     if (-not (Wait-For-NetworkReady -HostIP $VMHostIPAddress -TimeoutSeconds 60)) {

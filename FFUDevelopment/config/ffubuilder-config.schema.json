@@ -445,8 +445,8 @@
         },
         "ShowVMConsole": {
             "type": "boolean",
-            "default": false,
-            "description": "When set to true, displays the VM window during the build process (VMware only). When false (default), the VM runs in headless mode for automation. Hyper-V uses Hyper-V Manager for console access."
+            "default": true,
+            "description": "When set to true (default), displays the VM window during the build process (VMware only). When false, the VM runs in headless mode for automation. Hyper-V uses Hyper-V Manager for console access."
         },
         "ForceVMwareDriverDownload": {
             "type": "boolean",
@@ -481,6 +481,27 @@
             "maximum": 120,
             "default": 60,
             "description": "Maximum time in minutes to wait for VM shutdown before forcing power off. If the VM does not shutdown within this timeout, it will be forcibly powered off and the build will continue."
+        },
+        "FFUFileLockWaitSeconds": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 600,
+            "default": 120,
+            "description": "Time in seconds to wait after FFU capture before accessing the file. Helps prevent file lock errors from Windows Defender, indexing services, or other processes. Default is 120 seconds (2 minutes)."
+        },
+        "FFUFileLockRetryCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3,
+            "description": "Number of retry attempts when FFU file is locked by another process. Provides resilience against transient file locks from antivirus or indexer."
+        },
+        "FFUFileLockRetryDelaySeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 60,
+            "default": 10,
+            "description": "Delay in seconds between FFU file lock retry attempts. Allows time for locks to be released between attempts."
         },
         "WindowsArch": {
             "type": "string",

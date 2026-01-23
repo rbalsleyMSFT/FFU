@@ -2,6 +2,33 @@
 
 This checklist must be followed for every code modification in the FFUBuilder project.
 
+## When Using GSD Commands
+
+**The same checklist applies whether using `/implement` or `/gsd:*` commands.** GSD does not exempt you from version management or verification requirements.
+
+### GSD-Specific Requirements
+
+When executing `/gsd:execute-plan` or `/gsd:execute-phase`:
+
+- [ ] **Before marking plan/phase complete**: Run `verify-app` agent (BLOCKING)
+- [ ] **Version Management**: Update `.psd1` + `version.json` for any code changes
+- [ ] **Test Coverage**: Maintain or improve coverage (80% minimum)
+- [ ] **PSScriptAnalyzer**: No new errors
+- [ ] **CHANGELOG_FORK.md**: Add entry for changes
+
+### GSD HALT Conditions
+
+The following **BLOCK** GSD plan/phase completion:
+1. Any Pester test failures
+2. New PSScriptAnalyzer errors
+3. Module import failures
+4. Coverage decreased below baseline
+5. Missing version updates
+
+See [CLAUDE.md - GSD Command Integration](../CLAUDE.md#gsd-command-integration) for full details.
+
+---
+
 ## Pre-Implementation Checklist
 
 Before starting any code changes, verify:

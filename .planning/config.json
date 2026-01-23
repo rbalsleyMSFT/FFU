@@ -7,5 +7,32 @@
     "skip_checkpoints": true,
     "min_plans_for_parallel": 2
   },
-  "created": "2026-01-17"
+  "created": "2026-01-17",
+  "project_standards": {
+    "verification_required": true,
+    "verification_agent": "verify-app",
+    "verification_blocking": true,
+    "version_management": {
+      "enabled": true,
+      "single_source": "FFUDevelopment/version.json",
+      "require_module_psd1_update": true,
+      "require_changelog_entry": true
+    },
+    "code_standards": {
+      "analyzer": "PSScriptAnalyzer",
+      "style_guide": "docs/IMPLEMENTATION_PATTERNS.md",
+      "reference": "https://github.com/PoshCode/PowerShellPracticeAndStyle"
+    },
+    "test_requirements": {
+      "min_coverage": 80,
+      "test_framework": "Pester 5.x",
+      "tests_must_pass": true
+    },
+    "halt_conditions": [
+      "Pester test failures",
+      "PSScriptAnalyzer errors",
+      "Module import failures",
+      "Coverage decreased below baseline"
+    ]
+  }
 }

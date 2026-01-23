@@ -14,17 +14,19 @@
 #>
 
 # Import WriteLog from FFU.Common.Core if available
-if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+# Uses $function: drive instead of Get-Command for ThreadJob compatibility (v0.0.12)
+if ($function:WriteLog) {
     # WriteLog is available from FFU.Common.Core
 }
 else {
     # Fallback logging function
     # Uses [DateTime]::Now instead of Get-Date for ThreadJob runspace compatibility
+    # Uses [Console]::WriteLine instead of Write-Host for ThreadJob runspace compatibility (v0.0.11)
     function WriteLog {
         param([string]$LogText)
         $timestamp = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")
         Write-Verbose "[$timestamp] $LogText"
-        Write-Host "[$timestamp] $LogText"
+        [Console]::WriteLine("[$timestamp] $LogText")
     }
 }
 
@@ -199,12 +201,8 @@ function Invoke-BITSDownload {
         [object]$ProxyConfig = $null
     )
 
-    # Check if BITS is available
-    if (-not (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue)) {
-        WriteLog "BITS cmdlet not available, skipping"
-        $false
-                return
-    }
+    # BITS availability is checked via try/catch on actual call for ThreadJob compatibility (v0.0.12)
+    # Get-Command can become unavailable in ThreadJob runspaces during heavy operations
 
     $attempt = 0
     while ($attempt -lt $Retries) {
@@ -266,6 +264,12 @@ function Invoke-BITSDownload {
                 return
             }
         }
+        catch [System.Management.Automation.CommandNotFoundException] {
+            # BITS cmdlet not available (ThreadJob compatibility - v0.0.12)
+            WriteLog "BITS cmdlet not available, skipping"
+            $false
+            return
+        }
         catch {
             $errorCode = $_.Exception.HResult
 
@@ -288,7 +292,7 @@ function Invoke-BITSDownload {
     }
 
     $false
-                return
+    return
 }
 
 function Invoke-WebRequestDownload {
@@ -477,12 +481,27 @@ function Invoke-CurlDownload {
         [object]$ProxyConfig = $null
     )
 
-    # Check if curl.exe is available
-    $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
+    # Check if curl.exe is available using ThreadJob-safe path search (v0.0.12)
+    # Get-Command can become unavailable in ThreadJob runspaces during heavy operations
+    $curlPath = $null
+    if (Get-Command -Name 'Find-ExecutableInPath' -ErrorAction SilentlyContinue) {
+        $curlPath = Find-ExecutableInPath -Name 'curl.exe'
+    }
+    else {
+        # Fallback: search PATH manually (same logic as Find-ExecutableInPath)
+        foreach ($dir in $env:PATH -split ';') {
+            if ([string]::IsNullOrWhiteSpace($dir)) { continue }
+            $testPath = Join-Path $dir 'curl.exe'
+            if ([System.IO.File]::Exists($testPath)) {
+                $curlPath = $testPath
+                break
+            }
+        }
+    }
     if (-not $curlPath) {
         WriteLog "curl.exe not found in PATH, skipping"
         $false
-                return
+        return
     }
 
     $attempt = 0

@@ -12,7 +12,7 @@
 RootModule = 'FFUUI.Core.psm1'
 
 # Version number of this module.
-ModuleVersion = '0.0.12'
+ModuleVersion = '0.0.13'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()

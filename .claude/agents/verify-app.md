@@ -549,6 +549,47 @@ RECOMMENDATION: [Continue|Fix Required|Review Needed]
 
 ---
 
+## GSD Command Integration
+
+This agent should be invoked after any `/gsd:execute-plan` or `/gsd:execute-phase` that modifies PowerShell code. This is **BLOCKING** - GSD plans cannot be marked complete until verify-app passes.
+
+### When to Invoke During GSD Workflows
+
+| GSD Command | Invoke verify-app? | When |
+|-------------|-------------------|------|
+| `/gsd:execute-plan` | **YES** | After code implementation, before marking plan complete |
+| `/gsd:execute-phase` | **YES** | After each phase with code changes, before proceeding |
+| `/gsd:verify-work` | **YES** | First step - run automated verification before UAT |
+| `/gsd:progress` | No | Progress check only |
+| `/gsd:plan-phase` | No | Planning only, no code changes |
+
+### Integration Flow
+
+```
+/gsd:execute-plan or /gsd:execute-phase
+    ↓
+Code Implementation Complete
+    ↓
+Invoke verify-app (BLOCKING)
+    ↓
+    ├─ PASS → Mark GSD task complete
+    └─ FAIL → Return to implementation, fix issues, re-verify
+```
+
+### Required Verification Outputs
+
+When verify-app is invoked during GSD workflows, report:
+
+1. **Test Results**: Pass/fail count, any failures
+2. **Code Coverage**: Current percentage, comparison to baseline
+3. **PSScriptAnalyzer**: Error/warning count
+4. **Module Imports**: All modules load successfully
+5. **VERIFICATION_STATUS**: PASS/FAIL/BLOCKED
+
+See [CLAUDE.md - GSD Command Integration](../../CLAUDE.md#gsd-command-integration) for full requirements.
+
+---
+
 ## Elevated Build Execution
 
 Build operations that require administrator privileges (VM operations, disk partitioning, FFU capture) cannot run directly from Claude Code due to subprocess limitations. Use the elevated listener pattern instead.

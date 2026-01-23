@@ -3,7 +3,7 @@
     RootModule = 'FFU.Imaging.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.12'
+    ModuleVersion = '1.1.5'
 
     # Supported PSEditions
     CompatiblePSEditions = @('Desktop', 'Core')
@@ -48,6 +48,7 @@
         'Enable-WindowsFeaturesByName',
         'Dismount-ScratchVhdx',
         'Dismount-ScratchVhd',
+        'Mount-ScratchVhd',
         'Optimize-FFUCaptureDrive',
         'Get-WindowsVersionInfo',
         'New-FFU',
@@ -55,7 +56,9 @@
         'Start-RequiredServicesForDISM',
         'Invoke-FFUOptimizeWithScratchDir',
         'Expand-FFUPartitionForDrivers',
-        'Set-OSPartitionDriveLetter'
+        'Set-OSPartitionDriveLetter',
+        'Invoke-DismountScratchDisk',
+        'Invoke-MountScratchDisk'
     )
 
     # Cmdlets to export from this module
@@ -81,6 +84,37 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.1.5 - BUG-06: Fix FFU file lock after VM capture - SMB session cleanup
+- Added SMB session cleanup after VM capture completion (before FFU file verification)
+- Closes SMB sessions for capture user (ffu_user) to release file locks
+- Also closes any open .ffu file handles as safety measure
+- Fixes "FFU file is locked by another process" error during optimization
+- VM writes FFU via network share; SMB server may keep handles open after VM shutdown
+- Non-fatal: logs warning and continues if cleanup fails (file lock retry will handle it)
+
+v1.1.4 - ThreadJob function scope fix: Export hypervisor-agnostic mount/dismount wrappers
+- Added Invoke-MountScratchDisk function (previously script-scope in BuildFFUVM.ps1)
+- Added Invoke-DismountScratchDisk function (previously script-scope in BuildFFUVM.ps1)
+- These functions route to appropriate helper based on file extension (.vhd vs .vhdx)
+- Exported from FFU.Imaging to ensure availability in ThreadJob contexts
+- Fixes "Invoke-DismountScratchDisk is not recognized" error during UI builds
+
+v1.1.2 - BUG-05: Fix null disk error for VMware VHD files during optimization
+- Added Mount-ScratchVhd function for diskpart-based VHD mounting (counterpart to Dismount-ScratchVhd)
+- Optimize-FFUCaptureDrive now detects file type (.vhd vs .vhdx) and uses appropriate mount method
+- For .vhd files (VMware): Uses diskpart attach via Mount-ScratchVhd/Dismount-ScratchVhd
+- For .vhdx files (Hyper-V): Uses Mount-VHD/Dismount-VHD (existing behavior)
+- Fixed "Cannot bind argument to parameter 'Disk' because it is null" error for VMware builds
+- Root cause: Mount-VHD (Hyper-V cmdlet) returns null for diskpart-created VHD files
+- Skips Optimize-VHD step for .vhd files (requires Hyper-V, not available for VMware builds)
+
+v1.1.1 - BUG-04: Fix Optimize-FFUCaptureDrive null drive letter error
+- Fixed "Cannot validate argument on parameter 'DriveLetter'. The argument is null" error
+- Mount-VHD does NOT automatically assign drive letters to partitions
+- Now calls Set-OSPartitionDriveLetter after mounting to ensure drive letter is assigned
+- Uses returned drive letter for Optimize-Volume calls instead of $osPartition.DriveLetter
+- Fixes VMware + InstallApps=true builds that failed during VHDX optimization phase
+
 v1.0.12 - VHDX-01: Add Set-OSPartitionDriveLetter for guaranteed drive letter assignment
 - New centralized utility function for OS partition drive letter management
 - Handles both already-assigned and missing drive letter cases

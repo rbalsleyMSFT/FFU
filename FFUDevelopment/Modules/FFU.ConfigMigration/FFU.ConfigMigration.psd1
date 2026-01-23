@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule = 'FFU.ConfigMigration.psm1'
-    ModuleVersion = '1.1.0'
+    ModuleVersion = '1.1.1'
     GUID = '9a3eab81-2f9c-44dc-a26e-bbb11086668b'
 
     # Author information

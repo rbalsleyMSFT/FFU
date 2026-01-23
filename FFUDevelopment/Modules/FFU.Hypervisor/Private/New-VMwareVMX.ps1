@@ -36,6 +36,12 @@
 .PARAMETER GuestOS
     VMware guest OS identifier. Default windows11-64.
 
+.PARAMETER NicType
+    Virtual network adapter type. Options:
+    - e1000e: Intel 82574L emulation (default, best WinPE compatibility)
+    - vmxnet3: VMware paravirtual (higher performance, requires drivers)
+    - e1000: Older Intel PRO/1000 MT emulation
+
 .OUTPUTS
     [string] Path to the created VMX file
 
@@ -83,7 +89,11 @@ function New-VMwareVMX {
         [bool]$EnableSecureBoot = $true,
 
         [Parameter(Mandatory = $false)]
-        [string]$GuestOS = 'windows11-64'
+        [string]$GuestOS = 'windows11-64',
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('e1000e', 'vmxnet3', 'e1000')]
+        [string]$NicType = 'e1000e'
     )
 
     # Ensure VM folder exists
@@ -209,22 +219,29 @@ function New-VMwareVMX {
     }
 
     # Network adapter
+    # NicType determines the virtual NIC hardware:
+    # - e1000e: Intel 82574L emulation (default, best WinPE compatibility)
+    # - vmxnet3: VMware paravirtual (higher performance, requires vmxnet3 drivers)
+    # - e1000: Older Intel PRO/1000 MT emulation
     $vmxLines += @(
         '',
         '# Network adapter',
         'ethernet0.present = "TRUE"',
         "ethernet0.connectionType = `"$NetworkType`"",
-        'ethernet0.virtualDev = "e1000e"',
+        "ethernet0.virtualDev = `"$NicType`"",
         'ethernet0.startConnected = "TRUE"',
         'ethernet0.addressType = "generated"',
         'ethernet0.wakeOnPcktRcv = "FALSE"'
     )
 
     # Boot options
+    # FFU builds apply Windows to the VHD before VM boot - VM boots from hard drive, not ISO
+    # HDD must be first in boot order for the VM to find the Windows installation
     $vmxLines += @(
         '',
         '# Boot options',
-        'bios.bootOrder = "cdrom,hdd"',
+        '# IMPORTANT: HDD first - Windows is pre-installed on VHD before VM boot',
+        'bios.bootOrder = "hdd,cdrom"',
         'bios.bootDelay = "0"'
     )
 
@@ -336,8 +353,40 @@ function Update-VMwareVMX {
         $newLines += "$key = `"$value`""
     }
 
+    # Write to file
     $newLines -join "`n" | Out-File -FilePath $VMXPath -Encoding UTF8 -Force
-    WriteLog "Updated VMX file: $VMXPath"
+
+    # Force flush to disk to ensure changes are persisted before VM starts
+    $fileStream = $null
+    try {
+        $fileStream = [System.IO.File]::Open($VMXPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $fileStream.Flush()
+    }
+    finally {
+        if ($fileStream) {
+            $fileStream.Close()
+            $fileStream.Dispose()
+        }
+    }
+
+    # Verify write succeeded by re-reading the file
+    $verifyContent = Get-Content $VMXPath -Raw
+    $settingsVerified = $true
+    foreach ($key in $Settings.Keys) {
+        $expectedValue = $Settings[$key]
+        $escapedKey = [regex]::Escape($key)
+        if ($verifyContent -notmatch "$escapedKey\s*=\s*`"$([regex]::Escape($expectedValue))`"") {
+            WriteLog "WARNING: Setting '$key' may not have been written correctly"
+            $settingsVerified = $false
+        }
+    }
+
+    if ($settingsVerified) {
+        WriteLog "Updated VMX file: $VMXPath (verified)"
+    }
+    else {
+        WriteLog "Updated VMX file: $VMXPath (some settings may not have persisted)"
+    }
 }
 
 <#
@@ -377,7 +426,23 @@ function Get-VMwareVMXSettings {
 
 <#
 .SYNOPSIS
-    Sets the boot ISO for a VMware VM
+    Sets the boot ISO for a VMware VM and configures boot order to CD-ROM first
+
+.DESCRIPTION
+    Attaches an ISO file to the VM's SATA CD-ROM device and changes the BIOS boot order
+    to boot from CD-ROM before hard disk. This is essential for WinPE capture scenarios
+    where the VM must boot from the capture ISO rather than the pre-installed Windows.
+
+.PARAMETER VMXPath
+    Full path to the VMX configuration file
+
+.PARAMETER ISOPath
+    Full path to the ISO file to attach
+
+.NOTES
+    CRITICAL: Changes bios.bootOrder from "hdd,cdrom" to "cdrom,hdd" to ensure the VM
+    boots from the ISO. Without this, the VM would boot Windows from the VHD and the
+    WinPE capture script would never execute.
 #>
 function Set-VMwareBootISO {
     [CmdletBinding()]
@@ -389,14 +454,30 @@ function Set-VMwareBootISO {
         [string]$ISOPath
     )
 
+    # Log current boot order before change for diagnostics
+    if (Test-Path $VMXPath) {
+        $currentVMX = Get-Content $VMXPath -Raw
+        if ($currentVMX -match 'bios\.bootOrder\s*=\s*"([^"]*)"') {
+            WriteLog "Current boot order: $($Matches[1])"
+        }
+        else {
+            WriteLog "No explicit boot order found in VMX (using VMware default)"
+        }
+    }
+
     $settings = @{
-        'sata0:0.deviceType' = 'cdrom-image'
-        'sata0:0.fileName' = $ISOPath
+        # Attach ISO to SATA CD-ROM device
+        'sata0:0.deviceType'    = 'cdrom-image'
+        'sata0:0.fileName'      = $ISOPath
         'sata0:0.startConnected' = 'TRUE'
+        # CRITICAL: Set boot order to CD-ROM first for WinPE capture
+        # This overrides the default "hdd,cdrom" set during VM creation
+        'bios.bootOrder'        = 'cdrom,hdd'
     }
 
     Update-VMwareVMX -VMXPath $VMXPath -Settings $settings
     WriteLog "Set boot ISO to: $ISOPath"
+    WriteLog "Changed boot order to: cdrom,hdd (CD-ROM first for WinPE capture)"
 }
 
 <#

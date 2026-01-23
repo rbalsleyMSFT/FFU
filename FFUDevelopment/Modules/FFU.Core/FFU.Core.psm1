@@ -263,7 +263,15 @@ function Get-ShortenedWindowsSKU {
         # DEFAULT CASE - Return original SKU if no match found
         # This prevents empty string returns and allows builds to continue with unknown SKUs
         default {
-            Write-Warning "Unknown Windows SKU '$WindowsSKU' - using original name in FFU filename"
+            # Safe logging pattern for ThreadJob compatibility (v1.0.17)
+            # WriteLog may not be available in all contexts; fall back to Write-Verbose
+            $warningMsg = "Unknown Windows SKU '$WindowsSKU' - using original name in FFU filename"
+            if ($function:WriteLog) {
+                WriteLog "WARNING: $warningMsg"
+            }
+            else {
+                Write-Verbose "WARNING: $warningMsg"
+            }
             Write-Verbose "If this SKU should have a shorter name, please add it to Get-ShortenedWindowsSKU function"
             $WindowsSKU
         }
@@ -1198,7 +1206,7 @@ function Invoke-WithErrorHandling {
     # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
     $log = {
         param([string]$Message)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog $Message
         } else {
             Write-Verbose $Message
@@ -1313,7 +1321,7 @@ function Test-ExternalCommandSuccess {
     # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
     $logError = {
         param([string]$Message)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "ERROR: $Message"
         } else {
             Write-Verbose "ERROR: $Message"
@@ -1387,7 +1395,7 @@ function Invoke-WithCleanup {
     # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
     $logMessage = {
         param([string]$Level, [string]$Message)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "$Level $Message"
         } else {
             Write-Verbose "$Level $Message"
@@ -1490,7 +1498,7 @@ function Invoke-WimMountWithErrorHandling {
     # Safe logging helper - uses WriteLog if available, otherwise Write-Verbose
     $logMessage = {
         param([string]$Message)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog $Message
         } else {
             Write-Verbose $Message
@@ -2228,7 +2236,7 @@ function Register-CleanupAction {
     $script:CleanupRegistry.Add($entry)
 
     # Safe logging
-    if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Registered cleanup action: $Name (Type: $ResourceType, Id: $ResourceId)"
     }
 
@@ -2266,7 +2274,7 @@ function Unregister-CleanupAction {
     $entry = $script:CleanupRegistry | Where-Object { $_.Id -eq $CleanupId }
     if ($entry) {
         $script:CleanupRegistry.Remove($entry) | Out-Null
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "Unregistered cleanup action: $($entry.Name)"
         }
         $true
@@ -2309,7 +2317,7 @@ function Invoke-FailureCleanup {
     # Safe logging helper (Write-Verbose fallback for background job compatibility)
     $log = {
         param([string]$Message)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog $Message
         } else {
             Write-Verbose $Message
@@ -2431,8 +2439,10 @@ function Test-BuildCancellation {
     }
 
     # Check if cancellation was requested via FFU.Messaging
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.18)
+    # Note: $function: syntax doesn't work with hyphenated function names
     $cancellationRequested = $false
-    if (Get-Command Test-FFUCancellationRequested -ErrorAction SilentlyContinue) {
+    if ($ExecutionContext.InvokeCommand.GetCommand('Test-FFUCancellationRequested', 'Function')) {
         $cancellationRequested = Test-FFUCancellationRequested -Context $MessagingContext
     }
 
@@ -2442,14 +2452,15 @@ function Test-BuildCancellation {
 
     # Cancellation was requested - log and notify
     # Safe logging helper (Write-Verbose fallback for background job compatibility)
-    if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Cancellation detected at phase: $PhaseName"
     } else {
         Write-Verbose "Cancellation detected at phase: $PhaseName"
     }
 
     # Send warning to UI if FFU.Messaging functions available
-    if (Get-Command Write-FFUWarning -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.18)
+    if ($ExecutionContext.InvokeCommand.GetCommand('Write-FFUWarning', 'Function')) {
         Write-FFUWarning -Context $MessagingContext `
             -Message "Build cancellation requested at: $PhaseName" `
             -Source 'BuildFFUVM'
@@ -2459,7 +2470,8 @@ function Test-BuildCancellation {
     if ($InvokeCleanup) {
         Invoke-FailureCleanup -Reason "User cancelled build at: $PhaseName"
 
-        if (Get-Command Set-FFUBuildState -ErrorAction SilentlyContinue) {
+        # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.18)
+        if ($ExecutionContext.InvokeCommand.GetCommand('Set-FFUBuildState', 'Function')) {
             Set-FFUBuildState -Context $MessagingContext -State Cancelled -SendMessage
         }
     }
@@ -2481,7 +2493,7 @@ function Clear-CleanupRegistry {
     $count = $script:CleanupRegistry.Count
     $script:CleanupRegistry.Clear()
 
-    if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Cleared cleanup registry ($count actions removed)"
     }
 }
@@ -2778,7 +2790,7 @@ function Test-ScriptIntegrity {
             }
             catch {
                 # Safe logging - use WriteLog if available, otherwise Write-Verbose
-                if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+                if ($function:WriteLog) {
                     WriteLog "WARNING: Failed to read hash manifest: $($_.Exception.Message)"
                 }
                 else {
@@ -2787,7 +2799,7 @@ function Test-ScriptIntegrity {
             }
         }
         else {
-            if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            if ($function:WriteLog) {
                 WriteLog "WARNING: Hash manifest not found at $ManifestPath"
             }
             else {
@@ -2798,7 +2810,7 @@ function Test-ScriptIntegrity {
 
     # If no expected hash available, log and return based on strict mode
     if ([string]::IsNullOrEmpty($ExpectedHash)) {
-        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "WARNING: No expected hash for $(Split-Path $ScriptPath -Leaf) - skipping verification"
         }
         else {
@@ -2809,7 +2821,7 @@ function Test-ScriptIntegrity {
 
     # Compare hashes
     if ($actualHash -eq $ExpectedHash) {
-        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "SECURITY: Verified integrity of $(Split-Path $ScriptPath -Leaf)"
         }
         else {
@@ -2820,7 +2832,7 @@ function Test-ScriptIntegrity {
     else {
         $logLevel = if ($FailOnMismatch) { "ERROR" } else { "WARNING" }
         $message = "$logLevel`: Hash mismatch for $(Split-Path $ScriptPath -Leaf)"
-        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog $message
             WriteLog "  Expected: $ExpectedHash"
             WriteLog "  Actual:   $actualHash"
@@ -2881,7 +2893,7 @@ function New-OrchestrationHashManifest {
     foreach ($script in $scripts) {
         $hash = (Get-FileHash -Path $script.FullName -Algorithm SHA256).Hash
         $manifest.scripts[$script.Name] = $hash
-        if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "Hashed $($script.Name): $hash"
         }
         else {
@@ -2896,7 +2908,7 @@ function New-OrchestrationHashManifest {
     }
 
     $manifest | ConvertTo-Json -Depth 3 | Set-Content -Path $ManifestPath -Encoding UTF8
-    if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Generated manifest at $ManifestPath with $($scripts.Count) scripts"
     }
     else {
@@ -2964,7 +2976,7 @@ function Update-OrchestrationHashManifest {
         if (Test-Path $scriptPath) {
             $hash = (Get-FileHash -Path $scriptPath -Algorithm SHA256).Hash
             $manifest.scripts[$scriptName] = $hash
-            if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            if ($function:WriteLog) {
                 WriteLog "Updated hash for $scriptName`: $hash"
             }
             else {
@@ -2972,7 +2984,7 @@ function Update-OrchestrationHashManifest {
             }
         }
         else {
-            if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+            if ($function:WriteLog) {
                 WriteLog "WARNING: Script not found: $scriptPath"
             }
             else {
@@ -2990,7 +3002,7 @@ function Update-OrchestrationHashManifest {
     }
 
     $manifest | ConvertTo-Json -Depth 3 | Set-Content -Path $ManifestPath -Encoding UTF8
-    if (Get-Command -Name 'WriteLog' -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Updated manifest at $ManifestPath"
     }
     else {

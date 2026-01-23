@@ -491,6 +491,28 @@ class FFUConstants {
 
     #endregion
 
+    #region FFU File Lock Settings
+
+    # FFU file lock wait time (120 seconds / 2 minutes)
+    # Time to wait after FFU capture before accessing the file
+    # Helps prevent file lock errors from antivirus, indexing services, or Hyper-V handles
+    # Can be overridden via config FFUFileLockWaitSeconds
+    static [int] $FFU_FILE_LOCK_WAIT_SECONDS = 120
+
+    # FFU file lock retry count (3)
+    # Number of retry attempts when FFU file is locked by another process
+    # Retries help with transient locks from Windows Defender or indexer
+    # Can be overridden via config FFUFileLockRetryCount
+    static [int] $FFU_FILE_LOCK_RETRY_COUNT = 3
+
+    # FFU file lock retry delay (10 seconds)
+    # Delay between FFU file lock retry attempts
+    # Short enough to not waste time, long enough for locks to release
+    # Can be overridden via config FFUFileLockRetryDelaySeconds
+    static [int] $FFU_FILE_LOCK_RETRY_DELAY_SECONDS = 10
+
+    #endregion
+
     #region Feature Flags
 
     # Enable verbose DISM logging

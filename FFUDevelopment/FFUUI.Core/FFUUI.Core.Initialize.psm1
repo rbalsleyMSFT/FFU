@@ -153,6 +153,7 @@ function Initialize-UIControls {
     $State.Controls.txtVMNamePrefix = $window.FindName('txtVMNamePrefix')
     $State.Controls.cmbLogicalSectorSize = $window.FindName('cmbLogicalSectorSize')
     $State.Controls.txtVMShutdownTimeout = $window.FindName('txtVMShutdownTimeout')
+    $State.Controls.txtFFUFileLockWait = $window.FindName('txtFFUFileLockWait')
     $State.Controls.txtProductKey = $window.FindName('txtProductKey')
     $State.Controls.txtOfficePath = $window.FindName('txtOfficePath')
     $State.Controls.txtOfficeConfigXMLFilePath = $window.FindName('txtOfficeConfigXMLFilePath')

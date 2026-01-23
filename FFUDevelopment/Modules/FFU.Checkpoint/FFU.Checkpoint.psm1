@@ -244,7 +244,7 @@ function Save-FFUBuildCheckpoint {
     Move-Item -Path $tempPath -Destination $checkpointPath -Force
 
     # Log if WriteLog is available
-    if (Get-Command -Name WriteLog -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Checkpoint saved: Phase $CompletedPhase ($($checkpoint.percentComplete)%)"
     }
     else {
@@ -630,7 +630,7 @@ function Test-PhaseAlreadyComplete {
 
     if ($currentPhaseOrder -le $checkpointPhaseOrder) {
         # Phase already completed - log it
-        if (Get-Command -Name WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "RESUME: Phase '$PhaseName' already completed (checkpoint at '$lastCompletedPhase')"
         }
         else {

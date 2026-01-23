@@ -157,6 +157,17 @@ function Get-UIConfig {
         }
     }
 
+    # Add FFUFileLockWaitSeconds from UI control
+    if ($null -ne $State.Controls.txtFFUFileLockWait) {
+        $waitText = $State.Controls.txtFFUFileLockWait.Text
+        if (-not [string]::IsNullOrWhiteSpace($waitText)) {
+            $waitSeconds = 0
+            if ([int]::TryParse($waitText, [ref]$waitSeconds) -and $waitSeconds -ge 30 -and $waitSeconds -le 600) {
+                $config.FFUFileLockWaitSeconds = $waitSeconds
+            }
+        }
+    }
+
     $State.Controls.lstUSBDrives.Items | Where-Object { $_.IsSelected } | ForEach-Object {
         $config.USBDriveList[$_.Model] = $_.SerialNumber
     }
@@ -511,6 +522,12 @@ function Update-UIFromConfig {
     if ($ConfigContent.VMShutdownTimeoutMinutes -and $null -ne $State.Controls.txtVMShutdownTimeout) {
         $State.Controls.txtVMShutdownTimeout.Text = $ConfigContent.VMShutdownTimeoutMinutes.ToString()
         WriteLog "LoadConfig: Set VMShutdownTimeoutMinutes to $($ConfigContent.VMShutdownTimeoutMinutes)."
+    }
+
+    # Load FFUFileLockWaitSeconds if present
+    if ($ConfigContent.FFUFileLockWaitSeconds -and $null -ne $State.Controls.txtFFUFileLockWait) {
+        $State.Controls.txtFFUFileLockWait.Text = $ConfigContent.FFUFileLockWaitSeconds.ToString()
+        WriteLog "LoadConfig: Set FFUFileLockWaitSeconds to $($ConfigContent.FFUFileLockWaitSeconds)."
     }
 
     # Windows Settings

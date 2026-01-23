@@ -305,7 +305,8 @@ function Invoke-ExpandWindowsImageWithRetry {
                     $newSourcesFolder = "$newDriveLetter`:\sources\"
 
                     # Register cleanup for re-mounted ISO in case of failure
-                    if (Get-Command Register-ISOCleanup -ErrorAction SilentlyContinue) {
+                    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.2)
+                    if ($ExecutionContext.InvokeCommand.GetCommand('Register-ISOCleanup', 'Function')) {
                         $null = Register-ISOCleanup -ISOPath $ISOPath
                     }
 
@@ -447,7 +448,8 @@ function Get-WimFromISO {
     $sourcesFolder = ($mountResult | Get-Volume).DriveLetter + ":\sources\"
 
     # Register cleanup for mounted ISO in case of failure
-    if (Get-Command Register-ISOCleanup -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.2)
+    if ($ExecutionContext.InvokeCommand.GetCommand('Register-ISOCleanup', 'Function')) {
         $null = Register-ISOCleanup -ISOPath $isoPath
     }
 
@@ -630,9 +632,22 @@ detail vdisk
             WriteLog "  diskpart detail output:"
             $detailOutput -split "`n" | ForEach-Object { WriteLog "    $_" }
 
-            # Parse "Disk ###" from detail output
+            # Parse disk number from detail output - handle multiple diskpart output formats
+            # Format 1: "Disk : Disk N" (some Windows versions)
+            # Format 2: "Associated disk#: N" (other Windows versions)
+            # Format 3: "Disk #: N" or "Disk#: N"
+            $diskNumber = $null
             if ($detailOutput -match "Disk\s*:\s*Disk\s+(\d+)") {
                 $diskNumber = [int]$Matches[1]
+            }
+            elseif ($detailOutput -match "Associated disk#:\s*(\d+)") {
+                $diskNumber = [int]$Matches[1]
+            }
+            elseif ($detailOutput -match "Disk\s*#:\s*(\d+)") {
+                $diskNumber = [int]$Matches[1]
+            }
+
+            if ($null -ne $diskNumber) {
                 WriteLog "  Found attached VHD at Disk $diskNumber"
 
                 # Now get disk details using diskpart list disk
@@ -1182,19 +1197,28 @@ function Invoke-VerifiedVolumeFlush {
             return $true  # Nothing to flush
         }
 
-        # Check if Write-VolumeCache is available (Windows 10+/Server 2016+)
-        $writeVolumeCacheAvailable = Get-Command Write-VolumeCache -Module Storage -ErrorAction SilentlyContinue
-
-        if ($writeVolumeCacheAvailable) {
-            # Use native cmdlet - single verified flush operation
-            foreach ($partition in $partitions) {
-                $driveLetter = $partition.DriveLetter
+        # Try Write-VolumeCache first (Windows 10+/Server 2016+)
+        # Uses try/catch instead of Get-Command for ThreadJob compatibility (v0.0.12)
+        $writeVolumeCacheWorked = $false
+        foreach ($partition in $partitions) {
+            $driveLetter = $partition.DriveLetter
+            try {
                 WriteLog "  Flushing volume $driveLetter`: (Write-VolumeCache)..."
                 Write-VolumeCache -DriveLetter $driveLetter -ErrorAction Stop
                 WriteLog "    Volume $driveLetter`: flushed (verified)"
+                $writeVolumeCacheWorked = $true
+            }
+            catch [System.Management.Automation.CommandNotFoundException] {
+                # Write-VolumeCache not available, will fall back to fsutil
+                WriteLog "  Write-VolumeCache not available, using fsutil fallback..."
+                break
+            }
+            catch {
+                WriteLog "    WARNING: Write-VolumeCache failed for $driveLetter`: $($_.Exception.Message)"
             }
         }
-        else {
+
+        if (-not $writeVolumeCacheWorked) {
             # Fallback to fsutil for older Windows versions
             WriteLog "  Write-VolumeCache not available, using fsutil fallback..."
             foreach ($partition in $partitions) {
@@ -1217,6 +1241,156 @@ function Invoke-VerifiedVolumeFlush {
         WriteLog "WARNING: Volume flush encountered error: $($_.Exception.Message)"
         WriteLog "Continuing with dismount anyway..."
         return $false
+    }
+}
+
+function Mount-ScratchVhd {
+    <#
+    .SYNOPSIS
+    Mounts an existing VHD file using diskpart (no Hyper-V dependency)
+
+    .DESCRIPTION
+    Attaches an existing VHD file using diskpart.exe instead of Hyper-V cmdlets.
+    This function is the counterpart to Dismount-ScratchVhd for VMware builds.
+    Unlike New-ScratchVhd which creates a new VHD, this function attaches an
+    existing VHD that was previously detached (e.g., after VM shutdown).
+
+    Returns a disk object compatible with partition operations.
+
+    .PARAMETER VhdPath
+    Path to the VHD file to mount
+
+    .OUTPUTS
+    Object with Number, Size, BusType properties (CimInstance or PSCustomObject)
+
+    .EXAMPLE
+    $disk = Mount-ScratchVhd -VhdPath "C:\VM\disk.vhd"
+
+    .NOTES
+    For .vhd files created with diskpart (VMware builds), use this function.
+    For .vhdx files created with Hyper-V cmdlets, use Mount-VHD.
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VhdPath
+    )
+
+    WriteLog "=========================================="
+    WriteLog "Mount-ScratchVhd: Mounting existing VHD"
+    WriteLog "=========================================="
+    WriteLog "VHD Path: $VhdPath"
+
+    if (-not (Test-Path -Path $VhdPath)) {
+        throw "VHD file not found: $VhdPath"
+    }
+
+    # Attach VHD using diskpart
+    WriteLog "Attaching VHD with diskpart..."
+    $attachScript = @"
+select vdisk file="$VhdPath"
+attach vdisk
+"@
+    $attachScriptPath = Join-Path $env:TEMP "diskpart_mount_$(Get-Random).txt"
+    $attachScript | Out-File -FilePath $attachScriptPath -Encoding ASCII
+
+    try {
+        $attachProcess = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$attachScriptPath`"" `
+                                       -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_mount_stdout.txt" `
+                                       -RedirectStandardError "$env:TEMP\diskpart_mount_stderr.txt"
+
+        $attachStdout = Get-Content "$env:TEMP\diskpart_mount_stdout.txt" -Raw -ErrorAction SilentlyContinue
+        if ($attachStdout) {
+            WriteLog "Attach output:"
+            $attachStdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { WriteLog "  $_" }
+        }
+
+        if ($attachProcess.ExitCode -ne 0) {
+            throw "diskpart attach failed with exit code $($attachProcess.ExitCode)"
+        }
+
+        # Wait for mount to complete and disk to be recognized
+        WriteLog "Waiting for disk enumeration..."
+        Start-Sleep -Seconds 3
+
+        # Find the mounted disk using diskpart detail (most reliable method)
+        WriteLog "Locating mounted VHD disk..."
+        $disk = $null
+
+        # Use diskpart detail vdisk to find the disk number
+        $detailScript = @"
+select vdisk file="$VhdPath"
+detail vdisk
+"@
+        $detailScriptPath = Join-Path $env:TEMP "diskpart_detail_$(Get-Random).txt"
+        $detailScript | Out-File -FilePath $detailScriptPath -Encoding ASCII
+
+        $detailOutput = & diskpart /s $detailScriptPath 2>&1 | Out-String
+        Remove-Item -Path $detailScriptPath -Force -ErrorAction SilentlyContinue
+
+        WriteLog "diskpart detail output:"
+        $detailOutput -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { WriteLog "  $_" }
+
+        # Parse disk number from detail output - handle multiple diskpart output formats
+        # Format 1: "Disk : Disk N" (some Windows versions)
+        # Format 2: "Associated disk#: N" (other Windows versions)
+        # Format 3: "Disk #: N" or "Disk#: N"
+        $diskNumber = $null
+        if ($detailOutput -match "Disk\s*:\s*Disk\s+(\d+)") {
+            $diskNumber = [int]$Matches[1]
+        }
+        elseif ($detailOutput -match "Associated disk#:\s*(\d+)") {
+            $diskNumber = [int]$Matches[1]
+        }
+        elseif ($detailOutput -match "Disk\s*#:\s*(\d+)") {
+            $diskNumber = [int]$Matches[1]
+        }
+
+        if ($null -ne $diskNumber) {
+            WriteLog "Found attached VHD at Disk $diskNumber"
+
+            # Try to get disk via Get-Disk first (more complete object)
+            try {
+                $disk = Get-Disk -Number $diskNumber -ErrorAction Stop
+                WriteLog "Got disk via Get-Disk: Disk $($disk.Number), Size=$([math]::Round($disk.Size / 1GB, 2))GB"
+            }
+            catch {
+                WriteLog "WARNING: Get-Disk failed, creating PSCustomObject fallback"
+                # Create a compatible PSCustomObject
+                $disk = [PSCustomObject]@{
+                    Number = $diskNumber
+                    DiskNumber = $diskNumber
+                    Size = (Get-Item $VhdPath).Length
+                    BusType = 'File Backed Virtual'
+                    PartitionStyle = 'GPT'
+                    FriendlyName = "VHD Disk $diskNumber"
+                    OperationalStatus = 'Online'
+                }
+            }
+        }
+
+        if (-not $disk) {
+            throw "Could not find mounted VHD disk after attach"
+        }
+
+        WriteLog "=========================================="
+        WriteLog "Mount-ScratchVhd: VHD mounted successfully"
+        WriteLog "  Disk Number: $($disk.Number)"
+        WriteLog "  Size: $([math]::Round($disk.Size / 1GB, 2)) GB"
+        WriteLog "=========================================="
+
+        return $disk
+    }
+    catch {
+        WriteLog "ERROR: Failed to mount VHD: $($_.Exception.Message)"
+        throw
+    }
+    finally {
+        # Clean up temp files
+        Remove-Item -Path $attachScriptPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_mount_stdout.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:TEMP\diskpart_mount_stderr.txt" -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -1749,25 +1923,87 @@ function Dismount-ScratchVhdx {
 }
 
 function Optimize-FFUCaptureDrive {
+    <#
+    .SYNOPSIS
+    Optimizes a VHD/VHDX before FFU capture by defragmenting and consolidating.
+
+    .DESCRIPTION
+    Mounts the VHD/VHDX, assigns a drive letter to the OS partition (using Set-OSPartitionDriveLetter
+    to handle the fact that mount operations do not automatically assign drive letters), then performs
+    defragmentation and slab consolidation. Finally, mounts read-only for full VHD optimization.
+
+    Supports both:
+    - .vhdx files (Hyper-V builds): Uses Mount-VHD/Dismount-VHD and Optimize-VHD
+    - .vhd files (VMware builds): Uses diskpart-based Mount-ScratchVhd/Dismount-ScratchVhd
+      Note: Optimize-VHD is skipped for .vhd files as it requires Hyper-V cmdlets
+
+    .PARAMETER VhdxPath
+    Path to the VHD or VHDX file to optimize.
+
+    .NOTES
+    Fix for issue: DriveLetter-null-during-optimization
+    Mount operations do not automatically assign drive letters to partitions - the partition
+    exists but DriveLetter property is null. Set-OSPartitionDriveLetter must be called
+    to ensure a valid drive letter is assigned before calling Optimize-Volume.
+
+    Fix for issue: Disk-null-optimization-vhd
+    VMware builds use .vhd files created with diskpart, not Hyper-V .vhdx files.
+    Mount-VHD (Hyper-V cmdlet) returns null for diskpart-created VHD files.
+    This function now detects file type and uses the appropriate mount method.
+    #>
     param (
         [string]$VhdxPath
     )
     try {
-        WriteLog 'Mounting VHDX for volume optimization'
-        $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
-        $osPartition = $mountedDisk | Get-Partition | Where-Object { $_.GptType -eq "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" }
+        # Detect file type to use appropriate mount/dismount methods
+        $isVhd = $VhdxPath -like '*.vhd' -and $VhdxPath -notlike '*.vhdx'
+        $fileType = if ($isVhd) { 'VHD (VMware/diskpart)' } else { 'VHDX (Hyper-V)' }
+        WriteLog "Mounting $fileType for volume optimization: $VhdxPath"
+
+        if ($isVhd) {
+            # VMware builds: Use diskpart-based mount
+            $mountedDisk = Mount-ScratchVhd -VhdPath $VhdxPath
+        }
+        else {
+            # Hyper-V builds: Use Mount-VHD cmdlet
+            $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+        }
+
+        if (-not $mountedDisk) {
+            throw "Failed to mount $fileType - mount operation returned null"
+        }
+
+        # Use Set-OSPartitionDriveLetter to ensure drive letter is assigned
+        # Mount operations do NOT automatically assign drive letters to partitions
+        WriteLog 'Ensuring OS partition has drive letter assigned...'
+        $driveLetter = Set-OSPartitionDriveLetter -Disk $mountedDisk -PreferredLetter 'W'
+        WriteLog "OS partition assigned drive letter: $driveLetter"
+
         WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
+        Optimize-Volume -DriveLetter $driveLetter -Defrag -NormalPriority
         WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
-        WriteLog 'Dismounting VHDX'
-        Dismount-ScratchVhdx -VhdxPath $VhdxPath
-        WriteLog 'Mounting VHDX as read-only for optimization'
-        Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly
-        WriteLog 'Optimizing VHDX in full mode...'
-        Optimize-VHD -Path $VhdxPath -Mode Full
-        WriteLog 'Dismounting VHDX'
-        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        Optimize-Volume -DriveLetter $driveLetter -SlabConsolidate -NormalPriority
+
+        WriteLog "Dismounting $fileType"
+        if ($isVhd) {
+            Dismount-ScratchVhd -VhdPath $VhdxPath
+        }
+        else {
+            Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        }
+
+        # Full VHD optimization is only available for VHDX (requires Hyper-V Optimize-VHD cmdlet)
+        if (-not $isVhd) {
+            WriteLog 'Mounting VHDX as read-only for optimization'
+            Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly
+            WriteLog 'Optimizing VHDX in full mode...'
+            Optimize-VHD -Path $VhdxPath -Mode Full
+            WriteLog 'Dismounting VHDX'
+            Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        }
+        else {
+            WriteLog 'Skipping VHD optimization (Optimize-VHD requires Hyper-V, not available for VMware builds)'
+        }
     }
     catch {
         throw $_
@@ -2023,7 +2259,19 @@ function New-FFU {
         [object]$VMInfo,
 
         [Parameter(Mandatory = $false)]
-        [int]$VMShutdownTimeoutMinutes = 60
+        [int]$VMShutdownTimeoutMinutes = 60,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$ShowVMConsole = $true,
+
+        [Parameter(Mandatory = $false)]
+        [int]$FFUFileLockWaitSeconds = 120,
+
+        [Parameter(Mandatory = $false)]
+        [int]$FFUFileLockRetryCount = 3,
+
+        [Parameter(Mandatory = $false)]
+        [int]$FFUFileLockRetryDelaySeconds = 10
     )
     #If $InstallApps = $true, configure the VM
     If ($InstallApps) {
@@ -2073,7 +2321,8 @@ function New-FFU {
             WriteLog "    4. DISM captures disk to FFU file"
             WriteLog "    5. VM shuts down automatically after capture"
             WriteLog "  If VM boots to Windows instead of WinPE, boot order was not changed correctly"
-            $HypervisorProvider.StartVM($VMInfo)
+            WriteLog "  ShowVMConsole: $ShowVMConsole"
+            $HypervisorProvider.StartVM($VMInfo, $ShowVMConsole)
             WriteLog "VM started - monitor VM console to verify WinPE boot"
             WriteLog "============================================"
 
@@ -2150,6 +2399,60 @@ function New-FFU {
 
         Set-Progress -Percentage 79 -Message "VM capture complete, verifying..."
         WriteLog "VM Shutdown"
+
+        # === SMB SESSION CLEANUP: Release FFU file locks held by capture user ===
+        # The VM writes the FFU via network share. After VM shutdown, the SMB server
+        # may keep file handles open, causing "file is locked" errors during optimization.
+        # Force close all SMB sessions for the capture user to release these locks.
+        $captureUser = 'ffu_user'
+        WriteLog "Releasing SMB file locks for capture user '$captureUser'..."
+        try {
+            # Method 1: Close all SMB sessions for the capture user
+            $smbSessions = Get-SmbSession -ErrorAction SilentlyContinue |
+                           Where-Object { $_.ClientUserName -like "*$captureUser*" }
+
+            if ($smbSessions) {
+                $sessionCount = @($smbSessions).Count
+                WriteLog "Found $sessionCount SMB session(s) for user '$captureUser'"
+
+                foreach ($session in $smbSessions) {
+                    WriteLog "  Closing SMB session: ClientComputerName=$($session.ClientComputerName), SessionId=$($session.SessionId)"
+                    $session | Close-SmbSession -Force -ErrorAction SilentlyContinue
+                }
+                WriteLog "SMB sessions closed successfully"
+            }
+            else {
+                WriteLog "No active SMB sessions found for user '$captureUser'"
+            }
+
+            # Method 2: Also close any open file handles on .ffu files as a safety measure
+            $ffuOpenFiles = Get-SmbOpenFile -ErrorAction SilentlyContinue |
+                            Where-Object { $_.Path -like '*.ffu' }
+
+            if ($ffuOpenFiles) {
+                $fileCount = @($ffuOpenFiles).Count
+                WriteLog "Found $fileCount open file handle(s) on .ffu files"
+
+                foreach ($openFile in $ffuOpenFiles) {
+                    WriteLog "  Closing file handle: $($openFile.Path)"
+                    $openFile | Close-SmbOpenFile -Force -ErrorAction SilentlyContinue
+                }
+                WriteLog "FFU file handles closed successfully"
+            }
+            else {
+                WriteLog "No open .ffu file handles found"
+            }
+
+            # Brief pause to allow file system to update after releasing locks
+            Start-Sleep -Seconds 2
+            WriteLog "SMB cleanup complete"
+        }
+        catch {
+            # Non-fatal: log warning but continue - the file lock retry logic will handle any remaining locks
+            WriteLog "WARNING: SMB session cleanup encountered an error: $($_.Exception.Message)"
+            WriteLog "Continuing with FFU verification - file lock retry logic will handle any remaining locks"
+        }
+
         # Check for .ffu files in the FFUDevelopment folder
         WriteLog "Checking for FFU Files"
         $FFUFiles = Get-ChildItem -Path $FFUCaptureLocation -Filter "*.ffu" -File
@@ -2267,11 +2570,14 @@ function New-FFU {
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
-    #Without this 120 second sleep, we sometimes see an error when mounting the FFU due to a file handle lock. Needed for both driver and optimize steps.
-
+    # Wait before accessing FFU file to prevent file handle lock errors
+    # Common causes: Windows Defender scanning, Windows Search indexer, Hyper-V handles
+    # Wait time is configurable via FFUFileLockWaitSeconds parameter (default 120 seconds / 2 minutes)
     If ($InstallDrivers -or $Optimize) {
-        WriteLog 'Sleeping 2 minutes to prevent file handle lock'
-        Start-Sleep 120
+        $waitMinutes = [math]::Round($FFUFileLockWaitSeconds / 60, 1)
+        WriteLog "Sleeping $FFUFileLockWaitSeconds seconds ($waitMinutes minutes) to prevent file handle lock"
+        WriteLog "  Configurable via FFUFileLockWaitSeconds parameter (current: $FFUFileLockWaitSeconds)"
+        Start-Sleep -Seconds $FFUFileLockWaitSeconds
     }
 
     #Add drivers
@@ -2297,7 +2603,8 @@ function New-FFU {
                 WriteLog 'Mounting complete'
 
                 # Register cleanup for DISM mount in case of failure
-                if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+                # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.2)
+                if ($ExecutionContext.InvokeCommand.GetCommand('Register-DISMMountCleanup', 'Function')) {
                     $null = Register-DISMMountCleanup -MountPath $mountPath
                 }
             }
@@ -2313,7 +2620,8 @@ function New-FFU {
                     WriteLog 'Mounting succeeded on retry'
 
                     # Register cleanup for DISM mount in case of failure
-                    if (Get-Command Register-DISMMountCleanup -ErrorAction SilentlyContinue) {
+                    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.0.2)
+                    if ($ExecutionContext.InvokeCommand.GetCommand('Register-DISMMountCleanup', 'Function')) {
                         $null = Register-DISMMountCleanup -MountPath $mountPath
                     }
                 }
@@ -2370,7 +2678,10 @@ function New-FFU {
         WriteLog 'Optimizing FFU - This will take a few minutes, please be patient'
         # Use dedicated scratch directory to prevent file lock errors (Error 1167 / 0x8007048f)
         # This addresses antivirus and Windows Search indexer interference with temp VHD files
-        Invoke-FFUOptimizeWithScratchDir -FFUFile $FFUFile -DandIEnv $DandIEnv -FFUDevelopmentPath $FFUDevelopmentPath
+        # Pass file lock retry parameters for transient lock handling
+        Invoke-FFUOptimizeWithScratchDir -FFUFile $FFUFile -DandIEnv $DandIEnv -FFUDevelopmentPath $FFUDevelopmentPath `
+                                         -FileLockRetryCount $FFUFileLockRetryCount `
+                                         -FileLockRetryDelaySeconds $FFUFileLockRetryDelaySeconds
         WriteLog 'Optimizing FFU complete'
         Set-Progress -Percentage 90 -Message "FFU post-processing complete."
     }
@@ -2607,7 +2918,13 @@ function Invoke-FFUOptimizeWithScratchDir {
         [string]$FFUDevelopmentPath,
 
         [Parameter(Mandatory = $false)]
-        [int]$MaxRetries = 2
+        [int]$MaxRetries = 2,
+
+        [Parameter(Mandatory = $false)]
+        [int]$FileLockRetryCount = 3,
+
+        [Parameter(Mandatory = $false)]
+        [int]$FileLockRetryDelaySeconds = 10
     )
 
     # Create dedicated scratch directory (not in user temp)
@@ -2668,7 +2985,7 @@ function Invoke-FFUOptimizeWithScratchDir {
     New-Item -Path $scratchDir -ItemType Directory -Force | Out-Null
     WriteLog "Scratch directory created: $scratchDir"
 
-    # Step 4: Verify FFU file exists and is not locked
+    # Step 4: Verify FFU file exists and is not locked (with retry logic)
     WriteLog "Step 4/6: Verifying FFU file accessibility..."
     if (-not (Test-Path -Path $FFUFile)) {
         throw "FFU file not found: $FFUFile"
@@ -2677,14 +2994,73 @@ function Invoke-FFUOptimizeWithScratchDir {
     $ffuFileInfo = Get-Item -Path $FFUFile
     WriteLog "FFU file size: $([math]::Round($ffuFileInfo.Length / 1GB, 2)) GB"
 
-    try {
-        $fileStream = [System.IO.File]::Open($FFUFile, 'Open', 'Read', 'Read')
-        $fileStream.Close()
-        $fileStream.Dispose()
-        WriteLog "FFU file is accessible and not exclusively locked"
+    # File lock check with retry logic
+    $lockRetryAttempt = 0
+    $fileAccessible = $false
+    $lastLockError = $null
+
+    WriteLog "Checking file lock (max $FileLockRetryCount attempts, $FileLockRetryDelaySeconds sec delay between retries)..."
+
+    while (-not $fileAccessible -and $lockRetryAttempt -lt $FileLockRetryCount) {
+        $lockRetryAttempt++
+        try {
+            $fileStream = [System.IO.File]::Open($FFUFile, 'Open', 'Read', 'Read')
+            $fileStream.Close()
+            $fileStream.Dispose()
+            $fileAccessible = $true
+            WriteLog "FFU file is accessible and not exclusively locked (attempt $lockRetryAttempt/$FileLockRetryCount)"
+        }
+        catch {
+            $lastLockError = $_.Exception.Message
+            if ($lockRetryAttempt -lt $FileLockRetryCount) {
+                WriteLog "WARNING: FFU file is locked (attempt $lockRetryAttempt/$FileLockRetryCount). Waiting $FileLockRetryDelaySeconds seconds before retry..."
+                WriteLog "  Lock error: $lastLockError"
+                Start-Sleep -Seconds $FileLockRetryDelaySeconds
+            }
+        }
     }
-    catch {
-        throw "FFU file is locked by another process: $FFUFile - $($_.Exception.Message)"
+
+    if (-not $fileAccessible) {
+        # Provide detailed remediation guidance
+        WriteLog "============================================"
+        WriteLog "FFU FILE LOCK ERROR - TROUBLESHOOTING GUIDE"
+        WriteLog "============================================"
+        WriteLog "The FFU file is locked by another process after $FileLockRetryCount attempts."
+        WriteLog ""
+        WriteLog "POSSIBLE CAUSES AND REMEDIATION:"
+        WriteLog ""
+        WriteLog "1. Windows Defender Real-Time Scanning"
+        WriteLog "   Fix: Add FFU folder to exclusions"
+        WriteLog "   PowerShell: Add-MpPreference -ExclusionPath '$FFUDevelopmentPath'"
+        WriteLog ""
+        WriteLog "2. Windows Search Indexer"
+        WriteLog "   Fix: Exclude FFU folder from indexing"
+        WriteLog "   Settings > Search > Searching Windows > Excluded Folders"
+        WriteLog ""
+        WriteLog "3. Third-Party Antivirus Software"
+        WriteLog "   Fix: Add .ffu extension and FFU folder to exclusions"
+        WriteLog ""
+        WriteLog "4. Another Application Has File Open"
+        WriteLog "   Fix: Close file explorers, disk tools, or other apps"
+        WriteLog "   Check with: handle.exe -a '$FFUFile' (SysInternals)"
+        WriteLog ""
+        WriteLog "5. Hyper-V / VMware File Handles"
+        WriteLog "   Fix: Ensure VM is fully shut down and detached"
+        WriteLog ""
+        WriteLog "6. SMB Session Locks from ffu_user (Network Share Capture)"
+        WriteLog "   When FFU is captured via network share, SMB file handles may persist"
+        WriteLog "   after VM shutdown. The build script now auto-cleans these, but if issue"
+        WriteLog "   persists, manually run:"
+        WriteLog "   PowerShell: Get-SmbSession | Where-Object {`$_.ClientUserName -like '*ffu_user*'} | Close-SmbSession -Force"
+        WriteLog "   PowerShell: Get-SmbOpenFile | Where-Object {`$_.Path -like '*.ffu'} | Close-SmbOpenFile -Force"
+        WriteLog ""
+        WriteLog "CONFIGURATION OPTIONS:"
+        WriteLog "  - FFUFileLockWaitSeconds: Increase wait time after capture (current: 120)"
+        WriteLog "  - FFUFileLockRetryCount: Increase retry attempts (current: $FileLockRetryCount)"
+        WriteLog "  - FFUFileLockRetryDelaySeconds: Increase delay between retries (current: $FileLockRetryDelaySeconds)"
+        WriteLog "============================================"
+
+        throw "FFU file is locked by another process after $FileLockRetryCount attempts: $FFUFile - $lastLockError"
     }
 
     # Step 5: Verify sufficient disk space for scratch operations
@@ -2984,6 +3360,176 @@ function Expand-FFUPartitionForDrivers {
     WriteLog "VHDX expansion complete - ready for driver injection"
 }
 
+function Invoke-DismountScratchDisk {
+    <#
+    .SYNOPSIS
+    Dismounts scratch disk (VHD or VHDX) based on file extension
+
+    .DESCRIPTION
+    Hypervisor-agnostic helper function that calls the appropriate dismount function:
+    - VHD files: Uses Dismount-ScratchVhd (diskpart, no Hyper-V dependency)
+    - VHDX files: Uses Dismount-ScratchVhdx (Hyper-V cmdlets)
+
+    This function is exported from FFU.Imaging to ensure availability in ThreadJob
+    contexts where script-scope functions are not accessible.
+
+    .PARAMETER DiskPath
+    Path to the VHD or VHDX file to dismount
+
+    .EXAMPLE
+    Invoke-DismountScratchDisk -DiskPath "C:\VM\disk.vhd"
+
+    .EXAMPLE
+    Invoke-DismountScratchDisk -DiskPath "C:\VM\disk.vhdx"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DiskPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DiskPath)) {
+        WriteLog "WARNING: Invoke-DismountScratchDisk called with empty path, skipping"
+        return
+    }
+
+    WriteLog "Dismounting scratch disk: $DiskPath"
+
+    # Determine which dismount function to use based on file extension
+    if ($DiskPath -like "*.vhd" -and $DiskPath -notlike "*.vhdx") {
+        # VHD file - use diskpart-based dismount (for VMware)
+        WriteLog "Using Dismount-ScratchVhd for VHD file"
+        Dismount-ScratchVhd -VhdPath $DiskPath
+    }
+    else {
+        # VHDX file - use Hyper-V cmdlet
+        WriteLog "Using Dismount-ScratchVhdx for VHDX file"
+        Dismount-ScratchVhdx -VhdxPath $DiskPath
+    }
+}
+
+function Invoke-MountScratchDisk {
+    <#
+    .SYNOPSIS
+    Mounts scratch disk (VHD or VHDX) and returns the disk object
+
+    .DESCRIPTION
+    Hypervisor-agnostic helper function that calls the appropriate mount function:
+    - VHD files: Uses diskpart attach (no Hyper-V dependency)
+    - VHDX files: Uses Mount-VHD cmdlet (requires Hyper-V)
+
+    Returns a disk CIM instance for partition operations.
+
+    This function is exported from FFU.Imaging to ensure availability in ThreadJob
+    contexts where script-scope functions are not accessible.
+
+    .PARAMETER DiskPath
+    Path to the VHD or VHDX file to mount
+
+    .OUTPUTS
+    CimInstance - Disk object for the mounted disk
+
+    .EXAMPLE
+    $disk = Invoke-MountScratchDisk -DiskPath "C:\VM\disk.vhd"
+
+    .EXAMPLE
+    $disk = Invoke-MountScratchDisk -DiskPath "C:\VM\disk.vhdx"
+    #>
+    [CmdletBinding()]
+    [OutputType([CimInstance])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DiskPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DiskPath)) {
+        throw "Invoke-MountScratchDisk: DiskPath cannot be empty"
+    }
+
+    if (-not (Test-Path $DiskPath)) {
+        throw "Invoke-MountScratchDisk: Disk file not found: $DiskPath"
+    }
+
+    WriteLog "Mounting scratch disk: $DiskPath"
+
+    # Determine which mount approach to use based on file extension
+    if ($DiskPath -like "*.vhd" -and $DiskPath -notlike "*.vhdx") {
+        # VHD file - use diskpart-based mount (for VMware, no Hyper-V dependency)
+        WriteLog "Using diskpart to mount VHD file"
+
+        $diskpartScript = @"
+select vdisk file="$DiskPath"
+attach vdisk
+"@
+        $scriptPath = Join-Path $env:TEMP "diskpart_mount_$(Get-Random).txt"
+        $diskpartScript | Out-File -FilePath $scriptPath -Encoding ASCII
+
+        try {
+            $process = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$scriptPath`"" `
+                                     -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_mount_stdout.txt"
+
+            $stdout = Get-Content "$env:TEMP\diskpart_mount_stdout.txt" -Raw -ErrorAction SilentlyContinue
+            if ($stdout) {
+                WriteLog "Diskpart output:"
+                $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { WriteLog "  $_" }
+            }
+
+            if ($process.ExitCode -ne 0) {
+                throw "diskpart attach failed with exit code $($process.ExitCode)"
+            }
+
+            # Wait for disk enumeration
+            Start-Sleep -Seconds 3
+
+            # Find the mounted disk
+            $disk = $null
+            $retryCount = 0
+            while (-not $disk -and $retryCount -lt 5) {
+                $retryCount++
+                $disk = Get-Disk | Where-Object {
+                    $_.Location -eq $DiskPath -or
+                    $_.BusType -eq 'File Backed Virtual'
+                } | Select-Object -First 1
+
+                if (-not $disk) {
+                    WriteLog "  Waiting for disk enumeration (attempt $retryCount)..."
+                    Start-Sleep -Seconds 2
+                }
+            }
+
+            if (-not $disk) {
+                throw "Could not find mounted VHD disk after attach"
+            }
+
+            WriteLog "VHD mounted successfully at Disk $($disk.Number)"
+
+            # Guarantee drive letter assignment using centralized utility
+            $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'W'
+            $disk | Add-Member -NotePropertyName 'OSPartitionDriveLetter' -NotePropertyValue $driveLetter -Force
+            WriteLog "Guaranteed OS partition drive letter: $driveLetter"
+
+            return $disk
+        }
+        finally {
+            Remove-Item -Path $scriptPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$env:TEMP\diskpart_mount_stdout.txt" -Force -ErrorAction SilentlyContinue
+        }
+    }
+    else {
+        # VHDX file - use Hyper-V cmdlet
+        WriteLog "Using Mount-VHD for VHDX file"
+        $disk = Mount-VHD -Path $DiskPath -Passthru | Get-Disk
+        WriteLog "VHDX mounted successfully at Disk $($disk.Number)"
+
+        # Guarantee drive letter assignment using centralized utility
+        $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'W'
+        $disk | Add-Member -NotePropertyName 'OSPartitionDriveLetter' -NotePropertyValue $driveLetter -Force
+        WriteLog "Guaranteed OS partition drive letter: $driveLetter"
+
+        return $disk
+    }
+}
+
 # Export module members
 Export-ModuleMember -Function @(
     'Initialize-DISMService',
@@ -3001,6 +3547,7 @@ Export-ModuleMember -Function @(
     'Enable-WindowsFeaturesByName',
     'Dismount-ScratchVhdx',
     'Dismount-ScratchVhd',
+    'Mount-ScratchVhd',
     'Optimize-FFUCaptureDrive',
     'Get-WindowsVersionInfo',
     'New-FFU',
@@ -3008,5 +3555,7 @@ Export-ModuleMember -Function @(
     'Start-RequiredServicesForDISM',
     'Invoke-FFUOptimizeWithScratchDir',
     'Expand-FFUPartitionForDrivers',
-    'Set-OSPartitionDriveLetter'
+    'Set-OSPartitionDriveLetter',
+    'Invoke-DismountScratchDisk',
+    'Invoke-MountScratchDisk'
 )

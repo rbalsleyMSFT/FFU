@@ -7,7 +7,7 @@
     RootModule = 'FFU.Media.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.2.0'
+    ModuleVersion = '1.3.3'
 
     # ID used to uniquely identify this module
     GUID = 'a84d5d7c-3cb5-4ba3-a1a8-2dcd0916fb5d'
@@ -32,6 +32,7 @@
         @{ModuleName = 'FFU.Core'; ModuleVersion = '1.0.0'}
         @{ModuleName = 'FFU.ADK'; ModuleVersion = '1.0.0'}
         @{ModuleName = 'FFU.Preflight'; ModuleVersion = '1.0.0'}
+        @{ModuleName = 'FFU.Drivers'; ModuleVersion = '1.0.0'}
     )
 
     # Assemblies that must be loaded prior to importing this module
@@ -69,7 +70,31 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Media v1.2.0
+# Release Notes - FFU.Media v1.3.2
+
+## v1.3.2 - Fix Empty VMwareDrivers Folder Detection
+- FIXED: Empty VMwareDrivers folder no longer skips driver download
+- Changed condition from folder existence to INF file presence check
+- Auto-cleans empty/corrupted VMwareDrivers folder before fresh download
+- NEW: ForceVMwareDriverDownload parameter to force re-download
+- Enhanced post-download verification with detailed logging
+- Better error handling when cleanup fails
+
+## v1.3.1 - Enhanced VMware Driver Injection Logging
+- Added pre-download state logging (VMwareDrivers path and existence check)
+- Added post-download verification with INF file enumeration
+- Added detailed injection logging showing each driver being added
+- Enhanced error diagnostics when VMwareDrivers folder is empty
+- Improved troubleshooting output when download succeeds but no files found
+
+## v1.3.0 - VMware WinPE Network Support
+- NEW: HypervisorType parameter on New-PEMedia for hypervisor-aware media creation
+- NEW: Automatic Intel e1000e driver injection for VMware capture media
+- VMware Workstation Pro uses e1000e emulated NIC which WinPE lacks drivers for
+- Auto-downloads Intel Ethernet drivers if VMwareDrivers folder is missing
+- Ensures WinPE can connect to host SMB share during FFU capture on VMware
+- Added FFU.Drivers module dependency for Get-IntelEthernetDrivers function
+- Graceful fallback with clear remediation guidance if driver download fails
 
 ## v1.2.0 - Just-in-Time WIMMount Validation
 - NEW: Pre-mount WIMMount service validation using Test-FFUWimMount (from FFU.Preflight)

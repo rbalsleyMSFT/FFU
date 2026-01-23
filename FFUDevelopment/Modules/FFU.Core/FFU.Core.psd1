@@ -7,7 +7,7 @@
     RootModule = 'FFU.Core.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.16'
+    ModuleVersion = '1.0.18'
 
     # ID used to uniquely identify this module
     GUID = '9332d136-2710-49af-b356-a0281ebd8999'
@@ -121,7 +121,14 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Core v1.0.16
+# Release Notes - FFU.Core v1.0.17
+
+## v1.0.17 - ThreadJob Safe Logging
+- FIX: Get-ShortenedWindowsSKU uses safe logging pattern for ThreadJob compatibility
+- Root cause: Write-Warning cmdlet may not be available in ThreadJob runspaces
+- Solution: Conditional check for WriteLog, fallback to Write-Verbose
+- Same class of issue as FFU.Common v0.0.9 (Get-Date), v0.0.10 (Write-Host), v0.0.11 (Write-Warning)
+- 44 total functions exported (unchanged)
 
 ## v1.0.16 - Build Cancellation Support
 - Added Test-BuildCancellation: Helper for checking cancellation at build phase boundaries

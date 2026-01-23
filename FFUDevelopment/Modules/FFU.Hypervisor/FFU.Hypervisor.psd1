@@ -6,7 +6,7 @@
     RootModule = 'FFU.Hypervisor.psm1'
 
     # Version number of this module
-    ModuleVersion = '1.3.1'
+    ModuleVersion = '1.3.4'
 
     # ID used to uniquely identify this module
     GUID = 'a8e2c3f1-5d7b-4e9a-bc12-3f4d5e6a7b8c'
@@ -79,6 +79,19 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
+v1.3.3 (2026-01-21)
+- FIX: ThreadJob runspace compatibility - "Write-Warning is not recognized" error
+- Module initialization catch blocks used Write-Warning which fails in ThreadJob runspaces
+- Solution: Replaced Write-Warning with [Console]::Error.WriteLine() in FFU.Hypervisor.psm1
+- Also fixed Wait-VMStateChange.ps1: Write-Warning → safe logging pattern (WriteLog or Write-Verbose)
+- Same class of issue as FFU.Common v0.0.9 (Get-Date), v0.0.10 (Write-Host), v0.0.11 (Write-Warning)
+
+v1.3.2 (2026-01-21)
+- FIX: ThreadJob runspace compatibility for fallback WriteLog function
+- Root cause: Fallback WriteLog (used when FFU.Core isn't loaded) used Write-Host cmdlet
+- Write-Host may not be available in ThreadJob runspaces (same issue as FFU.Common v0.0.10)
+- Solution: Replaced Write-Host with [Console]::WriteLine() for console output
+
 v1.3.1 (2026-01-20)
 - NEW: VMware network configuration is now user-configurable (RTS-99)
 - Added VMwareNetworkType property to VMConfiguration (bridged, nat, hostonly)

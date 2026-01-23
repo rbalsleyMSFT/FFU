@@ -325,7 +325,7 @@ function Invoke-FFUConfigMigration {
     }
 
     # Log migration start
-    if (Get-Command -Name WriteLog -ErrorAction SilentlyContinue) {
+    if ($function:WriteLog) {
         WriteLog "Migrating config from version $currentVersion to $TargetVersion"
     }
     else {
@@ -340,7 +340,7 @@ function Invoke-FFUConfigMigration {
             Copy-Item -Path $ConfigPath -Destination $backupPath -Force
             $result.BackupPath = $backupPath
 
-            if (Get-Command -Name WriteLog -ErrorAction SilentlyContinue) {
+            if ($function:WriteLog) {
                 WriteLog "Created backup at $backupPath"
             }
             else {
@@ -468,7 +468,7 @@ function Invoke-FFUConfigMigration {
 
     # Log changes
     foreach ($change in $changes) {
-        if (Get-Command -Name WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog "Migration: $change"
         }
         else {

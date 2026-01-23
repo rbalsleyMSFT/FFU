@@ -65,7 +65,14 @@ function Wait-VMStateChange {
     # Check current state first - may already be at target
     $currentVM = Get-VM -Name $VMName -ErrorAction SilentlyContinue
     if (-not $currentVM) {
-        Write-Warning "VM '$VMName' not found"
+        # Safe logging pattern for ThreadJob compatibility (v1.3.3)
+        $warningMsg = "VM '$VMName' not found"
+        if ($function:WriteLog) {
+            WriteLog "WARNING: $warningMsg"
+        }
+        else {
+            Write-Verbose "WARNING: $warningMsg"
+        }
         return $false
     }
 
@@ -151,7 +158,14 @@ AND TargetInstance.ElementName = '$VMName'
             return $true
         }
         else {
-            Write-Warning "Timeout waiting for VM '$VMName' to reach state '$TargetState' after $TimeoutSeconds seconds"
+            # Safe logging pattern for ThreadJob compatibility (v1.3.3)
+            $warningMsg = "Timeout waiting for VM '$VMName' to reach state '$TargetState' after $TimeoutSeconds seconds"
+            if ($function:WriteLog) {
+                WriteLog "WARNING: $warningMsg"
+            }
+            else {
+                Write-Verbose "WARNING: $warningMsg"
+            }
             return $false
         }
     }

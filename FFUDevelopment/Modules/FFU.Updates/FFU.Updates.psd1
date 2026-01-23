@@ -7,7 +7,7 @@
     RootModule = 'FFU.Updates.psm1'
 
     # Version number of this module.
-    ModuleVersion = '1.0.3'
+    ModuleVersion = '1.0.5'
 
     # ID used to uniquely identify this module
     GUID = 'e3b9c4a1-5f7d-4e2b-8c9a-1d6f3e8b2a5c'
@@ -75,7 +75,13 @@
 
             # ReleaseNotes of this module
             ReleaseNotes = @'
-# Release Notes - FFU.Updates v1.0.3
+# Release Notes - FFU.Updates v1.0.4
+
+## v1.0.4 - ThreadJob Safe Logging (2026-01-21)
+- FIX: Get-KBLink uses safe logging pattern for ThreadJob compatibility
+- Root cause: Write-Warning cmdlet may not be available in ThreadJob runspaces
+- Solution: Conditional check for WriteLog, fallback to Write-Verbose
+- Same class of issue as FFU.Common v0.0.9 (Get-Date), v0.0.10 (Write-Host), v0.0.11 (Write-Warning)
 
 ## v1.0.3 BUG-02: MSU Unattend.xml Extraction Verification (2026-01-19)
 - **BUG-02 FIX:** Documented and verified CAB extraction workaround for Issue #301

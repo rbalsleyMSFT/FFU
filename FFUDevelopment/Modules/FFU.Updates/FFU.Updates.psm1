@@ -431,7 +431,14 @@ function Get-KBLink {
     Select-Object -ExpandProperty  ID
 
     if (-not $kbids) {
-        Write-Warning -Message "No results found for $Name"
+        # Safe logging pattern for ThreadJob compatibility (v1.0.3)
+        $warningMsg = "No results found for $Name"
+        if ($function:WriteLog) {
+            WriteLog "WARNING: $warningMsg"
+        }
+        else {
+            Write-Verbose "WARNING: $warningMsg"
+        }
         # Return empty result with KB article ID if available
         return [PSCustomObject]@{
             KBArticleID = $kbArticleID
@@ -458,7 +465,14 @@ function Get-KBLink {
     }
 
     if (-not $guids) {
-        Write-Warning -Message "No file found for $Name"
+        # Safe logging pattern for ThreadJob compatibility (v1.0.3)
+        $warningMsg = "No file found for $Name"
+        if ($function:WriteLog) {
+            WriteLog "WARNING: $warningMsg"
+        }
+        else {
+            Write-Verbose "WARNING: $warningMsg"
+        }
         # Return empty result with KB article ID if available
         return [PSCustomObject]@{
             KBArticleID = $kbArticleID
@@ -1519,7 +1533,7 @@ function Resolve-KBFilePath {
     # Helper function for safe logging (WriteLog may not be available in standalone tests)
     $logMessage = {
         param([string]$msg)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog $msg
         } else {
             Write-Verbose $msg
@@ -1659,7 +1673,7 @@ function Test-KBPathsValid {
     # Helper function for safe logging (WriteLog may not be available in standalone tests)
     $logMessage = {
         param([string]$msg)
-        if (Get-Command WriteLog -ErrorAction SilentlyContinue) {
+        if ($function:WriteLog) {
             WriteLog $msg
         } else {
             Write-Verbose $msg

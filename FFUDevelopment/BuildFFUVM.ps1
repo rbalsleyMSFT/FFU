@@ -555,7 +555,25 @@ param(
     # NoResume: When set, forces a fresh build even if a checkpoint exists
     # Removes any existing checkpoint and starts from the beginning
     [Parameter(Mandatory = $false)]
-    [switch]$NoResume
+    [switch]$NoResume,
+    # FFUFileLockWaitSeconds: Time to wait after FFU capture before accessing the file
+    # Helps prevent file lock errors from antivirus or indexing services
+    # Default is 120 seconds (2 minutes)
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(30, 600)]
+    [int]$FFUFileLockWaitSeconds = 120,
+    # FFUFileLockRetryCount: Number of retry attempts when FFU file is locked
+    # Provides resilience against transient file locks
+    # Default is 3 attempts
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 10)]
+    [int]$FFUFileLockRetryCount = 3,
+    # FFUFileLockRetryDelaySeconds: Delay between FFU file lock retry attempts
+    # Allows time for locks to be released between attempts
+    # Default is 10 seconds
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(5, 60)]
+    [int]$FFUFileLockRetryDelaySeconds = 10
 )
 
 BEGIN {
@@ -729,7 +747,9 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     $configData = Get-Content $ConfigFile -Raw | ConvertFrom-Json
 
     # Check for migration if module available
-    if (Get-Command -Name 'Test-FFUConfigVersion' -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.8.10)
+    # Note: $function: syntax doesn't work with hyphenated function names
+    if ($ExecutionContext.InvokeCommand.GetCommand('Test-FFUConfigVersion', 'Function')) {
         # Convert to hashtable for migration
         $configHashtable = ConvertTo-HashtableRecursive -InputObject $configData
 
@@ -1022,284 +1042,9 @@ Please verify the hypervisor is installed and properly configured.
     WriteLog "Hypervisor provider initialized: $($script:HypervisorProvider.Name) v$($script:HypervisorProvider.Version)"
 }
 
-# =============================================================================
-# Hypervisor-Agnostic VM Cleanup Helper
-# Uses hypervisor provider when available, falls back to Remove-FFUVM for Hyper-V
-# =============================================================================
-function Remove-FFUVMWithProvider {
-    <#
-    .SYNOPSIS
-    Removes FFU VM using the hypervisor provider with fallback to Remove-FFUVM
-
-    .DESCRIPTION
-    This helper function provides hypervisor-agnostic VM cleanup by:
-    1. Using the initialized hypervisor provider if available
-    2. Falling back to Remove-FFUVM for Hyper-V-specific cleanup if provider fails
-    3. Always calling Remove-FFUBuildArtifacts for non-VM cleanup
-
-    .PARAMETER VM
-    The VMInfo object returned from CreateVM (optional - can cleanup by name if null)
-
-    .PARAMETER VMName
-    Name of the VM to remove
-
-    .PARAMETER VMPath
-    Path to the VM configuration directory
-
-    .PARAMETER InstallApps
-    Whether apps were installed (affects VHDX cleanup)
-
-    .PARAMETER VhdxDisk
-    VHDX disk object for cleanup
-
-    .PARAMETER FFUDevelopmentPath
-    Root FFUDevelopment path
-    #>
-    param(
-        [Parameter(Mandatory = $false)]
-        $VM,
-
-        [Parameter(Mandatory = $false)]
-        [string]$VMName,
-
-        [Parameter(Mandatory = $true)]
-        [string]$VMPath,
-
-        [Parameter(Mandatory = $true)]
-        [bool]$InstallApps,
-
-        [Parameter(Mandatory = $false)]
-        $VhdxDisk,
-
-        [Parameter(Mandatory = $true)]
-        [string]$FFUDevelopmentPath
-    )
-
-    WriteLog "Starting hypervisor-agnostic VM cleanup"
-
-    $vmRemoved = $false
-
-    # Try hypervisor provider first if available
-    if ($null -ne $script:HypervisorProvider) {
-        try {
-            if ($null -ne $VM) {
-                WriteLog "Removing VM via hypervisor provider: $($VM.Name)"
-                $script:HypervisorProvider.RemoveVM($VM, $true)  # $true = remove disks
-                $vmRemoved = $true
-                WriteLog "VM removed via hypervisor provider"
-            }
-            elseif (-not [string]::IsNullOrWhiteSpace($VMName)) {
-                # Try to get VM by name from provider
-                WriteLog "Attempting to get VM '$VMName' from provider for cleanup"
-                $existingVM = $script:HypervisorProvider.GetVM($VMName)
-                if ($null -ne $existingVM) {
-                    WriteLog "Found VM, removing via hypervisor provider"
-                    $script:HypervisorProvider.RemoveVM($existingVM, $true)
-                    $vmRemoved = $true
-                    WriteLog "VM removed via hypervisor provider"
-                }
-                else {
-                    WriteLog "VM '$VMName' not found by provider - may already be removed"
-                    $vmRemoved = $true  # Consider it success if VM doesn't exist
-                }
-            }
-        }
-        catch {
-            WriteLog "WARNING: Hypervisor provider cleanup failed: $($_.Exception.Message)"
-            WriteLog "Falling back to Remove-FFUVM for cleanup"
-        }
-    }
-
-    # Fall back to Remove-FFUVM if provider cleanup failed or not available
-    if (-not $vmRemoved) {
-        WriteLog "Using Remove-FFUVM for Hyper-V-specific cleanup"
-        try {
-            Remove-FFUVM -VMName $VMName -VMPath $VMPath -InstallApps $InstallApps `
-                         -VhdxDisk $VhdxDisk -FFUDevelopmentPath $FFUDevelopmentPath
-        }
-        catch {
-            WriteLog "WARNING: Remove-FFUVM failed: $($_.Exception.Message)"
-        }
-    }
-    else {
-        # Provider removed VM, but we still need to clean up build artifacts
-        WriteLog "Running Remove-FFUBuildArtifacts for remaining cleanup"
-        try {
-            Remove-FFUBuildArtifacts -VMPath $VMPath -FFUDevelopmentPath $FFUDevelopmentPath
-        }
-        catch {
-            WriteLog "WARNING: Remove-FFUBuildArtifacts failed: $($_.Exception.Message)"
-        }
-    }
-
-    WriteLog "VM cleanup complete"
-}
-
-# =============================================================================
-# Hypervisor-Agnostic VHD/VHDX Dismount Helper
-# Uses appropriate dismount function based on HypervisorType
-# =============================================================================
-function Invoke-DismountScratchDisk {
-    <#
-    .SYNOPSIS
-    Dismounts scratch disk (VHD or VHDX) based on hypervisor type
-
-    .DESCRIPTION
-    Helper function that calls the appropriate dismount function:
-    - VMware: Dismount-ScratchVhd (uses diskpart, no Hyper-V dependency)
-    - Hyper-V: Dismount-ScratchVhdx (uses Hyper-V cmdlets)
-
-    .PARAMETER DiskPath
-    Path to the VHD or VHDX file to dismount
-
-    .EXAMPLE
-    Invoke-DismountScratchDisk -DiskPath "C:\VM\disk.vhd"
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$DiskPath
-    )
-
-    if ([string]::IsNullOrWhiteSpace($DiskPath)) {
-        WriteLog "WARNING: Invoke-DismountScratchDisk called with empty path, skipping"
-        return
-    }
-
-    WriteLog "Dismounting scratch disk: $DiskPath"
-
-    # Determine which dismount function to use based on file extension and hypervisor type
-    if ($DiskPath -like "*.vhd" -and $DiskPath -notlike "*.vhdx") {
-        # VHD file - use diskpart-based dismount (for VMware)
-        WriteLog "Using Dismount-ScratchVhd for VHD file"
-        Dismount-ScratchVhd -VhdPath $DiskPath
-    }
-    else {
-        # VHDX file - use Hyper-V cmdlet
-        WriteLog "Using Dismount-ScratchVhdx for VHDX file"
-        Dismount-ScratchVhdx -VhdxPath $DiskPath
-    }
-}
-
-# =============================================================================
-# Hypervisor-Agnostic VHD/VHDX Mount Helper
-# Uses appropriate mount function based on file extension
-# =============================================================================
-function Invoke-MountScratchDisk {
-    <#
-    .SYNOPSIS
-    Mounts scratch disk (VHD or VHDX) and returns the disk object
-
-    .DESCRIPTION
-    Helper function that calls the appropriate mount function:
-    - VHD files: Uses diskpart attach (no Hyper-V dependency)
-    - VHDX files: Uses Mount-VHD cmdlet (requires Hyper-V)
-
-    Returns a disk CIM instance for partition operations.
-
-    .PARAMETER DiskPath
-    Path to the VHD or VHDX file to mount
-
-    .OUTPUTS
-    CimInstance - Disk object for the mounted disk
-
-    .EXAMPLE
-    $disk = Invoke-MountScratchDisk -DiskPath "C:\VM\disk.vhd"
-    #>
-    [CmdletBinding()]
-    [OutputType([CimInstance])]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$DiskPath
-    )
-
-    if ([string]::IsNullOrWhiteSpace($DiskPath)) {
-        throw "Invoke-MountScratchDisk: DiskPath cannot be empty"
-    }
-
-    if (-not (Test-Path $DiskPath)) {
-        throw "Invoke-MountScratchDisk: Disk file not found: $DiskPath"
-    }
-
-    WriteLog "Mounting scratch disk: $DiskPath"
-
-    # Determine which mount approach to use based on file extension
-    if ($DiskPath -like "*.vhd" -and $DiskPath -notlike "*.vhdx") {
-        # VHD file - use diskpart-based mount (for VMware, no Hyper-V dependency)
-        WriteLog "Using diskpart to mount VHD file"
-
-        $diskpartScript = @"
-select vdisk file="$DiskPath"
-attach vdisk
-"@
-        $scriptPath = Join-Path $env:TEMP "diskpart_mount_$(Get-Random).txt"
-        $diskpartScript | Out-File -FilePath $scriptPath -Encoding ASCII
-
-        try {
-            $process = Start-Process -FilePath 'diskpart.exe' -ArgumentList "/s `"$scriptPath`"" `
-                                     -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$env:TEMP\diskpart_mount_stdout.txt"
-
-            $stdout = Get-Content "$env:TEMP\diskpart_mount_stdout.txt" -Raw -ErrorAction SilentlyContinue
-            if ($stdout) {
-                WriteLog "Diskpart output:"
-                $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { WriteLog "  $_" }
-            }
-
-            if ($process.ExitCode -ne 0) {
-                throw "diskpart attach failed with exit code $($process.ExitCode)"
-            }
-
-            # Wait for disk enumeration
-            Start-Sleep -Seconds 3
-
-            # Find the mounted disk
-            $disk = $null
-            $retryCount = 0
-            while (-not $disk -and $retryCount -lt 5) {
-                $retryCount++
-                $disk = Get-Disk | Where-Object {
-                    $_.Location -eq $DiskPath -or
-                    $_.BusType -eq 'File Backed Virtual'
-                } | Select-Object -First 1
-
-                if (-not $disk) {
-                    WriteLog "  Waiting for disk enumeration (attempt $retryCount)..."
-                    Start-Sleep -Seconds 2
-                }
-            }
-
-            if (-not $disk) {
-                throw "Could not find mounted VHD disk after attach"
-            }
-
-            WriteLog "VHD mounted successfully at Disk $($disk.Number)"
-
-            # Guarantee drive letter assignment using centralized utility
-            $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'W'
-            $disk | Add-Member -NotePropertyName 'OSPartitionDriveLetter' -NotePropertyValue $driveLetter -Force
-            WriteLog "Guaranteed OS partition drive letter: $driveLetter"
-
-            return $disk
-        }
-        finally {
-            Remove-Item -Path $scriptPath -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "$env:TEMP\diskpart_mount_stdout.txt" -Force -ErrorAction SilentlyContinue
-        }
-    }
-    else {
-        # VHDX file - use Hyper-V cmdlet
-        WriteLog "Using Mount-VHD for VHDX file"
-        $disk = Mount-VHD -Path $DiskPath -Passthru | Get-Disk
-        WriteLog "VHDX mounted successfully at Disk $($disk.Number)"
-
-        # Guarantee drive letter assignment using centralized utility
-        $driveLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter 'W'
-        $disk | Add-Member -NotePropertyName 'OSPartitionDriveLetter' -NotePropertyValue $driveLetter -Force
-        WriteLog "Guaranteed OS partition drive letter: $driveLetter"
-
-        return $disk
-    }
-}
+# NOTE: Hypervisor-agnostic helper functions (Remove-FFUVMWithProvider, Invoke-DismountScratchDisk,
+# Invoke-MountScratchDisk) have been moved to modules (FFU.VM and FFU.Imaging) for ThreadJob
+# compatibility. Script-scope functions are not accessible in ThreadJob runspaces. (v1.8.10)
 
 # =============================================================================
 # Global Failure Cleanup Handler
@@ -1308,7 +1053,8 @@ attach vdisk
 trap {
     # Defense-in-depth: Only invoke cleanup if module functions are available
     # This handles the edge case where an error occurs before modules are loaded
-    if (Get-Command 'Get-CleanupRegistry' -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.8.10)
+    if ($ExecutionContext.InvokeCommand.GetCommand('Get-CleanupRegistry', 'Function')) {
         $registry = Get-CleanupRegistry
         if ($registry -and $registry.Count -gt 0) {
             WriteLog "TRAP: Unhandled terminating error detected. Invoking failure cleanup for $($registry.Count) registered resource(s)..."
@@ -1329,7 +1075,8 @@ trap {
 # =============================================================================
 $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
     # Defense-in-depth: Only invoke cleanup if module functions are available
-    if (Get-Command 'Get-CleanupRegistry' -ErrorAction SilentlyContinue) {
+    # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.8.10)
+    if ($ExecutionContext.InvokeCommand.GetCommand('Get-CleanupRegistry', 'Function')) {
         $registry = Get-CleanupRegistry
         if ($registry -and $registry.Count -gt 0) {
             # Use Write-Host directly since WriteLog may not be available during exit
@@ -4363,38 +4110,84 @@ if ($InstallApps) {
             }
 
             # Force volume flush for the specific file
+            # IMPORTANT: fsutil volume flush can cause Windows to release the drive letter
+            # on file-backed virtual disks (VHD/VHDX). We must re-acquire after flush.
             WriteLog "  Flushing volume for unattend file..."
+            WriteLog "  DEBUG: Pre-flush drive letter: '$osPartitionDriveLetter'"
+            WriteLog "  DEBUG: Pre-flush partition state:"
+            $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' } | ForEach-Object {
+                WriteLog "    Partition $($_.PartitionNumber): DriveLetter='$($_.DriveLetter)', AccessPaths=$($_.AccessPaths -join '; ')"
+            }
+
             $null = & fsutil file seteof $unattendDest $sourceContent.Length 2>&1
             $null = & fsutil volume flush "$osPartitionDriveLetter`:" 2>&1
 
-            # CRITICAL: Verify by re-reading from disk (not from cache)
-            # Clear any cached data by opening with NoBuffering
-            WriteLog "  Verifying file persisted to disk (cache bypass read)..."
-            Start-Sleep -Milliseconds 500  # Brief pause to ensure disk I/O completes
+            # Wait for flush to complete and Windows to settle
+            Start-Sleep -Milliseconds 500
 
-            # DEBUG: Log the verification path value to diagnose empty path issue
-            WriteLog "  DEBUG: Verification path value: '$unattendDest'"
-            WriteLog "  DEBUG: osPartitionDriveLetter value: '$osPartitionDriveLetter'"
+            # POST-FLUSH: Check if drive letter was released by fsutil (common with VHD/VHDX)
+            WriteLog "  DEBUG: Post-flush partition state check..."
+            $osPartitionRefresh = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+            $postFlushDriveLetter = $osPartitionRefresh.DriveLetter
+            WriteLog "  DEBUG: Post-flush drive letter from partition: '$postFlushDriveLetter'"
 
-            # Validate and reconstruct path if empty (defensive fix for VMware VHD edge case)
-            if ([string]::IsNullOrWhiteSpace($unattendDest)) {
-                WriteLog "  WARNING: unattendDest is empty! Reconstructing path..."
-                # Re-fetch the drive letter in case something changed
-                $osPartitionRefresh = $disk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
-                $refreshedDriveLetter = $osPartitionRefresh.DriveLetter
-                WriteLog "  DEBUG: Refreshed drive letter: '$refreshedDriveLetter'"
+            # If drive letter was released by fsutil flush, re-acquire it
+            if ([string]::IsNullOrWhiteSpace($postFlushDriveLetter)) {
+                WriteLog "  WARNING: Drive letter was released by fsutil flush (VHD destabilization)"
+                WriteLog "  Attempting to re-acquire drive letter using Set-OSPartitionDriveLetter..."
 
-                if ([string]::IsNullOrWhiteSpace($refreshedDriveLetter)) {
-                    throw "Cannot verify unattend file: OS partition drive letter is not assigned"
+                try {
+                    # Use the centralized utility to re-establish drive letter
+                    # Use the original preferred letter (W) if current variable is empty
+                    $preferredLetter = if ([string]::IsNullOrWhiteSpace($osPartitionDriveLetter)) { 'W' } else { [char]$osPartitionDriveLetter }
+                    $reacquiredLetter = Set-OSPartitionDriveLetter -Disk $disk -PreferredLetter $preferredLetter -RetryCount 5
+                    WriteLog "  SUCCESS: Re-acquired drive letter: $reacquiredLetter"
+
+                    # Update the variables with the new drive letter
+                    $osPartitionDriveLetter = $reacquiredLetter
+                    $unattendDest = "$($reacquiredLetter):\Windows\Panther\Unattend\Unattend.xml"
+                    WriteLog "  Updated unattendDest path: '$unattendDest'"
                 }
+                catch {
+                    WriteLog "  ERROR: Failed to re-acquire drive letter: $($_.Exception.Message)"
+                    WriteLog "  Attempting diskpart-based recovery..."
 
-                $unattendDest = "$($refreshedDriveLetter):\Windows\Panther\Unattend\Unattend.xml"
-                WriteLog "  DEBUG: Reconstructed path: '$unattendDest'"
+                    # Emergency fallback: try to assign using diskpart directly
+                    $usedLetters = (Get-Volume).DriveLetter
+                    $availableLetter = [char[]](90..68) | Where-Object { $_ -notin $usedLetters } | Select-Object -First 1
+
+                    if ($availableLetter) {
+                        WriteLog "  Assigning emergency drive letter $availableLetter via Set-Partition..."
+                        $osPartitionRefresh | Set-Partition -NewDriveLetter $availableLetter -ErrorAction Stop
+                        Start-Sleep -Milliseconds 500
+
+                        $osPartitionDriveLetter = $availableLetter
+                        $unattendDest = "$($availableLetter):\Windows\Panther\Unattend\Unattend.xml"
+                        WriteLog "  Emergency recovery successful: '$unattendDest'"
+                    }
+                    else {
+                        throw "Cannot verify unattend file: Drive letter lost and no available letters for recovery"
+                    }
+                }
             }
+            else {
+                WriteLog "  Drive letter stable after flush: $postFlushDriveLetter"
+                # Update variables in case drive letter changed (e.g., Windows reassigned a different letter)
+                if ($postFlushDriveLetter -ne $osPartitionDriveLetter) {
+                    WriteLog "  NOTE: Drive letter changed from '$osPartitionDriveLetter' to '$postFlushDriveLetter'"
+                    $osPartitionDriveLetter = $postFlushDriveLetter
+                    $unattendDest = "$($postFlushDriveLetter):\Windows\Panther\Unattend\Unattend.xml"
+                }
+            }
+
+            # CRITICAL: Verify by re-reading from disk (not from cache)
+            WriteLog "  Verifying file persisted to disk (cache bypass read)..."
+            WriteLog "  DEBUG: Final verification path: '$unattendDest'"
+            WriteLog "  DEBUG: Final osPartitionDriveLetter: '$osPartitionDriveLetter'"
 
             # Final validation before FileStream creation
             if ([string]::IsNullOrWhiteSpace($unattendDest)) {
-                throw "Verification failed: unattendDest path is empty after reconstruction attempt"
+                throw "Verification failed: unattendDest path is empty after drive letter recovery"
             }
 
             # Re-read the file to verify it's actually on disk
@@ -4485,9 +4278,11 @@ if ($InstallApps) {
     Set-Progress -Percentage 41 -Message "Setting up FFU capture share..."
     try {
         # DIAGNOSTIC: Verify Set-CaptureFFU is available before calling
+        # Uses InvokeCommand.GetCommand for ThreadJob compatibility (v1.8.10)
+        # Note: $function: syntax doesn't work with hyphenated function names
         WriteLog "Verifying Set-CaptureFFU function availability..."
 
-        $funcAvailable = Get-Command Set-CaptureFFU -ErrorAction SilentlyContinue
+        $funcAvailable = $ExecutionContext.InvokeCommand.GetCommand('Set-CaptureFFU', 'Function')
 
         if (-not $funcAvailable) {
             WriteLog "WARNING: Set-CaptureFFU not found in current session. Attempting module reload..."
@@ -4506,7 +4301,7 @@ if ($InstallApps) {
             Import-Module $modulePath -Force -Global -ErrorAction Stop
 
             # Verify function is now available
-            $funcAvailable = Get-Command Set-CaptureFFU -ErrorAction SilentlyContinue
+            $funcAvailable = $ExecutionContext.InvokeCommand.GetCommand('Set-CaptureFFU', 'Function')
 
             if (-not $funcAvailable) {
                 WriteLog "ERROR: Set-CaptureFFU still not available after module reload"
@@ -4778,7 +4573,8 @@ if ($InstallApps) {
         # Use hypervisor-agnostic cleanup helper
         Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
                                  -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                                 -FFUDevelopmentPath $FFUDevelopmentPath
+                                 -FFUDevelopmentPath $FFUDevelopmentPath `
+                                 -HypervisorProvider $script:HypervisorProvider
         throw $_
 
     }
@@ -4918,6 +4714,58 @@ try {
 
         WriteLog 'VM Shutdown'
 
+        # === SMB SESSION CLEANUP: Release FFU file locks held by ffu_user ===
+        # The VM writes the FFU via network share. After VM shutdown, the SMB server
+        # may keep file handles open, causing "file is locked" errors during optimization.
+        # Force close all SMB sessions for the capture user to release these locks.
+        WriteLog "Releasing SMB file locks for capture user '$Username'..."
+        try {
+            # Method 1: Close all SMB sessions for the capture user
+            $smbSessions = Get-SmbSession -ErrorAction SilentlyContinue |
+                           Where-Object { $_.ClientUserName -like "*$Username*" }
+
+            if ($smbSessions) {
+                $sessionCount = @($smbSessions).Count
+                WriteLog "Found $sessionCount SMB session(s) for user '$Username'"
+
+                foreach ($session in $smbSessions) {
+                    WriteLog "  Closing SMB session: ClientComputerName=$($session.ClientComputerName), SessionId=$($session.SessionId)"
+                    $session | Close-SmbSession -Force -ErrorAction SilentlyContinue
+                }
+                WriteLog "SMB sessions closed successfully"
+            }
+            else {
+                WriteLog "No active SMB sessions found for user '$Username'"
+            }
+
+            # Method 2: Also close any open file handles on .ffu files as a safety measure
+            $ffuOpenFiles = Get-SmbOpenFile -ErrorAction SilentlyContinue |
+                            Where-Object { $_.Path -like '*.ffu' }
+
+            if ($ffuOpenFiles) {
+                $fileCount = @($ffuOpenFiles).Count
+                WriteLog "Found $fileCount open file handle(s) on .ffu files"
+
+                foreach ($openFile in $ffuOpenFiles) {
+                    WriteLog "  Closing file handle: $($openFile.Path)"
+                    $openFile | Close-SmbOpenFile -Force -ErrorAction SilentlyContinue
+                }
+                WriteLog "FFU file handles closed successfully"
+            }
+            else {
+                WriteLog "No open .ffu file handles found"
+            }
+
+            # Brief pause to allow file system to update after releasing locks
+            Start-Sleep -Seconds 2
+            WriteLog "SMB cleanup complete"
+        }
+        catch {
+            # Non-fatal: log warning but continue - the file lock retry logic will handle any remaining locks
+            WriteLog "WARNING: SMB session cleanup encountered an error: $($_.Exception.Message)"
+            WriteLog "Continuing with FFU capture - file lock retry logic will handle any remaining locks"
+        }
+
         # === CANCELLATION CHECKPOINT 6: After VM Shutdown, Before FFU Capture ===
         # Check before starting long-running DISM capture operation
         if (Test-BuildCancellation -MessagingContext $MessagingContext -PhaseName "FFU Capture" -InvokeCleanup) {
@@ -4965,7 +4813,11 @@ try {
                 -DriversFolder $DriversFolder `
                 -HypervisorProvider $script:HypervisorProvider `
                 -VMInfo $FFUVM `
-                -VMShutdownTimeoutMinutes $VMShutdownTimeoutMinutes
+                -VMShutdownTimeoutMinutes $VMShutdownTimeoutMinutes `
+                -ShowVMConsole $ShowVMConsole `
+                -FFUFileLockWaitSeconds $FFUFileLockWaitSeconds `
+                -FFUFileLockRetryCount $FFUFileLockRetryCount `
+                -FFUFileLockRetryDelaySeconds $FFUFileLockRetryDelaySeconds
         Set-Progress -Percentage 80 -Message "FFU capture complete..."
     }
     else {
@@ -4983,7 +4835,10 @@ try {
                 -DandIEnv $DandIEnv -VhdxDisk $vhdxDisk -CachedVHDXInfo $cachedVHDXInfo `
                 -InstallationType $installationType -InstallDrivers $InstallDrivers `
                 -Optimize $Optimize -FFUDevelopmentPath $FFUDevelopmentPath `
-                -DriversFolder $DriversFolder
+                -DriversFolder $DriversFolder `
+                -FFUFileLockWaitSeconds $FFUFileLockWaitSeconds `
+                -FFUFileLockRetryCount $FFUFileLockRetryCount `
+                -FFUFileLockRetryDelaySeconds $FFUFileLockRetryDelaySeconds
     }    
 }
 Catch {
@@ -4992,7 +4847,8 @@ Catch {
     # Use hypervisor-agnostic cleanup helper (works with both Hyper-V and VMware)
     Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
                              -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                             -FFUDevelopmentPath $FFUDevelopmentPath
+                             -FFUDevelopmentPath $FFUDevelopmentPath `
+                             -HypervisorProvider $script:HypervisorProvider
 
     throw $_
 
@@ -5009,7 +4865,8 @@ If ($InstallApps) {
         WriteLog "Cleaning up FFU User and/or share failed with error $_"
         Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
                                  -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                                 -FFUDevelopmentPath $FFUDevelopmentPath
+                                 -FFUDevelopmentPath $FFUDevelopmentPath `
+                                 -HypervisorProvider $script:HypervisorProvider
         throw $_
     }
     #Clean up Apps
@@ -5031,7 +4888,8 @@ If ($InstallApps) {
 try {
     Remove-FFUVMWithProvider -VM $FFUVM -VMName $VMName -VMPath $VMPath `
                              -InstallApps $InstallApps -VhdxDisk $vhdxDisk `
-                             -FFUDevelopmentPath $FFUDevelopmentPath
+                             -FFUDevelopmentPath $FFUDevelopmentPath `
+                             -HypervisorProvider $script:HypervisorProvider
     WriteLog 'FFU build complete!'
 }
 catch {

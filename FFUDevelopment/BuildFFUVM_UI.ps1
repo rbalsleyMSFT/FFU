@@ -103,6 +103,10 @@ Import-Module "$PSScriptRoot\FFUUI.Core" -Force
 # This provides ~20x faster updates (50ms vs 1000ms) compared to file polling
 Import-Module "$PSScriptRoot\Modules\FFU.Messaging" -Force -DisableNameChecking
 
+# Set the log path IMMEDIATELY after module imports, BEFORE any WriteLog calls
+# This prevents "CommonCoreLogFilePath not set" warnings during ThreadJob handling
+Set-CommonCoreLogPath -Path $script:uiState.LogFilePath
+
 # Import ThreadJob module for better credential handling in background jobs
 # ThreadJob runs jobs as threads in the current process, preserving network credentials
 # This fixes BITS authentication error 0x800704DD (ERROR_NOT_LOGGED_ON)
@@ -126,9 +130,6 @@ if (Get-Module -ListAvailable -Name ThreadJob) {
 else {
     Write-Warning "ThreadJob module not available. Using Start-Job (may cause BITS authentication issues)."
 }
-
-# Set the log path
-Set-CommonCoreLogPath -Path $script:uiState.LogFilePath
 
 # Setting long path support - this prevents issues where some applications have deep directory structures
 # and driver extraction fails due to long paths.

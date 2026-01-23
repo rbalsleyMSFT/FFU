@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "_comment": "FFU Builder Version Configuration - Single source of truth for all versioning",
 
-    "version": "1.8.3",
-    "buildDate": "2026-01-21",
+    "version": "1.8.11",
+    "buildDate": "2026-01-22",
 
     "versioningPolicy": {
         "scheme": "SemVer",
@@ -14,9 +14,9 @@
 
     "modules": {
         "FFU.Common": {
-            "version": "0.0.7",
+            "version": "0.0.12",
             "path": "FFU.Common/FFU.Common.psd1",
-            "description": "Core logging, process execution, shared utilities, messaging queue integration, and signature compatibility with FFU.Messaging"
+            "description": "Core logging, process execution, shared utilities - ThreadJob compatible (Find-ExecutableInPath, $function: drive instead of Get-Command)"
         },
         "FFU.Common.Logging": {
             "version": "1.0.0",
@@ -24,19 +24,19 @@
             "description": "Structured logging with levels, JSON output, session correlation"
         },
         "FFUUI.Core": {
-            "version": "0.0.12",
+            "version": "0.0.13",
             "path": "FFUUI.Core/FFUUI.Core.psd1",
-            "description": "WPF UI framework with VMware network settings (NetworkType/NicType dropdowns), bridged network IP auto-detection, hypervisor selection, VM shutdown timeout"
+            "description": "WPF UI framework with FFU file lock wait setting, VMware network settings, ShowVMConsole default true"
         },
         "FFU.Core": {
-            "version": "1.0.16",
+            "version": "1.0.18",
             "path": "Modules/FFU.Core/FFU.Core.psd1",
-            "description": "Core configuration, session tracking, credential security, schema validation, PowerShell best practices, WIM mount error handling, background job compatible output, build cancellation helper"
+            "description": "Core configuration, session tracking, credential security, schema validation, PowerShell best practices, WIM mount error handling, background job compatible output, build cancellation helper, ThreadJob safe logging ($function: instead of Get-Command)"
         },
         "FFU.Constants": {
-            "version": "1.1.1",
+            "version": "1.1.2",
             "path": "Modules/FFU.Constants/FFU.Constants.psd1",
-            "description": "Centralized configuration constants with dynamic path resolution - deprecated static properties removed"
+            "description": "Added FFU_FILE_LOCK_WAIT_SECONDS, FFU_FILE_LOCK_RETRY_COUNT, FFU_FILE_LOCK_RETRY_DELAY_SECONDS constants"
         },
         "FFU.ADK": {
             "version": "1.0.1",
@@ -54,24 +54,24 @@
             "description": "OEM driver download - enhanced diagnostics, BITS fallback, proxy/firewall block detection"
         },
         "FFU.Imaging": {
-            "version": "1.0.9",
+            "version": "1.1.5",
             "path": "Modules/FFU.Imaging/FFU.Imaging.psd1",
-            "description": "DISM operations and FFU creation - VMware VHD flush fix ensures unattend.xml persists to disk"
+            "description": "SMB session cleanup after VM capture - releases ffu_user file locks preventing FFU optimization"
         },
         "FFU.Media": {
-            "version": "1.3.2",
+            "version": "1.3.3",
             "path": "Modules/FFU.Media/FFU.Media.psd1",
-            "description": "WinPE media creation - fixed empty VMwareDrivers folder detection, ForceVMwareDriverDownload support"
+            "description": "WinPE media creation - fixed empty VMwareDrivers folder detection, ForceVMwareDriverDownload support, ThreadJob compatible ($function: instead of Get-Command)"
         },
         "FFU.Updates": {
-            "version": "1.0.2",
+            "version": "1.0.5",
             "path": "Modules/FFU.Updates/FFU.Updates.psd1",
-            "description": "Windows Update catalog and MSU handling - PowerShell 7 expand.exe fix"
+            "description": "Windows Update catalog and MSU handling - PowerShell 7 expand.exe fix, ThreadJob safe logging ($function: instead of Get-Command)"
         },
         "FFU.VM": {
-            "version": "1.0.6",
+            "version": "1.0.8",
             "path": "Modules/FFU.VM/FFU.VM.psd1",
-            "description": "VM lifecycle management for FFU Builder - Hyper-V and VMware support via FFU.Hypervisor"
+            "description": "Export Remove-FFUVMWithProvider for ThreadJob compatibility, VM lifecycle management via FFU.Hypervisor"
         },
         "FFU.Messaging": {
             "version": "1.0.0",
@@ -84,9 +84,9 @@
             "description": "Enhanced WimMount failure detection - driver integrity check, altitude conflict detection, EDR/security software blocking detection with targeted remediation"
         },
         "FFU.Hypervisor": {
-            "version": "1.3.1",
+            "version": "1.3.4",
             "path": "Modules/FFU.Hypervisor/FFU.Hypervisor.psd1",
-            "description": "Hypervisor abstraction layer - VMware network type (bridged/nat/hostonly) and NIC type (e1000e/vmxnet3/e1000) now configurable via VMConfiguration"
+            "description": "Hypervisor abstraction layer - ThreadJob compatible (Write-Warning replaced with [Console], $function: instead of Get-Command), VMware network type (bridged/nat/hostonly) and NIC type (e1000e/vmxnet3/e1000) configurable"
         },
         "FFU.BuildTest": {
             "version": "1.1.0",
@@ -94,9 +94,9 @@
             "description": "Build testing and verification with elevated execution support (Start-FFUBuildListener, Invoke-FFUBuildElevated)"
         },
         "FFU.ConfigMigration": {
-            "version": "1.0.0",
+            "version": "1.1.1",
             "path": "Modules/FFU.ConfigMigration/FFU.ConfigMigration.psd1",
-            "description": "Configuration file migration and schema versioning"
+            "description": "Configuration file migration and schema versioning, ThreadJob compatible ($function: instead of Get-Command)"
         }
     },
 
