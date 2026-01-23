@@ -276,6 +276,20 @@ function Update-DriverMappingJson {
             }
         }
 
+        # Microsoft Surface: resolve System SKU list (best-effort) using Sources A + C and cached results
+        $surfaceSystemSkuList = @()
+        if ($driver.Make -eq 'Microsoft') {
+            if ($driver.PSObject.Properties['Link'] -and -not [string]::IsNullOrWhiteSpace($driver.Link)) {
+                try {
+                    $surfaceSystemSkuList = Get-SurfaceSystemSkuListForMicrosoftDriver -DriversFolder $DriversFolder -ModelName $driver.Model -ModelLink $driver.Link
+                }
+                catch {
+                    WriteLog "Warning: Failed to resolve Surface SystemSku list for '$($driver.Model)'. Error: $($_.Exception.Message)"
+                    $surfaceSystemSkuList = @()
+                }
+            }
+        }
+
         $existingEntry = $mappingList | Where-Object { $_.Manufacturer -eq $driver.Make -and $_.Model -eq $driver.Model } | Select-Object -First 1
 
         if ($null -ne $existingEntry) {
@@ -316,6 +330,26 @@ function Update-DriverMappingJson {
                 }
             }
 
+            if ($driver.Make -eq 'Microsoft' -and $surfaceSystemSkuList -and $surfaceSystemSkuList.Count -gt 0) {
+                $desiredSkus = @($surfaceSystemSkuList | Sort-Object -Unique)
+                if ($existingEntry.PSObject.Properties['SystemSku']) {
+                    $currentSkus = @($existingEntry.SystemSku)
+                    $currentNormalized = @($currentSkus | ForEach-Object { if ($null -ne $_) { $_.ToString().Trim().ToUpperInvariant() } }) | Sort-Object -Unique
+                    $desiredNormalized = @($desiredSkus | ForEach-Object { if ($null -ne $_) { $_.ToString().Trim().ToUpperInvariant() } }) | Sort-Object -Unique
+
+                    if (($currentNormalized -join '|') -ne ($desiredNormalized -join '|')) {
+                        WriteLog "Updating SystemSku list for 'Microsoft - $($driver.Model)'."
+                        $existingEntry.SystemSku = $desiredSkus
+                        $entryUpdated = $true
+                    }
+                }
+                else {
+                    WriteLog "Adding SystemSku list for 'Microsoft - $($driver.Model)'."
+                    $existingEntry | Add-Member -NotePropertyName SystemSku -NotePropertyValue $desiredSkus
+                    $entryUpdated = $true
+                }
+            }
+
             if ($entryUpdated) {
                 $updatedCount++
             }
@@ -332,6 +366,9 @@ function Update-DriverMappingJson {
             }
             if ($driver.Make -eq 'Lenovo' -and -not [string]::IsNullOrWhiteSpace($machineTypeValue)) {
                 $newEntry | Add-Member -NotePropertyName MachineType -NotePropertyValue $machineTypeValue
+            }
+            if ($driver.Make -eq 'Microsoft' -and $surfaceSystemSkuList -and $surfaceSystemSkuList.Count -gt 0) {
+                $newEntry | Add-Member -NotePropertyName SystemSku -NotePropertyValue @($surfaceSystemSkuList | Sort-Object -Unique)
             }
 
             $mappingList.Add($newEntry)
@@ -778,4 +815,8 @@ function Get-LenovoPSREFToken {
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 
-Export-ModuleMember -Function Compress-DriverFolderToWim, Update-DriverMappingJson, Test-ExistingDriver, Get-LenovoPSREFToken
+Export-ModuleMember -Function `
+    Compress-DriverFolderToWim, `
+    Update-DriverMappingJson, `
+    Test-ExistingDriver, `
+    Get-LenovoPSREFToken

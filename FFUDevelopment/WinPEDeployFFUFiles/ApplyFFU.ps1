@@ -558,6 +558,21 @@ function Find-DriverMappingRule {
             return $null
         }
         'Microsoft' {
+            # Prefer System SKU matching for Microsoft/Surface when available.
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                foreach ($rule in $rulesForMake) {
+                    if ($rule.PSObject.Properties['SystemSku'] -and $null -ne $rule.SystemSku) {
+                        foreach ($sku in @($rule.SystemSku)) {
+                            if (-not [string]::IsNullOrWhiteSpace($sku) -and $sku.Trim().ToUpperInvariant() -eq $systemSkuNormalized) {
+                                WriteLog "DriverMapping: Microsoft SystemSku '$systemSkuNormalized' matched '$($rule.Model)'."
+                                return $rule
+                            }
+                        }
+                    }
+                }
+            }
+
+            # Fallback to model string comparison (legacy behavior).
             foreach ($rule in $rulesForMake) {
                 $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
                 if (-not [string]::IsNullOrWhiteSpace($ruleModelNorm) -and $ruleModelNorm -eq $normalizedModel) {

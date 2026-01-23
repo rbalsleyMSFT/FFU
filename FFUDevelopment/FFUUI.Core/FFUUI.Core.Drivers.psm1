@@ -170,7 +170,7 @@ function Convert-DriverItemToJsonModel {
 
     switch ($SelectedMake) {
         'Microsoft' {
-            $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent
+            $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent -DriversFolder $localDriversFolder
         }
         'Dell' {
             $rawModels = Get-DellDriversModelList -WindowsRelease $localWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake
@@ -969,6 +969,11 @@ function Invoke-DownloadSelectedDrivers {
                         Model      = $modelName
                         DriverPath = $driverPath
                     }
+
+                    if ($driverMetadata.PSObject.Properties['Link'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.Link)) {
+                        $driverRecord | Add-Member -NotePropertyName Link -NotePropertyValue $driverMetadata.Link
+                    }
+
                     if ($driverMetadata.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.SystemId)) {
                         $driverRecord | Add-Member -NotePropertyName SystemId -NotePropertyValue $driverMetadata.SystemId
                     }
