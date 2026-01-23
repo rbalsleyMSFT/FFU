@@ -37,7 +37,32 @@ function Import-SurfaceDriverIndexCache {
     )
 
     $cachePath = Get-SurfaceDriverIndexCachePath -DriversFolder $DriversFolder
+
+    # Surface cache TTL (7 days): treat stale caches as missing so we re-download Sources A/B/C as needed.
+    $cacheTtlDays = 7
     if (-not (Test-Path -Path $cachePath -PathType Leaf)) {
+        return [pscustomobject]@{
+            ModelIndex            = @()
+            SkuIndex              = @()
+            DownloadCenterDetails = @()
+        }
+    }
+
+    try {
+        $cacheAgeDays = ((Get-Date) - (Get-Item -Path $cachePath -ErrorAction Stop).LastWriteTime).TotalDays
+        if ($cacheAgeDays -ge $cacheTtlDays) {
+            WriteLog "Surface cache: Cache file '$cachePath' is older than $cacheTtlDays days ($([math]::Round($cacheAgeDays, 1)) days). Refreshing."
+            return [pscustomobject]@{
+                ModelIndex            = @()
+                SkuIndex              = @()
+                DownloadCenterDetails = @()
+            }
+        }
+
+        WriteLog "Surface cache: Loading cached SurfaceDriverIndex.json from '$cachePath' (age: $([math]::Round($cacheAgeDays, 1)) days)."
+    }
+    catch {
+        WriteLog "Surface cache: Failed to read cache timestamp for '$cachePath'. Refreshing. Error: $($_.Exception.Message)"
         return [pscustomobject]@{
             ModelIndex            = @()
             SkuIndex              = @()
