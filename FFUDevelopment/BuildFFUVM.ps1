@@ -587,7 +587,7 @@ public static extern uint GetPrivateProfileSection(
 Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
 
 #Check if Hyper-V feature is installed (requires only checks the module)
-$osInfo = Get-WmiObject -Class Win32_OperatingSystem
+$osInfo = Get-CimInstance -ClassName win32_OperatingSystem
 $isServer = $osInfo.Caption -match 'server'
 
 if ($isServer) {
@@ -3765,7 +3765,7 @@ Function Get-USBDrive {
     # Check if external hard disk media is allowed and user has not specified USB drives
     If ($AllowExternalHardDiskMedia -and (-not($USBDriveList))) {
         # Get all removable and external hard disk media drives
-        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
+        [array]$USBDrives = (Get-CimInstance -ClassName Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
         [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
         $ExternalCount = $ExternalHardDiskDrives.Count
         $USBDrivesCount = $USBDrives.Count
@@ -3910,7 +3910,7 @@ Function Get-USBDrive {
     }
     else {
         # Get only removable media drives
-        [array]$USBDrives = (Get-WmiObject -Class Win32_DiskDrive -Filter "MediaType='Removable Media'")
+        [array]$USBDrives = (Get-CimInstance -ClassName Win32_DiskDrive -Filter "MediaType='Removable Media'")
         $USBDrivesCount = $USBDrives.Count
         WriteLog "Found $USBDrivesCount Removable USB drives"
     }
