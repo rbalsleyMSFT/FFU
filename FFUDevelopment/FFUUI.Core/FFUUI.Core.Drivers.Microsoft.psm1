@@ -10,11 +10,32 @@ function Get-MicrosoftDriversModelList {
     [CmdletBinding()]
     param(
         [hashtable]$Headers, # Pass necessary headers
-        [string]$UserAgent # Pass UserAgent
+        [string]$UserAgent, # Pass UserAgent
+        [Parameter(Mandatory = $true)]
+        [string]$DriversFolder
     )
 
     $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
     $models = @()
+
+    # Load cached model list first (Source B) to keep the UI fast.
+    # The cache is refreshed automatically when missing or invalid.
+    try {
+        $cachePath = Get-SurfaceDriverIndexCachePath -DriversFolder $DriversFolder
+        if (Test-Path -Path $cachePath -PathType Leaf) {
+            $cacheAgeDays = ((Get-Date) - (Get-Item -Path $cachePath).LastWriteTime).TotalDays
+            if ($cacheAgeDays -lt 7) {
+                $cache = Import-SurfaceDriverIndexCache -DriversFolder $DriversFolder
+                if ($cache.ModelIndex -and $cache.ModelIndex.Count -gt 0) {
+                    WriteLog "Surface cache: Using cached Microsoft model list ($($cache.ModelIndex.Count) models)."
+                    return @($cache.ModelIndex)
+                }
+            }
+        }
+    }
+    catch {
+        WriteLog "Surface cache: Failed to load cached Microsoft model list. Falling back to online parse. Error: $($_.Exception.Message)"
+    }
 
     try {
         WriteLog "Getting Surface driver information from $url"
@@ -70,6 +91,18 @@ function Get-MicrosoftDriversModelList {
             }
         }
         WriteLog "Parsing complete. Found $($models.Count) models."
+
+        # Persist model list (Source B) into the local cache for fast UI population.
+        try {
+            $cache = Import-SurfaceDriverIndexCache -DriversFolder $DriversFolder
+            $cache.ModelIndex = @($models)
+            Save-SurfaceDriverIndexCache -Cache $cache -DriversFolder $DriversFolder
+            WriteLog "Surface cache: Saved Microsoft model list to cache."
+        }
+        catch {
+            WriteLog "Surface cache: Failed to save Microsoft model list. Error: $($_.Exception.Message)"
+        }
+
         return $models
     }
     catch {
@@ -152,49 +185,123 @@ function Save-MicrosoftDriversTask {
         ### GET THE DOWNLOAD LINK
         $status = "Getting download link..."
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-        WriteLog "Getting download page content for $modelName from $modelLink"
-        $OriginalVerbosePreference = $VerbosePreference
-        $VerbosePreference = 'SilentlyContinue'
-        # Use passed-in UserAgent and Headers
-        $downloadPageContent = Invoke-WebRequest -Uri $modelLink -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
-        $VerbosePreference = $OriginalVerbosePreference
-        WriteLog "Complete"
 
-        $status = "Parsing download page..."
-        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-        WriteLog "Parsing download page for file"
-        $scriptPattern = '<script>window.__DLCDetails__={(.*?)}<\/script>'
-        $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
+        # Initialize Win10/Win11 link variables
+        $win10Link = $null
+        $win10FileName = $null
+        $win11Link = $null
+        $win11FileName = $null
 
-        if ($scriptMatch.Success) {
-            $scriptContent = $scriptMatch.Groups[1].Value
-            # $downloadFilePattern = '"name":"(.*?)",.*?"url":"(.*?)"'
-            $downloadFilePattern = '"name":"([^"]+\.(?:msi|zip))",[^}]*?"url":"(.*?)"'
-            $downloadFileMatches = [regex]::Matches($scriptContent, $downloadFilePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        # Prefer cached Download Center details (Source C) to avoid unnecessary internet calls and cache rewrites
+        $useCachedDownloadCenterDetails = $false
+        try {
+            $cache = Import-SurfaceDriverIndexCache -DriversFolder $DriversFolder
+            $cachedDetails = @($cache.DownloadCenterDetails | Where-Object { $_.Link -eq $modelLink } | Select-Object -First 1)
+            if ($cachedDetails.Count -gt 0 -and $cachedDetails[0].Files -and $cachedDetails[0].Files.Count -gt 0) {
+                $useCachedDownloadCenterDetails = $true
+                WriteLog "Surface cache: Using cached Download Center details for $modelName from $modelLink"
 
+                foreach ($downloadFile in @($cachedDetails[0].Files)) {
+                    if ($null -eq $downloadFile) { continue }
+                    $currentFileName = $downloadFile.Name
+                    $fileUrl = $downloadFile.Url
+                    if ([string]::IsNullOrWhiteSpace($currentFileName) -or [string]::IsNullOrWhiteSpace($fileUrl)) { continue }
 
-            $win10Link = $null
-            $win10FileName = $null
-            $win11Link = $null
-            $win11FileName = $null
-
-            # Iterate through all matches to find potential Win10 and Win11 links
-            foreach ($downloadFile in $downloadFileMatches) {
-                $currentFileName = $downloadFile.Groups[1].Value
-                $fileUrl = $downloadFile.Groups[2].Value
-
-                if ($currentFileName -match "Win10") {
-                    $win10Link = $fileUrl
-                    $win10FileName = $currentFileName
-                    WriteLog "Found Win10 link: $win10FileName"
-                }
-                elseif ($currentFileName -match "Win11") {
-                    $win11Link = $fileUrl
-                    $win11FileName = $currentFileName
-                    WriteLog "Found Win11 link: $win11FileName"
+                    if ($currentFileName -match "Win10") {
+                        $win10Link = $fileUrl
+                        $win10FileName = $currentFileName
+                        WriteLog "Found Win10 link (cached): $win10FileName"
+                    }
+                    elseif ($currentFileName -match "Win11") {
+                        $win11Link = $fileUrl
+                        $win11FileName = $currentFileName
+                        WriteLog "Found Win11 link (cached): $win11FileName"
+                    }
                 }
             }
+        }
+        catch {
+            WriteLog "Surface cache: Failed loading cached Download Center details for '$modelName'. Error: $($_.Exception.Message)"
+        }
 
+        # Cache miss: download and parse the model's Download Center page (Source C), then backfill the cache
+        if (-not $useCachedDownloadCenterDetails) {
+            WriteLog "Getting download page content for $modelName from $modelLink"
+            $OriginalVerbosePreference = $VerbosePreference
+            $VerbosePreference = 'SilentlyContinue'
+            # Use passed-in UserAgent and Headers
+            $downloadPageContent = Invoke-WebRequest -Uri $modelLink -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
+            $VerbosePreference = $OriginalVerbosePreference
+            WriteLog "Complete"
+
+            $status = "Parsing download page..."
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
+            WriteLog "Parsing download page for file"
+            $scriptPattern = '<script>window.__DLCDetails__={(.*?)}<\/script>'
+            $scriptMatch = [regex]::Match($downloadPageContent.Content, $scriptPattern)
+
+            if ($scriptMatch.Success) {
+                $scriptContent = $scriptMatch.Groups[1].Value
+                # $downloadFilePattern = '"name":"(.*?)",.*?"url":"(.*?)"'
+                $downloadFilePattern = '"name":"([^"]+\.(?:msi|zip))",[^}]*?"url":"(.*?)"'
+                $downloadFileMatches = [regex]::Matches($scriptContent, $downloadFilePattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+                # Iterate through all matches to find potential Win10 and Win11 links
+                foreach ($downloadFile in $downloadFileMatches) {
+                    $currentFileName = $downloadFile.Groups[1].Value
+                    $fileUrl = $downloadFile.Groups[2].Value
+
+                    if ($currentFileName -match "Win10") {
+                        $win10Link = $fileUrl
+                        $win10FileName = $currentFileName
+                        WriteLog "Found Win10 link: $win10FileName"
+                    }
+                    elseif ($currentFileName -match "Win11") {
+                        $win11Link = $fileUrl
+                        $win11FileName = $currentFileName
+                        WriteLog "Found Win11 link: $win11FileName"
+                    }
+                }
+
+                # Update local cache with Download Center file details (Source C) for this model.
+                # This runs during download (not during Get Models) so it won't slow the listview population.
+                try {
+                    $filesForCache = [System.Collections.Generic.List[pscustomobject]]::new()
+                    if ($win10Link -and $win10FileName) {
+                        $filesForCache.Add([pscustomobject]@{ Name = $win10FileName; Url = $win10Link })
+                    }
+                    if ($win11Link -and $win11FileName) {
+                        $filesForCache.Add([pscustomobject]@{ Name = $win11FileName; Url = $win11Link })
+                    }
+
+                    if ($filesForCache.Count -gt 0) {
+                        $cache = Import-SurfaceDriverIndexCache -DriversFolder $DriversFolder
+                        $detailsEntry = [pscustomobject][ordered]@{
+                            Model = $modelName
+                            Link  = $modelLink
+                            Files = @($filesForCache)
+                        }
+
+                        $newDetails = [System.Collections.Generic.List[pscustomobject]]::new()
+                        foreach ($item in @($cache.DownloadCenterDetails)) {
+                            if ($null -ne $item -and $item.PSObject.Properties['Link'] -and $item.Link -ne $modelLink) {
+                                $newDetails.Add($item)
+                            }
+                        }
+                        $newDetails.Add($detailsEntry)
+                        $cache.DownloadCenterDetails = @($newDetails)
+                        Save-SurfaceDriverIndexCache -Cache $cache -DriversFolder $DriversFolder
+                    }
+                }
+                catch {
+                    WriteLog "Surface cache: Failed updating Download Center details cache for '$modelName'. Error: $($_.Exception.Message)"
+                }
+
+                $useCachedDownloadCenterDetails = $true
+            }
+        }
+
+        if ($useCachedDownloadCenterDetails) {
             # Decision logic to select the appropriate download link
             $downloadLink = $null
             $fileName = $null

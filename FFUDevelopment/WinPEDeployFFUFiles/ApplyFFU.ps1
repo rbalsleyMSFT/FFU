@@ -23,10 +23,10 @@ function Get-HardDrive() {
     if ($manufacturer -eq 'Microsoft Corporation' -and $model -eq 'Virtual Machine') {
         WriteLog 'Running in a Hyper-V VM. Getting virtual disk on Index 0 and SCSILogicalUnit 0'
         $diskDriveCandidates = @(Get-CimInstance -Class 'Win32_DiskDrive' | Where-Object { $_.MediaType -eq 'Fixed hard disk media' `
-                -and $_.Model -eq 'Microsoft Virtual Disk'
-                -and $_.Index -eq 0 `
-                -and $_.SCSILogicalUnit -eq 0
-        })
+                    -and $_.Model -eq 'Microsoft Virtual Disk' `
+                    -and $_.Index -eq 0 `
+                    -and $_.SCSILogicalUnit -eq 0
+            })
     }
     else {
         WriteLog 'Not running in a VM. Getting physical disk drive'
@@ -74,7 +74,13 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [string]$ArgumentList
+        [string]$ArgumentList,
+
+        [Parameter()]
+        [switch]$IgnoreExitCode,
+
+        [Parameter()]
+        [switch]$PassThruExitCode
     )
 
     $ErrorActionPreference = 'Stop'
@@ -96,18 +102,38 @@ function Invoke-Process {
             $cmd = Start-Process @startProcessParams
             $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
             $cmdError = Get-Content -Path $stdErrTempFile -Raw
+
             if ($cmd.ExitCode -ne 0) {
+                # Non-terminating mode: capture output to Scriptlog and continue
+                if ($IgnoreExitCode) {
+                    if ([string]::IsNullOrEmpty($cmdOutput) -eq $false) {
+                        WriteLog $cmdOutput
+                    }
+                    if ([string]::IsNullOrEmpty($cmdError) -eq $false) {
+                        WriteLog $cmdError
+                    }
+                    if ($PassThruExitCode) {
+                        return $cmd.ExitCode
+                    }
+                    return
+                }
+
                 if ($cmdError) {
                     throw $cmdError.Trim()
                 }
                 if ($cmdOutput) {
                     throw $cmdOutput.Trim()
                 }
+                throw "Process failed. ExitCode = $($cmd.ExitCode)."
             }
             else {
                 if ([string]::IsNullOrEmpty($cmdOutput) -eq $false) {
                     WriteLog $cmdOutput
                 }
+            }
+
+            if ($PassThruExitCode) {
+                return $cmd.ExitCode
             }
         }
     }
@@ -558,6 +584,21 @@ function Find-DriverMappingRule {
             return $null
         }
         'Microsoft' {
+            # Prefer System SKU matching for Microsoft/Surface when available.
+            if (-not [string]::IsNullOrWhiteSpace($systemSkuNormalized)) {
+                foreach ($rule in $rulesForMake) {
+                    if ($rule.PSObject.Properties['SystemSku'] -and $null -ne $rule.SystemSku) {
+                        foreach ($sku in @($rule.SystemSku)) {
+                            if (-not [string]::IsNullOrWhiteSpace($sku) -and $sku.Trim().ToUpperInvariant() -eq $systemSkuNormalized) {
+                                WriteLog "DriverMapping: Microsoft SystemSku '$systemSkuNormalized' matched '$($rule.Model)'."
+                                return $rule
+                            }
+                        }
+                    }
+                }
+            }
+
+            # Fallback to model string comparison (legacy behavior).
             foreach ($rule in $rulesForMake) {
                 $ruleModelNorm = ConvertTo-ComparableModelName -Text $rule.Model
                 if (-not [string]::IsNullOrWhiteSpace($ruleModelNorm) -and $ruleModelNorm -eq $normalizedModel) {
@@ -729,67 +770,67 @@ function Test-DriverFolderHasInstallableContent {
     
         return $false
     }
-        catch {
-            WriteLog "Failed to inspect driver folder '$Path': $($_.Exception.Message)"
-            return $false
+    catch {
+        WriteLog "Failed to inspect driver folder '$Path': $($_.Exception.Message)"
+        return $false
+    }
+}
+    
+function Get-AvailableDriveLetter {
+    $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name | ForEach-Object { $_.ToUpperInvariant() }
+    for ($ascii = [int][char]'Z'; $ascii -ge [int][char]'A'; $ascii--) {
+        $candidate = [char]$ascii
+        if ($usedLetters -notcontains $candidate) {
+            return $candidate
         }
     }
+    return $null
+}
     
-    function Get-AvailableDriveLetter {
-        $usedLetters = (Get-PSDrive -PSProvider FileSystem).Name | ForEach-Object { $_.ToUpperInvariant() }
-        for ($ascii = [int][char]'Z'; $ascii -ge [int][char]'A'; $ascii--) {
-            $candidate = [char]$ascii
-            if ($usedLetters -notcontains $candidate) {
-                return $candidate
-            }
-        }
-        return $null
+function New-DriverSubstMapping {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath
+    )
+    
+    $resolvedPath = (Resolve-Path -Path $SourcePath -ErrorAction Stop).Path
+    $driveLetter = Get-AvailableDriveLetter
+    if ($null -eq $driveLetter) {
+        throw 'No drive letters are available for SUBST mapping.'
     }
+    $driveName = "$driveLetter`:"
+    $mappedPath = "$driveLetter`:\"
+    WriteLog "Mapping driver folder '$resolvedPath' to $driveName with SUBST."
+    $escapedPath = $resolvedPath -replace '"', '""'
+    $arguments = "/c subst $driveName `"$escapedPath`""
+    Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
+    return [PSCustomObject]@{
+        DriveLetter = $driveLetter
+        DriveName   = $driveName
+        DrivePath   = $mappedPath
+    }
+}
     
-    function New-DriverSubstMapping {
-        [CmdletBinding()]
-        param(
-            [Parameter(Mandatory = $true)]
-            [string]$SourcePath
-        )
+function Remove-DriverSubstMapping {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DriveLetter
+    )
     
-        $resolvedPath = (Resolve-Path -Path $SourcePath -ErrorAction Stop).Path
-        $driveLetter = Get-AvailableDriveLetter
-        if ($null -eq $driveLetter) {
-            throw 'No drive letters are available for SUBST mapping.'
-        }
-        $driveName = "$driveLetter`:"
-        $mappedPath = "$driveLetter`:\"
-        WriteLog "Mapping driver folder '$resolvedPath' to $driveName with SUBST."
-        $escapedPath = $resolvedPath -replace '"', '""'
-        $arguments = "/c subst $driveName `"$escapedPath`""
+    $driveName = "$DriveLetter`:"
+    WriteLog "Removing SUBST drive $driveName"
+    try {
+        $arguments = "/c subst $driveName /d"
         Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
-        return [PSCustomObject]@{
-            DriveLetter = $driveLetter
-            DriveName   = $driveName
-            DrivePath   = $mappedPath
-        }
     }
-    
-    function Remove-DriverSubstMapping {
-        [CmdletBinding()]
-        param(
-            [Parameter(Mandatory = $true)]
-            [string]$DriveLetter
-        )
-    
-        $driveName = "$DriveLetter`:"
-        WriteLog "Removing SUBST drive $driveName"
-        try {
-            $arguments = "/c subst $driveName /d"
-            Invoke-Process -FilePath cmd.exe -ArgumentList $arguments
-        }
-        catch {
-            WriteLog "Failed to remove SUBST drive $($driveName): $_"
-        }
+    catch {
+        WriteLog "Failed to remove SUBST drive $($driveName): $_"
     }
+}
         
-    #Get USB Drive and create log file
+#Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
@@ -841,11 +882,11 @@ else {
     foreach ($currentDisk in $diskDriveCandidates) {
         $sizeGB = [math]::Round(($currentDisk.Size / 1GB), 2)
         $displayList += [PSCustomObject]@{
-            Disk         = $currentDisk.Index
-            'Size (GB)'  = $sizeGB
-            'Sector'     = $currentDisk.BytesPerSector
-            'Bus Type'   = $currentDisk.InterfaceType
-            Model        = $currentDisk.Model
+            Disk        = $currentDisk.Index
+            'Size (GB)' = $sizeGB
+            'Sector'    = $currentDisk.BytesPerSector
+            'Bus Type'  = $currentDisk.InterfaceType
+            Model       = $currentDisk.Model
         }
     }
     $displayList | Format-Table -AutoSize -Property Disk, 'Size (GB)', Sector, 'Bus Type', Model
@@ -1562,64 +1603,181 @@ if ($null -ne $DriverSourcePath) {
         Write-Host "Installing drivers from WIM: $DriverSourcePath"
         $TempDriverDir = "W:\TempDrivers"
         try {
+            # Create working folder for WIM-based drivers
             WriteLog "Creating temporary directory for drivers at $TempDriverDir"
             New-Item -Path $TempDriverDir -ItemType Directory -Force | Out-Null
             
+            # Mount the driver WIM read-only so DISM can recurse the extracted INF tree
             WriteLog "Mounting WIM contents to $TempDriverDir"
             Write-Host "Mounting WIM contents to $TempDriverDir"
             # For some reason can't use /mount-image with invoke-process, so using dism.exe directly
             dism.exe /Mount-Image /ImageFile:$DriverSourcePath /Index:1 /MountDir:$TempDriverDir /ReadOnly /optimize
+            $mountExitCode = $LASTEXITCODE
+            if ($mountExitCode -ne 0) {
+                throw "DISM WIM mount failed. LastExitCode = $mountExitCode."
+            }
             WriteLog "WIM mount successful."
 
+            # Inject drivers into the offline Windows image; failures here should not stop deployment
             WriteLog "Injecting drivers from $TempDriverDir"
             Write-Host "Injecting drivers from $TempDriverDir"
             Write-Host "This may take a while, please be patient."
-            Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:""$TempDriverDir"" /Recurse"
-            WriteLog "Driver injection from WIM succeeded."
-            Write-Host "Driver injection from WIM succeeded."
+            $driverInjectExitCode = Invoke-Process -FilePath dism.exe -ArgumentList "/image:W:\ /Add-Driver /Driver:""$TempDriverDir"" /Recurse" -IgnoreExitCode -PassThruExitCode
+            if ($driverInjectExitCode -ne 0) {
+                $warningMessage = "Warning: One or more drivers failed to inject from WIM. ExitCode = $driverInjectExitCode. Continuing deployment."
+                WriteLog $warningMessage
+                Write-Host $warningMessage -ForegroundColor Yellow
 
+                # Copy setupapi.offline.log to the USB drive when driver injection fails
+
+                $setupApiLogPath = 'W:\Windows\INF\setupapi.offline.log'
+                if (Test-Path -Path $setupApiLogPath) {
+                    try {
+                        Invoke-Process xcopy.exe """$setupApiLogPath"" ""$USBDrive"" /Y"
+                    }
+                    catch {
+                        WriteLog "Warning: Failed to copy setupapi.offline.log to $USBDrive. "
+                    }
+                }
+                else {
+                    WriteLog "Warning: setupapi.offline.log not found at $setupApiLogPath"
+                }
+            }
+            else {
+                WriteLog "Driver injection from WIM succeeded."
+                Write-Host "Driver injection from WIM succeeded."
+            }
         }
         catch {
-            WriteLog "An error occurred during WIM driver installation: $_"
-            # Copy DISM log to USBDrive for debugging
-            invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
-            throw $_
+            $warningMessage = "Warning: An error occurred during WIM driver installation. Continuing deployment."
+            WriteLog $warningMessage
+            Write-Host $warningMessage -ForegroundColor Yellow
+
+            # Copy troubleshooting logs to the USB drive when driver installation fails
+            try {
+                Invoke-Process cmd.exe "/c copy /Y ""X:\Windows\logs\dism\dism.log"" ""$($USBDrive)dism_driverinject.log"""
+            }
+            catch {
+                WriteLog "Warning: Failed to copy dism.log to $USBDrive."
+            }
+
+            $setupApiLogPath = 'W:\Windows\INF\setupapi.offline.log'
+            if (Test-Path -Path $setupApiLogPath) {
+                try {
+                    Invoke-Process xcopy.exe """$setupApiLogPath"" ""$USBDrive"" /Y"
+                }
+                catch {
+                    WriteLog "Warning: Failed to copy setupapi.offline.log to $USBDrive."
+                }
+            }
+            else {
+                WriteLog "Warning: setupapi.offline.log not found at $setupApiLogPath"
+            }
         }
         finally {
             if (Test-Path -Path $TempDriverDir) {
+                # Always attempt to unmount and clean up; unmount failures should not stop deployment
                 WriteLog "Unmounting WIM from $TempDriverDir"
                 Write-Host "Unmounting WIM from $TempDriverDir"
-                Invoke-Process dism.exe "/Unmount-Image /MountDir:""$TempDriverDir"" /Discard"
-                WriteLog "Unmount successful."
-                Write-Host "Unmount successful."
+                try {
+                    Invoke-Process dism.exe "/Unmount-Image /MountDir:""$TempDriverDir"" /Discard"
+                    WriteLog "Unmount successful."
+                    Write-Host "Unmount successful."
+                }
+                catch {
+                    $warningMessage = "Warning: Failed to unmount WIM from $TempDriverDir. Continuing cleanup."
+                    WriteLog $warningMessage
+                    Write-Host $warningMessage -ForegroundColor Yellow
+                }
+
                 WriteLog "Cleaning up temporary driver directory: $TempDriverDir"
                 Write-Host "Cleaning up temporary driver directory: $TempDriverDir"
-                Remove-Item -Path $TempDriverDir -Recurse -Force
-                WriteLog "Cleanup successful."
-                Write-Host "Cleanup successful."
+                try {
+                    Remove-Item -Path $TempDriverDir -Recurse -Force
+                    WriteLog "Cleanup successful."
+                    Write-Host "Cleanup successful."
+                }
+                catch {
+                    $warningMessage = "Warning: Failed to clean up temporary driver directory: $TempDriverDir."
+                    WriteLog $warningMessage
+                    Write-Host $warningMessage -ForegroundColor Yellow
+                }
             }
         }
     }
     elseif ($DriverSourceType -eq 'Folder') {
         $substMapping = $null
         try {
+            # Use SUBST to shorten long paths for DISM /Add-Driver
             $substMapping = New-DriverSubstMapping -SourcePath $DriverSourcePath
             $shortDriverPath = $substMapping.DrivePath
             WriteLog "Injecting drivers from folder via SUBST. Source: $DriverSourcePath, Mapped: $($substMapping.DriveName)"
             Write-Host "Injecting drivers from folder: $shortDriverPath"
             Write-Host "This may take a while, please be patient."
-            Invoke-Process dism.exe "/image:W:\ /Add-Driver /Driver:$shortDriverPath /Recurse"
-            WriteLog "Driver injection from folder succeeded."
-            Write-Host "Driver injection from folder succeeded."
+
+            # Inject drivers into the offline Windows image; failures here should not stop deployment
+            $driverInjectExitCode = Invoke-Process -FilePath dism.exe -ArgumentList "/image:W:\ /Add-Driver /Driver:$shortDriverPath /Recurse" -IgnoreExitCode -PassThruExitCode
+            if ($driverInjectExitCode -ne 0) {
+                $warningMessage = "Warning: One or more drivers failed to inject from folder. ExitCode = $driverInjectExitCode. Continuing deployment."
+                WriteLog $warningMessage
+                Write-Host $warningMessage -ForegroundColor Yellow
+
+                # Copy setupapi.offline.log to the USB drive when driver injection fails
+                $setupApiLogPath = 'W:\Windows\INF\setupapi.offline.log'
+                if (Test-Path -Path $setupApiLogPath) {
+                    try {
+                        Invoke-Process xcopy.exe """$setupApiLogPath"" ""$USBDrive"" /Y"
+                    }
+                    catch {
+                        WriteLog "Warning: Failed to copy setupapi.offline.log to $USBDrive. "
+                    }
+                }
+                else {
+                    WriteLog "Warning: setupapi.offline.log not found at $setupApiLogPath"
+                }
+            }
+            else {
+                WriteLog "Driver injection from folder succeeded."
+                Write-Host "Driver injection from folder succeeded."
+            }
         }
         catch {
-            WriteLog "An error occurred during folder driver installation: $_"
-            Invoke-Process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
-            throw $_
+            $warningMessage = "Warning: An error occurred during folder driver installation. Continuing deployment."
+            WriteLog $warningMessage
+            Write-Host $warningMessage -ForegroundColor Yellow
+
+            # Copy troubleshooting logs to the USB drive when driver installation fails
+            try {
+                Invoke-Process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
+            }
+            catch {
+                WriteLog "Warning: Failed to copy dism.log to $USBDrive."
+            }
+
+            $setupApiLogPath = 'W:\Windows\INF\setupapi.offline.log'
+            if (Test-Path -Path $setupApiLogPath) {
+                try {
+                    Invoke-Process xcopy.exe """$setupApiLogPath"" ""$USBDrive"" /Y"
+                }
+                catch {
+                    WriteLog "Warning: Failed to copy setupapi.offline.log to $USBDrive."
+                }
+            }
+            else {
+                WriteLog "Warning: setupapi.offline.log not found at $setupApiLogPath"
+            }
         }
         finally {
+            # Always attempt to remove SUBST mapping; failures here should not stop deployment
             if ($null -ne $substMapping) {
-                Remove-DriverSubstMapping -DriveLetter $substMapping.DriveLetter
+                try {
+                    Remove-DriverSubstMapping -DriveLetter $substMapping.DriveLetter
+                }
+                catch {
+                    $warningMessage = "Warning: Failed to remove SUBST mapping $($substMapping.DriveLetter). Continuing deployment."
+                    WriteLog $warningMessage
+                    Write-Host $warningMessage -ForegroundColor Yellow
+                }
             }
         }
     }
