@@ -584,7 +584,7 @@ public static extern uint GetPrivateProfileSection(
     uint nSize,
     string lpFileName);
 '@
-Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru
+Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru | Out-Null
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-CimInstance -ClassName win32_OperatingSystem

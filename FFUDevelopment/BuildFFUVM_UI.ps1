@@ -45,6 +45,7 @@ $script:uiState = [PSCustomObject]@{
         logData                     = $null;
         logStreamReader             = $null;
         pollTimer                   = $null;
+        currentBuildProcess         = $null;
         lastConfigFilePath          = $null
     };
     Flags              = @{
@@ -148,7 +149,7 @@ $script:uiState.Controls.btnRun.Add_Click({
             if ($script:uiState.Flags.isBuilding -and -not $script:uiState.Flags.isCleanupRunning) {
                 $btnRun.IsEnabled = $false
                 $script:uiState.Controls.txtStatus.Text = "Cancel requested. Stopping build..."
-                WriteLog "Cancel requested by user. Stopping background build job."
+                WriteLog "Cancel requested by user. Stopping background build process."
 
                 # Stop the timer
                 if ($null -ne $script:uiState.Data.pollTimer) {
@@ -163,92 +164,71 @@ $script:uiState.Controls.btnRun.Add_Click({
                     $script:uiState.Data.logStreamReader = $null
                 }
 
-                # Stop and remove the running build job
-                $jobToStop = $script:uiState.Data.currentBuildJob
-                $script:uiState.Data.currentBuildJob = $null
-                if ($null -ne $jobToStop) {
-                    try {
-                        # Attempt graceful stop first
-                        Stop-Job -Job $jobToStop -ErrorAction SilentlyContinue
-                        Wait-Job -Job $jobToStop -Timeout 5 -ErrorAction SilentlyContinue | Out-Null
-                    }
-                    catch {
-                        WriteLog "Stop-Job threw: $($_.Exception.Message)"
+                # Stop the running build process
+                $processToStop = $script:uiState.Data.currentBuildProcess
+                $script:uiState.Data.currentBuildProcess = $null
+
+                if ($null -ne $processToStop) {
+                    # Recursively terminate the build process and any children (DISM, setup tools, etc.)
+                    function Stop-ProcessTree {
+                        param([int]$parentPid)
+                        $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentPid" -ErrorAction SilentlyContinue
+                        foreach ($child in $children) {
+                            Stop-ProcessTree -parentPid $child.ProcessId
+                        }
+                        try { Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue } catch {}
                     }
 
-                    # If the job's hosting process is still alive, kill its process tree to stop child tools like DISM
                     try {
-                        $jobProcId = $null
-                        if ($null -ne $jobToStop.ChildJobs -and $jobToStop.ChildJobs.Count -gt 0) {
-                            $jobProcId = $jobToStop.ChildJobs[0].ProcessId
-                        }
-                        if ($jobProcId) {
-                            # Recursively terminate the job process and any children
-                            function Stop-ProcessTree {
-                                param([int]$parentPid)
-                                $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentPid" -ErrorAction SilentlyContinue
-                                foreach ($child in $children) {
-                                    Stop-ProcessTree -parentPid $child.ProcessId
-                                }
-                                try { Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue } catch {}
+                        Stop-ProcessTree -parentPid $processToStop.Id
+                        WriteLog "Background build process stopped (PID: $($processToStop.Id))."
+                    }
+                    catch {
+                        WriteLog "Error terminating build process tree: $($_.Exception.Message)"
+                    }
+                }
+
+                # Safety net: kill any active DISM capture still running
+                try {
+                    $dismCaptures = Get-CimInstance Win32_Process -Filter "Name='DISM.EXE'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match '/Capture-FFU' }
+                    foreach ($p in $dismCaptures) {
+                        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+                    }
+                }
+                catch {
+                    WriteLog "Error stopping DISM capture processes: $($_.Exception.Message)"
+                }
+
+                # Also stop Office ODT setup.exe if running (to avoid recreating files after cleanup)
+                try {
+                    $officePathForKill = $null
+
+                    # Prefer explicit UI path
+                    $uiOfficePath = $script:uiState.Controls.txtOfficePath.Text
+                    if (-not [string]::IsNullOrWhiteSpace($uiOfficePath)) {
+                        $officePathForKill = $uiOfficePath
+                    }
+                    else {
+                        # Fall back to the last config path only if known
+                        $lastConfigPathLocal = $script:uiState.Data.lastConfigFilePath
+                        if (-not [string]::IsNullOrWhiteSpace($lastConfigPathLocal)) {
+                            $ffuDevRoot = Split-Path (Split-Path $lastConfigPathLocal -Parent) -Parent
+                            if (-not [string]::IsNullOrWhiteSpace($ffuDevRoot)) {
+                                $officePathForKill = Join-Path $ffuDevRoot 'Apps\Office'
                             }
-                            Stop-ProcessTree -parentPid $jobProcId
                         }
                     }
-                    catch {
-                        WriteLog "Error terminating job process tree: $($_.Exception.Message)"
-                    }
 
-                    # Safety net: kill any active DISM capture still running
-                    try {
-                        $dismCaptures = Get-CimInstance Win32_Process -Filter "Name='DISM.EXE'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match '/Capture-FFU' }
-                        foreach ($p in $dismCaptures) {
+                    # Only proceed when a valid Office folder exists
+                    if ($officePathForKill -and (Test-Path -LiteralPath $officePathForKill -PathType Container)) {
+                        $setupProcs = Get-CimInstance Win32_Process -Filter "Name='setup.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -like "$officePathForKill*" }
+                        foreach ($p in $setupProcs) {
                             try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
                         }
                     }
-                    catch {
-                        WriteLog "Error stopping DISM capture processes: $($_.Exception.Message)"
-                    }
-
-                    # Also stop Office ODT setup.exe if running (to avoid recreating files after cleanup)
-                    try {
-                        $officePathForKill = $null
-
-                        # Prefer explicit UI path
-                        $uiOfficePath = $script:uiState.Controls.txtOfficePath.Text
-                        if (-not [string]::IsNullOrWhiteSpace($uiOfficePath)) {
-                            $officePathForKill = $uiOfficePath
-                        }
-                        else {
-                            # Fall back to the last config path only if known
-                            $lastConfigPathLocal = $script:uiState.Data.lastConfigFilePath
-                            if (-not [string]::IsNullOrWhiteSpace($lastConfigPathLocal)) {
-                                $ffuDevRoot = Split-Path (Split-Path $lastConfigPathLocal -Parent) -Parent
-                                if (-not [string]::IsNullOrWhiteSpace($ffuDevRoot)) {
-                                    $officePathForKill = Join-Path $ffuDevRoot 'Apps\Office'
-                                }
-                            }
-                        }
-
-                        # Only proceed when a valid Office folder exists
-                        if ($officePathForKill -and (Test-Path -LiteralPath $officePathForKill -PathType Container)) {
-                            $setupProcs = Get-CimInstance Win32_Process -Filter "Name='setup.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -like "$officePathForKill*" }
-                            foreach ($p in $setupProcs) {
-                                try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
-                            }
-                        }
-                    }
-                    catch {
-                        WriteLog "Error stopping Office setup.exe processes: $($_.Exception.Message)"
-                    }
-
-                    try {
-                        Remove-Job -Job $jobToStop -Force -ErrorAction SilentlyContinue
-                        WriteLog "Background build job stopped and removed."
-                    }
-                    catch {
-                        WriteLog "Error removing background build job: $($_.Exception.Message)"
-                    }
+                }
+                catch {
+                    WriteLog "Error stopping Office setup.exe processes: $($_.Exception.Message)"
                 }
 
                 # Start cleanup using the same BuildFFUVM.ps1 via -Cleanup short-circuit
@@ -289,13 +269,39 @@ $script:uiState.Controls.btnRun.Add_Click({
                     CleanupCurrentRunDownloads = $removeCurrentRunToo
                 }
 
-                $cleanupScriptBlock = {
-                    param($buildParams, $PSScriptRoot)
-                    & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
+                # Start cleanup in a separate pwsh process so the UI stays responsive
+                $pwshPath = Join-Path -Path $PSHOME -ChildPath 'pwsh.exe'
+                if (-not (Test-Path -Path $pwshPath)) {
+                    $pwshPath = 'pwsh'
                 }
 
-                # Start cleanup job
-                $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $cleanupScriptBlock -ArgumentList @($cleanupParams, $PSScriptRoot)
+                $cleanupScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'BuildFFUVM.ps1'
+
+                # Build argument list for cleanup.
+                # -Cleanup is a [switch] in BuildFFUVM.ps1, so do not pass a value after it.
+                # Use -Param:$true/$false syntax for boolean parameters to avoid argument transformation errors.
+                $cleanupArgs = @(
+                    '-NoProfile',
+                    '-ExecutionPolicy', 'Bypass',
+                    '-File', $cleanupScriptPath,
+                    '-ConfigFile', $cleanupParams.ConfigFile,
+                    '-Cleanup',
+                    "-RemoveApps:$($cleanupParams.RemoveApps)",
+                    "-RemoveUpdates:$($cleanupParams.RemoveUpdates)",
+                    "-CleanupDrivers:$($cleanupParams.CleanupDrivers)",
+                    "-CleanupCurrentRunDownloads:$($cleanupParams.CleanupCurrentRunDownloads)"
+                )
+
+                $startCleanupParams = @{
+                    FilePath     = $pwshPath
+                    ArgumentList = $cleanupArgs
+                    PassThru     = $true
+                }
+                if ($Host.Name -eq 'ConsoleHost') {
+                    $startCleanupParams['NoNewWindow'] = $true
+                }
+
+                $script:uiState.Data.currentBuildProcess = Start-Process @startCleanupParams
 
                 # Wait for log file to appear (or open immediately if it exists)
                 $logWaitTimeout = 60
@@ -315,14 +321,14 @@ $script:uiState.Controls.btnRun.Add_Click({
                     WriteLog "Warning: Main log file not found at $mainLogPath after waiting. Monitor tab will not update during cleanup."
                 }
 
-                # Create a timer to poll the cleanup job
+                # Create a timer to poll the cleanup process
                 $script:uiState.Data.pollTimer = New-Object System.Windows.Threading.DispatcherTimer
                 $script:uiState.Data.pollTimer.Interval = [TimeSpan]::FromSeconds(1)
                 $script:uiState.Flags.isCleanupRunning = $true
 
                 $script:uiState.Data.pollTimer.Add_Tick({
                         param($sender, $e)
-                        $currentJob = $script:uiState.Data.currentBuildJob
+                        $currentProcess = $script:uiState.Data.currentBuildProcess
 
                         # Read new lines from log
                         if ($null -ne $script:uiState.Data.logStreamReader) {
@@ -335,13 +341,13 @@ $script:uiState.Controls.btnRun.Add_Click({
                             }
                         }
 
-                        if ($null -eq $currentJob -or $null -eq $script:uiState.Data.pollTimer) {
+                        if ($null -eq $currentProcess -or $null -eq $script:uiState.Data.pollTimer) {
                             if ($null -ne $sender) { $sender.Stop() }
                             $script:uiState.Data.pollTimer = $null
                             return
                         }
 
-                        if ($currentJob.State -in 'Completed', 'Failed', 'Stopped') {
+                        if ($currentProcess.HasExited) {
                             if ($null -ne $sender) { $sender.Stop() }
                             $script:uiState.Data.pollTimer = $null
 
@@ -364,10 +370,8 @@ $script:uiState.Controls.btnRun.Add_Click({
                             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                             $script:uiState.Controls.pbOverallProgress.Value = 0
 
-                            # Receive and remove cleanup job
-                            $currentJob | Receive-Job -ErrorAction SilentlyContinue | Out-Null
-                            Remove-Job -Job $currentJob -Force
-                            $script:uiState.Data.currentBuildJob = $null
+                            # Clear cleanup process state
+                            $script:uiState.Data.currentBuildProcess = $null
 
                             # Reset flags and button
                             $script:uiState.Flags.isCleanupRunning = $false
@@ -425,33 +429,44 @@ $script:uiState.Controls.btnRun.Add_Click({
             $txtStatus.Text = "Executing BuildFFUVM.ps1 in the background..."
             WriteLog "Executing BuildFFUVM.ps1 in the background..."
 
-            # Prepare parameters for splatting
-            $buildParams = @{
-                ConfigFile = $configFilePath
+            # Start BuildFFUVM.ps1 in a separate pwsh process.
+            # This keeps the UI responsive and restores console interaction (Write-Host / Read-Host) when available.
+            $pwshPath = Join-Path -Path $PSHOME -ChildPath 'pwsh.exe'
+            if (-not (Test-Path -Path $pwshPath)) {
+                $pwshPath = 'pwsh'
             }
+
+            $buildScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'BuildFFUVM.ps1'
+            $pwshArgs = @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', $buildScriptPath,
+                '-ConfigFile', $configFilePath
+            )
             if ($config.Verbose) {
-                $buildParams['Verbose'] = $true
+                $pwshArgs += '-Verbose'
             }
 
-            # Define the script block to run in the background job
-            $scriptBlock = {
-                param($buildParams, $PSScriptRoot)
-                
-                # This script runs in a new process. BuildFFUVM.ps1 is expected to handle its own module imports.
-                & "$PSScriptRoot\BuildFFUVM.ps1" @buildParams
-            }
-
-            # Delete the old log file before starting the build job to ensure we don't read stale content.
+            # Delete the old log file before starting the build process to ensure we don't read stale content.
             $mainLogPath = Join-Path $config.FFUDevelopmentPath "FFUDevelopment.log"
             if (Test-Path $mainLogPath) {
                 WriteLog "Removing old FFUDevelopment.log file."
                 Remove-Item -Path $mainLogPath -Force
             }
 
-            # Start the job and store it in the shared state object
-            $script:uiState.Data.currentBuildJob = Start-Job -ScriptBlock $scriptBlock -ArgumentList @($buildParams, $PSScriptRoot)
+            $startBuildParams = @{
+                FilePath     = $pwshPath
+                ArgumentList = $pwshArgs
+                PassThru     = $true
+            }
+            if ($Host.Name -eq 'ConsoleHost') {
+                $startBuildParams['NoNewWindow'] = $true
+            }
 
-            # Wait for the new log file to be created by the background job.
+            # Start the build process and store it in the shared state object
+            $script:uiState.Data.currentBuildProcess = Start-Process @startBuildParams
+
+            # Wait for the new log file to be created by the background process.
             $logWaitTimeout = 15 # seconds
             $watch = [System.Diagnostics.Stopwatch]::StartNew()
             while (-not (Test-Path $mainLogPath) -and $watch.Elapsed.TotalSeconds -lt $logWaitTimeout) {
@@ -476,7 +491,7 @@ $script:uiState.Controls.btnRun.Add_Click({
             $script:uiState.Data.pollTimer.Add_Tick({
                     param($sender, $e)
                     # This scriptblock runs on the UI thread, so it can safely access script-scoped variables
-                    $currentJob = $script:uiState.Data.currentBuildJob
+                    $currentProcess = $script:uiState.Data.currentBuildProcess
                     
                     # Read from log stream
                     if ($null -ne $script:uiState.Data.logStreamReader) {
@@ -500,8 +515,8 @@ $script:uiState.Controls.btnRun.Add_Click({
                         }
                     }
 
-                    # If job is somehow null or the timer has been nulled out, stop the timer
-                    if ($null -eq $currentJob -or $null -eq $script:uiState.Data.pollTimer) {
+                    # If process is somehow null or the timer has been nulled out, stop the timer
+                    if ($null -eq $currentProcess -or $null -eq $script:uiState.Data.pollTimer) {
                         if ($null -ne $sender) {
                             $sender.Stop()
                         }
@@ -509,8 +524,8 @@ $script:uiState.Controls.btnRun.Add_Click({
                         return
                     }
 
-                    # Check if the job has reached a terminal state
-                    if ($currentJob.State -in 'Completed', 'Failed', 'Stopped') {
+                    # Check if the build process has exited
+                    if ($currentProcess.HasExited) {
                         # Stop the timer, we're done polling
                         if ($null -ne $sender) {
                             $sender.Stop()
@@ -546,42 +561,26 @@ $script:uiState.Controls.btnRun.Add_Click({
                             $script:uiState.Data.logStreamReader = $null
                         }
 
-                        # Determine final status based on job result and whether cleanup was running (should be false here)
+                        $exitCode = $currentProcess.ExitCode
+
+                        # Determine final status based on process exit code
                         $finalStatusText = "FFU build completed successfully."
-                        if ($currentJob.State -eq 'Failed') {
-                            $reason = $null
-                            
-                            Receive-Job -Job $currentJob -Keep -ErrorVariable jobErrors -ErrorAction SilentlyContinue | Out-Null
-                            
-                            if ($null -ne $jobErrors -and $jobErrors.Count -gt 0) {
-                                $reason = ($jobErrors | Select-Object -Last 1).ToString()
-                            }
-
-                            if ([string]::IsNullOrWhiteSpace($reason) -and $currentJob.JobStateInfo.Reason) {
-                                $reason = $currentJob.JobStateInfo.Reason.Message
-                            }
-
-                            if ([string]::IsNullOrWhiteSpace($reason)) {
-                                $reason = "An unknown error occurred. The job failed without a specific reason."
-                            }
-
+                        if ($exitCode -ne 0) {
                             $finalStatusText = "FFU build failed. Check FFUDevelopment.log for details."
-                            WriteLog "BuildFFUVM.ps1 job failed. Reason: $reason"
-                            [System.Windows.MessageBox]::Show("The build process failed. Please check the $FFUDevelopmentPath\FFUDevelopment.log file for details.`n`nError: $reason", "Build Error", "OK", "Error") | Out-Null
+                            WriteLog "BuildFFUVM.ps1 process failed with exit code: $exitCode"
+                            [System.Windows.MessageBox]::Show("The build process failed. Please check the $FFUDevelopmentPath\FFUDevelopment.log file for details.`n`nExit code: $exitCode", "Build Error", "OK", "Error") | Out-Null
                             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                         }
                         else {
-                            WriteLog "BuildFFUVM.ps1 job completed successfully."
+                            WriteLog "BuildFFUVM.ps1 process completed successfully."
                             $script:uiState.Controls.pbOverallProgress.Value = 100
                         }
 
                         # Update UI elements
                         $script:uiState.Controls.txtStatus.Text = $finalStatusText
 
-                        # Receive & remove job and clear state
-                        $currentJob | Receive-Job -ErrorAction SilentlyContinue | Out-Null
-                        Remove-Job -Job $currentJob -Force
-                        $script:uiState.Data.currentBuildJob = $null
+                        # Clear process state
+                        $script:uiState.Data.currentBuildProcess = $null
 
                         # Reset button and flags for next run
                         $script:uiState.Flags.isBuilding = $false
@@ -640,9 +639,9 @@ $window.Add_SourceInitialized({
 
 # Register cleanup to reclaim memory and revert LongPathsEnabled setting when the UI window closes
 $window.Add_Closed({
-        # Stop any running build job if the window is closed
-        if ($null -ne $script:uiState.Data.currentBuildJob) {
-            WriteLog "UI closing, stopping background build job."
+        # Stop any running build process if the window is closed
+        if ($null -ne $script:uiState.Data.currentBuildProcess) {
+            WriteLog "UI closing, stopping background build process."
             
             # Stop the timer
             if ($null -ne $script:uiState.Data.pollTimer) {
@@ -657,17 +656,28 @@ $window.Add_Closed({
                 $script:uiState.Data.logStreamReader = $null
             }
 
-            # Stop and remove the job
-            $jobToStop = $script:uiState.Data.currentBuildJob
-            $script:uiState.Data.currentBuildJob = $null # Clear it from state first
-            
+            $processToStop = $script:uiState.Data.currentBuildProcess
+            $script:uiState.Data.currentBuildProcess = $null
+
             try {
-                Stop-Job -Job $jobToStop
-                Remove-Job -Job $jobToStop
-                WriteLog "Background job stopped and removed."
+                # Terminate the build process and any children
+                function Stop-ProcessTree {
+                    param([int]$parentPid)
+                    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentPid" -ErrorAction SilentlyContinue
+                    foreach ($child in $children) {
+                        Stop-ProcessTree -parentPid $child.ProcessId
+                    }
+                    try { Stop-Process -Id $parentPid -Force -ErrorAction SilentlyContinue } catch {}
+                }
+
+                if ($null -ne $processToStop -and -not $processToStop.HasExited) {
+                    Stop-ProcessTree -parentPid $processToStop.Id
+                }
+
+                WriteLog "Background process stopped."
             }
             catch {
-                WriteLog "Error stopping or removing background job: $($_.Exception.Message)"
+                WriteLog "Error stopping background build process: $($_.Exception.Message)"
             }
         }
 
