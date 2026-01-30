@@ -2386,62 +2386,154 @@ function Get-Index {
         [string]$WindowsSKU
     )
 
-    
-    # Get the available indexes using Get-WindowsImage
+    # Get the available indexes in the WIM/ESD
     $imageIndexes = Get-WindowsImage -ImagePath $WindowsImagePath
-    
-    # Get the ImageName of ImageIndex 1 if an ISO was specified, else use ImageIndex 4 - this is usually Home or Education SKU on ESD MCT media
-    if ($ISOPath) {
-        if ($WindowsSKU -notmatch "Standard|Datacenter") {
-            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
-            $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+
+    # Normalize SKU and determine if Desktop Experience is explicitly requested (Server only)
+    $normalizedWindowsSKU = $WindowsSKU.Trim()
+    $isDesktopExperienceRequested = $normalizedWindowsSKU -match '\(Desktop Experience\)'
+    $normalizedWindowsSKU = $normalizedWindowsSKU -replace '\s*\(Desktop Experience\)\s*', ''
+
+    # Map user-selected SKU to language-independent EditionId values
+    # Notes:
+    # - Client: EditionId values are stable across languages (e.g. Professional, Core, Education)
+    # - Server: Desktop Experience vs Core is differentiated by InstallationType (EditionId is the same)
+    $editionIdCandidates = switch ($normalizedWindowsSKU) {
+        'Home' { @('Core') }
+        'Core' { @('Core') }
+
+        'Home N' { @('CoreN') }
+        'CoreN' { @('CoreN') }
+
+        'Home Single Language' { @('CoreSingleLanguage') }
+        'CoreSingleLanguage' { @('CoreSingleLanguage') }
+
+        'Education' { @('Education') }
+        'Education N' { @('EducationN') }
+        'EducationN' { @('EducationN') }
+
+        'Pro' { @('Professional') }
+        'Professional' { @('Professional') }
+
+        'Pro N' { @('ProfessionalN') }
+        'ProfessionalN' { @('ProfessionalN') }
+
+        'Pro Education' { @('ProfessionalEducation') }
+        'ProfessionalEducation' { @('ProfessionalEducation') }
+
+        'Pro Education N' { @('ProfessionalEducationN') }
+        'ProfessionalEducationN' { @('ProfessionalEducationN') }
+
+        'Pro for Workstations' { @('ProfessionalWorkstation') }
+        'ProfessionalWorkstation' { @('ProfessionalWorkstation') }
+
+        'Pro N for Workstations' { @('ProfessionalWorkstationN') }
+        'ProfessionalWorkstationN' { @('ProfessionalWorkstationN') }
+
+        'Enterprise' { @('Enterprise') }
+        'Enterprise N' { @('EnterpriseN') }
+        'EnterpriseN' { @('EnterpriseN') }
+
+        'Enterprise LTSC' { @('EnterpriseS') }
+        'Enterprise 2016 LTSB' { @('EnterpriseS') }
+        'EnterpriseS' { @('EnterpriseS') }
+
+        'Enterprise N LTSC' { @('EnterpriseSN') }
+        'Enterprise N 2016 LTSB' { @('EnterpriseSN') }
+        'EnterpriseSN' { @('EnterpriseSN') }
+
+        'IoT Enterprise LTSC' { @('IoTEnterpriseS') }
+        'IoTEnterpriseS' { @('IoTEnterpriseS') }
+
+        'IoT Enterprise N LTSC' { @('IoTEnterpriseSN') }
+        'IoTEnterpriseSN' { @('IoTEnterpriseSN') }
+
+        'Standard' { @('ServerStandard') }
+        'ServerStandard' { @('ServerStandard') }
+
+        'Datacenter' { @('ServerDatacenter') }
+        'ServerDatacenter' { @('ServerDatacenter') }
+
+        default { @() }
+    }
+
+    # Determine preferred InstallationType for Server images
+    $preferredInstallationType = $null
+    if ($normalizedWindowsSKU -in @('Standard', 'Datacenter', 'ServerStandard', 'ServerDatacenter')) {
+        if ($isDesktopExperienceRequested) {
+            $preferredInstallationType = 'Server'
         }
         else {
-            $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 1
-            $WindowsImage = $imageIndex.ImageName.Substring(0, 19)
+            $preferredInstallationType = 'Server Core'
         }
     }
-    else {
-        $imageIndex = $imageIndexes | Where-Object ImageIndex -eq 4
-        $WindowsImage = $imageIndex.ImageName.Substring(0, 10)
+
+    # If we can map SKU -> EditionId, attempt a non-interactive match
+    if ($editionIdCandidates.Count -gt 0) {
+        # Build per-index metadata (EditionId, InstallationType) to match deterministically
+        $imageMetadata = @(foreach ($imageIndex in $imageIndexes) {
+            try {
+                $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
+                [pscustomobject]@{
+                    ImageIndex       = $details.ImageIndex
+                    ImageName        = $details.ImageName
+                    ImageSize        = $details.ImageSize
+                    EditionId        = $details.EditionId
+                    InstallationType = $details.InstallationType
+                }
+            }
+            catch {
+                $null
+            }
+        }) | Where-Object { $null -ne $_ }
+
+        # Match by EditionId first
+        $imageMatches = $imageMetadata | Where-Object { $_.EditionId -in $editionIdCandidates }
+
+        # If this is a Server SKU, prefer the requested InstallationType (Server vs Server Core)
+        if ($null -ne $preferredInstallationType -and $imageMatches.Count -gt 0) {
+            $preferredImageMatches = $imageMatches | Where-Object { $_.InstallationType -eq $preferredInstallationType }
+            if ($preferredImageMatches.Count -gt 0) {
+                $imageMatches = $preferredImageMatches
+            }
+        }
+
+        # If multiple matches remain, pick the largest image (Desktop Experience tends to be larger)
+        if ($imageMatches.Count -gt 0) {
+            $bestMatch = $imageMatches | Sort-Object -Property ImageSize -Descending | Select-Object -First 1
+            WriteLog "Selected Windows image index $($bestMatch.ImageIndex) (SKU='$WindowsSKU', EditionId='$($bestMatch.EditionId)', InstallationType='$($bestMatch.InstallationType)'): $($bestMatch.ImageName)"
+            return $bestMatch.ImageIndex
+        }
     }
-    
-    # Concatenate $WindowsImage and $WindowsSKU (E.g. Windows 11 Pro)
-    $ImageNameToFind = "$WindowsImage $WindowsSKU"
-    
-    # Find the ImageName in all of the indexes in the image
-    $matchingImageIndex = $imageIndexes | Where-Object ImageName -eq $ImageNameToFind
-    
-    # Return the index that matches exactly
-    if ($matchingImageIndex) {
-        return $matchingImageIndex.ImageIndex
-    }
-    else {
-        # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
-        $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
-            
-        while ($true) {
-            # Present list of ImageNames to the end user if no matching ImageIndex is found
-            Write-Host "No matching ImageIndex found for $ImageNameToFind. Please select an ImageName from the list below:"
-    
-            $i = 1
-            $relevantImageIndexes | ForEach-Object {
-                Write-Host "$i. $($_.ImageName)"
-                $i++
-            }
-    
-            # Ask for user input
-            $inputValue = Read-Host "Enter the number of the ImageName you want to use"
-    
-            # Get selected ImageName based on user input
-            $selectedImage = $relevantImageIndexes[$inputValue - 1]
-    
-            if ($selectedImage) {
-                return $selectedImage.ImageIndex
-            }
-            else {
-                Write-Host "Invalid selection, please try again."
-            }
+
+    # Final fallback: prompt the user to select an ImageName
+    # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
+    $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
+
+    WriteLog "No matching image index found for SKU '$WindowsSKU' in '$WindowsImagePath'. Prompting user to select an ImageName."
+
+    while ($true) {
+        # Present list of ImageNames to the end user if no matching ImageIndex is found
+        Write-Host "No matching ImageIndex found for Windows SKU '$WindowsSKU'. Please select an ImageName from the list below:"
+
+        $i = 1
+        $relevantImageIndexes | ForEach-Object {
+            Write-Host "$i. $($_.ImageName)"
+            $i++
+        }
+
+        # Ask for user input
+        $inputValue = Read-Host "Enter the number of the ImageName you want to use"
+
+        # Get selected ImageName based on user input
+        $selectedImage = $relevantImageIndexes[$inputValue - 1]
+
+        if ($selectedImage) {
+            WriteLog "User selected Windows image index $($selectedImage.ImageIndex) (SKU='$WindowsSKU'): $($selectedImage.ImageName)"
+            return $selectedImage.ImageIndex
+        }
+        else {
+            Write-Host "Invalid selection, please try again."
         }
     }
 }
