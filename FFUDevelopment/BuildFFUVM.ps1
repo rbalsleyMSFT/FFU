@@ -195,9 +195,11 @@ Path to a JSON file containing a list of user-defined applications to install. D
 .PARAMETER USBDriveList
 A hashtable containing USB drives from win32_diskdrive where:
 - Key: USB drive model name (partial match supported)
-- Value: USB drive serial number (trailing partial match supported due to some serial numbers ending with blank spaces)
+- Value: USB drive UniqueId string, or an array of UniqueIds (to support selecting multiple drives with the same model)
 
-Example: @{ "SanDisk Ultra" = "1234567890"; "Kingston DataTraveler" = "0987654321" }
+Examples:
+@{ "SanDisk Ultra" = "1234567890" }
+@{ "SanDisk Ultra" = @("1234567890", "ABCDEFG"); "Kingston DataTraveler" = "0987654321" }
 
 .PARAMETER MaxUSBDrives
 Maximum number of USB drives to build in parallel. Default is 5. Set to 0 to process all discovered drives (or all selected drives when USBDriveList or selection is used). Actual throttle will never exceed the number of drives discovered.
@@ -3961,40 +3963,57 @@ Function Get-USBDrive {
     }
     elseif ($USBDriveList) {
         # Log the count of specified USB drives
-        $USBDriveListCount = $USBDriveList.Count
+        # USBDriveList values can be a single UniqueId string, or an array of UniqueIds (multiple same-model drives)
+        $USBDriveListCount = 0
+        foreach ($model in $USBDriveList.Keys) {
+            $USBDriveListCount += @($USBDriveList[$model]).Count
+        }
         WriteLog "Looking for $USBDriveListCount USB drives from USB Drive List"
+
         # Get only the specified USB drives based on model and UniqueId
         $USBDrives = @()
         foreach ($model in $USBDriveList.Keys) {
-            $configUniqueId = $USBDriveList[$model]
-            WriteLog "Looking for USB drive model $model with UniqueId $configUniqueId"
-            # First get candidate drives by model and media type
-            $candidateDrives = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Model LIKE '%$model%' AND (MediaType='Removable Media' OR MediaType='External hard disk media')"
-            $foundDrive = $null
-            foreach ($candidate in $candidateDrives) {
-                # Get the disk to retrieve UniqueId
-                $disk = Get-Disk -Number $candidate.Index -ErrorAction SilentlyContinue
-                if ($disk -and $disk.UniqueId) {
-                    # Trim the machine name suffix (everything after the colon) from UniqueId
-                    $diskUniqueId = if ($disk.UniqueId -match ':') {
-                        $disk.UniqueId.Split(':')[0]
-                    }
-                    else {
-                        $disk.UniqueId
-                    }
-                    # Match on the trimmed UniqueId
-                    if ($diskUniqueId -eq $configUniqueId) {
-                        $foundDrive = $candidate
-                        break
+            $configUniqueIds = @($USBDriveList[$model])
+
+            foreach ($configUniqueId in $configUniqueIds) {
+                if ([string]::IsNullOrWhiteSpace([string]$configUniqueId)) {
+                    continue
+                }
+
+                WriteLog "Looking for USB drive model $model with UniqueId $configUniqueId"
+                # First get candidate drives by model and media type
+                $candidateDrives = Get-CimInstance -ClassName Win32_DiskDrive -Filter "Model LIKE '%$model%' AND (MediaType='Removable Media' OR MediaType='External hard disk media')"
+                $foundDrive = $null
+                foreach ($candidate in $candidateDrives) {
+                    # Get the disk to retrieve UniqueId
+                    $disk = Get-Disk -Number $candidate.Index -ErrorAction SilentlyContinue
+                    if ($disk -and $disk.UniqueId) {
+                        # Trim the machine name suffix (everything after the colon) from UniqueId
+                        $diskUniqueId = if ($disk.UniqueId -match ':') {
+                            $disk.UniqueId.Split(':')[0]
+                        }
+                        else {
+                            $disk.UniqueId
+                        }
+                        # Match on the trimmed UniqueId
+                        if ($diskUniqueId -eq $configUniqueId) {
+                            $foundDrive = $candidate
+                            break
+                        }
                     }
                 }
-            }
-            if ($foundDrive) {
-                WriteLog "Found USB drive model $($foundDrive.Model) with UniqueId $configUniqueId"
-                $USBDrives += $foundDrive
-            }
-            else {
-                WriteLog "USB drive model $model with UniqueId $configUniqueId not found"
+                if ($foundDrive) {
+                    if ($USBDrives.Index -notcontains $foundDrive.Index) {
+                        WriteLog "Found USB drive model $($foundDrive.Model) with UniqueId $configUniqueId"
+                        $USBDrives += $foundDrive
+                    }
+                    else {
+                        WriteLog "USB drive model $($foundDrive.Model) with UniqueId $configUniqueId was already added. Skipping duplicate."
+                    }
+                }
+                else {
+                    WriteLog "USB drive model $model with UniqueId $configUniqueId not found"
+                }
             }
         }
         $USBDrivesCount = $USBDrives.Count

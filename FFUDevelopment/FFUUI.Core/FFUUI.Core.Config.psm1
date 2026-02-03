@@ -115,8 +115,27 @@ function Get-UIConfig {
     }
 
     # Save selected USB drives using UniqueId for reliable identification
+    # Multiple physical drives can share the same Model, so store an array of UniqueIds per Model.
     $State.Controls.lstUSBDrives.Items | Where-Object { $_.IsSelected } | ForEach-Object {
-        $config.USBDriveList[$_.Model] = $_.UniqueId
+        $modelName = $_.Model
+        $uniqueId = $_.UniqueId
+
+        if ([string]::IsNullOrWhiteSpace($modelName) -or [string]::IsNullOrWhiteSpace($uniqueId)) {
+            return
+        }
+
+        # Ensure the hashtable value is always an array so multiple same-model drives are preserved
+        $existingUniqueIds = $config.USBDriveList[$modelName]
+        if ($null -eq $existingUniqueIds) {
+            $config.USBDriveList[$modelName] = @($uniqueId)
+            return
+        }
+
+        $existingUniqueIds = @($existingUniqueIds)
+        if (-not ($existingUniqueIds -contains $uniqueId)) {
+            $existingUniqueIds += $uniqueId
+        }
+        $config.USBDriveList[$modelName] = $existingUniqueIds
     }
 
     # Additional FFU file selections
@@ -671,7 +690,19 @@ function Update-UIFromConfig {
             }
 
             # Match USB drives by UniqueId instead of SerialNumber
-            if ($propertyExists -and ($propertyValue -eq $item.UniqueId)) {
+            # USBDriveList values can be a single UniqueId (string) or an array of UniqueIds (multiple same-model drives)
+            $isMatch = $false
+            if ($propertyExists) {
+                if ($propertyValue -is [string]) {
+                    $isMatch = ($propertyValue -eq $item.UniqueId)
+                }
+                else {
+                    $propertyValueArray = @($propertyValue)
+                    $isMatch = ($propertyValueArray -contains $item.UniqueId)
+                }
+            }
+
+            if ($isMatch) {
                 WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with UniqueId '$($item.UniqueId)'."
                 $item.IsSelected = $true
             }
