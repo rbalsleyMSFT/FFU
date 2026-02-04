@@ -1,5 +1,41 @@
 # Change Log
 
+# 2602.1 UI Preview
+
+## What's Changed
+
+### Improved Automatic Matching for Surface devices
+
+To keep inline with HP, Dell, and Lenovo, added support for Surface devices to leverage the SystemSKU values from WMI when doing automatic driver matching during deployment. Check https://github.com/rbalsleyMSFT/FFU/pull/394 for more information. Long story short, there's a new `SurfaceDriverIndex.json` file that is created when getting the models which gathers the WMI information per model as well as the download links for each model. This info is used to generate the DriverMapping.json file for Surface to allow for better matching.
+
+There'll be deeper documentation on the new [docs site](https://rbalsleymsft.github.io/FFU/)
+
+### Improved driver injection error handling when deploying drivers via USB
+
+When drivers failed to be added from the USB drive during deployment, ApplyFFU.ps1 would fail with an error message and the deployment wouldn't complete. ApplyFFU.ps1 will now continue on failure and log the error and capture the setupapi.offline.log to the USB drive for troubleshooting if needed.
+
+### Fixed an issue with Windows image index for non-English media
+
+In some cases non-English media would cause the end-user to have to select which Windows SKU to select due to parsing the image name output and assuming the output was in English. BuildFFUVM.ps1 will now parse the edition metadata for each index. This should improve the experience for those that are creating FFUs from non-English media.
+
+### Run builds in separate pwsh process instead of background jobs
+
+In https://github.com/rbalsleyMSFT/FFU/pull/393, by changing the deprecated Get-WmiObject calls to Get-CimInstance, this actually broke console output. Still don't fully understand why GWMI was allowing background jobs to output console output to the calling pwsh Window but get-ciminstance wouldn't (WinRM, PowerShell Remoting, etc), but this required changing to running the build in a separate pwsh process. Between this and https://github.com/rbalsleyMSFT/FFU/pull/393, this should fix those that might build their FFUs on Servers and still expect to see console output.
+
+### Fixed an issue with USB drive selection for same-model USB drives
+
+When using the UI and selecting specific USB drives to create, the UI would allow you to select multiple of the same name, but would only create one of the drives. You should now be able to multi-select multiple USB drives with the same name and they should build as expected.
+
+### Created new docs site
+
+[FFU Builder docs](https://rbalsleymsft.github.io/FFU/) are now available! I'm still working on adding more documentation, but the layout of the site, the prereqs, quick start, and UI overview are done. I still have some stuff to migrate from the old docx file and some deep dive stuff to write up (Drivers, Apps, FAQs, Troubleshooting, etc). It should work well on both mobile and desktop. It also has built-in search capabilities to make it easy to find what you're interested in.
+
+## New Contributors
+
+* @JGehl99 made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/393
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2601.1Preview...v2602.1Preview
+
 # 2601.1 UI Preview
 
 ## What's Changed
