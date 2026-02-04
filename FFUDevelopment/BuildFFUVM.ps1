@@ -4141,8 +4141,8 @@ Function New-DeploymentUSB {
         
         $BootPartition = $Disk | New-Partition -Size 2GB -IsActive -AssignDriveLetter
         $DeployPartition = $Disk | New-Partition -UseMaximumSize -AssignDriveLetter
-        Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false 
-        Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false
+        Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "TempBoot" -Confirm:$false | Out-Null
+        Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "TempDeploy" -Confirm:$false | Out-Null
         
         $BootPartitionDriveLetter = "$($BootPartition.DriveLetter):\"
         $DeployPartitionDriveLetter = "$($DeployPartition.DriveLetter):\"
