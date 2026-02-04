@@ -1,0 +1,23 @@
+title: FFU Builder
+description: Build and deploy Windows FFU images
+remote_theme: just-the-docs/just-the-docs@v0.10.1
+plugins:
+  - jekyll-remote-theme
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+search_enabled: true
+
+# Because you’ll publish as a project site at /FFU
+baseurl: "/FFU"
+
+callouts:
+  note:
+    title: Note
+    color: purple
+  tip:
+    title: Tip
+    color: green
+  warning:
+    title: Warning
+    color: yellow

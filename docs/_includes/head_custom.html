@@ -1,0 +1,145 @@
+<!-- docs/_includes/head_custom.html -->
+<style>
+    /* Layout: remove Just-the-Docs "centered narrow" constraints on wide screens */
+    @media (min-width: 50rem) {
+        .main {
+            max-width: none !important;
+        }
+    }
+
+    @media (min-width: 66.5rem) {
+        .side-bar {
+            width: 16.5rem !important;
+            min-width: 16.5rem !important;
+        }
+
+        .side-bar+.main {
+            margin-left: 16.5rem !important;
+        }
+    }
+
+    /* Readability: wider column + slightly larger, less-thin text */
+    @media (min-width: 66.5rem) {
+        .main-content {
+            max-width: 1100px;
+        }
+    }
+
+    @media (min-width: 90rem) {
+        .main-content {
+            max-width: 1280px;
+        }
+    }
+
+    /* Typography: approximate Microsoft Learn (Segoe UI Variable + regular body + semibold headings) */
+    body,
+    .main-content {
+        font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+    }
+
+    .main-content {
+        margin-right: auto;
+        margin-left: auto;
+        font-size: 1rem;
+        /* 16px-ish, closer to Learn */
+        line-height: 1.6;
+        font-weight: 400;
+
+        /* Just-the-Docs defaults body text to a mid-grey; make it closer to Learn */
+        color: #242424;
+    }
+
+    .main-content p,
+    .main-content li {
+        line-height: 1.65;
+    }
+
+    .main-content h1,
+    .main-content h2,
+    .main-content h3 {
+        font-weight: 600;
+        letter-spacing: -0.01em;
+    }
+
+    .main-content code,
+    .main-content pre code {
+        font-size: 0.95em;
+    }
+
+    /* Images: make it obvious they're zoomable (opt-out via class="no-zoom") */
+    .main-content img:not(.no-zoom) {
+        cursor: zoom-in;
+    }
+
+    /* Right-side page TOC (desktop only) */
+    @media (min-width: 66.5rem) {
+        .main-content-wrap.has-page-toc {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 16rem;
+            column-gap: 2rem;
+            align-items: start;
+        }
+
+        .main-content-wrap.has-page-toc .main-content {
+            grid-column: 1;
+        }
+
+        .page-toc {
+            grid-column: 2;
+            position: sticky;
+            top: 5.5rem;
+            max-height: calc(100vh - 6.5rem);
+            overflow: auto;
+            padding-left: 1rem;
+            border-left: 1px solid #eeebee;
+            font-size: 0.875rem;
+        }
+
+        .page-toc__title {
+            font-weight: 600;
+            color: #27262b;
+            margin-bottom: 0.75rem;
+        }
+
+        .page-toc__list {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+
+        .page-toc__item {
+            margin: 0.4rem 0;
+        }
+
+        .page-toc__item--h3 {
+            padding-left: 0.75rem;
+        }
+
+        .page-toc__link {
+            color: inherit;
+            text-decoration: none;
+            display: block;
+            padding: 0.125rem 0 0.125rem 0.75rem;
+            border-left: 3px solid transparent;
+        }
+
+        .page-toc__link:hover {
+            text-decoration: underline;
+        }
+
+        .page-toc__link.is-active {
+            font-weight: 600;
+            color: #1a1a1a;
+            border-left-color: #2563eb;
+        }
+    }
+</style>
+
+<meta name="ffu-right-toc" content="{% if page.right_toc == false %}false{% else %}true{% endif %}">
+
+<script src="{{ '/assets/js/vendor/medium-zoom.min.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/image-zoom.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/page-toc.js' | relative_url }}" defer></script>
