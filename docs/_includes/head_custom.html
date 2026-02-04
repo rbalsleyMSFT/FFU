@@ -69,6 +69,23 @@
         font-size: 0.95em;
     }
 
+    /* Wrapping: prevent long code/paths from overflowing into the page TOC */
+    .main-content {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .main-content :not(pre) > code {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
+    .main-content a {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+
     /* Images: make it obvious they're zoomable (opt-out via class="no-zoom") */
     .main-content img:not(.no-zoom) {
         cursor: zoom-in;
@@ -79,16 +96,40 @@
         .main-content-wrap.has-page-toc {
             display: grid;
             grid-template-columns: minmax(0, 1fr) 16rem;
+            grid-template-rows: auto 1fr;
+            grid-template-areas:
+                "breadcrumb breadcrumb"
+                "content toc";
             column-gap: 2rem;
             align-items: start;
         }
 
-        .main-content-wrap.has-page-toc .main-content {
-            grid-column: 1;
+        /* Breadcrumbs (when present) always span full width */
+        .main-content-wrap.has-page-toc .breadcrumb-nav {
+            grid-area: breadcrumb;
         }
 
+        /* Main content always stays in the left column */
+        .main-content-wrap.has-page-toc .main-content {
+            grid-area: content;
+
+            /* Prevent wide tables/code from forcing overlap */
+            min-width: 0;
+
+            /* Force the content to respect the grid column width (no centering/max-width overflow) */
+            width: 100%;
+            max-width: 100%;
+            margin-left: 0;
+            margin-right: 0;
+            justify-self: stretch;
+
+            /* Safety net: if anything still overflows, don't let it render under the TOC */
+            overflow-x: hidden;
+        }
+
+        /* TOC always stays in the right column */
         .page-toc {
-            grid-column: 2;
+            grid-area: toc;
             position: sticky;
             top: 5.5rem;
             max-height: calc(100vh - 6.5rem);
@@ -96,6 +137,10 @@
             padding-left: 1rem;
             border-left: 1px solid #eeebee;
             font-size: 0.875rem;
+
+            /* Ensure the TOC doesn’t visually blend with overflowing content */
+            background-color: #fff;
+            z-index: 1;
         }
 
         .page-toc__title {
