@@ -91,6 +91,15 @@
         cursor: zoom-in;
     }
 
+    /* Image zoom: ensure the zoom overlay sits above the right TOC */
+    .medium-zoom-overlay {
+        z-index: 9999 !important;
+    }
+
+    .medium-zoom-image--opened {
+        z-index: 10000 !important;
+    }
+
     /* Right-side page TOC (desktop only) */
     @media (min-width: 66.5rem) {
         .main-content-wrap.has-page-toc {
