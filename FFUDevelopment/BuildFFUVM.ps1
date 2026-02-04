@@ -6538,7 +6538,7 @@ try {
         WriteLog 'Using cached VHDX file to speed up build process'
         WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
 
-        Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J
+        Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J | Out-Null
         $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
 
         $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
@@ -6568,7 +6568,7 @@ try {
         WriteLog 'Copying to cache dir'
 
         #Assuming there are now name collisons
-        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J
+        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J | Out-Null
 
         #Only create new instance if not created during patching
         if ($null -eq $cachedVHDXInfo) {
