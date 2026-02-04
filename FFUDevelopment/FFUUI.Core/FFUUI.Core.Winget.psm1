@@ -323,7 +323,7 @@ function Confirm-WingetInstallationUI {
         # Initial Check
         WriteLog "Confirm-WingetInstallationUI: Starting checks..."
         $cliStatus = Test-WingetCLI
-        $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue
+        $module = @(Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue) | Sort-Object -Top 1 -Descending Version -ErrorAction SilentlyContinue
 
         $result.CliVersion = $cliStatus.Version
         $result.ModuleVersion = if ($null -ne $module) { $module.Version.ToString() } else { "Not installed" }
