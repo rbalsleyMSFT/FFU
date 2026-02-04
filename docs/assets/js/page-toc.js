@@ -10,6 +10,14 @@
         return true;
     }
 
+    function IsDesktopViewport() {
+        try {
+            return window.matchMedia && window.matchMedia('(min-width: 66.5rem)').matches;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function GetHeadings(container) {
         var headings = container.querySelectorAll('h2, h3');
         var results = [];
@@ -101,6 +109,11 @@
 
     function SetupScrollSpy(main, toc, headings) {
         if (!main || !toc || !headings || headings.length < 1) {
+            return;
+        }
+
+        /* Scrollspy is desktop-only; on mobile it can cause "fighting" scroll behavior */
+        if (!IsDesktopViewport()) {
             return;
         }
 
@@ -218,6 +231,21 @@
 
     function InitRightToc() {
         if (!IsRightTocEnabled()) {
+            return;
+        }
+
+        /* Desktop-only TOC: on mobile it interferes with scrolling */
+        if (!IsDesktopViewport()) {
+            var existingWrap = document.querySelector('.main-content-wrap');
+            if (existingWrap) {
+                var existingToc = existingWrap.querySelector('.page-toc');
+                if (existingToc) {
+                    existingToc.remove();
+                }
+
+                existingWrap.classList.remove('has-page-toc');
+            }
+
             return;
         }
 
