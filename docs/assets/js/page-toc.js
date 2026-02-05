@@ -1,6 +1,10 @@
 (function () {
     'use strict';
 
+    var scrollSpyDispose = null;
+    var resizeReinitTimerId = null;
+    var inlineMaxVisibleItems = 4;
+
     function IsRightTocEnabled() {
         var meta = document.querySelector('meta[name="ffu-right-toc"]');
         if (meta && meta.content && meta.content.toLowerCase() === 'false') {
@@ -16,6 +20,47 @@
         } catch (e) {
             return false;
         }
+    }
+
+    function RemoveExistingToc() {
+        if (scrollSpyDispose) {
+            scrollSpyDispose();
+            scrollSpyDispose = null;
+        }
+
+        var existingTocs = document.querySelectorAll('.page-toc');
+        for (var i = 0; i < existingTocs.length; i++) {
+            existingTocs[i].remove();
+        }
+
+        var wrap = document.querySelector('.main-content-wrap');
+        if (wrap) {
+            wrap.classList.remove('has-page-toc');
+        }
+    }
+
+    function InsertInlineToc(main, toc) {
+        if (!main || !toc) {
+            return;
+        }
+
+        var title = main.querySelector('h1');
+        if (title && title.parentNode === main) {
+            if (title.nextSibling) {
+                main.insertBefore(toc, title.nextSibling);
+                return;
+            }
+
+            main.appendChild(toc);
+            return;
+        }
+
+        if (main.firstChild) {
+            main.insertBefore(toc, main.firstChild);
+            return;
+        }
+
+        main.appendChild(toc);
     }
 
     function GetHeadings(container) {
@@ -49,9 +94,13 @@
         return results;
     }
 
-    function BuildToc(headings) {
+    function BuildToc(headings, options) {
+        var variant = (options && options.variant) ? options.variant : 'right';
+        var maxVisible = (options && options.maxVisible) ? options.maxVisible : 0;
+        var isInline = 'inline' === variant;
+
         var nav = document.createElement('nav');
-        nav.className = 'page-toc';
+        nav.className = 'page-toc' + (isInline ? ' page-toc--inline' : '');
         nav.setAttribute('aria-label', 'On this page');
 
         var title = document.createElement('div');
@@ -61,6 +110,7 @@
 
         var list = document.createElement('ul');
         list.className = 'page-toc__list';
+        list.id = 'page-toc-list';
 
         for (var i = 0; i < headings.length; i++) {
             var item = headings[i];
@@ -75,13 +125,61 @@
 
             li.appendChild(a);
             list.appendChild(li);
+
+            if (isInline && maxVisible > 0 && i >= maxVisible) {
+                li.classList.add('is-hidden');
+            }
         }
 
         nav.appendChild(list);
+
+        if (isInline && maxVisible > 0 && headings.length > maxVisible) {
+            var hiddenCount = headings.length - maxVisible;
+            var isExpanded = false;
+
+            var toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'page-toc__toggle';
+            toggle.setAttribute('aria-controls', list.id);
+            toggle.setAttribute('aria-expanded', 'false');
+
+            function SetToggleText() {
+                if (isExpanded) {
+                    toggle.textContent = 'Show less';
+                } else {
+                    toggle.textContent = 'Show ' + hiddenCount + ' more';
+                }
+            }
+
+            function SetHiddenState() {
+                var items = list.querySelectorAll('.page-toc__item');
+                for (var j = 0; j < items.length; j++) {
+                    if (j >= maxVisible) {
+                        if (isExpanded) {
+                            items[j].classList.remove('is-hidden');
+                        } else {
+                            items[j].classList.add('is-hidden');
+                        }
+                    }
+                }
+
+                toggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                SetToggleText();
+            }
+
+            toggle.addEventListener('click', function () {
+                isExpanded = !isExpanded;
+                SetHiddenState();
+            });
+
+            SetHiddenState();
+            nav.appendChild(toggle);
+        }
+
         return nav;
     }
 
-    function SetActiveTocLink(toc, activeId) {
+    function SetActiveTocLink(toc, activeId, keepVisibleInPanel) {
         if (!toc) {
             return;
         }
@@ -95,11 +193,13 @@
             if (isActive) {
                 link.classList.add('is-active');
 
-                /* Keep the active item visible inside the TOC panel */
-                try {
-                    link.scrollIntoView({ block: 'nearest' });
-                } catch (e) {
-                    link.scrollIntoView();
+                if (keepVisibleInPanel) {
+                    /* Keep the active item visible inside the TOC panel (desktop/right TOC only) */
+                    try {
+                        link.scrollIntoView({ block: 'nearest' });
+                    } catch (e) {
+                        link.scrollIntoView();
+                    }
                 }
             } else {
                 link.classList.remove('is-active');
@@ -109,12 +209,12 @@
 
     function SetupScrollSpy(main, toc, headings) {
         if (!main || !toc || !headings || headings.length < 1) {
-            return;
+            return null;
         }
 
-        /* Scrollspy is desktop-only; on mobile it can cause "fighting" scroll behavior */
+        /* Scrollspy is desktop-only */
         if (!IsDesktopViewport()) {
-            return;
+            return null;
         }
 
         var headingElements = [];
@@ -126,7 +226,7 @@
         }
 
         if (headingElements.length < 1) {
-            return;
+            return null;
         }
 
         var activeId = null;
@@ -143,7 +243,7 @@
         }
 
         function GetCurrentHeadingId() {
-            /* If we're at the bottom, force the last heading active (Learn-like behavior) */
+            /* If we're at the bottom, force the last heading active */
             if (IsNearBottomOfPage()) {
                 return headingElements[headingElements.length - 1].getAttribute('id');
             }
@@ -177,6 +277,11 @@
         function Update() {
             ticking = false;
 
+            /* If the viewport becomes narrow after load, avoid scroll fighting */
+            if (!IsDesktopViewport()) {
+                return;
+            }
+
             if (Date.now() < lockActiveUntilMs) {
                 return;
             }
@@ -187,7 +292,7 @@
             }
 
             activeId = currentId;
-            SetActiveTocLink(toc, activeId);
+            SetActiveTocLink(toc, activeId, true);
         }
 
         function OnScrollOrResize() {
@@ -199,11 +304,7 @@
             window.requestAnimationFrame(Update);
         }
 
-        window.addEventListener('scroll', OnScrollOrResize, { passive: true });
-        window.addEventListener('resize', OnScrollOrResize);
-
-        /* Update immediately and also when clicking TOC links */
-        toc.addEventListener('click', function (evt) {
+        function OnTocClick(evt) {
             var target = evt.target;
             if (!target || !target.classList || !target.classList.contains('page-toc__link')) {
                 return;
@@ -223,29 +324,25 @@
             lockActiveUntilMs = Date.now() + 800;
 
             activeId = id;
-            SetActiveTocLink(toc, activeId);
-        });
+            SetActiveTocLink(toc, activeId, true);
+        }
+
+        window.addEventListener('scroll', OnScrollOrResize, { passive: true });
+        window.addEventListener('resize', OnScrollOrResize);
+        toc.addEventListener('click', OnTocClick);
 
         Update();
+
+        return function DisposeScrollSpy() {
+            window.removeEventListener('scroll', OnScrollOrResize);
+            window.removeEventListener('resize', OnScrollOrResize);
+            toc.removeEventListener('click', OnTocClick);
+        };
     }
 
     function InitRightToc() {
         if (!IsRightTocEnabled()) {
-            return;
-        }
-
-        /* Desktop-only TOC: on mobile it interferes with scrolling */
-        if (!IsDesktopViewport()) {
-            var existingWrap = document.querySelector('.main-content-wrap');
-            if (existingWrap) {
-                var existingToc = existingWrap.querySelector('.page-toc');
-                if (existingToc) {
-                    existingToc.remove();
-                }
-
-                existingWrap.classList.remove('has-page-toc');
-            }
-
+            RemoveExistingToc();
             return;
         }
 
@@ -256,31 +353,51 @@
 
         var headings = GetHeadings(main);
         if (headings.length < 2) {
+            RemoveExistingToc();
             return;
         }
 
-        var wrap = document.querySelector('.main-content-wrap');
-        var content = document.querySelector('.main-content');
-        if (!wrap || !content) {
+        if (IsDesktopViewport()) {
+            RemoveExistingToc();
+
+            var wrap = document.querySelector('.main-content-wrap');
+            if (!wrap) {
+                return;
+            }
+
+            wrap.classList.add('has-page-toc');
+
+            var toc = BuildToc(headings, { variant: 'right' });
+            wrap.appendChild(toc);
+
+            scrollSpyDispose = SetupScrollSpy(main, toc, headings);
             return;
         }
 
-        if (wrap.querySelector('.page-toc')) {
-            return;
+        /* Narrow viewports: place TOC at the top of the article (Learn-like) */
+        RemoveExistingToc();
+
+        var inlineToc = BuildToc(headings, { variant: 'inline', maxVisible: inlineMaxVisibleItems });
+        InsertInlineToc(main, inlineToc);
+    }
+
+    function OnViewportResize() {
+        if (null !== resizeReinitTimerId) {
+            window.clearTimeout(resizeReinitTimerId);
         }
 
-        wrap.classList.add('has-page-toc');
-
-        var toc = BuildToc(headings);
-        wrap.appendChild(toc);
-
-        SetupScrollSpy(main, toc, headings);
+        resizeReinitTimerId = window.setTimeout(InitRightToc, 150);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', InitRightToc);
+        document.addEventListener('DOMContentLoaded', function () {
+            InitRightToc();
+            window.addEventListener('resize', OnViewportResize);
+        });
+
         return;
     }
 
     InitRightToc();
+    window.addEventListener('resize', OnViewportResize);
 })();

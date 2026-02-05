@@ -192,13 +192,84 @@
             text-decoration: underline;
         }
 
-        .page-toc__link.is-active {
-            font-weight: 600;
-            color: #1a1a1a;
-            border-left-color: #2563eb;
-        }
-    }
-</style>
+                .page-toc__link.is-active {
+                    font-weight: 600;
+                    color: #1a1a1a;
+                    border-left-color: #2563eb;
+                }
+            }
+        
+            /* Inline "In this article" TOC (narrow viewports; Learn-like) */
+            .page-toc.page-toc--inline {
+                margin: 1.5rem 0;
+                padding-left: 1rem;
+                border-left: 1px solid #eeebee;
+                font-size: 0.875rem;
+            }
+        
+            .page-toc--inline .page-toc__title {
+                font-weight: 600;
+                color: #27262b;
+                margin-bottom: 0.75rem;
+            }
+        
+            .page-toc--inline .page-toc__list {
+                list-style: none !important;
+                padding-left: 0;
+                margin: 0;
+            }
+        
+            .page-toc--inline .page-toc__item {
+                list-style: none !important;
+                margin: 0.4rem 0;
+            }
+
+            .page-toc--inline .page-toc__item::marker {
+                content: "";
+            }
+        
+            .page-toc--inline .page-toc__item--h3 {
+                padding-left: 0.75rem;
+            }
+        
+            .page-toc--inline .page-toc__link {
+                color: inherit;
+                text-decoration: none;
+                display: block;
+                padding: 0.125rem 0 0.125rem 0.75rem;
+                border-left: 3px solid transparent;
+            }
+        
+            .page-toc--inline .page-toc__link:hover {
+                text-decoration: underline;
+            }
+        
+            .page-toc__item.is-hidden {
+                display: none;
+            }
+
+            /* Just-the-Docs renders UL bullets via li::before; disable for inline TOC */
+            .page-toc--inline ul > li::before,
+            .page-toc--inline .page-toc__list > li::before,
+            .page-toc--inline .page-toc__item::before {
+                content: "" !important;
+                display: none !important;
+            }
+        
+            .page-toc__toggle {
+                background: none;
+                border: 0;
+                padding: 0.25rem 0 0 0.75rem;
+                font: inherit;
+                color: inherit;
+                cursor: pointer;
+                text-decoration: none;
+            }
+        
+            .page-toc__toggle:hover {
+                text-decoration: underline;
+            }
+        </style>
 
 <meta name="ffu-right-toc" content="{% if page.right_toc == false %}false{% else %}true{% endif %}">
 
