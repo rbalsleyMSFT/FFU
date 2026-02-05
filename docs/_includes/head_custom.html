@@ -75,7 +75,7 @@
         word-break: break-word;
     }
 
-    .main-content :not(pre) > code {
+    .main-content :not(pre)>code {
         white-space: normal;
         overflow-wrap: anywhere;
         word-break: break-word;
@@ -132,8 +132,16 @@
             margin-right: 0;
             justify-self: stretch;
 
-            /* Safety net: if anything still overflows, don't let it render under the TOC */
-            overflow-x: hidden;
+            /* Keep heading permalink icons visible */
+            /* (Just-the-Docs positions .anchor-heading to the left at desktop widths) */
+            overflow-x: visible;
+        }
+
+        /* Safety net: prevent long code/tables from overlapping the TOC */
+        .main-content-wrap.has-page-toc .main-content pre,
+        .main-content-wrap.has-page-toc .main-content .highlighter-rouge,
+        .main-content-wrap.has-page-toc .main-content .table-wrapper {
+            overflow-x: auto;
         }
 
         /* TOC always stays in the right column */
