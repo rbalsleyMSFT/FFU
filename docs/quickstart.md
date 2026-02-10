@@ -25,6 +25,18 @@ After following this guide, you will have a USB drive with an FFU that contains 
 * Drivers (Optional)
   * In some cases drivers aren't necessary and you can get away with Windows Update providing drivers. We'll go over how to add drivers via the UI for Microsoft, HP, Lenovo, or Dell devices
 
+## Video Walkthrough
+
+<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">
+  <iframe
+    src="https://www.youtube-nocookie.com/embed/kOIK5OmDugc"
+    title="YouTube video player"
+    style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen>
+  </iframe>
+</div>
+
 ## Prerequisites
 
 Follow the [prerequisites](/FFU/prerequisites.html) documentation before getting started.
