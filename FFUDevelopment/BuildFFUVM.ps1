@@ -6322,6 +6322,106 @@ try {
             WriteLog "Creating $KBPath"; New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
 
+        # Remove older MSU files for update types included in the current run
+        # This avoids DISM considering multiple stale MSUs as local sources during servicing
+        try {
+            # Build allow-lists from update metadata for this run
+            $expectedWindowsMsuNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($updateInfo in $ssuUpdateInfos) {
+                if (-not [string]::IsNullOrWhiteSpace($updateInfo.Name) -and $updateInfo.Name.ToLowerInvariant().EndsWith('.msu')) {
+                    [void]$expectedWindowsMsuNames.Add($updateInfo.Name)
+                }
+            }
+            foreach ($updateInfo in $cuUpdateInfos) {
+                if (-not [string]::IsNullOrWhiteSpace($updateInfo.Name) -and $updateInfo.Name.ToLowerInvariant().EndsWith('.msu')) {
+                    [void]$expectedWindowsMsuNames.Add($updateInfo.Name)
+                }
+            }
+            foreach ($updateInfo in $cupUpdateInfos) {
+                if (-not [string]::IsNullOrWhiteSpace($updateInfo.Name) -and $updateInfo.Name.ToLowerInvariant().EndsWith('.msu')) {
+                    [void]$expectedWindowsMsuNames.Add($updateInfo.Name)
+                }
+            }
+
+            $expectedNetMsuNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($updateInfo in $netUpdateInfos) {
+                if (-not [string]::IsNullOrWhiteSpace($updateInfo.Name) -and $updateInfo.Name.ToLowerInvariant().EndsWith('.msu')) {
+                    [void]$expectedNetMsuNames.Add($updateInfo.Name)
+                }
+            }
+            foreach ($updateInfo in $netFeatureUpdateInfos) {
+                if (-not [string]::IsNullOrWhiteSpace($updateInfo.Name) -and $updateInfo.Name.ToLowerInvariant().EndsWith('.msu')) {
+                    [void]$expectedNetMsuNames.Add($updateInfo.Name)
+                }
+            }
+
+            $expectedMicrocodeMsuNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($updateInfo in $microcodeUpdateInfos) {
+                if (-not [string]::IsNullOrWhiteSpace($updateInfo.Name) -and $updateInfo.Name.ToLowerInvariant().EndsWith('.msu')) {
+                    [void]$expectedMicrocodeMsuNames.Add($updateInfo.Name)
+                }
+            }
+
+            # Prune older Windows update MSUs (CU/SSU/Preview CU) from KB root (exclude .NET "ndp" MSUs)
+            if ($expectedWindowsMsuNames.Count -gt 0) {
+                WriteLog "Pruning older Windows update MSU files in $KBPath"
+                $existingWindowsMsus = @(Get-ChildItem -Path $KBPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object {
+                        $_.Name -match '(?i)^windows\d+\.0-kb\d+.*\.msu$' -and $_.Name -notmatch '(?i)ndp'
+                    })
+                foreach ($msu in $existingWindowsMsus) {
+                    if (-not $expectedWindowsMsuNames.Contains($msu.Name)) {
+                        WriteLog "Removing old Windows update MSU: $($msu.FullName)"
+                        Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+
+            # Prune older .NET MSUs from KB root (non-LTSC stores .NET MSUs in KB root)
+            if ($expectedNetMsuNames.Count -gt 0 -and -not ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021)) {
+                WriteLog "Pruning older .NET MSU files in $KBPath"
+                $existingNetMsus = @(Get-ChildItem -Path $KBPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)ndp' })
+                foreach ($msu in $existingNetMsus) {
+                    if (-not $expectedNetMsuNames.Contains($msu.Name)) {
+                        WriteLog "Removing old .NET MSU: $($msu.FullName)"
+                        Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+
+            # Prune older .NET MSUs from KB\NET (LTSC stores .NET updates under NET)
+            if ($expectedNetMsuNames.Count -gt 0 -and ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021)) {
+                $netFolder = Join-Path -Path $KBPath -ChildPath 'NET'
+                if (Test-Path -Path $netFolder) {
+                    WriteLog "Pruning older .NET MSU files in $netFolder"
+                    $existingNetMsus = @(Get-ChildItem -Path $netFolder -Filter '*.msu' -File -ErrorAction SilentlyContinue)
+                    foreach ($msu in $existingNetMsus) {
+                        if (-not $expectedNetMsuNames.Contains($msu.Name)) {
+                            WriteLog "Removing old .NET MSU: $($msu.FullName)"
+                            Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
+            }
+
+            # Prune older Microcode MSUs from KB\Microcode (only when Microcode is part of this run)
+            if ($expectedMicrocodeMsuNames.Count -gt 0) {
+                $microcodeFolder = Join-Path -Path $KBPath -ChildPath 'Microcode'
+                if (Test-Path -Path $microcodeFolder) {
+                    WriteLog "Pruning older Microcode MSU files in $microcodeFolder"
+                    $existingMicrocodeMsus = @(Get-ChildItem -Path $microcodeFolder -Filter '*.msu' -File -ErrorAction SilentlyContinue)
+                    foreach ($msu in $existingMicrocodeMsus) {
+                        if (-not $expectedMicrocodeMsuNames.Contains($msu.Name)) {
+                            WriteLog "Removing old Microcode MSU: $($msu.FullName)"
+                            Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
+            }
+        }
+        catch {
+            WriteLog "Failed to prune old MSU files in $($KBPath): $($_.Exception.Message). Continuing."
+        }
+
         foreach ($update in $requiredUpdates) {
             $destinationPath = $KBPath
             if (($netUpdateInfos -and ($netUpdateInfos.Name -contains $update.Name)) -or `
