@@ -6322,6 +6322,61 @@ try {
             WriteLog "Creating $KBPath"; New-Item -Path $KBPath -ItemType Directory -Force | Out-Null
         }
 
+        # Create an OS/version-scoped KB cache folder under KB
+        # This allows caching across multiple Windows targets without mixing MSUs
+        $kbCacheReleaseFolder = $null
+        $kbCacheVersionFolder = $null
+
+        if ($installationType -eq 'Server') {
+            $kbCacheReleaseFolder = "Server$WindowsRelease"
+            $kbCacheVersionFolder = $null
+        }
+        else {
+            # Client
+            if ($WindowsRelease -eq 10) {
+                $kbCacheReleaseFolder = 'Windows10'
+                $kbCacheVersionFolder = $WindowsVersion
+            }
+            elseif ($WindowsRelease -eq 11) {
+                $kbCacheReleaseFolder = 'Windows11'
+                $kbCacheVersionFolder = $WindowsVersion
+            }
+            elseif ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
+                $kbCacheReleaseFolder = 'Windows10'
+                $kbCacheVersionFolder = "LTSC$WindowsRelease"
+            }
+            elseif ($isLTSC -and $WindowsRelease -eq 2024) {
+                # Windows 11 LTSC 2024 shares the same CU branch as Windows 11 24H2/25H2
+                $kbCacheReleaseFolder = 'Windows11'
+                $kbCacheVersionFolder = '24H2'
+            }
+            else {
+                $kbCacheReleaseFolder = "Windows$WindowsRelease"
+                $kbCacheVersionFolder = $WindowsVersion
+            }
+        }
+
+        # Force Windows 11 25H2 to share Windows 11 24H2 cache folder (same CU branch)
+        if ($kbCacheReleaseFolder -eq 'Windows11' -and $kbCacheVersionFolder -match '(?i)^25H2$') {
+            $kbCacheVersionFolder = '24H2'
+        }
+
+        # For Server, do not create a WindowsVersion subfolder (unnecessary for Server releases)
+        if ($installationType -eq 'Server') {
+            $kbCacheRootPath = Join-Path -Path $KBPath -ChildPath $kbCacheReleaseFolder
+        }
+        else {
+            if ([string]::IsNullOrWhiteSpace($kbCacheVersionFolder)) {
+                $kbCacheVersionFolder = 'UnknownVersion'
+            }
+            $kbCacheRootPath = Join-Path -Path (Join-Path -Path $KBPath -ChildPath $kbCacheReleaseFolder) -ChildPath $kbCacheVersionFolder
+        }
+
+        if (-not (Test-Path -Path $kbCacheRootPath)) {
+            WriteLog "Creating KB cache folder $kbCacheRootPath"
+            New-Item -Path $kbCacheRootPath -ItemType Directory -Force | Out-Null
+        }
+
         # Remove older MSU files for update types included in the current run
         # This avoids DISM considering multiple stale MSUs as local sources during servicing
         try {
@@ -6362,10 +6417,10 @@ try {
                 }
             }
 
-            # Prune older Windows update MSUs (CU/SSU/Preview CU) from KB root (exclude .NET "ndp" MSUs)
+            # Prune older Windows update MSUs (CU/SSU/Preview CU) from this OS cache root (exclude .NET "ndp" MSUs)
             if ($expectedWindowsMsuNames.Count -gt 0) {
-                WriteLog "Pruning older Windows update MSU files in $KBPath"
-                $existingWindowsMsus = @(Get-ChildItem -Path $KBPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object {
+                WriteLog "Pruning older Windows update MSU files in $kbCacheRootPath"
+                $existingWindowsMsus = @(Get-ChildItem -Path $kbCacheRootPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object {
                         $_.Name -match '(?i)^windows\d+\.0-kb\d+.*\.msu$' -and $_.Name -notmatch '(?i)ndp'
                     })
                 foreach ($msu in $existingWindowsMsus) {
@@ -6376,10 +6431,10 @@ try {
                 }
             }
 
-            # Prune older .NET MSUs from KB root (non-LTSC stores .NET MSUs in KB root)
+            # Prune older .NET MSUs from this OS cache root (non-LTSC stores .NET MSUs in the root)
             if ($expectedNetMsuNames.Count -gt 0 -and -not ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021)) {
-                WriteLog "Pruning older .NET MSU files in $KBPath"
-                $existingNetMsus = @(Get-ChildItem -Path $KBPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)ndp' })
+                WriteLog "Pruning older .NET MSU files in $kbCacheRootPath"
+                $existingNetMsus = @(Get-ChildItem -Path $kbCacheRootPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)ndp' })
                 foreach ($msu in $existingNetMsus) {
                     if (-not $expectedNetMsuNames.Contains($msu.Name)) {
                         WriteLog "Removing old .NET MSU: $($msu.FullName)"
@@ -6388,9 +6443,9 @@ try {
                 }
             }
 
-            # Prune older .NET MSUs from KB\NET (LTSC stores .NET updates under NET)
+            # Prune older .NET MSUs from NET folder (LTSC stores .NET updates under NET)
             if ($expectedNetMsuNames.Count -gt 0 -and ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021)) {
-                $netFolder = Join-Path -Path $KBPath -ChildPath 'NET'
+                $netFolder = Join-Path -Path $kbCacheRootPath -ChildPath 'NET'
                 if (Test-Path -Path $netFolder) {
                     WriteLog "Pruning older .NET MSU files in $netFolder"
                     $existingNetMsus = @(Get-ChildItem -Path $netFolder -Filter '*.msu' -File -ErrorAction SilentlyContinue)
@@ -6403,9 +6458,9 @@ try {
                 }
             }
 
-            # Prune older Microcode MSUs from KB\Microcode (only when Microcode is part of this run)
+            # Prune older Microcode MSUs from Microcode folder (only when Microcode is part of this run)
             if ($expectedMicrocodeMsuNames.Count -gt 0) {
-                $microcodeFolder = Join-Path -Path $KBPath -ChildPath 'Microcode'
+                $microcodeFolder = Join-Path -Path $kbCacheRootPath -ChildPath 'Microcode'
                 if (Test-Path -Path $microcodeFolder) {
                     WriteLog "Pruning older Microcode MSU files in $microcodeFolder"
                     $existingMicrocodeMsus = @(Get-ChildItem -Path $microcodeFolder -Filter '*.msu' -File -ErrorAction SilentlyContinue)
@@ -6419,19 +6474,19 @@ try {
             }
         }
         catch {
-            WriteLog "Failed to prune old MSU files in $($KBPath): $($_.Exception.Message). Continuing."
+            WriteLog "Failed to prune old MSU files in $($kbCacheRootPath): $($_.Exception.Message). Continuing."
         }
 
         foreach ($update in $requiredUpdates) {
-            $destinationPath = $KBPath
+            $destinationPath = $kbCacheRootPath
             if (($netUpdateInfos -and ($netUpdateInfos.Name -contains $update.Name)) -or `
                 ($netFeatureUpdateInfos -and ($netFeatureUpdateInfos.Name -contains $update.Name))) {
                 if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
-                    $destinationPath = Join-Path -Path $KBPath -ChildPath "NET"
+                    $destinationPath = Join-Path -Path $kbCacheRootPath -ChildPath "NET"
                 }
             }
             if ($microcodeUpdateInfos -and ($microcodeUpdateInfos.Name -contains $update.Name)) {
-                $destinationPath = Join-Path -Path $KBPath -ChildPath "Microcode"
+                $destinationPath = Join-Path -Path $kbCacheRootPath -ChildPath "Microcode"
             }
 
             if (-not (Test-Path -Path $destinationPath)) {
@@ -6454,33 +6509,33 @@ try {
         # Set file path variables for the patching process
         if ($ssuUpdateInfos.Count -gt 0) {
             $SSUFile = $ssuUpdateInfos[0].Name
-            $SSUFilePath = "$KBPath\$SSUFile"
+            $SSUFilePath = Join-Path -Path $kbCacheRootPath -ChildPath $SSUFile
             WriteLog "Latest SSU identified as $SSUFilePath"
         }
         if ($cuUpdateInfos.Count -gt 0) {
             if (-not $CUPath) {
-                $CUPath = (Get-ChildItem -Path $KBPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).FullName
+                $CUPath = (Get-ChildItem -Path $kbCacheRootPath -Filter "*$cuKbArticleId*" -Recurse | Select-Object -First 1).FullName
             }
             WriteLog "Latest CU identified as $CUPath"
         }
         if ($cupUpdateInfos.Count -gt 0) {
             if (-not $CUPPath) {
-                $CUPPath = (Get-ChildItem -Path $KBPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).FullName
+                $CUPPath = (Get-ChildItem -Path $kbCacheRootPath -Filter "*$cupKbArticleId*" -Recurse | Select-Object -First 1).FullName
             }
             WriteLog "Latest Preview CU identified as $CUPPath"
         }
         if ($netUpdateInfos.Count -gt 0 -or $netFeatureUpdateInfos.Count -gt 0) {
             if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
-                $NETPath = Join-Path -Path $KBPath -ChildPath "NET"
+                $NETPath = Join-Path -Path $kbCacheRootPath -ChildPath "NET"
                 WriteLog ".NET updates for LTSC are in $NETPath"
             }
             else {
                 # Use the actual downloaded file name from the update info
                 $NETFileName = $netUpdateInfos[0].Name
-                $NETPath = (Get-ChildItem -Path $KBPath -Filter $NETFileName -Recurse).FullName
+                $NETPath = (Get-ChildItem -Path $kbCacheRootPath -Filter $NETFileName -Recurse).FullName
                 if (-not $NETPath) {
                     # If exact match fails, try to find by KB article ID
-                    $NETPath = (Get-ChildItem -Path $KBPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).FullName
+                    $NETPath = (Get-ChildItem -Path $kbCacheRootPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).FullName
                     if ($NETPath) {
                         $NETFileName = Split-Path $NETPath -Leaf
                     }
@@ -6489,7 +6544,7 @@ try {
             }
         }
         if ($microcodeUpdateInfos.Count -gt 0) {
-            $MicrocodePath = "$KBPath\Microcode"
+            $MicrocodePath = Join-Path -Path $kbCacheRootPath -ChildPath "Microcode"
             WriteLog "Microcode updates are in $MicrocodePath"
         }
     }
