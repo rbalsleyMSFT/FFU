@@ -6431,29 +6431,42 @@ try {
                 }
             }
 
-            # Prune older .NET MSUs from this OS cache root (non-LTSC stores .NET MSUs in the root)
-            if ($expectedNetMsuNames.Count -gt 0 -and -not ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021)) {
-                WriteLog "Pruning older .NET MSU files in $kbCacheRootPath"
-                $existingNetMsus = @(Get-ChildItem -Path $kbCacheRootPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)ndp' })
+            # Prune older .NET MSUs from NET folder (always store .NET updates under NET)
+            if ($expectedNetMsuNames.Count -gt 0) {
+                $netFolder = Join-Path -Path $kbCacheRootPath -ChildPath 'NET'
+
+                # Ensure NET folder exists
+                if (-not (Test-Path -Path $netFolder)) {
+                    WriteLog "Creating .NET updates folder $netFolder"
+                    New-Item -Path $netFolder -ItemType Directory -Force | Out-Null
+                }
+
+                # Migrate legacy layout: move expected .NET MSUs from cache root into NET folder (if present)
+                $legacyRootNetMsus = @(Get-ChildItem -Path $kbCacheRootPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)ndp' })
+                foreach ($msu in $legacyRootNetMsus) {
+                    $destPath = Join-Path -Path $netFolder -ChildPath $msu.Name
+                    if ($expectedNetMsuNames.Contains($msu.Name) -and -not (Test-Path -LiteralPath $destPath)) {
+                        WriteLog "Moving .NET MSU into NET folder: $($msu.FullName) -> $destPath"
+                        Move-Item -LiteralPath $msu.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
+                    }
+                }
+
+                # Prune any stale .NET MSUs from NET folder
+                WriteLog "Pruning older .NET MSU files in $netFolder"
+                $existingNetMsus = @(Get-ChildItem -Path $netFolder -Filter '*.msu' -File -ErrorAction SilentlyContinue)
                 foreach ($msu in $existingNetMsus) {
                     if (-not $expectedNetMsuNames.Contains($msu.Name)) {
                         WriteLog "Removing old .NET MSU: $($msu.FullName)"
                         Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
                     }
                 }
-            }
 
-            # Prune older .NET MSUs from NET folder (LTSC stores .NET updates under NET)
-            if ($expectedNetMsuNames.Count -gt 0 -and ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021)) {
-                $netFolder = Join-Path -Path $kbCacheRootPath -ChildPath 'NET'
-                if (Test-Path -Path $netFolder) {
-                    WriteLog "Pruning older .NET MSU files in $netFolder"
-                    $existingNetMsus = @(Get-ChildItem -Path $netFolder -Filter '*.msu' -File -ErrorAction SilentlyContinue)
-                    foreach ($msu in $existingNetMsus) {
-                        if (-not $expectedNetMsuNames.Contains($msu.Name)) {
-                            WriteLog "Removing old .NET MSU: $($msu.FullName)"
-                            Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
-                        }
+                # Remove stale legacy .NET MSUs that may still exist in the cache root
+                $legacyRootNetMsus = @(Get-ChildItem -Path $kbCacheRootPath -Filter '*.msu' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)ndp' })
+                foreach ($msu in $legacyRootNetMsus) {
+                    if (-not $expectedNetMsuNames.Contains($msu.Name)) {
+                        WriteLog "Removing old .NET MSU: $($msu.FullName)"
+                        Remove-Item -LiteralPath $msu.FullName -Force -ErrorAction SilentlyContinue
                     }
                 }
             }
@@ -6481,9 +6494,7 @@ try {
             $destinationPath = $kbCacheRootPath
             if (($netUpdateInfos -and ($netUpdateInfos.Name -contains $update.Name)) -or `
                 ($netFeatureUpdateInfos -and ($netFeatureUpdateInfos.Name -contains $update.Name))) {
-                if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
-                    $destinationPath = Join-Path -Path $kbCacheRootPath -ChildPath "NET"
-                }
+                $destinationPath = Join-Path -Path $kbCacheRootPath -ChildPath "NET"
             }
             if ($microcodeUpdateInfos -and ($microcodeUpdateInfos.Name -contains $update.Name)) {
                 $destinationPath = Join-Path -Path $kbCacheRootPath -ChildPath "Microcode"
@@ -6525,23 +6536,12 @@ try {
             WriteLog "Latest Preview CU identified as $CUPPath"
         }
         if ($netUpdateInfos.Count -gt 0 -or $netFeatureUpdateInfos.Count -gt 0) {
-            if ($isLTSC -and $WindowsRelease -in 2016, 2019, 2021) {
-                $NETPath = Join-Path -Path $kbCacheRootPath -ChildPath "NET"
-                WriteLog ".NET updates for LTSC are in $NETPath"
+            $NETPath = Join-Path -Path $kbCacheRootPath -ChildPath "NET"
+            if (-not (Test-Path -Path $NETPath)) {
+                WriteLog "Creating .NET updates folder $NETPath"
+                New-Item -Path $NETPath -ItemType Directory -Force | Out-Null
             }
-            else {
-                # Use the actual downloaded file name from the update info
-                $NETFileName = $netUpdateInfos[0].Name
-                $NETPath = (Get-ChildItem -Path $kbCacheRootPath -Filter $NETFileName -Recurse).FullName
-                if (-not $NETPath) {
-                    # If exact match fails, try to find by KB article ID
-                    $NETPath = (Get-ChildItem -Path $kbCacheRootPath -Filter "*$netKbArticleId*" -Recurse | Select-Object -First 1).FullName
-                    if ($NETPath) {
-                        $NETFileName = Split-Path $NETPath -Leaf
-                    }
-                }
-                WriteLog "Latest .NET Framework identified as $NETPath"
-            }
+            WriteLog ".NET updates are in $NETPath"
         }
         if ($microcodeUpdateInfos.Count -gt 0) {
             $MicrocodePath = Join-Path -Path $kbCacheRootPath -ChildPath "Microcode"
