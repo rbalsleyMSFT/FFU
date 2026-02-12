@@ -28,7 +28,7 @@ Write-Host "---------------------------------------------------" -ForegroundColo
 # Define the path to the scripts
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
-# Define the list of scripts to run, order doesn't matter - if you have a custom script, add it here
+# Define the list of scripts to run
 $scriptList = @(
     "Update-Defender.ps1",
     "Install-Office.ps1",
