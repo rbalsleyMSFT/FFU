@@ -95,6 +95,15 @@ function Invoke-FFUPostBuildCleanup {
             }
         }
 
+        # Always remove LTSC update staging folder (out-of-band cleanup exception)
+        if (-not [string]::IsNullOrWhiteSpace($AppsPath) -and (Test-Path -LiteralPath $AppsPath -PathType Container)) {
+            $ltscUpdateFolder = Join-Path $AppsPath 'LTSCUpdate'
+            if (Test-Path -LiteralPath $ltscUpdateFolder) {
+                WriteLog "CommonCleanup: Removing LTSC update staging folder $ltscUpdateFolder"
+                try { Remove-Item -LiteralPath $ltscUpdateFolder -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $ltscUpdateFolder : $($_.Exception.Message)" }
+            }
+        }
+
         if ($RemoveUpdates) {
             if (-not [string]::IsNullOrWhiteSpace($AppsPath) -and (Test-Path -LiteralPath $AppsPath)) {
                 # Remove per-run app update payloads stored under Apps

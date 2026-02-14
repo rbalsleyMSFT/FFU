@@ -30,6 +30,7 @@ $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
 # Define the list of scripts to run
 $scriptList = @(
+    "Install-LTSCUpdate.ps1",
     "Update-Defender.ps1",
     "Install-Office.ps1",
     "Update-MSRT.ps1",

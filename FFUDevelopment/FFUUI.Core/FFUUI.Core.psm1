@@ -320,6 +320,23 @@ function Update-ApplicationPanelVisibility {
     }
 }
 
+# Function to identify whether current Windows release selection is Windows 10 LTSB/LTSC
+function Test-IsWindows10LtscReleaseSelection {
+    param([PSCustomObject]$State)
+
+    $releaseItem = $State.Controls.cmbWindowsRelease.SelectedItem
+    if ($null -eq $releaseItem) {
+        return $false
+    }
+
+    $releaseDisplay = [string]$releaseItem.Display
+    if ([string]::IsNullOrWhiteSpace($releaseDisplay)) {
+        return $false
+    }
+
+    return (($releaseDisplay -like 'Windows 10*') -and (($releaseDisplay -like '*LTSB*') -or ($releaseDisplay -like '*LTSC*')))
+}
+
 # Function to manage the state of the main "Install Apps" checkbox based on selections in Updates/Office
 function Update-InstallAppsState {
     param([PSCustomObject]$State)
@@ -327,11 +344,16 @@ function Update-InstallAppsState {
     $installAppsChk = $State.Controls.chkInstallApps
     $installOfficeChk = $State.Controls.chkInstallOffice
 
+    # Determine if Windows 10 LTSB/LTSC + Update Latest CU is selected
+    $isWindows10LtscRelease = Test-IsWindows10LtscReleaseSelection -State $State
+    $isLtscCuChecked = $State.Controls.chkUpdateLatestCU.IsChecked -and $isWindows10LtscRelease
+
     # Determine if any checkbox that forces "Install Apps" is checked
     $anyUpdateChecked = $State.Controls.chkUpdateLatestDefender.IsChecked -or `
         $State.Controls.chkUpdateEdge.IsChecked -or `
         $State.Controls.chkUpdateOneDrive.IsChecked -or `
-        $State.Controls.chkUpdateLatestMSRT.IsChecked
+        $State.Controls.chkUpdateLatestMSRT.IsChecked -or `
+        $isLtscCuChecked
     
     $isForced = $anyUpdateChecked -or $installOfficeChk.IsChecked
 

@@ -619,6 +619,11 @@ if (-not $InstallDefenderPath) { $InstallDefenderPath = "$OrchestrationPath\Upda
 if (-not $InstallMSRTPath) { $InstallMSRTPath = "$OrchestrationPath\Update-MSRT.ps1" }
 if (-not $InstallODPath) { $InstallODPath = "$OrchestrationPath\Update-OneDrive.ps1" }
 if (-not $InstallEdgePath) { $InstallEdgePath = "$OrchestrationPath\Update-Edge.ps1" }
+
+# Set default LTSC CU in-VM orchestration paths
+if (-not $InstallLTSCUpdatePath) { $InstallLTSCUpdatePath = "$OrchestrationPath\Install-LTSCUpdate.ps1" }
+if (-not $LtscCUStagePath) { $LtscCUStagePath = "$AppsPath\LTSCUpdate" }
+
 if (-not $AppsScriptVarsJsonPath) { $AppsScriptVarsJsonPath = "$OrchestrationPath\AppsScriptVariables.json" }
 if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy_$WindowsArch.iso" }
 if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture_$WindowsArch.iso" }
@@ -665,6 +670,11 @@ if ($WindowsSKU -like "*LTS*") {
     }
     $isLTSC = $true
 }
+
+# Determine runtime LTSC CU handling flags
+$isWindows10LtscClient = ($installationType -eq 'Client') -and ($WindowsRelease -in 2016, 2019, 2021) -and ($WindowsSKU -like '*LTS*')
+$installLatestCuInVm = ($UpdateLatestCU -and $isWindows10LtscClient)
+$refreshAppsIsoForLtscCu = $false
 
 # Set the log path for the common logger
 Set-CommonCoreLogPath -Path $LogFile
@@ -4428,22 +4438,38 @@ Function Remove-DisabledArtifacts {
         if ($removed) { WriteLog 'Removal complete' }
     }
 
-    # Remove Edge artifacts if Edge update is disabled
-    if (-not $UpdateEdge) {
-        $removed = $false
-        if (Test-Path -Path $installEdgePath) {
-            WriteLog "Update Edge disabled - removing $installEdgePath"
-            Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
-            $removed = $true
+        # Remove Edge artifacts if Edge update is disabled
+        if (-not $UpdateEdge) {
+            $removed = $false
+            if (Test-Path -Path $installEdgePath) {
+                WriteLog "Update Edge disabled - removing $installEdgePath"
+                Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
+                $removed = $true
+            }
+            if (Test-Path -Path $EdgePath) {
+                WriteLog "Update Edge disabled - removing $EdgePath"
+                Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
+                $removed = $true
+            }
+            if ($removed) { WriteLog 'Removal complete' }
         }
-        if (Test-Path -Path $EdgePath) {
-            WriteLog "Update Edge disabled - removing $EdgePath"
-            Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
-            $removed = $true
+    
+        # Remove LTSC CU in-VM artifacts when this scenario is not selected
+        if (-not ($UpdateLatestCU -and $installationType -eq 'Client' -and $WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like '*LTS*')) {
+            $removed = $false
+            if (Test-Path -Path $InstallLTSCUpdatePath) {
+                WriteLog "Windows 10 LTSB/LTSC latest CU in-VM install not selected - removing $InstallLTSCUpdatePath"
+                Remove-Item -Path $InstallLTSCUpdatePath -Force -ErrorAction SilentlyContinue
+                $removed = $true
+            }
+            if (Test-Path -Path $LtscCUStagePath) {
+                WriteLog "Windows 10 LTSB/LTSC latest CU in-VM install not selected - removing $LtscCUStagePath"
+                Remove-Item -Path $LtscCUStagePath -Recurse -Force -ErrorAction SilentlyContinue
+                $removed = $true
+            }
+            if ($removed) { WriteLog 'Removal complete' }
         }
-        if ($removed) { WriteLog 'Removal complete' }
     }
-}
 
 function Export-ConfigFile {
     [CmdletBinding()]
@@ -5252,9 +5278,9 @@ if (($LogicalSectorSizeBytes -eq 4096) -and ($installdrivers -eq $true)) {
 if ($BuildUSBDrive -eq $true) {
     $USBDrives, $USBDrivesCount = Get-USBDrive
 }
-if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true) -or ($UpdateLatestMSRT -eq $true))) {
-    WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, or Edge, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
-    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, or Edge"
+if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($UpdateOneDrive -eq $true) -or ($UpdateEdge -eq $true) -or ($UpdateLatestMSRT -eq $true) -or ($installLatestCuInVm -eq $true))) {
+    WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, Edge, or the latest Windows 10 LTSB/LTSC cumulative update, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, Edge, MSRT, or the latest Windows 10 LTSB/LTSC cumulative update"
 }
 if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
     $InstallOffice = $false
@@ -6610,9 +6636,14 @@ try {
                 }
                 # Break out CU and NET updates to be added separately to abide by Checkpoint Update recommendations
                 if ($UpdateLatestCU) {
-                    WriteLog "Adding $CUPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
-                    WriteLog "$CUPath added to $WindowsPartition"
+                    if ($installLatestCuInVm) {
+                        WriteLog "Skipping offline CU install for Windows 10 LTSB/LTSC. CU will be installed in VM from Apps ISO."
+                    }
+                    else {
+                        WriteLog "Adding $CUPath to $WindowsPartition"
+                        Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        WriteLog "$CUPath added to $WindowsPartition"
+                    }
                 }
                 if ($UpdatePreviewCU) {
                     WriteLog "Adding $CUPPath to $WindowsPartition"
@@ -6775,6 +6806,149 @@ catch {
     
 }
 
+# Prepare Windows 10 LTSB/LTSC CU assets for in-VM install when required
+if ($InstallApps -and $installLatestCuInVm) {
+    try {
+        # Ensure CUPath is resolved and the CU package is available locally
+        if (([string]::IsNullOrWhiteSpace($CUPath)) -or -not (Test-Path -Path $CUPath)) {
+            $ltscKbCacheRootPath = Join-Path -Path (Join-Path -Path $KBPath -ChildPath 'Windows10') -ChildPath "LTSC$WindowsRelease"
+            if (-not (Test-Path -Path $ltscKbCacheRootPath)) {
+                WriteLog "Creating LTSC KB cache folder $ltscKbCacheRootPath"
+                New-Item -Path $ltscKbCacheRootPath -ItemType Directory -Force | Out-Null
+            }
+
+            foreach ($cuUpdateInfo in $cuUpdateInfos) {
+                $expectedCuName = $cuUpdateInfo.Name
+                if ([string]::IsNullOrWhiteSpace($expectedCuName)) {
+                    continue
+                }
+
+                $expectedCuPath = Join-Path -Path $ltscKbCacheRootPath -ChildPath $expectedCuName
+                if (-not (Test-Path -Path $expectedCuPath)) {
+                    WriteLog "Downloading $expectedCuName to $ltscKbCacheRootPath"
+                    Start-BitsTransferWithRetry -Source $cuUpdateInfo.Url -Destination $ltscKbCacheRootPath
+                }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($cuKbArticleId)) {
+                $resolvedCu = Get-ChildItem -Path $ltscKbCacheRootPath -Filter "*$cuKbArticleId*" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($null -ne $resolvedCu) {
+                    $CUPath = $resolvedCu.FullName
+                }
+            }
+
+            if (([string]::IsNullOrWhiteSpace($CUPath)) -and $cuUpdateInfos.Count -gt 0) {
+                $fallbackCuName = $cuUpdateInfos[0].Name
+                if (-not [string]::IsNullOrWhiteSpace($fallbackCuName)) {
+                    $resolvedCu = Get-ChildItem -Path $ltscKbCacheRootPath -Filter $fallbackCuName -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if ($null -ne $resolvedCu) {
+                        $CUPath = $resolvedCu.FullName
+                    }
+                }
+            }
+
+            if (([string]::IsNullOrWhiteSpace($CUPath)) -or -not (Test-Path -Path $CUPath)) {
+                throw "Unable to resolve LTSC CU package path for in-VM install."
+            }
+        }
+
+         # Stage CU payload into Apps content so it is included in Apps ISO
+        if (-not (Test-Path -Path $LtscCUStagePath)) {
+            WriteLog "Creating LTSC CU staging folder $LtscCUStagePath"
+            New-Item -Path $LtscCUStagePath -ItemType Directory -Force | Out-Null
+        }
+
+        $ltscCuFileName = Split-Path -Path $CUPath -Leaf
+        $stagedLtscCuPath = Join-Path -Path $LtscCUStagePath -ChildPath $ltscCuFileName
+        Copy-Item -Path $CUPath -Destination $stagedLtscCuPath -Force | Out-Null
+        WriteLog "Staged LTSC CU package to $stagedLtscCuPath"
+
+        # Create Install-LTSCUpdate.ps1 for in-VM execution via orchestrator
+        $installLtscUpdateCommand = @"
+# Validate LTSC CU package exists on Apps ISO mount
+`$kbPath = "D:\LTSCUpdate\$ltscCuFileName"
+
+# Extract KB ID from filename for idempotent checks
+`$kbFileName = Split-Path -Path `$kbPath -Leaf
+`$kbMatch = [regex]::Match(`$kbFileName, 'KB\d+', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+`$kbId = if (`$kbMatch.Success) { `$kbMatch.Value.ToUpperInvariant() } else { `$null }
+
+# Detect whether Windows has a pending reboot
+function Test-PendingReboot {
+    if (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { return `$true }
+    if (Test-Path -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') { return `$true }
+
+    `$sessionManagerPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager'
+    try {
+        `$pendingRename = Get-ItemProperty -Path `$sessionManagerPath -Name 'PendingFileRenameOperations' -ErrorAction SilentlyContinue
+        if (`$null -ne `$pendingRename) { return `$true }
+    }
+    catch {
+    }
+
+    return `$false
+}
+
+# Skip if the target KB is already installed
+if (`$kbId -and (Get-HotFix -Id `$kbId -ErrorAction SilentlyContinue)) {
+    Write-Host "`$kbId is already installed. Skipping LTSC CU install."
+    if (Test-PendingReboot) {
+        Write-Host "Pending reboot detected. Restarting before continuing orchestration..."
+        Restart-Computer -Force
+    }
+    return
+}
+
+# Stop with a non-zero code if the package is missing
+if (-not (Test-Path -Path `$kbPath)) {
+    Write-Host "LTSC CU package not found at `$kbPath"
+    exit 1
+}
+
+# Start silent LTSC CU installation and capture exit code
+Write-Host "Starting LTSC CU install from `$kbPath"
+`$wusaArguments = @(`$kbPath, '/quiet', '/norestart')
+`$wusaProcess = Start-Process -FilePath "wusa.exe" -ArgumentList `$wusaArguments -PassThru -Wait -ErrorAction Stop
+`$wusaExitCode = `$wusaProcess.ExitCode
+Write-Host "WUSA exit code: `$wusaExitCode"
+
+# 3010 means reboot required; restart now so sysprep won't fail later
+if (`$wusaExitCode -eq 3010) {
+    Write-Host "LTSC CU requires reboot. Restarting now..."
+    Restart-Computer -Force
+    return
+}
+
+# 0 = success, 2359302 = not applicable/already present
+if (`$wusaExitCode -eq 0 -or `$wusaExitCode -eq 2359302) {
+    if (Test-PendingReboot) {
+        Write-Host "Pending reboot detected after LTSC CU step. Restarting now..."
+        Restart-Computer -Force
+        return
+    }
+
+    Write-Host "LTSC CU install completed."
+    return
+}
+
+throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
+"@
+
+        Set-Content -Path $InstallLTSCUpdatePath -Value $installLtscUpdateCommand -Force
+        if (-not (Test-Path -Path $InstallLTSCUpdatePath)) {
+            throw "Failed to create $InstallLTSCUpdatePath"
+        }
+
+        WriteLog "$InstallLTSCUpdatePath created successfully"
+        $refreshAppsIsoForLtscCu = $true
+        WriteLog "Prepared Windows 10 LTSB/LTSC CU assets for in-VM installation"
+    }
+    catch {
+        WriteLog "Preparing Windows 10 LTSB/LTSC CU assets for in-VM installation failed with error $_"
+        throw $_
+    }
+}
+
 #Inject unattend after caching so cached VHDX never contains audit-mode unattend
 if ($InstallApps) {
     # Determine mount state and only mount if needed to avoid redundant mount/dismount cycles
@@ -6805,6 +6979,25 @@ if ($InstallApps) {
 #If installing apps (Office or 3rd party), we need to build a VM and capture that FFU, if not, just cut the FFU from the VHDX file
 if ($InstallApps) {
     Set-Progress -Percentage 41 -Message "Starting VM for app installation..."
+
+    # Refresh Apps ISO to include LTSC CU assets when staged for in-VM install
+    if ($refreshAppsIsoForLtscCu) {
+        try {
+            WriteLog "Refreshing Apps ISO to include LTSC CU assets"
+            if (Test-Path -Path $AppsISO) {
+                WriteLog "Removing $AppsISO"
+                Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+                WriteLog 'Removal complete'
+            }
+            New-AppsISO
+            WriteLog "Apps ISO refreshed with LTSC CU assets"
+        }
+        catch {
+            WriteLog "Refreshing Apps ISO for LTSC CU assets failed with error $_"
+            throw $_
+        }
+    }
+
     #Create VM and attach VHDX
     try {
         WriteLog 'Creating new FFU VM'

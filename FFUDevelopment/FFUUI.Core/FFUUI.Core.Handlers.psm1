@@ -317,6 +317,9 @@ function Register-EventHandlers {
             Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $localState.Controls.txtISOPath.Text -State $localState
             Update-WindowsSkuCombo -State $localState
             Update-WindowsArchCombo -State $localState
+
+            # Re-evaluate Install Apps dependency when Windows release changes
+            Update-InstallAppsState -State $localState
         })
 
     $State.Controls.cmbWindowsVersion.Add_SelectionChanged({
@@ -369,6 +372,8 @@ function Register-EventHandlers {
     $State.Controls.chkUpdateOneDrive.Add_Unchecked($updateCheckboxHandler)
     $State.Controls.chkUpdateLatestMSRT.Add_Checked($updateCheckboxHandler)
     $State.Controls.chkUpdateLatestMSRT.Add_Unchecked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestCU.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestCU.Add_Unchecked($updateCheckboxHandler)
     
     # Also attach the handler to the Office checkbox
     $State.Controls.chkInstallOffice.Add_Checked($updateCheckboxHandler)
