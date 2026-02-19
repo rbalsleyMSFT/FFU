@@ -115,9 +115,9 @@
                         <TextBox x:Name="txtVMHostIPAddress" Grid.Row="2" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
                         <!-- Row 3: Disk Size (GB) -->
                         <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
-                            <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
+                            <TextBlock Text="Disk Size (GB)" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                         </StackPanel>
-                        <TextBox x:Name="txtDiskSize" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="30" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk."/>
+                        <TextBox x:Name="txtDiskSize" Grid.Row="3" Grid.Column="1" Margin="5" VerticalAlignment="Center" HorizontalAlignment="Stretch" Text="50" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                         <!-- Row 4: Memory (GB) -->
                         <StackPanel Grid.Row="4" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,5">
                             <TextBlock Text="Memory (GB)" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
@@ -359,7 +359,7 @@
 
                                 <!-- Arguments -->
                                 <TextBlock Text="Arguments:" Margin="0,0,0,5"/>
-                                <TextBox x:Name="txtAppArguments" Margin="0,0,0,10" ToolTip="Enter the arguments for the command line. If the application is an msi, the command line should only contain msiexec and the rest of the command line arguments would go here (e.g. /i D:\Win32\Mozilla firefox\setup.msi /qn /norestart)."/>
+                                <TextBox x:Name="txtAppArguments" Margin="0,0,0,10" ToolTip="Enter the arguments for the command line. If the application is an msi, the command line should only contain msiexec and the rest of the command line arguments would go here (e.g. /i &quot;D:\Win32\Mozilla firefox\setup.msi&quot; /qn /norestart)."/>
 
                                 <!-- Source -->
                                 <TextBlock Text="Source:" Margin="0,0,0,5"/>
@@ -628,9 +628,10 @@
                             <CheckBox x:Name="chkCompressDriversToWIM" Content="Compress Driver Model Folder to WIM" Margin="0,0,5,0" ToolTip="When set to $true, will compress each downloaded driver model folder into a separate WIM file within the Drivers folder. This is useful with Copy Drivers to USB drive."/>
                         </StackPanel>
 
-                        <!-- Row 12: Copy PE Drivers Checkbox -->
-                        <StackPanel Grid.Row="12" Orientation="Horizontal" Margin="5">
-                            <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,5,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                        <!-- Row 12: PE Driver Options (UseDriversAsPEDrivers is a dependent sub-option) -->
+                        <StackPanel Grid.Row="12" Margin="5">
+                            <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,0,5" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                            <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="25,0,0,0" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
@@ -640,7 +641,7 @@
             <TabItem Header="Build" Padding="20">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid Margin="10">
-                        <!-- Define 10 rows for the Build tab -->
+                        <!-- Define 12 rows for the Build tab -->
                         <Grid.RowDefinitions>
                             <!-- Row 0: Header -->
                             <RowDefinition Height="Auto"/>
@@ -656,13 +657,15 @@
                             <RowDefinition Height="Auto"/>
                             <!-- Row 6: Threads -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 7: General Build Options Header -->
+                            <!-- Row 7: BITS Priority -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 8: General Build Options Checkboxes -->
+                            <!-- Row 8: General Build Options Header -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 9: Build USB Drive Section -->
+                            <!-- Row 9: General Build Options Checkboxes -->
                             <RowDefinition Height="Auto"/>
-                            <!-- Row 10: Post-Build Cleanup -->
+                            <!-- Row 10: Build USB Drive Section -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- Row 11: Post-Build Cleanup -->
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
@@ -728,11 +731,25 @@
                             <TextBlock Grid.Column="0" Text="Threads" VerticalAlignment="Center" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
                             <TextBox x:Name="txtThreads" Grid.Column="1" Margin="5" VerticalAlignment="Center" Width="50" HorizontalAlignment="Left" Text="5" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
                         </Grid>
-                        <!-- Row 7: General Build Options Header -->
-                        <TextBlock Grid.Row="7" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
+                        <!-- Row 7: BITS Priority -->
+                        <Grid Grid.Row="7" Margin="0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="BITS Priority" VerticalAlignment="Center" ToolTip="Controls the BITS download priority used by the UI and BuildFFUVM.ps1. Switch to Foreground to maximize download speed if needed."/>
+                            <ComboBox x:Name="cmbBitsPriority" Grid.Column="1" Margin="5" VerticalAlignment="Center" Width="150" HorizontalAlignment="Left" ToolTip="Controls the BITS download priority used by the UI and BuildFFUVM.ps1. Switch to Foreground to maximize download speed if needed.">
+                                <sys:String>Foreground</sys:String>
+                                <sys:String>High</sys:String>
+                                <sys:String>Normal</sys:String>
+                                <sys:String>Low</sys:String>
+                            </ComboBox>
+                        </Grid>
+                        <!-- Row 8: General Build Options Header -->
+                        <TextBlock Grid.Row="8" Text="General Build Options" FontWeight="Bold" FontSize="16" Margin="0,10,0,5"/>
 
-                        <!-- Row 8: General Build Options Checkboxes -->
-                        <WrapPanel Grid.Row="8" Margin="0,5">
+                        <!-- Row 9: General Build Options Checkboxes -->
+                        <WrapPanel Grid.Row="9" Margin="0,5">
                             <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                             <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
                             <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="5" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
@@ -744,8 +761,8 @@
                             <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
                         </WrapPanel>
 
-                        <!-- Row 9: Build USB Drive Section -->
-                        <StackPanel Grid.Row="9" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
+                        <!-- Row 10: Build USB Drive Section -->
+                        <StackPanel Grid.Row="10" Margin="0,10,0,5" x:Name="usbDriveSection" Visibility="Collapsed">
                             <TextBlock Text="Build USB Drive Settings" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
                             <StackPanel Margin="5,0,0,10">
                                 <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
@@ -755,6 +772,29 @@
                                 <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
                                 <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
                                 <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="5" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
+                                <CheckBox x:Name="chkCopyAdditionalFFUFiles" Content="Copy Additional FFU Files" Margin="5" VerticalAlignment="Center" Tag="When set to $true, allows selecting existing FFU files in the capture folder to also copy to the USB drive."/>
+
+                                <!-- Additional FFU Selection Section -->
+                                <Grid x:Name="additionalFFUPanel" Margin="5,0,0,10" Visibility="Collapsed">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <!-- Header row -->
+                                    <DockPanel Grid.Row="0" Margin="0,5" LastChildFill="False">
+                                        <TextBlock Text="Additional FFU Files" DockPanel.Dock="Left" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <Button x:Name="btnRefreshAdditionalFFUs" Content="Refresh" DockPanel.Dock="Left" Padding="10,5" ToolTip="Refresh the list of FFU files from the capture folder"/>
+                                    </DockPanel>
+                                    <!-- ListView row -->
+                                    <ListView x:Name="lstAdditionalFFUs" Grid.Row="1" Margin="0,5" Height="150">
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="FFU Name" DisplayMemberBinding="{Binding Name}" Width="300"/>
+                                                <GridViewColumn Header="Last Modified" DisplayMemberBinding="{Binding LastModified}" Width="200"/>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                </Grid>
 
                                 <!-- Max USB Drives -->
                                 <StackPanel Orientation="Horizontal" Margin="5">
@@ -778,7 +818,7 @@
                                             <GridView>
 
                                                 <GridViewColumn Header="Model" DisplayMemberBinding="{Binding Model}" Width="200"/>
-                                                <GridViewColumn Header="Serial Number" DisplayMemberBinding="{Binding SerialNumber}" Width="150"/>
+                                                <GridViewColumn Header="Unique ID" DisplayMemberBinding="{Binding UniqueId}" Width="300"/>
                                                 <GridViewColumn Header="Size (GB)" DisplayMemberBinding="{Binding Size}" Width="80"/>
                                             </GridView>
                                         </ListView.View>
@@ -787,8 +827,8 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- Row 10: Post-Build Cleanup -->
-                        <StackPanel Grid.Row="10" Margin="0,10,0,5">
+                        <!-- Row 11: Post-Build Cleanup -->
+                        <StackPanel Grid.Row="11" Margin="0,10,0,5">
                             <TextBlock Text="Post-Build Cleanup" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
                             <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="5" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
                             <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="5" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
@@ -816,6 +856,7 @@
         <TextBlock x:Name="txtStatus" Grid.Row="2" Margin="0,5,0,0"/>
         <!-- Buttons (Build Config File / Load Config File / Build FFU) -->
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,20,20">
+            <Button x:Name="btnRestoreDefaults" Content="Restore Defaults" Width="150" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
             <Button x:Name="btnBuildConfig" Content="Save Config File" Width="150" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
             <Button x:Name="btnLoadConfig" Content="Load Config File" Width="150" Margin="0,0,10,0" FontSize="14" Padding="10,5"/>
             <Button x:Name="btnRun" Content="Build FFU" Width="120" FontSize="14" Padding="10,5"/>

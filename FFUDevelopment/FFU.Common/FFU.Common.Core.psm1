@@ -12,6 +12,10 @@ $script:CommonCoreLogFilePath = $null
 # Mutex for log file access
 $script:commonCoreLogMutexName = "Global\FFUCommonCoreLogMutex" # Unique name
 $script:commonCoreLogMutex = New-Object System.Threading.Mutex($false, $script:commonCoreLogMutexName)
+$script:BitsTransferPriority = 'Normal'
+if (-not [string]::IsNullOrWhiteSpace($env:FFU_BITS_PRIORITY)) {
+    $script:BitsTransferPriority = $env:FFU_BITS_PRIORITY
+}
 
 # Function to set the log file path for this module
 function Set-CommonCoreLogPath {
@@ -30,7 +34,24 @@ function Set-CommonCoreLogPath {
         Write-Warning "Set-CommonCoreLogPath called with an empty or null path."
     }
 }
-
+        
+function Set-BitsTransferPriority {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Foreground', 'High', 'Normal', 'Low')]
+        [string]$Priority
+    )
+    $script:BitsTransferPriority = $Priority
+    try {
+        Set-Item -Path Env:FFU_BITS_PRIORITY -Value $Priority -ErrorAction Stop
+    }
+    catch {
+        WriteLog "Failed to set FFU_BITS_PRIORITY environment variable: $($_.Exception.Message)"
+    }
+    WriteLog "BITS transfer priority set to $Priority."
+}
+        
 # Centralized WriteLog function
 function WriteLog {
     [CmdletBinding()]
@@ -143,31 +164,64 @@ function Start-BitsTransferWithRetry {
         [string]$Source,
         [Parameter(Mandatory = $true)]
         [string]$Destination,
-        [int]$Retries = 3
+        [int]$Retries = 3,
+        [ValidateSet('Foreground','High','Normal','Low')]
+        [string]$Priority
     )
+
+    if ([string]::IsNullOrWhiteSpace($Priority)) {
+        if (-not [string]::IsNullOrWhiteSpace($env:FFU_BITS_PRIORITY)) {
+            $Priority = $env:FFU_BITS_PRIORITY
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($script:BitsTransferPriority)) {
+            $Priority = $script:BitsTransferPriority
+        }
+        else {
+            $Priority = 'Normal'
+        }
+    }
 
     $attempt = 0
     $lastError = $null
+    $notLoggedOnHResult = [int]0x800704dd
+    $fallbackTriggered = $false
 
-    while ($attempt -lt $Retries) {
+    while ($attempt -lt $Retries -and -not $fallbackTriggered) {
         $OriginalVerbosePreference = $VerbosePreference
         $OriginalProgressPreference = $ProgressPreference
         try {
-            $VerbosePreference = 'SilentlyContinue' 
-            $ProgressPreference = 'SilentlyContinue' 
+            $VerbosePreference = 'SilentlyContinue'
+            $ProgressPreference = 'SilentlyContinue'
 
-            Start-BitsTransfer -Source $Source -Destination $Destination -ErrorAction Stop
+            Start-BitsTransfer -Source $Source -Destination $Destination -Priority $Priority -ErrorAction Stop
             
             $ProgressPreference = $OriginalProgressPreference
             $VerbosePreference = $OriginalVerbosePreference
-            WriteLog "Successfully transferred $Source to $Destination." 
-            return 
+            WriteLog "Successfully transferred $Source to $Destination."
+            return
         }
         catch {
             $lastError = $_
             $attempt++
-            WriteLog "Attempt $attempt of $Retries failed to download $Source. Error: $($lastError.Exception.Message)." 
-            Start-Sleep -Seconds (1 * $attempt) 
+            $errorMessage = $lastError.Exception.Message
+            WriteLog "Attempt $attempt of $Retries failed to download $Source. Error: $errorMessage."
+            $hResult = $null
+            if ($null -ne $lastError.Exception) {
+                $hResult = $lastError.Exception.HResult
+            }
+            $needsHttpFallback = $false
+            if ($hResult -eq $notLoggedOnHResult) {
+                $needsHttpFallback = $true
+            }
+            elseif ($errorMessage -match '0x800704DD' -or $errorMessage -match 'not.*logged on to the network') {
+                $needsHttpFallback = $true
+            }
+            if ($needsHttpFallback) {
+                WriteLog "BITS cannot download $Source because the current session is not logged on to the network. Falling back to Invoke-WebRequest."
+                $fallbackTriggered = $true
+                break
+            }
+            Start-Sleep -Seconds (1 * $attempt)
         }
         finally {
             if (Get-Variable -Name 'OriginalProgressPreference' -ErrorAction SilentlyContinue) {
@@ -179,8 +233,43 @@ function Start-BitsTransferWithRetry {
         }
     }
 
-    WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)" 
-    throw $lastError 
+    if ($fallbackTriggered) {
+        $remainingAttempts = $Retries - $attempt
+        if ($remainingAttempts -lt 1) {
+            $remainingAttempts = 1
+        }
+        $httpAttempt = 0
+        while ($httpAttempt -lt $remainingAttempts) {
+            $httpAttempt++
+            $OriginalVerbosePreference = $VerbosePreference
+            $OriginalProgressPreference = $ProgressPreference
+            try {
+                $VerbosePreference = 'SilentlyContinue'
+                $ProgressPreference = 'SilentlyContinue'
+                Invoke-WebRequest -Uri $Source -OutFile $Destination -ErrorAction Stop
+                $ProgressPreference = $OriginalProgressPreference
+                $VerbosePreference = $OriginalVerbosePreference
+                WriteLog "Successfully transferred $Source to $Destination via HTTP fallback."
+                return
+            }
+            catch {
+                $lastError = $_
+                WriteLog "HTTP fallback attempt $httpAttempt of $remainingAttempts failed to download $Source. Error: $($lastError.Exception.Message)."
+                Start-Sleep -Seconds (1 * $httpAttempt)
+            }
+            finally {
+                if (Get-Variable -Name 'OriginalProgressPreference' -ErrorAction SilentlyContinue) {
+                    $ProgressPreference = $OriginalProgressPreference
+                }
+                if (Get-Variable -Name 'OriginalVerbosePreference' -ErrorAction SilentlyContinue) {
+                    $VerbosePreference = $OriginalVerbosePreference
+                }
+            }
+        }
+    }
+
+    WriteLog "Failed to download $Source after $Retries attempts. Last Error: $($lastError.Exception.Message)"
+    throw $lastError
 }
     
 function Set-Progress {
@@ -194,4 +283,22 @@ function Set-Progress {
     WriteLog "[PROGRESS] $Percentage | $Message"
 }
     
+function ConvertTo-SafeName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+    # Replace invalid Windows filename characters (<>:"/\|?* and control chars) with a dash
+    $sanitized = $Name -replace '[<>:\"/\\|?*\x00-\x1F]', '-'
+    # Collapse multiple consecutive dashes
+    $sanitized = $sanitized -replace '-{2,}', '-'
+    # Trim leading/trailing spaces, periods, and dashes
+    $sanitized = $sanitized.Trim(' ', '.', '-')
+    if ([string]::IsNullOrWhiteSpace($sanitized)) {
+        $sanitized = 'Unnamed'
+    }
+    return $sanitized
+}
+
 Export-ModuleMember -Function *

@@ -94,17 +94,20 @@ function Save-LenovoDriversTask {
         [hashtable]$Headers,
         [Parameter(Mandatory = $true)]
         [string]$UserAgent,
-        [Parameter()] # Made optional
+        [Parameter()]
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null,
         [Parameter()]
-        [bool]$CompressToWim = $false
+        [bool]$CompressToWim = $false,
+        [Parameter()]
+        [bool]$PreserveSourceOnCompress = $false
     )
             
     # The Model property from the UI already contains the combined "ProductName (MachineType)" string
     $identifier = $DriverItemData.Model
     $machineType = $DriverItemData.MachineType 
     $make = "Lenovo"
-    $sanitizedIdentifier = $identifier -replace '[\\/:"*?<>|]', '_'
+    $sanitizedIdentifier = ConvertTo-SafeName -Name $identifier
+    if ($sanitizedIdentifier -ne $identifier) { WriteLog "Sanitized model identifier: '$identifier' -> '$sanitizedIdentifier'" }
     $status = "Starting..."
     $success = $false
     
@@ -129,13 +132,14 @@ function Save-LenovoDriversTask {
             # Special handling for existing folders that need compression
             if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
                 $wimFilePath = Join-Path -Path $makeDriversPath -ChildPath "$($sanitizedIdentifier).wim"
+                $wimRelativePath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
                 $sourceFolderPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedIdentifier
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
-                    $existingDriver.Status = "Already downloaded & Compressed"
-                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedIdentifier).wim"
+                    $null = Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+                    $existingDriver.Status = "Compression successful"
+                    $existingDriver.DriverPath = $wimRelativePath
                     $existingDriver.Success = $true
                     WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
                 }
@@ -204,17 +208,16 @@ function Save-LenovoDriversTask {
             $packageXMLPath = Join-Path -Path $tempDownloadPath -ChildPath $packageName
             $baseURL = $packageUrl -replace [regex]::Escape($packageName), "" # Base URL for the driver file
 
-            $status = "($processedPackages/$totalPackages) Getting package info..."
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-
             # Download the package XML
             WriteLog "($processedPackages/$totalPackages) Downloading package XML: $packageUrl"
             try {
                 Start-BitsTransferWithRetry -Source $packageUrl -Destination $packageXMLPath
             }
             catch {
-                WriteLog "($processedPackages/$totalPackages) Failed to download package XML '$packageUrl'. Skipping. Error: $($_.Exception.Message)"
-                continue # Skip this package
+                $failureMessage = "Failed to download Lenovo package XML '$packageUrl': $($_.Exception.Message)"
+                WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+                throw (New-Object System.Exception($failureMessage, $_.Exception))
             }
 
             # Load and parse the package XML
@@ -275,7 +278,7 @@ function Save-LenovoDriversTask {
             }
 
             # Download the driver .exe
-            $status = "($processedPackages/$totalPackages) Downloading $packageTitle..."
+            $status = "$processedPackages/$totalPackages Downloading $packageTitle"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
             WriteLog "($processedPackages/$totalPackages) Downloading driver: $driverUrl to $driverFilePath"
             try {
@@ -283,13 +286,14 @@ function Save-LenovoDriversTask {
                 WriteLog "($processedPackages/$totalPackages) Driver downloaded: $driverFileName"
             }
             catch {
-                WriteLog "($processedPackages/$totalPackages) Failed to download driver '$driverUrl'. Skipping. Error: $($_.Exception.Message)"
-                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue # Clean up package XML
-                continue # Skip this driver
+                $failureMessage = "Failed to download driver '$packageTitle' from $($driverUrl): $($_.Exception.Message)"
+                WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+                throw (New-Object System.Exception($failureMessage, $_.Exception))
             }
 
             # --- Extraction Logic ---
-            $status = "($processedPackages/$totalPackages) Extracting $packageTitle..."
+            $status = "$processedPackages/$totalPackages Extracting $packageTitle"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
     
             # Always use a temporary extraction path to avoid long path issues
@@ -314,7 +318,7 @@ function Save-LenovoDriversTask {
     
             # Modify the extract command to point to the temporary folder
             $modifiedExtractCommand = $extractCommand -replace '%PACKAGEPATH%', "`"$extractFolder`""
-            WriteLog "($processedPackages/$totalPackages) Extracting driver: $driverFilePath using command: $modifiedExtractCommand"
+            WriteLog "$processedPackages/$totalPackages Extracting driver: $driverFilePath using command: $modifiedExtractCommand"
                 
             try {
                 Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait $true | Out-Null
@@ -322,14 +326,13 @@ function Save-LenovoDriversTask {
                 $extractionSucceeded = $true
             }
             catch {
-                WriteLog "($processedPackages/$totalPackages) Failed to extract driver '$driverFilePath' to temporary path. Skipping. Error: $($_.Exception.Message)"
-                # Don't delete the downloaded exe yet if extraction fails
-                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue # Clean up package XML
-                # Clean up temp folder if extraction failed
+                $failureMessage = "Failed to extract driver package '$packageTitle': $($_.Exception.Message)"
+                WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
                 if ($tempExtractBase -and (Test-Path -Path $tempExtractBase)) {
                     Remove-Item -Path $tempExtractBase -Recurse -Force -ErrorAction SilentlyContinue
                 }
-                continue # Skip further processing for this driver
+                throw (New-Object System.Exception($failureMessage, $_.Exception))
             }
     
             # --- Post-Extraction Handling (Move from Temp to Final Destination) ---
@@ -372,10 +375,9 @@ function Save-LenovoDriversTask {
                             Move-Item -Path $item.FullName -Destination $finalDestinationPath -Force -ErrorAction Stop
                         }
                         catch {
-                            WriteLog "($processedPackages/$totalPackages) Failed to move item '$($item.FullName)' to '$finalDestinationPath'. Error: $($_.Exception.Message)"
-                            # Decide if this should stop the whole process or just skip this item
-                            # For now, we'll log and continue, but mark overall success as false
-                            $extractionSucceeded = $false
+                            $failureMessage = "Failed to move extracted item '$($item.FullName)' to '$finalDestinationPath': $($_.Exception.Message)"
+                            WriteLog "($processedPackages/$totalPackages) $failureMessage"
+                            throw (New-Object System.Exception($failureMessage, $_.Exception))
                         }
                     } # End foreach ($item in $extractedItems)
     
@@ -412,6 +414,9 @@ function Save-LenovoDriversTask {
             # Always delete the package XML
             WriteLog "($processedPackages/$totalPackages) Deleting package XML file: $packageXMLPath"
             Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
+            if (-not $extractionSucceeded) {
+                throw (New-Object System.Exception("Failed to extract driver '$packageTitle'. See log for details."))
+            }
     
         } # End foreach package
         
@@ -424,7 +429,7 @@ function Save-LenovoDriversTask {
             $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
             WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
             try {
-                $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $identifier -WimDescription $identifier -ErrorAction Stop
+                $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $identifier -WimDescription $identifier -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                 if ($compressResult) {
                     WriteLog "Compression successful for '$identifier'."
                     $status = "Completed & Compressed"
@@ -448,12 +453,11 @@ function Save-LenovoDriversTask {
         
     }
     catch {
-        $status = "Error: $($_.Exception.Message.Split('.')[0])" # Shorten error message
-        WriteLog "Error saving Lenovo drivers for '$identifier': $($_.Exception.ToString())" # Log full exception string
+        $status = "Error: $($_.Exception.Message)"
+        WriteLog "Error saving Lenovo drivers for '$identifier': $($_.Exception.ToString())"
         $success = $false
-        # Enqueue the error status before returning
+        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $identifier
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-        # Ensure return object is created even on error
         return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null }
     }
     finally {

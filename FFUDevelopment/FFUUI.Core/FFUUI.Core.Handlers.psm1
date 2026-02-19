@@ -152,6 +152,61 @@ function Register-EventHandlers {
             $localState.Controls.chkPromptExternalHardDiskMedia.IsChecked = $false
         })
 
+    if ($null -ne $State.Controls.cmbBitsPriority) {
+        $State.Controls.cmbBitsPriority.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                Update-BitsPrioritySetting -State $window.Tag
+            })
+    }
+
+    # Additional FFU Files events
+    $State.Controls.chkCopyAdditionalFFUFiles.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.additionalFFUPanel.Visibility = 'Visible'
+            Update-AdditionalFFUList -State $localState
+        })
+    $State.Controls.chkCopyAdditionalFFUFiles.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.additionalFFUPanel.Visibility = 'Collapsed'
+            $localState.Controls.lstAdditionalFFUs.Items.Clear()
+            $headerChk = $localState.Controls.chkSelectAllAdditionalFFUs
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
+            }
+        })
+    $State.Controls.btnRefreshAdditionalFFUs.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Update-AdditionalFFUList -State $localState
+        })
+    $State.Controls.lstAdditionalFFUs.Add_PreviewKeyDown({
+            param($eventSource, $keyEvent)
+            if ($keyEvent.Key -eq 'Space') {
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                $localState = $window.Tag
+                Invoke-ListViewItemToggle -ListView $eventSource -State $localState -HeaderCheckBoxKeyName 'chkSelectAllAdditionalFFUs'
+                $keyEvent.Handled = $true
+            }
+        })
+    $State.Controls.lstAdditionalFFUs.Add_SelectionChanged({
+            param($eventSource, $selChangeEvent)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $headerChk = $localState.Controls.chkSelectAllAdditionalFFUs
+            if ($null -ne $headerChk) {
+                Update-SelectAllHeaderCheckBoxState -ListView $localState.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
+            }
+        })
+
     $State.Controls.btnCheckUSBDrives.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -216,11 +271,11 @@ function Register-EventHandlers {
             }
             else {
                 $localState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-                if ($localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
+                if ($null -ne $selectedItem -and $localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
                     $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.vmSwitchMap[$selectedItem]
                 }
                 else {
-                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found in map
+                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found or key null
                 }
             }
         })
@@ -262,6 +317,9 @@ function Register-EventHandlers {
             Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $localState.Controls.txtISOPath.Text -State $localState
             Update-WindowsSkuCombo -State $localState
             Update-WindowsArchCombo -State $localState
+
+            # Re-evaluate Install Apps dependency when Windows release changes
+            Update-InstallAppsState -State $localState
         })
 
     $State.Controls.cmbWindowsVersion.Add_SelectionChanged({
@@ -314,6 +372,8 @@ function Register-EventHandlers {
     $State.Controls.chkUpdateOneDrive.Add_Unchecked($updateCheckboxHandler)
     $State.Controls.chkUpdateLatestMSRT.Add_Checked($updateCheckboxHandler)
     $State.Controls.chkUpdateLatestMSRT.Add_Unchecked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestCU.Add_Checked($updateCheckboxHandler)
+    $State.Controls.chkUpdateLatestCU.Add_Unchecked($updateCheckboxHandler)
     
     # Also attach the handler to the Office checkbox
     $State.Controls.chkInstallOffice.Add_Checked($updateCheckboxHandler)
@@ -808,6 +868,10 @@ function Register-EventHandlers {
     $State.Controls.chkCopyDrivers.Add_Unchecked($driverCheckboxHandler)
     $State.Controls.chkCompressDriversToWIM.Add_Checked($driverCheckboxHandler)
     $State.Controls.chkCompressDriversToWIM.Add_Unchecked($driverCheckboxHandler)
+    $State.Controls.chkCopyPEDrivers.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkCopyPEDrivers.Add_Unchecked($driverCheckboxHandler)
+    $State.Controls.chkUseDriversAsPEDrivers.Add_Checked($driverCheckboxHandler)
+    $State.Controls.chkUseDriversAsPEDrivers.Add_Unchecked($driverCheckboxHandler)
 
     $State.Controls.btnBrowseDriversFolder.Add_Click({
             param($eventSource, $routedEventArgs)
@@ -949,6 +1013,12 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
             Invoke-LoadConfiguration -State $localState
+        })
+    $State.Controls.btnRestoreDefaults.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Invoke-RestoreDefaults -State $localState
         })
     $State.Controls.btnBuildConfig.Add_Click({
             param($eventSource, $routedEventArgs)

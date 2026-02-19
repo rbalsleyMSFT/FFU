@@ -92,6 +92,49 @@ function Invoke-Process {
     }
 }
 
+function Format-MsiArguments {
+    <#
+    .SYNOPSIS
+        Ensures MSI file paths in msiexec arguments are properly quoted.
+    .DESCRIPTION
+        Detects /i arguments followed by an unquoted path ending in .msi
+        and wraps the path in double quotes to handle paths with spaces.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandLine,
+
+        [Parameter(Mandatory)]
+        [string]$Arguments
+    )
+
+    # Only process if the command is msiexec
+    if ($CommandLine -notmatch '^msiexec(\.exe)?$') {
+        return $Arguments
+    }
+
+    # Regex pattern explanation:
+    # (?i)            - Case-insensitive matching
+    # (/i)\s+         - Match /i followed by whitespace
+    # (?!")           - Negative lookahead: not already quoted
+    # (.+?\.msi)      - Capture path ending in .msi (lazy match to stop at first .msi)
+    # (?=\s+/|\s*$)   - Followed by another switch or end of string
+    
+    # Pattern to match /i followed by an unquoted MSI path
+    $pattern = '(?i)(/i)\s+(?!")(.+?\.msi)(?=\s+/|\s*$)'
+    
+    if ($Arguments -match $pattern) {
+        $originalArgs = $Arguments
+        # Replace with quoted path
+        $Arguments = $Arguments -replace $pattern, '$1 "$2"'
+        Write-Host "Detected unquoted MSI path in msiexec arguments. Adjusted arguments:"
+        Write-Host "Original: $originalArgs"
+        Write-Host "Modified: $Arguments"
+    }
+
+    return $Arguments
+}
+
 function Install-Applications {
     param(
         [Parameter(Mandatory)]
@@ -175,6 +218,15 @@ function Install-Applications {
             $ignoreNonZeroExitCodes = $false
             if ($app.PSObject.Properties['IgnoreNonZeroExitCodes'] -and $app.IgnoreNonZeroExitCodes -is [bool]) {
                 $ignoreNonZeroExitCodes = $app.IgnoreNonZeroExitCodes
+            }
+
+            # Auto-quote MSI paths if using msiexec and path contains spaces but no quotes
+            if ($null -ne $argumentsToPass -and $argumentsToPass.Count -gt 0) {
+                $joinedArgs = $argumentsToPass -join ' '
+                $formattedArgs = Format-MsiArguments -CommandLine $app.CommandLine -Arguments $joinedArgs
+                if ($formattedArgs -ne $joinedArgs) {
+                    $argumentsToPass = @($formattedArgs)
+                }
             }
 
             if ($null -eq $argumentsToPass -or $argumentsToPass.Count -eq 0) {

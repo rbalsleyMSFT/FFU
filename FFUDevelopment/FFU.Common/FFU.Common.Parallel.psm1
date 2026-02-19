@@ -156,7 +156,7 @@ function Invoke-ParallelProcessing {
                 # Execute the appropriate background task based on $localTaskType
                 switch ($localTaskType) {
                     'WingetDownload' {
-                        # Pass the progress queue to the task function
+                        # Pass the progress queue and SkipWin32Json to the task function
                         $wingetTaskArgs = @{
                             ApplicationItemData = $currentItem
                             AppListJsonPath     = $localJobArgs['AppListJsonPath']
@@ -164,6 +164,7 @@ function Invoke-ParallelProcessing {
                             OrchestrationPath   = $localJobArgs['OrchestrationPath']
                             ProgressQueue       = $localProgressQueue
                             WindowsArch         = $localJobArgs['WindowsArch']
+                            SkipWin32Json       = [bool]$localJobArgs['SkipWin32Json']
                         }
                         $taskResult = Start-WingetAppDownloadTask @wingetTaskArgs
                         if ($null -ne $taskResult) {
@@ -209,7 +210,8 @@ function Invoke-ParallelProcessing {
                                     -Headers $localJobArgs['Headers'] `
                                     -UserAgent $localJobArgs['UserAgent'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             'Dell' {
                                 $taskResult = Save-DellDriversTask -DriverItemData $currentItem `
@@ -217,7 +219,8 @@ function Invoke-ParallelProcessing {
                                     -WindowsArch $localJobArgs['WindowsArch'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             'HP' {
                                 $taskResult = Save-HPDriversTask -DriverItemData $currentItem `
@@ -226,7 +229,8 @@ function Invoke-ParallelProcessing {
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
                                     -WindowsVersion $localJobArgs['WindowsVersion'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             'Lenovo' {
                                 $taskResult = Save-LenovoDriversTask -DriverItemData $currentItem `
@@ -235,7 +239,8 @@ function Invoke-ParallelProcessing {
                                     -Headers $localJobArgs['Headers'] `
                                     -UserAgent $localJobArgs['UserAgent'] `
                                     -ProgressQueue $localProgressQueue `
-                                    -CompressToWim $localJobArgs['CompressToWim']
+                                    -CompressToWim $localJobArgs['CompressToWim'] `
+                                    -PreserveSourceOnCompress $localJobArgs['PreserveSourceOnCompress']
                             }
                             default {
                                 $unsupportedMakeMessage = "Error: Unsupported Make '$make' for driver download."
@@ -265,7 +270,7 @@ function Invoke-ParallelProcessing {
                             else {
                                 # Fallback for any task that *still* doesn't return 'Success'. This is now the exceptional case.
                                 WriteLog "Warning: Task for '$taskSpecificIdentifier' did not return a 'Success' property. Inferring from status: '$($taskResult.Status)'"
-                                if ($taskResult.Status -like 'Completed*' -or $taskResult.Status -like 'Already downloaded*') {
+                                if ($taskResult.Status -like 'Completed*' -or $taskResult.Status -like 'Already downloaded*' -or $taskResult.Status -like 'Compression successful*') {
                                     $resultCode = 0 # Treat as success
                                 }
                                 else {

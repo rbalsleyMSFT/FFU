@@ -2,16 +2,6 @@
   <Add SourcePath="C:\FFUDevelopment\Apps\Office" OfficeClientEdition="64" Channel="Current">
     <Product ID="O365ProPlusRetail">
       <Language ID="MatchOS" />
-      <ExcludeApp ID="Access" />
-      <ExcludeApp ID="Lync" />
-      <ExcludeApp ID="Publisher" />
-      <ExcludeApp ID="Bing" />
     </Product>
   </Add>
-  <Property Name="SharedComputerLicensing" Value="0" />
-  <Property Name="FORCEAPPSHUTDOWN" Value="FALSE" />
-  <Property Name="DeviceBasedLicensing" Value="0" />
-  <Property Name="SCLCacheOverride" Value="0" />
-  <Updates Enabled="TRUE" />
-  <Display Level="None" AcceptEULA="TRUE" />
 </Configuration>

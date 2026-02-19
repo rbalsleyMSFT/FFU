@@ -117,6 +117,7 @@ function Get-GeneralDefaults {
         ShareName                      = "FFUCaptureShare"
         Username                       = "ffu_user"
         Threads                        = 5
+        BitsPriority                   = 'Normal'
         MaxUSBDrives                   = 5
         BuildUSBDriveEnable            = $false
         CompactOS                      = $true
@@ -128,6 +129,7 @@ function Get-GeneralDefaults {
         AllowExternalHardDiskMedia     = $false
         PromptExternalHardDiskMedia    = $true
         SelectSpecificUSBDrives        = $false
+        CopyAdditionalFFUFiles         = $false
         CopyAutopilot                  = $false
         CopyUnattend                   = $false
         CopyPPKG                       = $false
@@ -141,7 +143,7 @@ function Get-GeneralDefaults {
         RemoveUpdates                  = $false 
         # Hyper-V Settings Defaults
         VMHostIPAddress                = ""
-        DiskSizeGB                     = 30
+        DiskSizeGB                     = 50
         MemoryGB                       = 4
         Processors                     = 4
         VMLocation                     = $vmLocationPath
@@ -175,25 +177,101 @@ function Get-GeneralDefaults {
         InstallDrivers                 = $false
         CopyDrivers                    = $false
         CopyPEDrivers                  = $false
+        UseDriversAsPEDrivers          = $false
         UpdateADK                      = $true
         CompressDownloadedDriversToWim = $false
     }
 }
 
 # Function to get USB Drives (Moved from BuildFFUVM_UI.ps1)
+# Uses Get-Disk to retrieve UniqueId which is more reliable than SerialNumber
+# UniqueId is trimmed to remove the machine name suffix (characters after colon)
 function Get-USBDrives {
     Get-WmiObject Win32_DiskDrive | Where-Object {
         ($_.MediaType -eq 'Removable Media' -or $_.MediaType -eq 'External hard disk media')
     } | ForEach-Object {
         $size = [math]::Round($_.Size / 1GB, 2)
-        $serialNumber = if ($_.SerialNumber) { $_.SerialNumber.Trim() } else { "N/A" }
-        @{
-            IsSelected   = $false
-            Model        = $_.Model.Trim()
-            SerialNumber = $serialNumber
-            Size         = $size
-            DriveIndex   = $_.Index
+        # Get the disk using the index to retrieve UniqueId
+        $disk = Get-Disk -Number $_.Index -ErrorAction SilentlyContinue
+        # Trim the machine name suffix (everything after the colon) from UniqueId
+        $uniqueId = if ($disk -and $disk.UniqueId) {
+            $rawId = $disk.UniqueId
+            if ($rawId -match ':') {
+                $rawId.Split(':')[0]
+            }
+            else {
+                $rawId
+            }
         }
+        else {
+            "N/A"
+        }
+        @{
+            IsSelected = $false
+            Model      = $_.Model.Trim()
+            UniqueId   = $uniqueId
+            Size       = $size
+            DriveIndex = $_.Index
+        }
+    }
+}
+
+# Returns a list of FFU files from the provided folder with selection metadata
+function Get-FFUFiles {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+    if (-not (Test-Path -Path $Path)) {
+        return @()
+    }
+    Get-ChildItem -Path $Path -Filter '*.ffu' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        [PSCustomObject]@{
+            IsSelected   = $false
+            Name         = $_.Name
+            LastModified = $_.LastWriteTime
+            FullName     = $_.FullName
+        }
+    }
+}
+
+# Helper: Populate Additional FFU List from the capture folder
+function Update-AdditionalFFUList {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State
+    )
+    try {
+        $ffuFolder = $State.Controls.txtFFUCaptureLocation.Text
+        $listView = $State.Controls.lstAdditionalFFUs
+        if ($null -eq $listView) { return }
+        $listView.Items.Clear()
+        if ([string]::IsNullOrWhiteSpace($ffuFolder) -or -not (Test-Path -Path $ffuFolder)) {
+            WriteLog "Additional FFUs: Capture folder not set or not found: $ffuFolder"
+        }
+        else {
+            $items = Get-ChildItem -Path $ffuFolder -Filter '*.ffu' -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending |
+                ForEach-Object {
+                    [PSCustomObject]@{
+                        IsSelected   = $false
+                        Name         = $_.Name
+                        LastModified = $_.LastWriteTime
+                        FullName     = $_.FullName
+                    }
+                }
+            foreach ($it in $items) { $listView.Items.Add($it) | Out-Null }
+            WriteLog "Additional FFUs: Found $($listView.Items.Count) FFU files in $ffuFolder."
+        }
+        $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
+        if ($null -ne $headerChk) {
+            Update-SelectAllHeaderCheckBoxState -ListView $listView -HeaderCheckBox $headerChk
+        }
+    }
+    catch {
+        WriteLog "Update-AdditionalFFUList error: $($_.Exception.Message)"
     }
 }
 
@@ -242,6 +320,23 @@ function Update-ApplicationPanelVisibility {
     }
 }
 
+# Function to identify whether current Windows release selection is Windows 10 LTSB/LTSC
+function Test-IsWindows10LtscReleaseSelection {
+    param([PSCustomObject]$State)
+
+    $releaseItem = $State.Controls.cmbWindowsRelease.SelectedItem
+    if ($null -eq $releaseItem) {
+        return $false
+    }
+
+    $releaseDisplay = [string]$releaseItem.Display
+    if ([string]::IsNullOrWhiteSpace($releaseDisplay)) {
+        return $false
+    }
+
+    return (($releaseDisplay -like 'Windows 10*') -and (($releaseDisplay -like '*LTSB*') -or ($releaseDisplay -like '*LTSC*')))
+}
+
 # Function to manage the state of the main "Install Apps" checkbox based on selections in Updates/Office
 function Update-InstallAppsState {
     param([PSCustomObject]$State)
@@ -249,11 +344,16 @@ function Update-InstallAppsState {
     $installAppsChk = $State.Controls.chkInstallApps
     $installOfficeChk = $State.Controls.chkInstallOffice
 
+    # Determine if Windows 10 LTSB/LTSC + Update Latest CU is selected
+    $isWindows10LtscRelease = Test-IsWindows10LtscReleaseSelection -State $State
+    $isLtscCuChecked = $State.Controls.chkUpdateLatestCU.IsChecked -and $isWindows10LtscRelease
+
     # Determine if any checkbox that forces "Install Apps" is checked
     $anyUpdateChecked = $State.Controls.chkUpdateLatestDefender.IsChecked -or `
         $State.Controls.chkUpdateEdge.IsChecked -or `
         $State.Controls.chkUpdateOneDrive.IsChecked -or `
-        $State.Controls.chkUpdateLatestMSRT.IsChecked
+        $State.Controls.chkUpdateLatestMSRT.IsChecked -or `
+        $isLtscCuChecked
     
     $isForced = $anyUpdateChecked -or $installOfficeChk.IsChecked
 
@@ -292,11 +392,14 @@ function Update-DriverCheckboxStates {
     $installDriversChk = $State.Controls.chkInstallDrivers
     $copyDriversChk = $State.Controls.chkCopyDrivers
     $compressWimChk = $State.Controls.chkCompressDriversToWIM
+    $copyPEDriversChk = $State.Controls.chkCopyPEDrivers
+    $useDriversAsPeChk = $State.Controls.chkUseDriversAsPEDrivers
 
     # Default to enabled, then apply disabling rules
     $installDriversChk.IsEnabled = $true
     $copyDriversChk.IsEnabled = $true
     $compressWimChk.IsEnabled = $true
+    $copyPEDriversChk.IsEnabled = $true
 
     if ($installDriversChk.IsChecked) {
         $copyDriversChk.IsEnabled = $false
@@ -309,6 +412,16 @@ function Update-DriverCheckboxStates {
 
     if ($compressWimChk.IsChecked) {
         $installDriversChk.IsEnabled = $false
+    }
+
+    # Sub-option visibility logic: only show UseDriversAsPEDrivers when CopyPEDrivers is checked
+    if ($copyPEDriversChk.IsChecked) {
+        $useDriversAsPeChk.Visibility = 'Visible'
+    }
+    else {
+        # Parent unchecked: hide and clear sub-option
+        $useDriversAsPeChk.IsChecked = $false
+        $useDriversAsPeChk.Visibility = 'Collapsed'
     }
 }
 

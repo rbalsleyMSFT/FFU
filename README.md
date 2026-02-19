@@ -20,7 +20,7 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Updates
 
-2507.1 has been released to preview! This is a major update that brings a new user interface to preview.
+2509.1 has been released to preview! This is a major update that brings a new user interface to preview.
 
 Docs are coming, but will take a bit to write them. The youtube video is a must watch for a complete demo on how to use the UI and the changes made to apps (InstallAppsAndSysprep.cmd is gone) and drivers. I'll be recording a more formalized deep dive with slides that go a bit deeper into how things work, but the UI walkthrough should get most people going.
 
@@ -32,7 +32,7 @@ Docs are coming, but will take a bit to write them. The youtube video is a must 
 
 ## YouTube Detailed Walkthrough
 
-Here's a detailed overview of the new UI process. 
+Here's a detailed overview of the new UI process.
 
 [![Reimage Windows Fast with FFU Builder 2507.1 Preview](https://img.youtube.com/vi/oozG1aVcg9M/maxresdefault.jpg)](https://youtu.be/oozG1aVcg9M "Reimage Windows Fast with FFU Builder 2507.1 Preview")
 

@@ -34,8 +34,10 @@ function Get-UIConfig {
         CopyDrivers                    = $State.Controls.chkCopyDrivers.IsChecked
         CopyOfficeConfigXML            = $State.Controls.chkCopyOfficeConfigXML.IsChecked
         CopyPEDrivers                  = $State.Controls.chkCopyPEDrivers.IsChecked
+        UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
+        CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
         CreateCaptureMedia             = $State.Controls.chkCreateCaptureMedia.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
@@ -94,6 +96,7 @@ function Get-UIConfig {
         USBDriveList                   = @{}
         Username                       = $State.Controls.txtUsername.Text
         Threads                        = [int]$State.Controls.txtThreads.Text
+        BitsPriority                    = $State.Controls.cmbBitsPriority.SelectedItem
         MaxUSBDrives                   = [int]$State.Controls.txtMaxUSBDrives.Text
         Verbose                        = $State.Controls.chkVerbose.IsChecked
         VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
@@ -111,8 +114,38 @@ function Get-UIConfig {
         WindowsVersion                 = $State.Controls.cmbWindowsVersion.SelectedItem
     }
 
+    # Save selected USB drives using UniqueId for reliable identification
+    # Multiple physical drives can share the same Model, so store an array of UniqueIds per Model.
     $State.Controls.lstUSBDrives.Items | Where-Object { $_.IsSelected } | ForEach-Object {
-        $config.USBDriveList[$_.Model] = $_.SerialNumber
+        $modelName = $_.Model
+        $uniqueId = $_.UniqueId
+
+        if ([string]::IsNullOrWhiteSpace($modelName) -or [string]::IsNullOrWhiteSpace($uniqueId)) {
+            return
+        }
+
+        # Ensure the hashtable value is always an array so multiple same-model drives are preserved
+        $existingUniqueIds = $config.USBDriveList[$modelName]
+        if ($null -eq $existingUniqueIds) {
+            $config.USBDriveList[$modelName] = @($uniqueId)
+            return
+        }
+
+        $existingUniqueIds = @($existingUniqueIds)
+        if (-not ($existingUniqueIds -contains $uniqueId)) {
+            $existingUniqueIds += $uniqueId
+        }
+        $config.USBDriveList[$modelName] = $existingUniqueIds
+    }
+
+    # Additional FFU file selections
+    $config.AdditionalFFUFiles = @()
+    if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) {
+        $config.AdditionalFFUFiles = @(
+            $State.Controls.lstAdditionalFFUs.Items |
+                Where-Object { $_.IsSelected } |
+                ForEach-Object { $_.FullName }
+        )
     }
     
     return $config
@@ -231,6 +264,55 @@ function Set-UIValue {
     }
 }
 
+function Get-ConfigDriverBaseName {
+    param(
+        [string]$RawName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RawName)) {
+        return $RawName
+    }
+
+    if ($RawName -match '^(.*?)\s*\((.+)\)\s*$') {
+        return $matches[1].Trim()
+    }
+
+    return $RawName.Trim()
+}
+
+function Get-ConfigDriverDisplayName {
+    param(
+        [string]$Make,
+        [string]$StoredName,
+        [string]$ProductName,
+        [string]$SystemId,
+        [string]$MachineType
+    )
+
+    $baseName = if (-not [string]::IsNullOrWhiteSpace($ProductName)) { $ProductName } else { Get-ConfigDriverBaseName -RawName $StoredName }
+
+    switch ($Make) {
+        'Dell' {
+            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $StoredName }
+            if ([string]::IsNullOrWhiteSpace($SystemId)) { return $baseName }
+            return "{0} ({1})" -f $baseName.Trim(), $SystemId.Trim()
+        }
+        'HP' {
+            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $StoredName }
+            if ([string]::IsNullOrWhiteSpace($SystemId)) { return $baseName }
+            return "{0} ({1})" -f $baseName.Trim(), $SystemId.Trim()
+        }
+        'Lenovo' {
+            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $StoredName }
+            if ([string]::IsNullOrWhiteSpace($MachineType)) { return $baseName }
+            return "{0} ({1})" -f $baseName.Trim(), $MachineType.Trim()
+        }
+        default {
+            return $StoredName
+        }
+    }
+}
+
 function Invoke-LoadConfiguration {
     param(
         [Parameter(Mandatory = $true)]
@@ -242,19 +324,39 @@ function Invoke-LoadConfiguration {
             WriteLog "Load configuration cancelled by user."
             return
         }
-
         WriteLog "Loading configuration from: $filePath"
-        $configContent = Get-Content -Path $filePath -Raw | ConvertFrom-Json
-
+        $raw = $null
+        try {
+            $raw = Get-Content -Path $filePath -Raw -ErrorAction Stop
+        }
+        catch {
+            WriteLog "LoadConfig Error: Failed reading file $filePath : $($_.Exception.Message)"
+            [System.Windows.MessageBox]::Show("Failed to read the configuration file.`n$($_.Exception.Message)", "Load Error", "OK", "Error")
+            return
+        }
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            WriteLog "LoadConfig Error: File $filePath is empty."
+            [System.Windows.MessageBox]::Show("The selected configuration file is empty.", "Load Error", "OK", "Error")
+            return
+        }
+        $configContent = $null
+        try {
+            $configContent = $raw | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            WriteLog "LoadConfig Error: JSON parse failure for $filePath : $($_.Exception.Message)"
+            [System.Windows.MessageBox]::Show("Failed to parse the configuration file (invalid JSON).`n$($_.Exception.Message)", "Load Error", "OK", "Error")
+            return
+        }
         if ($null -eq $configContent) {
-            WriteLog "LoadConfig Error: configContent is null after parsing $filePath. File might be empty or malformed."
-            [System.Windows.MessageBox]::Show("Failed to parse the configuration file. It might be empty or not valid JSON.", "Load Error", "OK", "Error")
+            WriteLog "LoadConfig Error: Parsed config object is null after $filePath."
+            [System.Windows.MessageBox]::Show("Parsed configuration object was null.", "Load Error", "OK", "Error")
             return
         }
         WriteLog "LoadConfig: Successfully parsed config file. Top-level keys: $($configContent.PSObject.Properties.Name -join ', ')"
-
-        # Apply the configuration to the UI
         Update-UIFromConfig -ConfigContent $configContent -State $State
+        $State.Data.lastConfigFilePath = $filePath
+        Import-ConfigSupplementalAssets -ConfigContent $configContent -State $State -ShowWarnings:$true
     }
     catch {
         WriteLog "LoadConfig FATAL Error: $($_.Exception.ToString())"
@@ -331,6 +433,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtShareName' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ShareName' -State $State
     Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Username' -State $State
     Set-UIValue -ControlName 'txtThreads' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Threads' -State $State
+    Set-UIValue -ControlName 'cmbBitsPriority' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'BitsPriority' -State $State
     Set-UIValue -ControlName 'txtMaxUSBDrives' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'MaxUSBDrives' -State $State
     Set-UIValue -ControlName 'chkBuildUSBDriveEnable' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'BuildUSBDrive' -State $State
     Set-UIValue -ControlName 'chkCompactOS' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CompactOS' -State $State
@@ -339,6 +442,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkAllowVHDXCaching' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AllowVHDXCaching' -State $State
     Set-UIValue -ControlName 'chkAllowExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AllowExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'PromptExternalHardDiskMedia' -State $State
+    Set-UIValue -ControlName 'chkCopyAdditionalFFUFiles' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAdditionalFFUFiles' -State $State
     Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateCaptureMedia' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
     Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
@@ -348,7 +452,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State
     Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyUnattend' -State $State
     Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPPKG' -State $State
-
+    
     # Post Build Cleanup group (Build Tab)
     Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupAppsISO' -State $State
     Set-UIValue -ControlName 'chkCleanupCaptureISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupCaptureISO' -State $State
@@ -460,6 +564,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'PEDriversFolder' -State $State
     Set-UIValue -ControlName 'txtDriversJsonPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversJsonPath' -State $State
     Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPEDrivers' -State $State
+    Set-UIValue -ControlName 'chkUseDriversAsPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UseDriversAsPEDrivers' -State $State
     Set-UIValue -ControlName 'chkCompressDriversToWIM' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CompressDownloadedDriversToWim' -State $State
 
     # Updates tab
@@ -584,8 +689,21 @@ function Update-UIFromConfig {
                 }
             }
 
-            if ($propertyExists -and ($propertyValue -eq $item.SerialNumber)) {
-                WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with Serial '$($item.SerialNumber)'."
+            # Match USB drives by UniqueId instead of SerialNumber
+            # USBDriveList values can be a single UniqueId (string) or an array of UniqueIds (multiple same-model drives)
+            $isMatch = $false
+            if ($propertyExists) {
+                if ($propertyValue -is [string]) {
+                    $isMatch = ($propertyValue -eq $item.UniqueId)
+                }
+                else {
+                    $propertyValueArray = @($propertyValue)
+                    $isMatch = ($propertyValueArray -contains $item.UniqueId)
+                }
+            }
+
+            if ($isMatch) {
+                WriteLog "LoadConfig: Selecting USB Drive Model '$($item.Model)' with UniqueId '$($item.UniqueId)'."
                 $item.IsSelected = $true
             }
             else {
@@ -632,8 +750,47 @@ function Update-UIFromConfig {
     else {
         WriteLog "LoadConfig: Condition to auto-check 'Select Specific USB Drives' was NOT met."
     }
-    WriteLog "LoadConfig: Configuration loading process finished."
-}
+        # Populate additional FFU list and apply selections
+        try {
+            if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) {
+                $State.Controls.additionalFFUPanel.Visibility = 'Visible'
+                if ($State.Controls.btnRefreshAdditionalFFUs) {
+                    $State.Controls.btnRefreshAdditionalFFUs.RaiseEvent([System.Windows.RoutedEventArgs]::new([System.Windows.Controls.Button]::ClickEvent))
+                }
+                $selectedFiles = @()
+                $addFFUKeyExists = $false
+                if ($ConfigContent -is [System.Management.Automation.PSCustomObject] -and $null -ne $ConfigContent.PSObject.Properties) {
+                    if (($ConfigContent.PSObject.Properties.Match('AdditionalFFUFiles')).Count -gt 0) {
+                        $addFFUKeyExists = $true
+                    }
+                }
+                if ($addFFUKeyExists -and $null -ne $ConfigContent.AdditionalFFUFiles) {
+                    $selectedFiles = @($ConfigContent.AdditionalFFUFiles)
+                }
+                if ($selectedFiles.Count -gt 0) {
+                    foreach ($item in $State.Controls.lstAdditionalFFUs.Items) {
+                        if ($selectedFiles -contains $item.FullName) {
+                            $item.IsSelected = $true
+                        }
+                    }
+                    $State.Controls.lstAdditionalFFUs.Items.Refresh()
+                    $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
+                    if ($null -ne $headerChk) {
+                        Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
+                    }
+                }
+            }
+            else {
+                $State.Controls.additionalFFUPanel.Visibility = 'Collapsed'
+            }
+            }
+            catch {
+                WriteLog "LoadConfig: Error applying Additional FFU selections: $($_.Exception.Message)"
+            }
+        
+            Update-BitsPrioritySetting -State $State
+            WriteLog "LoadConfig: Configuration loading process finished."
+        }
 
 function Invoke-SaveConfiguration {
     param(
@@ -655,13 +812,446 @@ function Invoke-SaveConfiguration {
             -DefaultExt ".json"
 
         if ($savePath) {
-            $config | ConvertTo-Json -Depth 10 | Set-Content -Path $savePath -Encoding UTF8
+            # Sort top-level keys alphabetically for consistent output
+            $sortedConfig = [ordered]@{}
+            foreach ($k in ($config.Keys | Sort-Object)) { $sortedConfig[$k] = $config[$k] }
+            $sortedConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $savePath -Encoding UTF8
             [System.Windows.MessageBox]::Show("Configuration file saved to:`n$savePath", "Success", "OK", "Information")
         }
     }
     catch {
         [System.Windows.MessageBox]::Show("Error saving config file:`n$($_.Exception.Message)", "Error", "OK", "Error")
     }
+}
+
+function Invoke-RestoreDefaults {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
+    try {
+        $rootPath = $State.FFUDevelopmentPath
+
+        # Normalize potential array values to single strings
+        function Normalize-PathScalar {
+            param([object]$value)
+            if ($null -eq $value) { return $null }
+            if ($value -is [System.Array]) {
+                foreach ($v in $value) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$v)) {
+                        return [string]$v
+                    }
+                }
+                return $null
+            }
+            return [string]$value
+        }
+
+        $appsPath = Join-Path $rootPath 'Apps'
+        $driversRaw = Normalize-PathScalar -value $State.Controls.txtDriversFolder.Text
+        if ([string]::IsNullOrWhiteSpace($driversRaw)) {
+            $driversPath = Join-Path $rootPath 'Drivers'
+        }
+        else {
+            $driversPath = $driversRaw
+        }
+        $ffuCaptureRaw = Normalize-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
+        $ffuCapturePath = if ([string]::IsNullOrWhiteSpace($ffuCaptureRaw)) { Join-Path $rootPath 'FFU' } else { $ffuCaptureRaw }
+
+        $captureISOPath = Join-Path $rootPath 'WinPECaptureFFUFiles\WinPE-Capture.iso'
+        $deployISOPath = Join-Path $rootPath 'WinPEDeployFFUFiles\WinPE-Deploy.iso'
+        $appsISOPath = Join-Path $rootPath 'Apps.iso'
+        
+        $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Capture, Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
+        $result = [System.Windows.MessageBox]::Show($msg, "Confirm Restore Defaults", "YesNo", "Warning")
+        if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
+            WriteLog "RestoreDefaults: User cancelled."
+            return
+        }
+
+        WriteLog "RestoreDefaults: Starting environment reset."
+        WriteLog "RestoreDefaults: Paths -> Apps=$appsPath Drivers=$driversPath FFUCapture=$ffuCapturePath"
+
+        # Remove JSON artifact files if present
+        $artifactFiles = @(
+            (Join-Path $rootPath 'config\FFUConfig.json'),
+            (Join-Path $appsPath 'AppList.json'),
+            (Join-Path $driversPath 'Drivers.json'),
+            (Join-Path $appsPath 'UserAppList.json')
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+        foreach ($file in $artifactFiles) {
+            if ((-not [string]::IsNullOrWhiteSpace($file)) -and (Test-Path -LiteralPath $file)) {
+                try {
+                    WriteLog "RestoreDefaults: Removing $file"
+                    Remove-Item -LiteralPath $file -Force -ErrorAction Stop
+                }
+                catch {
+                    WriteLog "RestoreDefaults: Failed removing $file : $($_.Exception.Message)"
+                }
+            }
+        }
+
+        # Force all cleanup flags true
+        Invoke-FFUPostBuildCleanup `
+            -RootPath $rootPath `
+            -AppsPath $appsPath `
+            -DriversPath $driversPath `
+            -FFUCapturePath $ffuCapturePath `
+            -CaptureISOPath $captureISOPath `
+            -DeployISOPath $deployISOPath `
+            -AppsISOPath $appsISOPath `
+            -KBPath (Join-Path $rootPath 'KB') `
+            -RemoveCaptureISO:$true `
+            -RemoveDeployISO:$true `
+            -RemoveAppsISO:$true `
+            -RemoveDrivers:$true `
+            -RemoveFFU:$true `
+            -RemoveApps:$true `
+            -RemoveUpdates:$true
+
+        # Clear UI lists / state
+        if ($null -ne $State.Data.allDriverModels) { $State.Data.allDriverModels.Clear() }
+        if ($null -ne $State.Controls.lstDriverModels) { $State.Controls.lstDriverModels.Items.Refresh() }
+        if ($null -ne $State.Controls.lstApplications) {
+            try {
+                if ($State.Controls.lstApplications.ItemsSource) { $State.Controls.lstApplications.ItemsSource = $null }
+                $State.Controls.lstApplications.Items.Clear()
+            } catch {}
+        }
+        if ($null -ne $State.Controls.lstWingetResults) {
+            try { 
+                if ($State.Controls.lstWingetResults.ItemsSource) { $State.Controls.lstWingetResults.ItemsSource = $null }
+                $State.Controls.lstWingetResults.Items.Clear() 
+            } catch {}
+        }
+        if ($null -ne $State.Controls.lstAppsScriptVariables) {
+            try {
+                if ($State.Controls.lstAppsScriptVariables.ItemsSource) { $State.Controls.lstAppsScriptVariables.ItemsSource = $null }
+                $State.Controls.lstAppsScriptVariables.Items.Clear()
+            } catch {}
+        }
+
+        $State.Data.lastConfigFilePath = $null
+
+        Initialize-UIDefaults -State $State
+
+        WriteLog "RestoreDefaults: Completed."
+        [System.Windows.MessageBox]::Show("Environment restored to defaults.", "Restore Defaults", "OK", "Information")
+    }
+    catch {
+        WriteLog "RestoreDefaults: Failed with $($_.Exception.Message)"
+        [System.Windows.MessageBox]::Show("Restore Defaults failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+    }
+}
+
+function Invoke-AutoLoadPreviousEnvironment {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$State
+    )
+    try {
+        $ffuDevRoot = $State.FFUDevelopmentPath
+        if ([string]::IsNullOrWhiteSpace($ffuDevRoot)) {
+            WriteLog "AutoLoad: FFUDevelopmentPath not set; skipping."
+            return
+        }
+        $configPath = Join-Path $ffuDevRoot "config\FFUConfig.json"
+        if (-not (Test-Path -LiteralPath $configPath)) {
+            WriteLog "AutoLoad: No existing FFUConfig.json found at $configPath."
+            return
+        }
+        WriteLog "AutoLoad: Found config file at $configPath. Parsing..."
+        $raw = Get-Content -Path $configPath -Raw -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            WriteLog "AutoLoad: Config file empty; aborting."
+            return
+        }
+        $configContent = $null
+        try {
+            $configContent = $raw | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            WriteLog "AutoLoad: JSON parse failed: $($_.Exception.Message)"
+            return
+        }
+        if ($null -eq $configContent) {
+            WriteLog "AutoLoad: Parsed object null; aborting."
+            return
+        }
+        WriteLog "AutoLoad: Applying core configuration."
+        Update-UIFromConfig -ConfigContent $configContent -State $State
+        $State.Data.lastConfigFilePath = $configPath
+        Import-ConfigSupplementalAssets -ConfigContent $configContent -State $State -ShowWarnings:$false
+        WriteLog "AutoLoad: Completed supplemental import with warnings disabled."
+    }
+    catch {
+        WriteLog "AutoLoad: Unexpected failure: $($_.Exception.ToString())"
+    }
+}
+
+function Import-ConfigSupplementalAssets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$ConfigContent,
+        [Parameter(Mandatory = $true)]
+        [psobject]$State,
+        [Parameter()]
+        [bool]$ShowWarnings = $false
+    )
+    WriteLog "SupplementalImport: Starting import of helper assets."
+    $loadedWinget = $false
+    $loadedBYO = $false
+    $loadedDrivers = $false
+    $missing = New-Object System.Collections.Generic.List[string]
+
+    # Winget AppList
+    $appListPath = $null
+    if ($ConfigContent.PSObject.Properties.Match('AppListPath').Count -gt 0) {
+        $appListPath = $ConfigContent.AppListPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($appListPath)) {
+        if (Test-Path -LiteralPath $appListPath) {
+            WriteLog "SupplementalImport: Loading Winget AppList from $appListPath"
+            try {
+                $importedAppsData = Get-Content -Path $appListPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($null -ne $importedAppsData -and $null -ne $importedAppsData.apps) {
+                    $defaultArch = $State.Controls.cmbWindowsArch.SelectedItem
+                    $appsBuffer = [System.Collections.Generic.List[object]]::new()
+                    foreach ($appInfo in $importedAppsData.apps) {
+                        $arch = if ($appInfo.source -eq 'msstore') { 'NA' } else {
+                            if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch }
+                        }
+                        $appsBuffer.Add([PSCustomObject]@{
+                                IsSelected               = $true
+                                Name                     = $appInfo.name
+                                Id                       = $appInfo.id
+                                Version                  = ""
+                                Source                   = $appInfo.source
+                                Architecture             = $arch
+                                AdditionalExitCodes      = if ($appInfo.PSObject.Properties['AdditionalExitCodes']) { $appInfo.AdditionalExitCodes } else { "" }
+                                IgnoreNonZeroExitCodes   = if ($appInfo.PSObject.Properties['IgnoreNonZeroExitCodes']) { [bool]$appInfo.IgnoreNonZeroExitCodes } else { $false }
+                                DownloadStatus           = ""
+                            })
+                    }
+                    $State.Controls.lstWingetResults.ItemsSource = $appsBuffer.ToArray()
+                    $loadedWinget = $true
+                    if ($null -ne $State.Controls.wingetSearchPanel) {
+                        $State.Controls.wingetSearchPanel.Visibility = 'Visible'
+                    }
+                    if ($null -ne $State.Controls.chkSelectAllWingetResults -and (Get-Command -Name Update-SelectAllHeaderCheckBoxState -ErrorAction SilentlyContinue)) {
+                        Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstWingetResults -HeaderCheckBox $State.Controls.chkSelectAllWingetResults
+                    }
+                    WriteLog "SupplementalImport: Winget list loaded with $($appsBuffer.Count) entries."
+                }
+                else {
+                    WriteLog "SupplementalImport: Winget AppList missing 'apps' array."
+                }
+            }
+            catch {
+                WriteLog "SupplementalImport: Failed loading Winget AppList ($appListPath): $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "SupplementalImport: Winget AppList file missing: $appListPath"
+            $missing.Add("Winget AppList (AppListPath): $appListPath")
+        }
+    }
+    else {
+        WriteLog "SupplementalImport: AppListPath not defined in config."
+    }
+
+    # UserAppList (BYO)
+    $userAppListPath = $null
+    if ($ConfigContent.PSObject.Properties.Match('UserAppListPath').Count -gt 0) {
+        $userAppListPath = $ConfigContent.UserAppListPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($userAppListPath)) {
+        if (Test-Path -LiteralPath $userAppListPath) {
+            WriteLog "SupplementalImport: Loading UserAppList from $userAppListPath"
+            try {
+                $applications = Get-Content -Path $userAppListPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($applications) {
+                    $listView = $State.Controls.lstApplications
+                    $listView.Items.Clear()
+                    $sortedApps = $applications | Sort-Object Priority
+                    foreach ($app in $sortedApps) {
+                        $ignoreNonZero = if ($app.PSObject.Properties['IgnoreNonZeroExitCodes']) { $app.IgnoreNonZeroExitCodes } else { $false }
+                        $listView.Items.Add([PSCustomObject]@{
+                                IsSelected             = $false
+                                Priority               = $app.Priority
+                                Name                   = $app.Name
+                                CommandLine            = $app.CommandLine
+                                Arguments              = if ($app.PSObject.Properties['Arguments']) { $app.Arguments } else { "" }
+                                Source                 = $app.Source
+                                AdditionalExitCodes    = if ($app.PSObject.Properties['AdditionalExitCodes']) { $app.AdditionalExitCodes } else { "" }
+                                IgnoreNonZeroExitCodes = $ignoreNonZero
+                                IgnoreExitCodes        = if ($ignoreNonZero) { "Yes" } else { "No" }
+                                CopyStatus             = ""
+                            })
+                    }
+                    if (Get-Command -Name Update-ListViewPriorities -ErrorAction SilentlyContinue) {
+                        Update-ListViewPriorities -ListView $listView
+                    }
+                    if (Get-Command -Name Update-CopyButtonState -ErrorAction SilentlyContinue) {
+                        Update-CopyButtonState -State $State
+                    }
+                    if (Get-Command -Name Update-BYOAppsActionButtonsState -ErrorAction SilentlyContinue) {
+                        Update-BYOAppsActionButtonsState -State $State
+                    }
+                    $loadedBYO = $true
+                    WriteLog "SupplementalImport: UserAppList loaded with $($listView.Items.Count) entries."
+                }
+                else {
+                    WriteLog "SupplementalImport: UserAppList JSON empty."
+                }
+            }
+            catch {
+                WriteLog "SupplementalImport: Failed loading UserAppList ($userAppListPath): $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "SupplementalImport: UserAppList file missing: $userAppListPath"
+            $missing.Add("UserAppList (UserAppListPath): $userAppListPath")
+        }
+    }
+    else {
+        WriteLog "SupplementalImport: UserAppListPath not defined in config."
+    }
+
+    # Drivers JSON
+    $driversJsonPath = $null
+    if ($ConfigContent.PSObject.Properties.Match('DriversJsonPath').Count -gt 0) {
+        $driversJsonPath = $ConfigContent.DriversJsonPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($driversJsonPath)) {
+        if (Test-Path -LiteralPath $driversJsonPath) {
+            WriteLog "SupplementalImport: Loading Drivers JSON from $driversJsonPath"
+            try {
+                $rawDrivers = Get-Content -Path $driversJsonPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                if ($rawDrivers -and $rawDrivers.PSObject.Properties.Count -gt 0) {
+                    $State.Data.allDriverModels.Clear()
+                    foreach ($makeProp in $rawDrivers.PSObject.Properties) {
+                        $makeName = $makeProp.Name
+                        $makeObject = $makeProp.Value
+                        if ($null -eq $makeObject -or -not ($makeObject.PSObject.Properties['Models'])) { continue }
+                        $models = $makeObject.Models
+                        if ($models -and ($models -is [System.Collections.IEnumerable])) {
+                            foreach ($modelEntry in $models) {
+                                if ($null -eq $modelEntry -or -not ($modelEntry.PSObject.Properties['Name'])) { continue }
+                                $modelName = $modelEntry.Name
+                                if ([string]::IsNullOrWhiteSpace($modelName)) { continue }
+                                $downloadStatus = if ($modelEntry.PSObject.Properties['DownloadStatus']) { $modelEntry.DownloadStatus } else { "" }
+                                $linkValue = if ($modelEntry.PSObject.Properties['Link']) { $modelEntry.Link } else { $null }
+                                $productName = if ($modelEntry.PSObject.Properties['ProductName']) { $modelEntry.ProductName } else { $null }
+                                $machineType = if ($modelEntry.PSObject.Properties['MachineType']) { $modelEntry.MachineType } else { $null }
+                                $systemId = if ($modelEntry.PSObject.Properties['SystemId']) { $modelEntry.SystemId } else { $null }
+                                $idValue = if ($modelEntry.PSObject.Properties['Id']) { $modelEntry.Id } else { $null }
+                                if ($null -eq $idValue -and -not [string]::IsNullOrWhiteSpace($systemId)) { $idValue = $systemId }
+                                if ($null -eq $idValue -and -not [string]::IsNullOrWhiteSpace($machineType)) { $idValue = $machineType }
+                                $displayModel = Get-ConfigDriverDisplayName -Make $makeName -StoredName $modelName -ProductName $productName -SystemId $systemId -MachineType $machineType
+                                if ([string]::IsNullOrWhiteSpace($displayModel)) {
+                                    $displayModel = $modelName
+                                }
+                                $driverObj = [PSCustomObject]@{
+                                    IsSelected     = $true
+                                    Make           = $makeName
+                                    Model          = $displayModel
+                                    DownloadStatus = $downloadStatus
+                                    Link           = $linkValue
+                                    ProductName    = $productName
+                                    MachineType    = $machineType
+                                    SystemId       = $systemId
+                                    Id             = $idValue
+                                }
+                                $State.Data.allDriverModels.Add($driverObj)
+                            }
+                        }
+                    }
+                    $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+                    if (Get-Command -Name Update-SelectAllHeaderCheckBoxState -ErrorAction SilentlyContinue) {
+                        $headerChk = $State.Controls.chkSelectAllDriverModels
+                        if ($null -ne $headerChk) {
+                            Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstDriverModels -HeaderCheckBox $headerChk
+                        }
+                    }
+                    if ($State.Data.allDriverModels.Count -gt 0) {
+                        if ($null -ne $State.Controls.spModelFilterSection) { $State.Controls.spModelFilterSection.Visibility = 'Visible' }
+                        if ($null -ne $State.Controls.lstDriverModels) { $State.Controls.lstDriverModels.Visibility = 'Visible' }
+                        if ($null -ne $State.Controls.spDriverActionButtons) { $State.Controls.spDriverActionButtons.Visibility = 'Visible' }
+                        try {
+                            if ($State.Controls.cmbMake.SelectedIndex -lt 0 -and $State.Data.allDriverModels.Count -gt 0) {
+                                $firstMake = ($State.Data.allDriverModels | Select-Object -First 1).Make
+                                if (-not [string]::IsNullOrWhiteSpace($firstMake)) {
+                                    $makeItem = $State.Controls.cmbMake.Items | Where-Object { $_ -eq $firstMake } | Select-Object -First 1
+                                    if ($makeItem) { $State.Controls.cmbMake.SelectedItem = $makeItem }
+                                }
+                            }
+                        }
+                        catch {
+                            WriteLog "SupplementalImport: Non-fatal error selecting first Make: $($_.Exception.Message)"
+                        }
+                    }
+                    $loadedDrivers = $true
+                    WriteLog "SupplementalImport: Loaded $($State.Data.allDriverModels.Count) driver models."
+                }
+                else {
+                    WriteLog "SupplementalImport: Drivers JSON empty or structure unexpected."
+                }
+            }
+            catch {
+                WriteLog "SupplementalImport: Failed loading Drivers JSON ($driversJsonPath): $($_.Exception.Message)"
+            }
+        }
+        else {
+            WriteLog "SupplementalImport: Drivers JSON file missing: $driversJsonPath"
+            $missing.Add("Drivers (DriversJsonPath): $driversJsonPath")
+        }
+    }
+    else {
+        WriteLog "SupplementalImport: DriversJsonPath not defined in config."
+    }
+
+    if ($loadedWinget -or $loadedBYO) {
+        $State.Controls.chkInstallApps.IsChecked = $true
+    }
+    if ($loadedWinget) {
+        $State.Controls.chkInstallWingetApps.IsChecked = $true
+    }
+    if ($loadedBYO) {
+        $State.Controls.chkBringYourOwnApps.IsChecked = $true
+    }
+    if ($loadedDrivers) {
+        $State.Controls.chkDownloadDrivers.IsChecked = $true
+    }
+
+    if (Get-Command -Name Update-ApplicationPanelVisibility -ErrorAction SilentlyContinue) {
+        Update-ApplicationPanelVisibility -State $State -TriggeringControlName 'SupplementalImport'
+    }
+    if (Get-Command -Name Update-DriverDownloadPanelVisibility -ErrorAction SilentlyContinue) {
+        Update-DriverDownloadPanelVisibility -State $State
+    }
+    if (Get-Command -Name Update-DriverCheckboxStates -ErrorAction SilentlyContinue) {
+        Update-DriverCheckboxStates -State $State
+    }
+    if (Get-Command -Name Update-OfficePanelVisibility -ErrorAction SilentlyContinue) {
+        Update-OfficePanelVisibility -State $State
+    }
+    if (Get-Command -Name Update-CopyButtonState -ErrorAction SilentlyContinue) {
+        Update-CopyButtonState -State $State
+    }
+
+    # Updated message to clarify successful load and that missing helper files are optional if not yet created.
+    if ($ShowWarnings -and $missing.Count -gt 0) {
+        $msg = "Configuration file loaded successfully.`n`n" +
+            "Optional helper file(s) referenced in the configuration were not found:`n" +
+            ($missing | ForEach-Object { "- $_" } | Out-String) +
+            "`nThese files are optional. They won't exist until you create Winget (AppList.json), User (UserAppList.json), or Driver (Drivers.json) manifests. You can create them later or ignore this message."
+        [System.Windows.MessageBox]::Show($msg.TrimEnd(), "Configuration Loaded - Optional Files Missing", "OK", "Information") | Out-Null
+    }
+
+    WriteLog ("SupplementalImport: Complete. Winget={0} BYO={1} Drivers={2} Missing={3}" -f $loadedWinget, $loadedBYO, $loadedDrivers, $missing.Count)
 }
 
 Export-ModuleMember -Function *

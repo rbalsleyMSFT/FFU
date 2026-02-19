@@ -396,8 +396,8 @@ function Invoke-CopyBYOApps {
 
     try {
         # Ensure items are sorted by current priority before saving
-        # Exclude CopyStatus when saving and ensure Priority is an integer
-        $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source
+        # Exclude CopyStatus when saving and ensure Priority is an integer; include AdditionalExitCodes and IgnoreNonZeroExitCodes for parity with Save-BYOApplicationList
+        $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source, AdditionalExitCodes, IgnoreNonZeroExitCodes
         $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $userAppListPath -Force -Encoding UTF8
         WriteLog "Successfully updated UserAppList.json with all applications from the UI."
     }

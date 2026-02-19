@@ -59,6 +59,10 @@ function Initialize-UIControls {
     $State.Controls.usbSelectionPanel = $window.FindName('usbDriveSelectionPanel')
     $State.Controls.chkAllowExternalHardDiskMedia = $window.FindName('chkAllowExternalHardDiskMedia')
     $State.Controls.chkPromptExternalHardDiskMedia = $window.FindName('chkPromptExternalHardDiskMedia')
+    $State.Controls.chkCopyAdditionalFFUFiles = $window.FindName('chkCopyAdditionalFFUFiles')
+    $State.Controls.additionalFFUPanel = $window.FindName('additionalFFUPanel')
+    $State.Controls.lstAdditionalFFUs = $window.FindName('lstAdditionalFFUs')
+    $State.Controls.btnRefreshAdditionalFFUs = $window.FindName('btnRefreshAdditionalFFUs')
     $State.Controls.chkInstallWingetApps = $window.FindName('chkInstallWingetApps')
     $State.Controls.wingetPanel = $window.FindName('wingetPanel')
     $State.Controls.btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
@@ -114,6 +118,7 @@ function Initialize-UIControls {
     $State.Controls.txtShareName = $window.FindName('txtShareName')
     $State.Controls.txtUsername = $window.FindName('txtUsername')
     $State.Controls.txtThreads = $window.FindName('txtThreads')
+    $State.Controls.cmbBitsPriority = $window.FindName('cmbBitsPriority')
     $State.Controls.txtMaxUSBDrives = $window.FindName('txtMaxUSBDrives')
     $State.Controls.chkCompactOS = $window.FindName('chkCompactOS')
     $State.Controls.chkOptimize = $window.FindName('chkOptimize')
@@ -143,6 +148,7 @@ function Initialize-UIControls {
     $State.Controls.txtDriversFolder = $window.FindName('txtDriversFolder')
     $State.Controls.txtPEDriversFolder = $window.FindName('txtPEDriversFolder')
     $State.Controls.chkCopyPEDrivers = $window.FindName('chkCopyPEDrivers')
+    $State.Controls.chkUseDriversAsPEDrivers = $window.FindName('chkUseDriversAsPEDrivers')
     $State.Controls.chkUpdateLatestCU = $window.FindName('chkUpdateLatestCU')
     $State.Controls.chkUpdateLatestNet = $window.FindName('chkUpdateLatestNet')
     $State.Controls.chkUpdateLatestDefender = $window.FindName('chkUpdateLatestDefender')
@@ -170,6 +176,7 @@ function Initialize-UIControls {
     $State.Controls.btnBrowseDriversJsonPath = $window.FindName('btnBrowseDriversJsonPath')
     $State.Controls.chkUpdateADK = $window.FindName('chkUpdateADK')
     $State.Controls.btnLoadConfig = $window.FindName('btnLoadConfig')
+    $State.Controls.btnRestoreDefaults = $window.FindName('btnRestoreDefaults')
     $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
 
     # Monitor Tab
@@ -198,11 +205,11 @@ function Initialize-VMSwitchData {
     if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
         $State.Controls.cmbVMSwitchName.SelectedIndex = 0
         $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
-        if ($State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
+        if ($null -ne $firstSwitch -and $State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
             $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
         }
         else {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found
+            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found or key null
         }
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
     }
@@ -228,6 +235,7 @@ function Initialize-UIDefaults {
     $State.Controls.txtShareName.Text = $State.Defaults.generalDefaults.ShareName
     $State.Controls.txtUsername.Text = $State.Defaults.generalDefaults.Username
     $State.Controls.txtThreads.Text = $State.Defaults.generalDefaults.Threads
+    $State.Controls.cmbBitsPriority.SelectedItem = $State.Defaults.generalDefaults.BitsPriority
     $State.Controls.txtMaxUSBDrives.Text = $State.Defaults.generalDefaults.MaxUSBDrives
     $State.Controls.chkBuildUSBDriveEnable.IsChecked = $State.Defaults.generalDefaults.BuildUSBDriveEnable
     $State.Controls.chkCompactOS.IsChecked = $State.Defaults.generalDefaults.CompactOS
@@ -255,6 +263,9 @@ function Initialize-UIDefaults {
     $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.chkSelectSpecificUSBDrives.IsEnabled = $State.Controls.chkBuildUSBDriveEnable.IsChecked
     $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked
+    $State.Controls.chkCopyAdditionalFFUFiles.IsChecked = $State.Defaults.generalDefaults.CopyAdditionalFFUFiles
+    $State.Controls.additionalFFUPanel.Visibility = if ($State.Controls.chkCopyAdditionalFFUFiles.IsChecked) { 'Visible' } else { 'Collapsed' }
+    Update-BitsPrioritySetting -State $State
 
     # Hyper-V Settings defaults from General Defaults
     Initialize-VMSwitchData -State $State
@@ -309,15 +320,20 @@ function Initialize-UIDefaults {
     $State.Controls.chkInstallDrivers.IsChecked = $State.Defaults.generalDefaults.InstallDrivers
     $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
     $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
+    $State.Controls.chkUseDriversAsPEDrivers.IsChecked = $State.Defaults.generalDefaults.UseDriversAsPEDrivers
     $State.Controls.chkCompressDriversToWIM.IsChecked = $State.Defaults.generalDefaults.CompressDownloadedDriversToWim
 
     # Drivers tab UI logic
     $makeList = @('Microsoft', 'Dell', 'HP', 'Lenovo')
-    foreach ($m in $makeList) {
-        [void]$State.Controls.cmbMake.Items.Add($m)
-    }
-    if ($State.Controls.cmbMake.Items.Count -gt 0) {
-        $State.Controls.cmbMake.SelectedIndex = 0
+    if ($null -ne $State.Controls.cmbMake) {
+        # Clear existing items to prevent duplication on re-initialization (e.g., after Restore Defaults)
+        $State.Controls.cmbMake.Items.Clear()
+        foreach ($m in $makeList) {
+            [void]$State.Controls.cmbMake.Items.Add($m)
+        }
+        if ($State.Controls.cmbMake.Items.Count -gt 0) {
+            $State.Controls.cmbMake.SelectedIndex = 0
+        }
     }
     Update-DriverDownloadPanelVisibility -State $State
 
@@ -442,6 +458,75 @@ function Initialize-DynamicUIElements {
     $archColumn.CellTemplate = $archCellTemplate
     $wingetGridView.Columns.Add($archColumn)
     # --- END: Add Architecture Column ---
+
+    # --- START: Add Additional Exit Codes Column ---
+    $exitCodesColumn = New-Object System.Windows.Controls.GridViewColumn
+    $exitCodesHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+    $exitCodesHeader.Tag = "AdditionalExitCodes"
+    $exitCodesHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+
+    $exitHeaderTextFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+    $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Additional Exit Codes")
+    $exitHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5, 2, 5, 2)))
+    $exitHeaderTextFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+    $exitHeaderTemplate = New-Object System.Windows.DataTemplate
+    $exitHeaderTemplate.VisualTree = $exitHeaderTextFactory
+    $exitCodesHeader.ContentTemplate = $exitHeaderTemplate
+
+    $exitCodesColumn.Header = $exitCodesHeader
+    $exitCodesColumn.Width = 140
+
+    $exitCodesCellTemplate = New-Object System.Windows.DataTemplate
+    $exitCodesTextBoxFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBox])
+    $exitBinding = New-Object System.Windows.Data.Binding("AdditionalExitCodes")
+    $exitBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+    $exitCodesTextBoxFactory.SetBinding([System.Windows.Controls.TextBox]::TextProperty, $exitBinding)
+    $exitCodesCellTemplate.VisualTree = $exitCodesTextBoxFactory
+    $exitCodesColumn.CellTemplate = $exitCodesCellTemplate
+    $wingetGridView.Columns.Add($exitCodesColumn)
+    # --- END: Add Additional Exit Codes Column ---
+
+    # --- START: Add Ignore Non-Zero Exit Codes Column ---
+    $ignoreColumn = New-Object System.Windows.Controls.GridViewColumn
+    $ignoreHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+    $ignoreHeader.Tag = "IgnoreNonZeroExitCodes"
+    $ignoreHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+
+    $ignoreHeaderTextFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBlock])
+    $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::TextProperty, "Ignore Exit Codes")
+    $ignoreHeaderTextFactory.SetValue([System.Windows.Controls.TextBlock]::PaddingProperty, (New-Object System.Windows.Thickness(5, 2, 5, 2)))
+    $ignoreHeaderTextFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+    $ignoreHeaderTemplate = New-Object System.Windows.DataTemplate
+    $ignoreHeaderTemplate.VisualTree = $ignoreHeaderTextFactory
+    $ignoreHeader.ContentTemplate = $ignoreHeaderTemplate
+
+    $ignoreColumn.Header = $ignoreHeader
+    $ignoreColumn.Width = 140
+
+    $ignoreCellTemplate = New-Object System.Windows.DataTemplate
+
+    # Center the checkbox in the cell
+    $ignoreCellGridFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.Grid])
+    $ignoreCellGridFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)
+    $ignoreCellGridFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Stretch)
+
+    $ignoreCheckFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.CheckBox])
+    $ignoreCheckFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+    $ignoreCheckFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+
+    $ignoreBinding = New-Object System.Windows.Data.Binding("IgnoreNonZeroExitCodes")
+    $ignoreBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+    $ignoreCheckFactory.SetBinding([System.Windows.Controls.Primitives.ToggleButton]::IsCheckedProperty, $ignoreBinding)
+
+    # Build the visual tree: Grid -> CheckBox
+    $ignoreCellGridFactory.AppendChild($ignoreCheckFactory)
+    $ignoreCellTemplate.VisualTree = $ignoreCellGridFactory
+
+    $ignoreColumn.CellTemplate = $ignoreCellTemplate
+    $wingetGridView.Columns.Add($ignoreColumn)
+    # --- END: Add Ignore Non-Zero Exit Codes Column ---
 
     Add-SortableColumn -gridView $wingetGridView -header "Download Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
     $State.Controls.lstWingetResults.AddHandler(
@@ -570,14 +655,14 @@ function Initialize-DynamicUIElements {
             $modelColumn.Header = $modelHeader
         }
     
-        # Serial Number Column (index 1 in XAML, now 2)
+        # Unique ID Column (index 1 in XAML, now 2)
         if ($usbDrivesGridView.Columns.Count -gt 2) {
-            $serialColumn = $usbDrivesGridView.Columns[2]
-            $serialHeader = New-Object System.Windows.Controls.GridViewColumnHeader
-            $serialHeader.Content = "Serial Number"
-            $serialHeader.Tag = "SerialNumber" # Property to sort by
-            $serialHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
-            $serialColumn.Header = $serialHeader
+            $uniqueIdColumn = $usbDrivesGridView.Columns[2]
+            $uniqueIdHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $uniqueIdHeader.Content = "Unique ID"
+            $uniqueIdHeader.Tag = "UniqueId" # Property to sort by
+            $uniqueIdHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $uniqueIdColumn.Header = $uniqueIdHeader
         }
     
         # Size Column (index 2 in XAML, now 3)
@@ -609,6 +694,51 @@ function Initialize-DynamicUIElements {
     }
     else {
         WriteLog "Warning: lstUSBDrives.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
+    }
+    
+    # Additional FFUs ListView setup
+    $itemStyleAdditionalFFUs = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    $itemStyleAdditionalFFUs.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
+    $State.Controls.lstAdditionalFFUs.ItemContainerStyle = $itemStyleAdditionalFFUs
+    
+    if ($State.Controls.lstAdditionalFFUs.View -is [System.Windows.Controls.GridView]) {
+        Add-SelectableGridViewColumn -ListView $State.Controls.lstAdditionalFFUs -State $State -HeaderCheckBoxKeyName "chkSelectAllAdditionalFFUs" -ColumnWidth 70
+    
+        $additionalFFUsGridView = $State.Controls.lstAdditionalFFUs.View
+    
+        if ($additionalFFUsGridView.Columns.Count -gt 1) {
+            $nameColumn = $additionalFFUsGridView.Columns[1]
+            $nameHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $nameHeader.Content = "FFU Name"
+            $nameHeader.Tag = "Name"
+            $nameHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $nameColumn.Header = $nameHeader
+        }
+        if ($additionalFFUsGridView.Columns.Count -gt 2) {
+            $lastModColumn = $additionalFFUsGridView.Columns[2]
+            $lastModHeader = New-Object System.Windows.Controls.GridViewColumnHeader
+            $lastModHeader.Content = "Last Modified"
+            $lastModHeader.Tag = "LastModified"
+            $lastModHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+            $lastModColumn.Header = $lastModHeader
+        }
+    
+        $State.Controls.lstAdditionalFFUs.AddHandler(
+            [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
+            [System.Windows.RoutedEventHandler] {
+                param($eventSource, $e)
+                $header = $e.OriginalSource
+                if ($header -is [System.Windows.Controls.GridViewColumnHeader] -and $header.Tag) {
+                    $listViewControl = $eventSource
+                    $window = [System.Windows.Window]::GetWindow($listViewControl)
+                    $uiStateFromWindowTag = $window.Tag
+                    Invoke-ListViewSort -listView $eventSource -property $header.Tag -State $uiStateFromWindowTag
+                }
+            }
+        )
+    }
+    else {
+        WriteLog "Warning: lstAdditionalFFUs.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
     }
 }
 

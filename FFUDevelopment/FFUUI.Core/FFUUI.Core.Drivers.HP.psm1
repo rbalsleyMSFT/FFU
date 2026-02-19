@@ -66,30 +66,45 @@ function Get-HPDriversModelList {
         $settings.Async = $false # Ensure synchronous reading
 
         $reader = [System.Xml.XmlReader]::Create($platformListXml, $settings)
-        $uniqueModels = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        $uniqueEntries = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
         while ($reader.Read()) {
             if ($reader.NodeType -eq [System.Xml.XmlNodeType]::Element -and $reader.Name -eq 'Platform') {
-                # Read the inner content of the Platform node
                 $platformReader = $reader.ReadSubtree()
+                $platformNames = [System.Collections.Generic.List[string]]::new()
+                $platformSystemId = $null
+
                 while ($platformReader.Read()) {
-                    if ($platformReader.NodeType -eq [System.Xml.XmlNodeType]::Element -and $platformReader.Name -eq 'ProductName') {
-                        $modelName = $platformReader.ReadElementContentAsString()
-                        if (-not [string]::IsNullOrWhiteSpace($modelName) -and $uniqueModels.Add($modelName)) {
-                            # Add to list only if it's a new unique model
-                            $modelList.Add([PSCustomObject]@{
-                                    Make  = $Make
-                                    Model = $modelName
-                                })
+                    if ($platformReader.NodeType -eq [System.Xml.XmlNodeType]::Element) {
+                        if ($platformReader.Name -eq 'ProductName') {
+                            $modelName = $platformReader.ReadElementContentAsString()
+                            if (-not [string]::IsNullOrWhiteSpace($modelName)) {
+                                $platformNames.Add($modelName.Trim())
+                            }
+                        }
+                        elseif ($platformReader.Name -eq 'SystemID') {
+                            $platformSystemId = $platformReader.ReadElementContentAsString().Trim()
                         }
                     }
                 }
                 $platformReader.Close()
+
+                foreach ($name in $platformNames) {
+                    $systemIdKey = if (-not [string]::IsNullOrWhiteSpace($platformSystemId)) { $platformSystemId } else { '' }
+                    $compositeKey = "$name|$systemIdKey"
+                    if ($uniqueEntries.Add($compositeKey)) {
+                        $modelList.Add([PSCustomObject]@{
+                                Make     = $Make
+                                Model    = $name
+                                SystemId = $platformSystemId
+                            })
+                    }
+                }
             }
         }
         $reader.Close()
 
-        WriteLog "Successfully parsed $($modelList.Count) unique HP models from PlatformList.xml."
+        WriteLog "Successfully parsed $($modelList.Count) HP model and SystemID combinations from PlatformList.xml."
 
     }
     catch {
@@ -97,7 +112,7 @@ function Get-HPDriversModelList {
     }
 
     # Sort the list alphabetically by Model name before returning
-    return $modelList | Sort-Object -Property Model
+    return $modelList | Sort-Object -Property Model, SystemId
 }
 # Function to download and extract drivers for a specific HP model (Designed for ForEach-Object -Parallel)
 function Save-HPDriversTask {
@@ -118,21 +133,39 @@ function Save-HPDriversTask {
         [Parameter()] # Made optional
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
         [Parameter()]
-        [bool]$CompressToWim = $false # New parameter for compression
+        [bool]$CompressToWim = $false, # New parameter for compression
+        [Parameter()]
+        [bool]$PreserveSourceOnCompress = $false
     )
             
-    $modelName = $DriverItemData.Model
+    $displayModelName = if (-not [string]::IsNullOrWhiteSpace($DriverItemData.Model)) { $DriverItemData.Model } else { $DriverItemData.Id }
     $make = $DriverItemData.Make # Should be 'HP'
-    $identifier = $modelName # Unique identifier for progress updates
-    $sanitizedModelName = $modelName -replace '[\\/:"*?<>|]', '_'
+    $productName = if ($DriverItemData.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($DriverItemData.ProductName)) { $DriverItemData.ProductName } else { ConvertTo-DriverBaseName -ModelString $displayModelName }
+    if ([string]::IsNullOrWhiteSpace($productName)) { $productName = $displayModelName }
+    $systemIdentifier = if ($DriverItemData.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($DriverItemData.SystemId)) { $DriverItemData.SystemId } else { $null }
+    if ([string]::IsNullOrWhiteSpace($displayModelName)) {
+        $displayModelName = if ([string]::IsNullOrWhiteSpace($systemIdentifier)) { $productName } else { Get-DriverDisplayName -BaseName $productName -Identifier $systemIdentifier }
+    }
+    $identifier = $displayModelName # Unique identifier for progress updates
+    $sanitizedModelName = ConvertTo-SafeName -Name $identifier
+    if ($sanitizedModelName -ne $identifier) { WriteLog "Sanitized model name: '$identifier' -> '$sanitizedModelName'" }
     $hpDriversBaseFolder = Join-Path -Path $DriversFolder -ChildPath $make # Changed variable name for clarity
     $platformListXml = Join-Path -Path $hpDriversBaseFolder -ChildPath "PlatformList.xml"
     $modelSpecificFolder = Join-Path -Path $hpDriversBaseFolder -ChildPath $sanitizedModelName # Sanitize model name for folder path
     $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedModelName # Relative path for the driver folder
     $finalStatus = "" # Initialize final status
     $successState = $true # Assume success unless an operation fails
+
+    if (-not (Test-Path -Path $DriversFolder -PathType Container)) {
+        WriteLog "Creating Drivers folder: $DriversFolder"
+        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
+    }
+    if (-not (Test-Path -Path $hpDriversBaseFolder -PathType Container)) {
+        WriteLog "Creating HP drivers folder: $hpDriversBaseFolder"
+        New-Item -Path $hpDriversBaseFolder -ItemType Directory -Force | Out-Null
+    }
     
-    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking HP drivers for $modelName..." }
+    if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking HP drivers for $displayModelName..." }
     
     try {
         # Check for existing drivers
@@ -146,13 +179,14 @@ function Save-HPDriversTask {
             # Special handling for existing folders that need compression
             if ($CompressToWim -and $existingDriver.Status -eq 'Already downloaded') {
                 $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($sanitizedModelName).wim"
+                $wimRelativePath = Join-Path -Path $make -ChildPath "$($sanitizedModelName).wim"
                 $sourceFolderPath = Join-Path -Path $hpDriversBaseFolder -ChildPath $sanitizedModelName
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
-                    $existingDriver.Status = "Already downloaded & Compressed"
-                    $existingDriver.DriverPath = Join-Path -Path $make -ChildPath "$($sanitizedModelName).wim"
+                    $null = Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+                    $existingDriver.Status = "Compression successful"
+                    $existingDriver.DriverPath = $wimRelativePath
                     $existingDriver.Success = $true
                     WriteLog "Successfully compressed existing drivers for $identifier to $wimFilePath."
                 }
@@ -187,13 +221,23 @@ function Save-HPDriversTask {
             }
         }
 
-        # Parse PlatformList.xml to find SystemID and OSReleaseID for the specific model
-        WriteLog "Parsing $platformListXml for model '$modelName' details..."
+        # Parse the PlatformList.xml to find the SystemID based on the ProductName
+        WriteLog "Parsing $platformListXml for model '$displayModelName' (SystemID: $systemIdentifier) details..."
         [xml]$platformListContent = Get-Content -Path $platformListXml -Raw -Encoding UTF8 -ErrorAction Stop
-        $platformNode = $platformListContent.ImagePal.Platform | Where-Object { $_.ProductName.'#text' -match "^$([regex]::Escape($modelName))$" } | Select-Object -First 1
+        $platformNode = $null
+        if (-not [string]::IsNullOrWhiteSpace($systemIdentifier)) {
+            $platformNode = $platformListContent.ImagePal.Platform | Where-Object { $_.SystemID -eq $systemIdentifier } | Select-Object -First 1
+            if ($null -eq $platformNode) {
+                WriteLog "SystemID '$systemIdentifier' not found in PlatformList.xml. Falling back to ProductName search."
+            }
+        }
+        if ($null -eq $platformNode) {
+            $searchName = if (-not [string]::IsNullOrWhiteSpace($productName)) { $productName } else { $displayModelName }
+            $platformNode = $platformListContent.ImagePal.Platform | Where-Object { $_.ProductName.'#text' -match "^$([regex]::Escape($searchName))$" } | Select-Object -First 1
+        }
 
         if ($null -eq $platformNode) {
-            throw "Model '$modelName' not found in PlatformList.xml."
+            throw "Model '$displayModelName' (SystemID: $systemIdentifier) not found in PlatformList.xml."
         }
 
         $systemID = $platformNode.SystemID
@@ -286,11 +330,11 @@ function Save-HPDriversTask {
             }
             $availableVersionsString = ($allAvailableVersions | Select-Object -Unique) -join ', '
             if ([string]::IsNullOrWhiteSpace($availableVersionsString)) { $availableVersionsString = "None" }
-            throw "Could not find any suitable OS driver pack for model '$modelName' matching requested or fallback versions (Win$($WindowsRelease) $WindowsVersion). Available: $availableVersionsString"
+            throw "Could not find any suitable OS driver pack for model '$displayModelName' matching requested or fallback versions (Win$($WindowsRelease) $WindowsVersion). Available: $availableVersionsString"
         }
 
         $osReleaseIdFileName = $selectedOSNode.OSReleaseIdFileName -replace 'H', 'h' 
-        WriteLog "Using SystemID: $systemID and OS Info: Win$($selectedOSRelease) ($($selectedOSVersion)) for '$modelName'"
+        WriteLog "Using SystemID: $systemID and OS Info: Win$($selectedOSRelease) ($($selectedOSVersion)) for '$displayModelName'"
         $archSuffix = $WindowsArch -replace "^x", "" 
         $modelRelease = "$($systemID)_$($archSuffix)_$($selectedOSRelease).0.$($selectedOSVersion.ToLower())"
         $driverCabUrl = "https://hpia.hpcloud.hp.com/ref/$systemID/$modelRelease.cab"
@@ -309,7 +353,7 @@ function Save-HPDriversTask {
         $updates = $driverXmlContent.ImagePal.Solutions.UpdateInfo | Where-Object { $_.Category -match '^Driver' }
         $totalDrivers = ($updates | Measure-Object).Count
         $downloadedCount = 0
-        WriteLog "Found $totalDrivers driver updates for $modelName."
+        WriteLog "Found $totalDrivers driver updates for $displayModelName."
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Found $totalDrivers drivers. Downloading..." }
 
         if (-not (Test-Path -Path $modelSpecificFolder)) {
@@ -327,7 +371,7 @@ function Save-HPDriversTask {
             $extractFolder = Join-Path -Path $downloadFolder -ChildPath ($driverName + "_" + $version + "_" + ($driverFileName -replace '\.exe$', ''))
 
             $downloadedCount++
-            $progressMsg = "($downloadedCount/$totalDrivers) Downloading $driverName..."
+            $progressMsg = "$downloadedCount/$totalDrivers Downloading $driverName"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
             WriteLog "$progressMsg URL: $driverUrl"
 
@@ -341,6 +385,8 @@ function Save-HPDriversTask {
             WriteLog "Downloading driver to: $driverFilePath"
             Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath -ErrorAction Stop
             WriteLog "Driver downloaded: $driverFilePath"
+            $progressMsg = "$downloadedCount/$totalDrivers Extracting $driverName"
+            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
             WriteLog "Creating extraction folder: $extractFolder"
             New-Item -Path $extractFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
             $arguments = "/s /e /f `"$extractFolder`"" 
@@ -354,7 +400,7 @@ function Save-HPDriversTask {
         }
 
         Remove-Item -Path $driverCabFile, $driverXmlFile -Force -ErrorAction SilentlyContinue
-        WriteLog "Cleaned up driver cab and xml files for $modelName"
+        WriteLog "Cleaned up driver cab and xml files for $displayModelName"
         
         $finalStatus = "Completed" 
         if ($CompressToWim) {
@@ -362,7 +408,7 @@ function Save-HPDriversTask {
             $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim"
             WriteLog "Compressing '$modelSpecificFolder' to '$wimFilePath'..."
             try {
-                Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -ErrorAction Stop
+                $null = Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                 WriteLog "Compression successful for '$identifier'."
                 $finalStatus = "Completed & Compressed"
                 $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim" # Update relative path to the WIM
@@ -375,15 +421,12 @@ function Save-HPDriversTask {
         $successState = $true
     }
     catch {
-        $errorMessage = "Error saving HP drivers for $($modelName): $($_.Exception.Message)"
+        $errorMessage = "Error saving HP drivers for $($displayModelName): $($_.Exception.Message)"
         WriteLog $errorMessage
         $finalStatus = "Error: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
         $successState = $false
         $driverRelativePath = $null # Ensure path is null on error
-        if (Test-Path -Path $modelSpecificFolder -PathType Container) {
-            WriteLog "Attempting to remove partially created folder $modelSpecificFolder due to error."
-            Remove-Item -Path $modelSpecificFolder -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelSpecificFolder -Description $identifier
     }
             
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }

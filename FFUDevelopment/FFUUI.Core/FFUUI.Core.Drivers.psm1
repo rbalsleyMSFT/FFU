@@ -5,8 +5,142 @@
     This module contains all the business logic for the 'Drivers' tab in the FFU Builder UI. It handles fetching driver model lists from various manufacturers (Microsoft, Dell, HP, Lenovo), displaying and filtering them in the UI, and managing the selection state. It also includes functions to import and export driver selections to a JSON file (Drivers.json) and to orchestrate the parallel download of selected driver packages using the common parallel processing module.
 #>
 
-# Helper function to get models for a selected Make and standardize them
-function Get-ModelsForMake {
+function ConvertTo-DriverBaseName {
+    param(
+        [string]$ModelString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ModelString)) {
+        return $ModelString
+    }
+
+    if ($ModelString -match '^(.*?)\s*\((.+)\)\s*$') {
+        return $matches[1].Trim()
+    }
+
+    return $ModelString.Trim()
+}
+
+function Get-DriverDisplayName {
+    param(
+        [string]$BaseName,
+        [string]$Identifier
+    )
+
+    if ([string]::IsNullOrWhiteSpace($BaseName)) {
+        return $Identifier
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Identifier)) {
+        return $BaseName.Trim()
+    }
+
+    return "$($BaseName.Trim()) ($($Identifier.Trim()))"
+}
+
+function Convert-DriverItemToJsonModel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$DriverItem
+    )
+
+    $makeName = $DriverItem.Make
+    switch ($makeName) {
+        'Microsoft' {
+            $modelObject = @{ Name = $DriverItem.Model }
+            if ($DriverItem.PSObject.Properties['Link'] -and -not [string]::IsNullOrWhiteSpace($DriverItem.Link)) {
+                $modelObject.Link = $DriverItem.Link
+            }
+            return $modelObject
+        }
+        'Dell' {
+            $systemId = if ($DriverItem.PSObject.Properties['SystemId']) { $DriverItem.SystemId } else { $null }
+            $baseName = ConvertTo-DriverBaseName -ModelString $DriverItem.Model
+            if ([string]::IsNullOrWhiteSpace($baseName)) {
+                $baseName = $DriverItem.Model
+            }
+            $modelObject = @{ Name = $baseName }
+            if (-not [string]::IsNullOrWhiteSpace($systemId)) {
+                $modelObject.SystemId = $systemId
+            }
+            if ($DriverItem.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($DriverItem.CabUrl)) {
+                $modelObject.CabUrl = $DriverItem.CabUrl
+            }
+            return $modelObject
+        }
+        'HP' {
+            $baseName = if ($DriverItem.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($DriverItem.ProductName)) { $DriverItem.ProductName } else { ConvertTo-DriverBaseName -ModelString $DriverItem.Model }
+            if ([string]::IsNullOrWhiteSpace($baseName)) {
+                $baseName = $DriverItem.Model
+            }
+            $systemId = if ($DriverItem.PSObject.Properties['SystemId']) { $DriverItem.SystemId } else { $null }
+            $modelObject = @{ Name = $baseName.Trim() }
+            if (-not [string]::IsNullOrWhiteSpace($systemId)) {
+                $modelObject.SystemId = $systemId
+            }
+            return $modelObject
+        }
+        'Lenovo' {
+            $machineType = $DriverItem.MachineType
+            $baseName = if ($DriverItem.ProductName) { $DriverItem.ProductName } else { ConvertTo-DriverBaseName -ModelString $DriverItem.Model }
+            if ([string]::IsNullOrWhiteSpace($baseName) -or [string]::IsNullOrWhiteSpace($machineType)) {
+                WriteLog "Skipping Lenovo driver '$($DriverItem.Model)' because Name or MachineType is missing."
+                return $null
+            }
+            return @{
+                Name        = $baseName
+                MachineType = $machineType
+            }
+        }
+                default {
+                    WriteLog "Convert-DriverItemToJsonModel: Unsupported Make '$makeName'."
+                    return $null
+                }
+            }
+        }
+        
+        function Remove-DriverModelFolder {
+            param(
+                [Parameter(Mandatory = $true)]
+                [string]$DriversFolder,
+                [Parameter(Mandatory = $true)]
+                [string]$TargetFolder,
+                [string]$Description
+            )
+        
+            if ([string]::IsNullOrWhiteSpace($DriversFolder) -or [string]::IsNullOrWhiteSpace($TargetFolder)) {
+                return
+            }
+        
+            try {
+                if (-not (Test-Path -Path $TargetFolder -PathType Container)) {
+                    return
+                }
+        
+                $driversRoot = [System.IO.Path]::GetFullPath((Resolve-Path -Path $DriversFolder -ErrorAction Stop).ProviderPath)
+                $targetPath = [System.IO.Path]::GetFullPath((Resolve-Path -Path $TargetFolder -ErrorAction Stop).ProviderPath)
+        
+                if ($targetPath -eq $driversRoot) {
+                    WriteLog "Remove-DriverModelFolder skipped deleting Drivers root: $targetPath"
+                    return
+                }
+        
+                if (-not ($targetPath.StartsWith($driversRoot, [System.StringComparison]::OrdinalIgnoreCase))) {
+                    WriteLog "Remove-DriverModelFolder skipped path outside Drivers root: $targetPath"
+                    return
+                }
+        
+                $contextMessage = if ([string]::IsNullOrWhiteSpace($Description)) { $targetPath } else { "$Description ($targetPath)" }
+                WriteLog "Removing driver folder $contextMessage due to failure."
+                Remove-Item -Path $targetPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                WriteLog "Remove-DriverModelFolder failed for $($TargetFolder): $($_.Exception.Message)"
+            }
+        }
+        
+        # Helper function to get models for a selected Make and standardize them
+        function Get-ModelsForMake {
     param(
         [Parameter(Mandatory = $true)]
         [string]$SelectedMake,
@@ -36,7 +170,7 @@ function Get-ModelsForMake {
 
     switch ($SelectedMake) {
         'Microsoft' {
-            $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent
+            $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent -DriversFolder $localDriversFolder
         }
         'Dell' {
             $rawModels = Get-DellDriversModelList -WindowsRelease $localWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake
@@ -84,11 +218,12 @@ function ConvertTo-StandardizedDriverModel {
         [psobject]$State
     )
 
-    $modelDisplay = $RawDriverObject.Model # Default
-    $id = $RawDriverObject.Model           # Default
+    $modelDisplay = $RawDriverObject.Model
+    $id = $RawDriverObject.Model
     $link = $null
     $productName = $null
     $machineType = $null
+    $systemId = $null
 
     if ($RawDriverObject.PSObject.Properties['Link']) {
         $link = $RawDriverObject.Link
@@ -96,26 +231,62 @@ function ConvertTo-StandardizedDriverModel {
 
     # Lenovo specific handling
     if ($Make -eq 'Lenovo') {
-        $modelDisplay = $RawDriverObject.Model 
+        $modelDisplay = $RawDriverObject.Model
         $productName = $RawDriverObject.ProductName
         $machineType = $RawDriverObject.MachineType
-        $id = $RawDriverObject.MachineType 
+        $id = $RawDriverObject.MachineType
     }
 
-    return [PSCustomObject]@{
+    # HP specific handling
+    if ($Make -eq 'HP') {
+        $productName = if ($RawDriverObject.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($RawDriverObject.ProductName)) { $RawDriverObject.ProductName } else { ConvertTo-DriverBaseName -ModelString $RawDriverObject.Model }
+        if ([string]::IsNullOrWhiteSpace($productName)) { $productName = $RawDriverObject.Model }
+        if ($RawDriverObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($RawDriverObject.SystemId)) {
+            $systemId = $RawDriverObject.SystemId
+        }
+        $modelDisplay = if ([string]::IsNullOrWhiteSpace($systemId)) { $productName } else { Get-DriverDisplayName -BaseName $productName -Identifier $systemId }
+        $id = if ([string]::IsNullOrWhiteSpace($systemId)) { $productName } else { $systemId }
+    }
+
+    # Dell-specific passthrough (needed for per-model cab workflow)
+    $dellBrand = $null
+    $dellModelNumber = $null
+    $dellSystemId = $null
+    $dellCabUrl = $null
+    if ($Make -eq 'Dell') {
+        if ($RawDriverObject.PSObject.Properties['Brand']) { $dellBrand = $RawDriverObject.Brand }
+        if ($RawDriverObject.PSObject.Properties['ModelNumber']) { $dellModelNumber = $RawDriverObject.ModelNumber }
+        if ($RawDriverObject.PSObject.Properties['SystemId']) { $dellSystemId = $RawDriverObject.SystemId }
+        if ($RawDriverObject.PSObject.Properties['CabUrl']) { $dellCabUrl = $RawDriverObject.CabUrl }
+    }
+
+    $output = [PSCustomObject]@{
         IsSelected     = $false
         Make           = $Make
-        Model          = $modelDisplay 
+        Model          = $modelDisplay
         Link           = $link
-        Id             = $id            
-        ProductName    = $productName   
-        MachineType    = $machineType   
-        Version        = "" # Placeholder
-        Type           = "" # Placeholder
-        Size           = "" # Placeholder
-        Arch           = "" # Placeholder
-        DownloadStatus = "" # Initial download status
+        Id             = $id
+        ProductName    = $productName
+        MachineType    = $machineType
+        Version        = ""
+        Type           = ""
+        Size           = ""
+        Arch           = ""
+        DownloadStatus = ""
     }
+
+    if ($Make -eq 'Dell') {
+        # Add Dell-only fields so Save-DellDriversTask can use CabUrl
+        $output | Add-Member -NotePropertyName Brand           -NotePropertyValue $dellBrand
+        $output | Add-Member -NotePropertyName ModelNumber     -NotePropertyValue $dellModelNumber
+        $output | Add-Member -NotePropertyName SystemId        -NotePropertyValue $dellSystemId
+        $output | Add-Member -NotePropertyName CabUrl          -NotePropertyValue $dellCabUrl
+    }
+    elseif ($Make -eq 'HP' -and -not [string]::IsNullOrWhiteSpace($systemId)) {
+        $output | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemId
+    }
+
+    return $output
 }
 
 # Function to filter the driver model list based on text input
@@ -188,35 +359,7 @@ function Save-DriversJson {
         $modelsForThisMake = @() # Initialize an array to hold model objects
 
         foreach ($driverItem in $_.Group) {
-            $modelObject = $null
-            switch ($makeName) {
-                'Microsoft' {
-                    $modelObject = @{
-                        Name = $driverItem.Model # Model is the display name
-                        Link = $driverItem.Link
-                    }
-                }
-                'Dell' {
-                    $modelObject = @{
-                        Name = $driverItem.Model
-                    }
-                }
-                'HP' {
-                    $modelObject = @{
-                        Name = $driverItem.Model
-                    }
-                }
-                'Lenovo' {
-                    $modelObject = @{
-                        Name        = $driverItem.Model       # This is "ProductName (MachineType)"
-                        ProductName = $driverItem.ProductName # This is "ProductName"
-                        MachineType = $driverItem.MachineType # This is "MachineType"
-                    }
-                }
-                default {
-                    WriteLog "Save-DriversJson: Unknown Make '$makeName' encountered for model '$($driverItem.Model)'. Skipping."
-                }
-            }
+            $modelObject = Convert-DriverItemToJsonModel -DriverItem $driverItem
             if ($null -ne $modelObject) {
                 $modelsForThisMake += $modelObject
             }
@@ -306,13 +449,99 @@ function Import-DriversJson {
                         WriteLog "Import-DriversJson: Skipping empty model name for Make '$makeName'."
                         continue
                     }
-
+        
+                    $normalizedName = $importedModelNameFromObject
+                    $skipModel = $false
+                    switch ($makeName) {
+                        'Lenovo' {
+                            $productName = if ($importedModelObject.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.ProductName)) { $importedModelObject.ProductName } else { ConvertTo-DriverBaseName -ModelString $normalizedName }
+                            $machineType = if ($importedModelObject.PSObject.Properties['MachineType'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.MachineType)) { $importedModelObject.MachineType } else { $null }
+                            if ([string]::IsNullOrWhiteSpace($machineType) -and $normalizedName -match '(.+?)\s*\((.+?)\)$') {
+                                if ([string]::IsNullOrWhiteSpace($productName)) { $productName = $matches[1].Trim() }
+                                $machineType = $matches[2].Trim()
+                            }
+                            if ([string]::IsNullOrWhiteSpace($productName) -or [string]::IsNullOrWhiteSpace($machineType)) {
+                                WriteLog "Import-DriversJson: Skipping Lenovo model '$normalizedName' due to missing ProductName or MachineType."
+                                $skipModel = $true
+                            }
+                            else {
+                                $normalizedName = Get-DriverDisplayName -BaseName $productName -Identifier $machineType
+                                if ($importedModelObject.PSObject.Properties['ProductName']) {
+                                    $importedModelObject.ProductName = $productName
+                                }
+                                else {
+                                    $importedModelObject | Add-Member -NotePropertyName ProductName -NotePropertyValue $productName
+                                }
+                                if ($importedModelObject.PSObject.Properties['MachineType']) {
+                                    $importedModelObject.MachineType = $machineType
+                                }
+                                else {
+                                    $importedModelObject | Add-Member -NotePropertyName MachineType -NotePropertyValue $machineType
+                                }
+                            }
+                        }
+                        'Dell' {
+                            $baseName = ConvertTo-DriverBaseName -ModelString $normalizedName
+                            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $normalizedName }
+                            $systemId = if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) { $importedModelObject.SystemId } else { $null }
+                            if ([string]::IsNullOrWhiteSpace($systemId) -and $normalizedName -match '(.+?)\s*\((.+?)\)$') {
+                                if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $matches[1].Trim() }
+                                $systemId = $matches[2].Trim()
+                            }
+                            $normalizedName = if ([string]::IsNullOrWhiteSpace($systemId)) { $baseName.Trim() } else { Get-DriverDisplayName -BaseName $baseName -Identifier $systemId }
+                            if ($importedModelObject.PSObject.Properties['SystemId']) {
+                                $importedModelObject.SystemId = $systemId
+                            }
+                            else {
+                                $importedModelObject | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemId
+                            }
+                        }
+                        'HP' {
+                            $baseName = ConvertTo-DriverBaseName -ModelString $normalizedName
+                            if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $normalizedName }
+                            $systemId = if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) { $importedModelObject.SystemId } else { $null }
+                            if ([string]::IsNullOrWhiteSpace($systemId) -and $normalizedName -match '(.+?)\s*\((.+?)\)$') {
+                                if ([string]::IsNullOrWhiteSpace($baseName)) { $baseName = $matches[1].Trim() }
+                                $systemId = $matches[2].Trim()
+                            }
+                            $normalizedName = if ([string]::IsNullOrWhiteSpace($systemId)) { $baseName.Trim() } else { Get-DriverDisplayName -BaseName $baseName -Identifier $systemId }
+                            if ($importedModelObject.PSObject.Properties['ProductName']) {
+                                $importedModelObject.ProductName = $baseName
+                            }
+                            else {
+                                $importedModelObject | Add-Member -NotePropertyName ProductName -NotePropertyValue $baseName
+                            }
+                            if ($importedModelObject.PSObject.Properties['SystemId']) {
+                                $importedModelObject.SystemId = $systemId
+                            }
+                            else {
+                                $importedModelObject | Add-Member -NotePropertyName SystemId -NotePropertyValue $systemId
+                            }
+                        }
+                        default {
+                            $normalizedName = $normalizedName.Trim()
+                        }
+                    }
+        
+                    if ($skipModel) {
+                        continue
+                    }
+        
+                    if ([string]::IsNullOrWhiteSpace($normalizedName)) {
+                        WriteLog "Import-DriversJson: Skipping normalized model name for Make '$makeName'."
+                        continue
+                    }
+        
+                    $importedModelObject.Name = $normalizedName
+                    $importedModelNameFromObject = $normalizedName
+        
                     $existingModel = $State.Data.allDriverModels | Where-Object { $_.Make -eq $makeName -and $_.Model -eq $importedModelNameFromObject } | Select-Object -First 1
 
                     if ($null -ne $existingModel) {
                         $existingModel.IsSelected = $true
                         $existingModel.DownloadStatus = "Imported"
-
+                        $existingModel.Model = $importedModelNameFromObject
+                    
                         if ($makeName -eq 'Microsoft' -and $importedModelObject.PSObject.Properties['Link']) {
                             if ($existingModel.Link -ne $importedModelObject.Link) {
                                 $existingModel.Link = $importedModelObject.Link
@@ -327,13 +556,36 @@ function Import-DriversJson {
                             }
                             if ($importedModelObject.PSObject.Properties['MachineType'] -and $existingModel.PSObject.Properties['MachineType'] -and $existingModel.MachineType -ne $importedModelObject.MachineType) {
                                 $existingModel.MachineType = $importedModelObject.MachineType
-                                $existingModel.Id = $importedModelObject.MachineType # Update Id as well
+                                $existingModel.Id = $importedModelObject.MachineType
                                 $updateExistingLenovo = $true
                             }
                             if ($updateExistingLenovo) {
                                 WriteLog "Import-DriversJson: Updated ProductName/MachineType/Id for existing Lenovo model '$($existingModel.Model)'."
                             }
                         }
+                        elseif ($makeName -eq 'Dell') {
+                            # Update Dell extended fields if provided
+                            if ($importedModelObject.PSObject.Properties['SystemId'] -and $existingModel.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) {
+                                if ($existingModel.SystemId -ne $importedModelObject.SystemId) {
+                                    $existingModel.SystemId = $importedModelObject.SystemId
+                                    WriteLog "Import-DriversJson: Updated SystemId for existing Dell model '$($existingModel.Model)'."
+                                }
+                            }
+                            if ($importedModelObject.PSObject.Properties['CabUrl'] -and $existingModel.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabUrl)) {
+                                if ($existingModel.CabUrl -ne $importedModelObject.CabUrl) {
+                                    $existingModel.CabUrl = $importedModelObject.CabUrl
+                                    WriteLog "Import-DriversJson: Updated CabUrl for existing Dell model '$($existingModel.Model)'."
+                                }
+                            }
+                        }
+                        elseif ($makeName -eq 'HP') {
+                            $importedProductName = if ($importedModelObject.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.ProductName)) { $importedModelObject.ProductName } else { ConvertTo-DriverBaseName -ModelString $importedModelNameFromObject }
+                            if ([string]::IsNullOrWhiteSpace($importedProductName)) { $importedProductName = $importedModelNameFromObject }
+                            if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) {
+                                $importedId = $importedModelObject.SystemId
+                            }
+                        }
+                    
                         $existingModelsUpdated++
                         WriteLog "Import-DriversJson: Marked existing model '$($existingModel.Make) - $($existingModel.Model)' as imported."
                     }
@@ -370,7 +622,7 @@ function Import-DriversJson {
                         $newDriverModel = [PSCustomObject]@{
                             IsSelected     = $true
                             Make           = $makeName
-                            Model          = $importedModelNameFromObject # Full display name
+                            Model          = $importedModelNameFromObject
                             Link           = $importedLink
                             Id             = $importedId
                             ProductName    = $importedProductName
@@ -380,6 +632,20 @@ function Import-DriversJson {
                             Size           = ""
                             Arch           = ""
                             DownloadStatus = "Imported"
+                        }
+                        if ($makeName -eq 'Dell') {
+                            # Attach optional Dell extended fields if present
+                            if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) {
+                                $newDriverModel | Add-Member -NotePropertyName SystemId -NotePropertyValue $importedModelObject.SystemId
+                            }
+                            if ($importedModelObject.PSObject.Properties['CabUrl'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.CabUrl)) {
+                                $newDriverModel | Add-Member -NotePropertyName CabUrl -NotePropertyValue $importedModelObject.CabUrl
+                            }
+                        }
+                        elseif ($makeName -eq 'HP') {
+                            if ($importedModelObject.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($importedModelObject.SystemId)) {
+                                $newDriverModel | Add-Member -NotePropertyName SystemId -NotePropertyValue $importedModelObject.SystemId
+                            }
                         }
                         $State.Data.allDriverModels.Add($newDriverModel)
                         $newModelsAdded++
@@ -571,6 +837,8 @@ function Invoke-DownloadSelectedDrivers {
     $localHeaders = $coreStaticVars.Headers
     $localUserAgent = $coreStaticVars.UserAgent
     $compressDrivers = $State.Controls.chkCompressDriversToWIM.IsChecked
+    # Determine if we must preserve source folders (used later for PE driver harvesting)
+    $preserveSource = ($State.Controls.chkUseDriversAsPEDrivers.IsChecked -and $State.Controls.chkCompressDriversToWIM.IsChecked)
 
     $State.Controls.txtStatus.Text = "Processing all selected drivers..."
     WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
@@ -580,10 +848,10 @@ function Invoke-DownloadSelectedDrivers {
         WriteLog "Dell drivers selected. Ensuring Dell Catalog is up-to-date..."
         try {
             $dellDriversFolder = Join-Path -Path $localDriversFolder -ChildPath "Dell"
-            $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogPC" } else { "Catalog" }
+            $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogIndexPC" } else { "Catalog" }
             $dellCabFile = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).cab"
             $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
-            $catalogUrl = if ($localWindowsRelease -le 11) { "http://downloads.dell.com/catalog/CatalogPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+            $catalogUrl = if ($localWindowsRelease -le 11) { "https://downloads.dell.com/catalog/CatalogIndexPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
 
             $downloadCatalog = $true
             if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
@@ -620,15 +888,16 @@ function Invoke-DownloadSelectedDrivers {
             return
         }
     }
-
+    $preserveSource = ($State.Controls.chkUseDriversAsPEDrivers.IsChecked -and $State.Controls.chkCompressDriversToWIM.IsChecked)
     $taskArguments = @{
-        DriversFolder  = $localDriversFolder
-        WindowsRelease = $localWindowsRelease
-        WindowsArch    = $localWindowsArch
-        WindowsVersion = $localWindowsVersion
-        Headers        = $localHeaders
-        UserAgent      = $localUserAgent
-        CompressToWim  = $compressDrivers
+        DriversFolder            = $localDriversFolder
+        WindowsRelease           = $localWindowsRelease
+        WindowsArch              = $localWindowsArch
+        WindowsVersion           = $localWindowsVersion
+        Headers                  = $localHeaders
+        UserAgent                = $localUserAgent
+        CompressToWim            = $compressDrivers
+        PreserveSourceOnCompress = $preserveSource
     }
 
     $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
@@ -645,14 +914,18 @@ function Invoke-DownloadSelectedDrivers {
 
     $overallSuccess = $true
     $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $failedDownloads = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # Check the results from the parallel processing tasks
     if ($null -ne $parallelResults) {
-        # Create a lookup from the original selected drivers to get the 'Make' property,
-        # as the result object might only have 'Identifier' or 'Model'.
-        $makeLookup = @{}
-        $selectedDrivers | ForEach-Object { $makeLookup[$_.Model] = $_.Make }
-
+        # Create a lookup from the original selected drivers to retain full metadata for mapping.
+        $driverLookup = @{}
+        foreach ($driver in $selectedDrivers) {
+            if (-not [string]::IsNullOrWhiteSpace($driver.Model)) {
+                $driverLookup[$driver.Model] = $driver
+            }
+        }
+    
         # Filter for objects that could be results, avoiding stray log strings
         foreach ($result in ($parallelResults | Where-Object { $_ -is [hashtable] })) {
             if ($null -eq $result) { continue }
@@ -666,26 +939,65 @@ function Invoke-DownloadSelectedDrivers {
             if ([string]::IsNullOrWhiteSpace($modelName)) {
                 WriteLog "Could not determine model name from result object: $($result | ConvertTo-Json -Compress -Depth 3)"
                 $overallSuccess = $false
+                $failedDownloads.Add([PSCustomObject]@{
+                        Model  = 'Unknown model'
+                        Status = 'Driver task returned without a model identifier.'
+                    })
                 continue
             }
 
             if ($resultCode -ne 0) {
                 $overallSuccess = $false
+                $failureStatus = $result['Status']
+                if ([string]::IsNullOrWhiteSpace($failureStatus)) { $failureStatus = 'Driver download failed. Check the log for details.' }
+                $failedDownloads.Add([PSCustomObject]@{
+                        Model  = $modelName
+                        Status = $failureStatus
+                    })
                 WriteLog "Error detected for model $modelName."
             }
             elseif (-not [string]::IsNullOrWhiteSpace($driverPath)) {
                 # The task was successful and returned a driver path.
-                $make = $makeLookup[$modelName]
-                if ($make) {
-                    $successfullyDownloaded.Add([PSCustomObject]@{
-                            Make       = $make
-                            Model      = $modelName
-                            DriverPath = $driverPath
-                        })
+                $driverMetadata = $null
+                if (-not [string]::IsNullOrWhiteSpace($modelName) -and $driverLookup.ContainsKey($modelName)) {
+                    $driverMetadata = $driverLookup[$modelName]
+                }
+
+                if ($driverMetadata) {
+                    $driverRecord = [PSCustomObject]@{
+                        Make       = $driverMetadata.Make
+                        Model      = $modelName
+                        DriverPath = $driverPath
+                    }
+
+                    if ($driverMetadata.PSObject.Properties['Link'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.Link)) {
+                        $driverRecord | Add-Member -NotePropertyName Link -NotePropertyValue $driverMetadata.Link
+                    }
+
+                    if ($driverMetadata.PSObject.Properties['SystemId'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.SystemId)) {
+                        $driverRecord | Add-Member -NotePropertyName SystemId -NotePropertyValue $driverMetadata.SystemId
+                    }
+                    if ($driverMetadata.PSObject.Properties['MachineType'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.MachineType)) {
+                        $driverRecord | Add-Member -NotePropertyName MachineType -NotePropertyValue $driverMetadata.MachineType
+                    }
+                    if ($driverMetadata.PSObject.Properties['ProductName'] -and -not [string]::IsNullOrWhiteSpace($driverMetadata.ProductName)) {
+                        $driverRecord | Add-Member -NotePropertyName ProductName -NotePropertyValue $driverMetadata.ProductName
+                    }
+                    $successfullyDownloaded.Add($driverRecord)
                 }
                 else {
-                    WriteLog "Warning: Could not find 'Make' for successful download of model '$modelName'. Skipping from DriverMapping.json."
+                    WriteLog "Warning: Could not find driver metadata for successful download of model '$modelName'. Skipping from DriverMapping.json."
                 }
+            }
+            else {
+                $overallSuccess = $false
+                $fallbackStatus = $result['Status']
+                if ([string]::IsNullOrWhiteSpace($fallbackStatus)) { $fallbackStatus = 'Driver download did not return a driver path.' }
+                $failedDownloads.Add([PSCustomObject]@{
+                        Model  = $modelName
+                        Status = $fallbackStatus
+                    })
+                WriteLog "Driver download did not provide a path for model $modelName."
             }
         }
     }
@@ -714,43 +1026,17 @@ function Invoke-DownloadSelectedDrivers {
                 $makeName = $_.Name
                 $modelsForThisMake = @() # Initialize an array to hold model objects
 
-                foreach ($driverItem in $_.Group) {
-                    $modelObject = $null
-                    switch ($makeName) {
-                        'Microsoft' {
-                            $modelObject = @{
-                                Name = $driverItem.Model # Model is the display name
-                                Link = $driverItem.Link
-                            }
-                        }
-                        'Dell' {
-                            $modelObject = @{
-                                Name = $driverItem.Model # Model is the display name
-                            }
-                        }
-                        'HP' {
-                            $modelObject = @{
-                                Name = $driverItem.Model
-                            }
-                        }
-                        'Lenovo' {
-                            $modelObject = @{
-                                Name        = $driverItem.Model
-                                ProductName = $driverItem.ProductName
-                                MachineType = $driverItem.MachineType
-                            }
-                        }
-                        default {
-                            WriteLog "Auto-Save Drivers.json: Unrecognized Make '$makeName' for driver '$($driverItem.Model)'. Skipping."
+                            foreach ($driverItem in $_.Group) {
+                        $modelObject = Convert-DriverItemToJsonModel -DriverItem $driverItem
+                        if ($null -ne $modelObject) {
+                            $modelsForThisMake += $modelObject
                         }
                     }
-                    if ($null -ne $modelObject) {
-                        $modelsForThisMake += $modelObject
+            
+                    if ($modelsForThisMake.Count -gt 0) {
+                        $outputJson[$makeName] = @{ Models = $modelsForThisMake }
                     }
                 }
-                # Add the models array to the make-specific object
-                $outputJson[$makeName] = @{ Models = $modelsForThisMake }
-            }
 
             # Ensure directory exists
             $parentDir = Split-Path -Path $driversJsonPath -Parent
@@ -775,8 +1061,21 @@ function Invoke-DownloadSelectedDrivers {
         [System.Windows.MessageBox]::Show("All selected driver downloads processed. Check status column for details.", "Download Process Finished", "OK", "Information")
     }
     else {
-        $State.Controls.txtStatus.Text = "Driver downloads processed with some errors. Check status column and log."
-        [System.Windows.MessageBox]::Show("Driver downloads processed, but some errors occurred. Please check the status column for each driver and the log file for details.", "Download Process Finished with Errors", "OK", "Warning")
+        $State.Controls.txtStatus.Text = "Driver download failed. Resolve the errors and try again."
+        $messageLines = [System.Collections.Generic.List[string]]::new()
+        if ($failedDownloads.Count -gt 0) {
+            $messageLines.Add("Driver download failed for:")
+            foreach ($item in ($failedDownloads | Select-Object -First 5)) {
+                $messageLines.Add("- $($item.Model): $($item.Status)")
+            }
+            if ($failedDownloads.Count -gt 5) {
+                $messageLines.Add("...see the log for additional failures.")
+            }
+        }
+        else {
+            $messageLines.Add("One or more driver downloads failed. Check the log for details.")
+        }
+        [System.Windows.MessageBox]::Show(($messageLines -join [System.Environment]::NewLine), "Driver Download Failed", "OK", "Error")
     }
 }
 
