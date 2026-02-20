@@ -8,6 +8,9 @@ plugins:
 
 search_enabled: true
 
+# Canonical host for absolute URLs (sitemap/robots/canonical tags)
+url: "https://rbalsleymsft.github.io"
+
 # Because you’ll publish as a project site at /FFU
 baseurl: "/FFU"
 
