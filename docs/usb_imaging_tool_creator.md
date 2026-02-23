@@ -22,7 +22,7 @@ parent: Helper Scripts
 
 For a shared workflow, stage one folder on a share with the deploy ISO and content that technicians should copy to USB drives.
 
-If you do not already have a deployment ISO in the staging location, create one first using [Create PE Media](/create_pemedia.html). This lets admins quickly generate the deploy ISO and then stage it for technicians using `USBImagingToolCreator.ps1`.
+If you do not already have a deployment ISO in the staging location, create one first using [Create PE Media](/FFU/create_pemedia.html). This lets admins quickly generate the deploy ISO and then stage it for technicians using `USBImagingToolCreator.ps1`.
 
 Example layout:
 
