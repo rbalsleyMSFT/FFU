@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rbalsleymsft.github.io/FFU/sitemap.xml
