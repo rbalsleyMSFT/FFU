@@ -620,7 +620,7 @@ During the build process, when **Build Deploy ISO** is enabled, the script creat
 
 You may want to disable Cleanup Deploy ISO in the following scenarios:
 
-* **Creating deployment media separately**: When you want to create USB deployment drives at a later time (e.g. using `.\FFUDevelopment\USBImagingToolCreator.ps1`)
+* **Creating deployment media separately**: When you want to create USB deployment drives at a later time, see [USB Imaging Tool Creator](/usb_imaging_tool_creator.html) for a staged workflow using `USBImagingToolCreator.ps1` with a deploy ISO, `FFU`, and `Drivers` folder (local path or network share).
 * **Testing in Hyper-V**: When deploying FFU images to Hyper-V VMs for testing, you can attach the deploy ISO directly to a VM as a DVD drive
 
 ## Cleanup Drivers
