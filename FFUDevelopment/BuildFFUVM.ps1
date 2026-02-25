@@ -9,6 +9,9 @@ A PowerShell script to create a Windows 10/11 FFU file.
 .DESCRIPTION
 This script creates a Windows 10/11 FFU and USB drive to help quickly get a Windows device reimaged. FFU can be customized with drivers, apps, and additional settings. 
 
+.PARAMETER AdditionalFFUFiles
+Array of full file paths to existing FFU files that should also be copied to the deployment USB when -CopyAdditionalFFUFiles is set to $true.
+
 .PARAMETER AllowExternalHardDiskMedia
 When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
 
@@ -21,14 +24,23 @@ Path to a JSON file containing a list of applications to install using WinGet. D
 .PARAMETER AppsScriptVariables
 When passed a hashtable, the script will create an AppsScriptVariables.json file in the OrchestrationPath. This file will be used to pass variables to the Apps script. The hashtable should contain key-value pairs where the key is the variable name and the value is the variable value.
 
+.PARAMETER BitsPriority
+BITS transfer priority used for downloads. Accepted values are 'Foreground', 'High', 'Normal', and 'Low'. Default is 'Normal'.
+
 .PARAMETER BuildUSBDrive
 When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. 
+
+.PARAMETER Cleanup
+Switch to run cleanup-only mode. When specified, the script performs cleanup and exits without starting a new build.
 
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
 .PARAMETER CleanupCaptureISO
 When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true.
+
+.PARAMETER CleanupCurrentRunDownloads
+When set to $true, cleanup mode will remove downloads created during the current run and restore backed up run JSON files. Default is $false.
 
 .PARAMETER CleanupDeployISO
 When set to $true, will remove the WinPE deployment ISO after the FFU has been captured. Default is $true.
@@ -44,6 +56,9 @@ When set to $true, compresses downloaded drivers into a WIM file. Default is $fa
 
 .PARAMETER ConfigFile
 Path to a JSON file containing parameters to use for the script. Default is $null.
+
+.PARAMETER CopyAdditionalFFUFiles
+When set to $true, enables copying additional FFU files from $FFUDevelopmentPath\FFU to the deployment USB alongside the current build output.
 
 .PARAMETER CopyAutopilot
 When set to $true, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is $false.
@@ -85,7 +100,7 @@ Path to a JSON file to export the parameters used for the script.
 Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU.
 
 .PARAMETER FFUDevelopmentPath
-Path to the FFU development folder. Default is C:\FFUDevelopment.
+Path to the FFU development folder. Default is $PSScriptRoot.
 
 .PARAMETER FFUPrefix
 Prefix for the generated FFU file. Default is _FFU.
@@ -109,10 +124,13 @@ Install Microsoft Office if set to $true. The script will download the latest OD
 Path to the Windows 10/11 ISO file.
 
 .PARAMETER LogicalSectorSizeBytes
-Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.
+UInt32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.
 
 .PARAMETER Make
 Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'.
+
+.PARAMETER MaxUSBDrives
+Maximum number of USB drives to build in parallel. Default is 5. Set to 0 to process all discovered drives (or all selected drives when USBDriveList or selection is used). Actual throttle will never exceed the number of drives discovered.
 
 .PARAMETER MediaType
 String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'.
@@ -159,6 +177,9 @@ When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive
 .PARAMETER ShareName
 Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
 
+.PARAMETER Threads
+Controls the throttle applied to parallel tasks inside the script. Default is 5, matching the UI Threads field, and applies to driver downloads invoked through Invoke-ParallelProcessing.
+
 .PARAMETER UpdateADK
 When set to $true, the script will check for and install the latest Windows ADK and WinPE add-on if they are not already installed or up-to-date. Default is $true.
 
@@ -186,12 +207,6 @@ When set to $true, will download and install the latest OneDrive and install it 
 .PARAMETER UpdatePreviewCU
 When set to $true, will download and install the latest Preview cumulative update. Default is $false.
 
-.PARAMETER UseDriversAsPEDrivers
-When set to $true (and -CopyPEDrivers is also $true), bypasses the contents of $FFUDevelopmentPath\PEDrivers and instead builds the WinPE driver set dynamically from the $DriversFolder path, copying only the required WinPE drivers. Has no effect if -CopyPEDrivers is not specified. Default is $false.
-
-.PARAMETER UserAppListPath
-Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json.
-
 .PARAMETER USBDriveList
 A hashtable containing USB drives from win32_diskdrive where:
 - Key: USB drive model name (partial match supported)
@@ -201,14 +216,14 @@ Examples:
 @{ "SanDisk Ultra" = "1234567890" }
 @{ "SanDisk Ultra" = @("1234567890", "ABCDEFG"); "Kingston DataTraveler" = "0987654321" }
 
-.PARAMETER MaxUSBDrives
-Maximum number of USB drives to build in parallel. Default is 5. Set to 0 to process all discovered drives (or all selected drives when USBDriveList or selection is used). Actual throttle will never exceed the number of drives discovered.
-
-.PARAMETER Threads
-Controls the throttle applied to parallel tasks inside the script. Default is 5, matching the UI Threads field, and applies to driver downloads invoked through Invoke-ParallelProcessing.
+.PARAMETER UseDriversAsPEDrivers
+When set to $true (and -CopyPEDrivers is also $true), bypasses the contents of $FFUDevelopmentPath\PEDrivers and instead builds the WinPE driver set dynamically from the $DriversFolder path, copying only the required WinPE drivers. Has no effect if -CopyPEDrivers is not specified. Default is $false.
 
 .PARAMETER UserAgent
 User agent string to use when downloading files.
+
+.PARAMETER UserAppListPath
+Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json.
 
 .PARAMETER Username
 Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account.
@@ -220,19 +235,19 @@ IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true,
 Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.
 
 .PARAMETER VMSwitchName
-Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this.
+Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set to capture the FFU from the VM.
 
 .PARAMETER WindowsArch
-String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
+String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
 
 .PARAMETER WindowsLang
 String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'.
 
 .PARAMETER WindowsRelease
-Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
+Integer value of 10, 11, 2016, 2019, 2021, 2022, 2024, or 2025. This is used to identify which Windows client/LTSC/server release to use. Default is 11.
 
 .PARAMETER WindowsSKU
-Edition of Windows 10/11 to be installed. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'.
+Edition/SKU to install. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Enterprise 2016 LTSB', 'Enterprise N 2016 LTSB', 'Enterprise LTSC', 'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'.
 
 .PARAMETER WindowsVersion
 String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'.
