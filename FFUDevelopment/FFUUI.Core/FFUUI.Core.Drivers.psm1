@@ -35,10 +35,41 @@ function Get-DriverDisplayName {
         return $BaseName.Trim()
     }
 
-    return "$($BaseName.Trim()) ($($Identifier.Trim()))"
-}
-
-function Convert-DriverItemToJsonModel {
+        return "$($BaseName.Trim()) ($($Identifier.Trim()))"
+    }
+    
+    function Get-EffectiveDriverWindowsRelease {
+        param(
+            [Parameter(Mandatory = $true)]
+            [int]$WindowsRelease,
+            [string]$WindowsReleaseDisplay,
+            [string]$WindowsSku
+        )
+    
+        # Normalize LTSC/LTSB UI release selections to client driver releases for OEM catalogs.
+        if (-not [string]::IsNullOrWhiteSpace($WindowsReleaseDisplay)) {
+            if (($WindowsReleaseDisplay -like 'Windows 10*') -and (($WindowsReleaseDisplay -like '*LTSB*') -or ($WindowsReleaseDisplay -like '*LTSC*'))) {
+                return 10
+            }
+            if (($WindowsReleaseDisplay -like 'Windows 11*') -and ($WindowsReleaseDisplay -like '*LTSC*')) {
+                return 11
+            }
+        }
+    
+        # Use SKU-based fallback when display text is unavailable.
+        if (-not [string]::IsNullOrWhiteSpace($WindowsSku) -and $WindowsSku -like '*LTS*') {
+            if ($WindowsRelease -in 2016, 2019, 2021) {
+                return 10
+            }
+            if ($WindowsRelease -eq 2024) {
+                return 11
+            }
+        }
+    
+        return $WindowsRelease
+    }
+    
+    function Convert-DriverItemToJsonModel {
     param(
         [Parameter(Mandatory = $true)]
         [pscustomobject]$DriverItem
@@ -154,8 +185,20 @@ function Convert-DriverItemToJsonModel {
     # Get necessary values from UI or script scope
     $localDriversFolder = $State.Controls.txtDriversFolder.Text
     $localWindowsRelease = $null
+    $localWindowsReleaseDisplay = $null
     if ($null -ne $State.Controls.cmbWindowsRelease.SelectedItem) {
         $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
+        $localWindowsReleaseDisplay = $State.Controls.cmbWindowsRelease.SelectedItem.Display
+    }
+
+    # Resolve effective release used specifically for OEM driver operations.
+    $localWindowsSku = if ($null -ne $State.Controls.cmbWindowsSKU.SelectedItem) { [string]$State.Controls.cmbWindowsSKU.SelectedItem } else { $null }
+    $localDriverWindowsRelease = $localWindowsRelease
+    if ($null -ne $localWindowsRelease) {
+        $localDriverWindowsRelease = Get-EffectiveDriverWindowsRelease -WindowsRelease $localWindowsRelease -WindowsReleaseDisplay $localWindowsReleaseDisplay -WindowsSku $localWindowsSku
+        if ($localDriverWindowsRelease -ne $localWindowsRelease) {
+            WriteLog "Normalized WindowsRelease for model retrieval from $localWindowsRelease to $localDriverWindowsRelease (Display='$localWindowsReleaseDisplay', SKU='$localWindowsSku')."
+        }
     }
 
     # Get headers and user agent from Get-CoreStaticVariables
@@ -173,7 +216,7 @@ function Convert-DriverItemToJsonModel {
             $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent -DriversFolder $localDriversFolder
         }
         'Dell' {
-            $rawModels = Get-DellDriversModelList -WindowsRelease $localWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake
+            $rawModels = Get-DellDriversModelList -WindowsRelease $localDriverWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake
         }
         'HP' {
             $rawModels = Get-HPDriversModelList -DriversFolder $localDriversFolder -Make $SelectedMake
@@ -831,6 +874,12 @@ function Invoke-DownloadSelectedDrivers {
 
     $localDriversFolder = $State.Controls.txtDriversFolder.Text
     $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
+    $localWindowsReleaseDisplay = $State.Controls.cmbWindowsRelease.SelectedItem.Display
+    $localWindowsSku = if ($null -ne $State.Controls.cmbWindowsSKU.SelectedItem) { [string]$State.Controls.cmbWindowsSKU.SelectedItem } else { $null }
+    $localDriverWindowsRelease = Get-EffectiveDriverWindowsRelease -WindowsRelease $localWindowsRelease -WindowsReleaseDisplay $localWindowsReleaseDisplay -WindowsSku $localWindowsSku
+    if ($localDriverWindowsRelease -ne $localWindowsRelease) {
+        WriteLog "Normalized WindowsRelease for driver download from $localWindowsRelease to $localDriverWindowsRelease (Display='$localWindowsReleaseDisplay', SKU='$localWindowsSku')."
+    }
     $localWindowsArch = $State.Controls.cmbWindowsArch.SelectedItem
     $localWindowsVersion = if ($null -ne $State.Controls.cmbWindowsVersion -and $null -ne $State.Controls.cmbWindowsVersion.SelectedItem) { $State.Controls.cmbWindowsVersion.SelectedItem } else { $null }
     $coreStaticVars = Get-CoreStaticVariables
@@ -848,10 +897,10 @@ function Invoke-DownloadSelectedDrivers {
         WriteLog "Dell drivers selected. Ensuring Dell Catalog is up-to-date..."
         try {
             $dellDriversFolder = Join-Path -Path $localDriversFolder -ChildPath "Dell"
-            $catalogBaseName = if ($localWindowsRelease -le 11) { "CatalogIndexPC" } else { "Catalog" }
+            $catalogBaseName = if ($localDriverWindowsRelease -le 11) { "CatalogIndexPC" } else { "Catalog" }
             $dellCabFile = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).cab"
             $dellCatalogXML = Join-Path -Path $dellDriversFolder -ChildPath "$($catalogBaseName).xml"
-            $catalogUrl = if ($localWindowsRelease -le 11) { "https://downloads.dell.com/catalog/CatalogIndexPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
+            $catalogUrl = if ($localDriverWindowsRelease -le 11) { "https://downloads.dell.com/catalog/CatalogIndexPC.cab" } else { "https://downloads.dell.com/catalog/Catalog.cab" }
 
             $downloadCatalog = $true
             if (Test-Path -Path $dellCatalogXML -PathType Leaf) {
@@ -891,7 +940,7 @@ function Invoke-DownloadSelectedDrivers {
     $preserveSource = ($State.Controls.chkUseDriversAsPEDrivers.IsChecked -and $State.Controls.chkCompressDriversToWIM.IsChecked)
     $taskArguments = @{
         DriversFolder            = $localDriversFolder
-        WindowsRelease           = $localWindowsRelease
+        WindowsRelease           = $localDriverWindowsRelease
         WindowsArch              = $localWindowsArch
         WindowsVersion           = $localWindowsVersion
         Headers                  = $localHeaders

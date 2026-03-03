@@ -697,6 +697,26 @@ Set-BitsTransferPriority -Priority $BitsPriority
 
 #FUNCTIONS
 
+function Get-EffectiveDriverWindowsRelease {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+        [string]$WindowsSKU
+    )
+
+    # Normalize LTSC/LTSB client releases to OEM driver release values.
+    if (-not [string]::IsNullOrWhiteSpace($WindowsSKU) -and $WindowsSKU -like '*LTS*') {
+        if ($WindowsRelease -in 2016, 2019, 2021) {
+            return 10
+        }
+        if ($WindowsRelease -eq 2024) {
+            return 11
+        }
+    }
+
+    return $WindowsRelease
+}
+
 function Get-Parameters {
     [CmdletBinding()]
     param (
@@ -5514,10 +5534,16 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
     else {
         WriteLog "Found $($driversToProcess.Count) driver entries to process from $driversJsonPath."
 
+        # Resolve effective release used for OEM driver operations.
+        $localDriverWindowsRelease = Get-EffectiveDriverWindowsRelease -WindowsRelease $WindowsRelease -WindowsSKU $WindowsSKU
+        if ($localDriverWindowsRelease -ne $WindowsRelease) {
+            WriteLog "Normalized WindowsRelease for Drivers.json processing from $WindowsRelease to $localDriverWindowsRelease (SKU='$WindowsSKU')."
+        }
+
         $preserveSourceOnCompress = ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim)
         $taskArguments = @{
             DriversFolder            = $DriversFolder
-            WindowsRelease           = $WindowsRelease
+            WindowsRelease           = $localDriverWindowsRelease
             WindowsArch              = $WindowsArch
             WindowsVersion           = $WindowsVersion 
             Headers                  = $Headers
@@ -5654,26 +5680,31 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
 }
 # Existing single-model driver download logic
 elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
+    # Resolve effective release used for OEM driver operations.
+    $localDriverWindowsRelease = Get-EffectiveDriverWindowsRelease -WindowsRelease $WindowsRelease -WindowsSKU $WindowsSKU
+    if ($localDriverWindowsRelease -ne $WindowsRelease) {
+        WriteLog "Normalized WindowsRelease for single-model driver processing from $WindowsRelease to $localDriverWindowsRelease (SKU='$WindowsSKU')."
+    }
+
     try {
         if ($Make -eq 'HP') {
             WriteLog 'Getting HP drivers'
-            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion
+            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -WindowsVersion $WindowsVersion
             WriteLog 'Getting HP drivers completed successfully'
         }
         if ($make -eq 'Microsoft') {
             WriteLog 'Getting Microsoft drivers'
-            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease
             WriteLog 'Getting Microsoft drivers completed successfully'
         }
         if ($make -eq 'Lenovo') {
             WriteLog 'Getting Lenovo drivers'
-            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease
             WriteLog 'Getting Lenovo drivers completed successfully'
         }
         if ($make -eq 'Dell') {
             WriteLog 'Getting Dell drivers'
-            #Dell mixes Win10 and 11 drivers, hence no WindowsRelease parameter
-            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
+            Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease
             WriteLog 'Getting Dell drivers completed successfully'
         }
     }
