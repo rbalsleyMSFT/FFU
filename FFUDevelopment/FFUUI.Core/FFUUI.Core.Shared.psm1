@@ -329,7 +329,8 @@ function Add-SelectableGridViewColumn {
         [string]$HeaderCheckBoxKeyName,
         [Parameter(Mandatory)]
         [double]$ColumnWidth,
-        [string]$IsSelectedPropertyName = "IsSelected"
+        [string]$IsSelectedPropertyName = "IsSelected",
+        [switch]$HeaderSelectionAffectsVisibleItemsOnly
     )
 
     # Ensure the ListView has a GridView
@@ -343,10 +344,11 @@ function Add-SelectableGridViewColumn {
     $headerCheckBox = New-Object System.Windows.Controls.CheckBox
     $headerCheckBox.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
     
-    # MODIFICATION: Store the actual ListView object in the header's Tag
+    # Store header metadata, including whether select-all should only affect visible rows.
     $headerTagObject = [PSCustomObject]@{
-        PropertyName    = $IsSelectedPropertyName
-        ListViewControl = $ListView 
+        PropertyName                           = $IsSelectedPropertyName
+        ListViewControl                        = $ListView
+        HeaderSelectionAffectsVisibleItemsOnly = [bool]$HeaderSelectionAffectsVisibleItemsOnly
     }
     $headerCheckBox.Tag = $headerTagObject
 
@@ -356,8 +358,24 @@ function Add-SelectableGridViewColumn {
             $localPropertyName = $tagData.PropertyName
             $actualListView = $tagData.ListViewControl
 
-            $collectionToUpdate = if ($null -ne $actualListView.ItemsSource) { $actualListView.ItemsSource } else { $actualListView.Items }
-            if ($null -ne $collectionToUpdate) {
+            # Select either visible view items only (filtered scope) or the full backing list.
+            $collectionToUpdate = @()
+            if ($tagData.HeaderSelectionAffectsVisibleItemsOnly -and $null -ne $actualListView.ItemsSource) {
+                $collectionView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($actualListView.ItemsSource)
+                if ($null -ne $collectionView) {
+                    foreach ($visibleItem in $collectionView) {
+                        $collectionToUpdate += $visibleItem
+                    }
+                }
+            }
+            elseif ($null -ne $actualListView.ItemsSource) {
+                $collectionToUpdate = @($actualListView.ItemsSource)
+            }
+            elseif ($actualListView.HasItems) {
+                $collectionToUpdate = @($actualListView.Items)
+            }
+
+            if ($collectionToUpdate.Count -gt 0) {
                 foreach ($item in $collectionToUpdate) { $item.$($localPropertyName) = $true }
                 $actualListView.Items.Refresh()
             }
@@ -370,8 +388,24 @@ function Add-SelectableGridViewColumn {
                 $localPropertyName = $tagData.PropertyName
                 $actualListView = $tagData.ListViewControl 
 
-                $collectionToUpdate = if ($null -ne $actualListView.ItemsSource) { $actualListView.ItemsSource } else { $actualListView.Items }
-                if ($null -ne $collectionToUpdate) {
+                # Clear either visible view items only (filtered scope) or the full backing list.
+                $collectionToUpdate = @()
+                if ($tagData.HeaderSelectionAffectsVisibleItemsOnly -and $null -ne $actualListView.ItemsSource) {
+                    $collectionView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($actualListView.ItemsSource)
+                    if ($null -ne $collectionView) {
+                        foreach ($visibleItem in $collectionView) {
+                            $collectionToUpdate += $visibleItem
+                        }
+                    }
+                }
+                elseif ($null -ne $actualListView.ItemsSource) {
+                    $collectionToUpdate = @($actualListView.ItemsSource)
+                }
+                elseif ($actualListView.HasItems) {
+                    $collectionToUpdate = @($actualListView.Items)
+                }
+
+                if ($collectionToUpdate.Count -gt 0) {
                     foreach ($item in $collectionToUpdate) { $item.$($localPropertyName) = $false }
                     $actualListView.Items.Refresh()
                 }
@@ -446,24 +480,38 @@ function Update-SelectAllHeaderCheckBoxState {
         [System.Windows.Controls.CheckBox]$HeaderCheckBox
     )
 
-    $collectionToInspect = $null
-    if ($null -ne $ListView.ItemsSource) {
+    # Determine whether this header should evaluate only visible (filtered) rows.
+    $inspectVisibleItemsOnly = $false
+    if ($null -ne $HeaderCheckBox.Tag -and $null -ne $HeaderCheckBox.Tag.PSObject.Properties['HeaderSelectionAffectsVisibleItemsOnly']) {
+        $inspectVisibleItemsOnly = [bool]$HeaderCheckBox.Tag.HeaderSelectionAffectsVisibleItemsOnly
+    }
+
+    # Build the collection to inspect based on scope (visible view vs full source).
+    $collectionToInspect = @()
+    if ($inspectVisibleItemsOnly -and $null -ne $ListView.ItemsSource) {
+        $collectionView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($ListView.ItemsSource)
+        if ($null -ne $collectionView) {
+            foreach ($visibleItem in $collectionView) {
+                $collectionToInspect += $visibleItem
+            }
+        }
+    }
+    elseif ($null -ne $ListView.ItemsSource) {
         $collectionToInspect = @($ListView.ItemsSource)
     }
     elseif ($ListView.HasItems) {
-        # Check if Items collection has items and ItemsSource is null
         $collectionToInspect = @($ListView.Items)
     }
 
-    # If no items to inspect (either ItemsSource was null and Items was empty, or ItemsSource was empty)
-    if ($null -eq $collectionToInspect -or $collectionToInspect.Count -eq 0) {
+    # If no items are available in the selected scope, force unchecked.
+    if ($collectionToInspect.Count -eq 0) {
         $HeaderCheckBox.IsChecked = $false
         return
     }
 
     $selectedCount = ($collectionToInspect | Where-Object { $_.IsSelected }).Count
     WriteLog "Update-SelectAllHeaderCheckBoxState: Selected count is $selectedCount for ListView '$($ListView.Name)'."
-    $totalItemCount = $collectionToInspect.Count # Get the total count from the collection being inspected
+    $totalItemCount = $collectionToInspect.Count
     WriteLog "Update-SelectAllHeaderCheckBoxState: Total item count is $totalItemCount for ListView '$($ListView.Name)'."
 
     if ($totalItemCount -eq 0) {
@@ -597,7 +645,7 @@ function Invoke-ListViewSort {
             $val = $_.$property
             if ($null -eq $val) { '' } else { $val }
         }
-        Ascending = $State.Flags.lastSortAscending
+        Ascending  = $State.Flags.lastSortAscending
     }
 
     $sortCriteria = [System.Collections.Generic.List[hashtable]]::new()
@@ -644,7 +692,7 @@ function Invoke-ListViewSort {
                     $val = Invoke-Command -ScriptBlock $expressionScriptBlock -ArgumentList $_
                     if ($null -eq $val) { '' } else { $val }
                 }
-                Ascending = $true
+                Ascending  = $true
             }
             $sortCriteria.Add($secondarySortDefinition)
         }

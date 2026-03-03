@@ -387,7 +387,10 @@ function Save-DriversJson {
         [psobject]$State
     )
     WriteLog "Save-DriversJson function called."
-    $selectedDrivers = @($State.Controls.lstDriverModels.Items | Where-Object { $_.IsSelected })
+
+    # Save from the master model list so filtered-out selected rows are preserved.
+    $driverSelectionSource = if ($null -ne $State.Data.allDriverModels) { $State.Data.allDriverModels } else { $State.Controls.lstDriverModels.Items }
+    $selectedDrivers = @($driverSelectionSource | Where-Object { $_.IsSelected })
 
     if (-not $selectedDrivers) {
         [System.Windows.MessageBox]::Show("No drivers selected to save.", "Save Drivers", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)

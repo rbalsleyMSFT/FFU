@@ -366,8 +366,8 @@ function Initialize-DynamicUIElements {
     $driverModelsGridView = New-Object System.Windows.Controls.GridView
     $State.Controls.lstDriverModels.View = $driverModelsGridView # Assign GridView to ListView first
 
-    # Add the selectable column using the new function
-    Add-SelectableGridViewColumn -ListView $State.Controls.lstDriverModels -State $State -HeaderCheckBoxKeyName "chkSelectAllDriverModels" -ColumnWidth 70
+    # Add the selectable column and scope header select-all to visible filtered rows.
+    Add-SelectableGridViewColumn -ListView $State.Controls.lstDriverModels -State $State -HeaderCheckBoxKeyName "chkSelectAllDriverModels" -ColumnWidth 70 -HeaderSelectionAffectsVisibleItemsOnly
 
     # Add other sortable columns with left-aligned headers
     Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
