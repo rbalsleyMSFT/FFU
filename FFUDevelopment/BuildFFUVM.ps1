@@ -1722,24 +1722,47 @@ function Install-ADK {
 }
 function Get-InstalledProgramRegKey {
     param (
-        [string]$DisplayName
+        [ValidateSet("Windows ADK", "WinPE add-on")]
+        [string]$ADKOption
     )
 
-    $uninstallRegPath = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-    $uninstallRegKeys = Get-ChildItem -Path $uninstallRegPath -Recurse
-    
-    foreach ($regKey in $uninstallRegKeys) {
-        try {
-            $regValue = $regKey.GetValue("DisplayName")
-            if ($regValue -eq $DisplayName) {
-                return $regKey
+    # Match ADK entries using installer executable names in BundleCachePath
+    $bundleExecutableName = switch ($ADKOption) {
+        "Windows ADK" { "adksetup.exe" }
+        "WinPE add-on" { "adkwinpesetup.exe" }
+    }
+
+    # Check both uninstall roots to support different install contexts
+    $uninstallRegPaths = @(
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+
+    foreach ($uninstallRegPath in $uninstallRegPaths) {
+        if (-not (Test-Path -Path $uninstallRegPath)) {
+            continue
+        }
+
+        $uninstallRegKeys = Get-ChildItem -Path $uninstallRegPath -Recurse -ErrorAction SilentlyContinue
+
+        foreach ($regKey in $uninstallRegKeys) {
+            try {
+                $bundleCachePath = $regKey.GetValue("BundleCachePath")
+                if ($null -ne $bundleCachePath) {
+                    $bundleFileName = Split-Path -Path $bundleCachePath -Leaf
+                    if ($bundleFileName -ieq $bundleExecutableName) {
+                        return $regKey
+                    }
+                }
+            }
+            catch {
+                WriteLog $_
+                throw "Error retrieving installed program info for $ADKOption : $_"
             }
         }
-        catch {
-            WriteLog $_
-            throw "Error retrieving installed program info for $DisplayName : $_"
-        }
     }
+
+    return $null
 }
 
 function Uninstall-ADK {
@@ -1748,14 +1771,9 @@ function Uninstall-ADK {
         [string]$ADKOption
     )
 
-    # Match name as it appears in the registry
-    $displayName = switch ($ADKOption) {
-        "Windows ADK" { "Windows Assessment and Deployment Kit" }
-        "WinPE add-on" { "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons" }
-    }
-
     try {
-        $adkRegKey = Get-InstalledProgramRegKey -DisplayName $displayName
+        # Find ADK entry by bundle executable path instead of display name
+        $adkRegKey = Get-InstalledProgramRegKey -ADKOption $ADKOption
 
         if (-not $adkRegKey) {
             WriteLog "$ADKOption is not installed."
@@ -1780,13 +1798,9 @@ function Confirm-ADKVersionIsLatest {
         [string]$ADKOption
     )
 
-    $displayName = switch ($ADKOption) {
-        "Windows ADK" { "Windows Assessment and Deployment Kit" }
-        "WinPE add-on" { "Windows Assessment and Deployment Kit Windows Preinstallation Environment Add-ons" }
-    }
-
     try {
-        $adkRegKey = Get-InstalledProgramRegKey -DisplayName $displayName
+        # Find ADK entry by bundle executable path instead of display name
+        $adkRegKey = Get-InstalledProgramRegKey -ADKOption $ADKOption
 
         if (-not $adkRegKey) {
             return $false
@@ -1860,12 +1874,17 @@ function Get-ADK {
         throw "Windows ADK installation path could not be found."
     }
 
-    # If ADK was already installed, then check if the Windows Deployment Tools feature is also installed
-    $deploymentToolsRegKey = Get-InstalledProgramRegKey -DisplayName "Windows Deployment Tools"
+    # If ADK is installed, validate Deployment Tools by checking DandISetEnv.bat
+    $deploymentToolsEnvPath = Join-Path $adkPath "Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
 
-    if (-not $deploymentToolsRegKey) {
+    if (-not (Test-Path -Path $deploymentToolsEnvPath)) {
         WriteLog "ADK is installed, but the Windows Deployment Tools feature is not installed."
-        $adkRegKey = Get-InstalledProgramRegKey -DisplayName "Windows Assessment and Deployment Kit"
+        $adkRegKey = Get-InstalledProgramRegKey -ADKOption "Windows ADK"
+
+        if ($null -eq $adkRegKey) {
+            throw "Failed to locate the installed ADK package to install Windows Deployment Tools."
+        }
+
         $adkBundleCachePath = $adkRegKey.GetValue("BundleCachePath")
         if ($adkBundleCachePath) {
             WriteLog "Installing Windows Deployment Tools..."
