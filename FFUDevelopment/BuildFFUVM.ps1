@@ -3561,20 +3561,49 @@ function New-PEMedia {
 
 function Optimize-FFUCaptureDrive {
     param (
-        [string]$VhdxPath
+        [string]$VhdxPath,
+        [bool]$EnableVolumeRetrim = $false
     )
     try {
-        WriteLog 'Mounting VHDX for volume optimization'
-        $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+        # Resolve whether the VHDX is already attached and get the disk reference
+        $vhdInfo = Get-VHD -Path $VhdxPath
+        if ($vhdInfo.Attached) {
+            WriteLog 'VHDX is already mounted; using existing attachment for volume optimization'
+            $mountedDisk = Get-Disk -Number $vhdInfo.DiskNumber
+        }
+        else {
+            WriteLog 'Mounting VHDX for volume optimization'
+            $mountedDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+        }
+
+        # Resolve the OS partition drive letter used for volume-level optimization
         $osPartition = $mountedDisk | Get-Partition | Where-Object { $_.GptType -eq "{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}" }
+        if ($null -eq $osPartition -or [string]::IsNullOrWhiteSpace($osPartition.DriveLetter)) {
+            throw 'Unable to resolve Windows partition drive letter for VHDX optimization.'
+        }
+
+        # Optimize filesystem layout before compacting the VHDX file
         WriteLog 'Defragmenting Windows partition...'
         Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority
         WriteLog 'Performing slab consolidation on Windows partition...'
         Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority
+
+        # Optionally issue TRIM to improve reclaimable blocks before full VHDX compact
+        if ($EnableVolumeRetrim) {
+            try {
+                WriteLog 'Running retrim on Windows partition before VHD compaction...'
+                Optimize-Volume -DriveLetter $osPartition.DriveLetter -ReTrim -NormalPriority
+            }
+            catch {
+                WriteLog "Retrim skipped with error: $($_.Exception.Message)"
+            }
+        }
+
+        # Dismount and perform full-mode VHD optimization offline
         WriteLog 'Dismounting VHDX'
         Dismount-ScratchVhdx -VhdxPath $VhdxPath
         WriteLog 'Mounting VHDX as read-only for optimization'
-        Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly
+        Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly | Out-Null
         WriteLog 'Optimizing VHDX in full mode...'
         Optimize-VHD -Path $VhdxPath -Mode Full
         WriteLog 'Dismounting VHDX'
@@ -6834,12 +6863,9 @@ try {
     if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
         WriteLog 'Caching VHDX file'
 
-        WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -Defrag -NormalPriority 
-        WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter $osPartition.DriveLetter -SlabConsolidate -NormalPriority 
-        WriteLog 'Dismounting VHDX'
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        # Run full VHDX optimization after servicing/cleanup and before cache copy
+        WriteLog 'Optimizing VHDX before copying to cache dir'
+        Optimize-FFUCaptureDrive -VhdxPath $VHDXPath -EnableVolumeRetrim $true
 
         WriteLog 'Copying to cache dir'
 
