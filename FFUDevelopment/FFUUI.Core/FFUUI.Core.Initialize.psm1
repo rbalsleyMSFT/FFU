@@ -135,6 +135,7 @@ function Initialize-UIControls {
     $State.Controls.chkCleanupDeployISO = $window.FindName('chkCleanupDeployISO')
     $State.Controls.chkCleanupDrivers = $window.FindName('chkCleanupDrivers')
     $State.Controls.chkRemoveFFU = $window.FindName('chkRemoveFFU')
+    $State.Controls.chkRemoveDownloadedESD = $window.FindName('chkRemoveDownloadedESD')
     $State.Controls.txtDiskSize = $window.FindName('txtDiskSize')
     $State.Controls.txtMemory = $window.FindName('txtMemory')
     $State.Controls.txtProcessors = $window.FindName('txtProcessors')
@@ -258,6 +259,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkRemoveFFU.IsChecked = $State.Defaults.generalDefaults.RemoveFFU
     $State.Controls.chkRemoveApps.IsChecked = $State.Defaults.generalDefaults.RemoveApps
     $State.Controls.chkRemoveUpdates.IsChecked = $State.Defaults.generalDefaults.RemoveUpdates
+    $State.Controls.chkRemoveDownloadedESD.IsChecked = $State.Defaults.generalDefaults.RemoveDownloadedESD
     $State.Controls.chkVerbose.IsChecked = $State.Defaults.generalDefaults.Verbose
     $State.Controls.usbSection.Visibility = if ($State.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }

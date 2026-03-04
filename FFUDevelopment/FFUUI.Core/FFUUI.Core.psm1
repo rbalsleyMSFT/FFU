@@ -141,6 +141,7 @@ function Get-GeneralDefaults {
         RemoveFFU                      = $false
         RemoveApps                     = $false 
         RemoveUpdates                  = $false 
+        RemoveDownloadedESD            = $true
         # Hyper-V Settings Defaults
         VMHostIPAddress                = ""
         DiskSizeGB                     = 50

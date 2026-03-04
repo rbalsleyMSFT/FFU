@@ -174,6 +174,9 @@ When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU fol
 .PARAMETER RemoveUpdates
 When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive, and .NET files downloaded. Default is $true.
 
+.PARAMETER RemoveDownloadedESD
+When set to $true, will remove downloaded Windows ESD files after they have been applied. Default is $true.
+
 .PARAMETER ShareName
 Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
 
@@ -426,6 +429,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true,
     [bool]$RemoveUpdates = $true,
+    [bool]$RemoveDownloadedESD = $true,
     [bool]$RemoveApps = $true,
     [string]$DriversFolder,
     [string]$PEDriversFolder,
@@ -2139,7 +2143,20 @@ function Get-WindowsESD {
     }
 
     $esdFilePath = $esdMetadata.LocalPath
-    if (-not (Test-Path $esdFilePath)) {
+    $latestEsdFileName = $esdMetadata.FileName
+    $existingEsdMatch = $null
+
+    # Reuse an existing ESD only when it matches the latest metadata filename
+    if (-not [string]::IsNullOrWhiteSpace($latestEsdFileName)) {
+        $existingEsdMatch = Get-ChildItem -Path $PSScriptRoot -Filter *.esd -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq $latestEsdFileName } | Select-Object -First 1
+    }
+
+    if ($null -ne $existingEsdMatch) {
+        $esdFilePath = $existingEsdMatch.FullName
+        WriteLog "Found existing ESD matching metadata filename '$latestEsdFileName' at $esdFilePath. Skipping download."
+    }
+    else {
+        WriteLog "No existing ESD matching metadata filename '$latestEsdFileName' was found. Downloading latest ESD to $esdFilePath."
         WriteLog "Downloading $($esdMetadata.FileUrl) to $esdFilePath"
         $OriginalVerbosePreference = $VerbosePreference
         $VerbosePreference = 'SilentlyContinue'
@@ -2148,9 +2165,6 @@ function Get-WindowsESD {
         Clear-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $esdFilePath
         $VerbosePreference = $OriginalVerbosePreference
         WriteLog "ESD download succeeded"
-    }
-    else {
-        WriteLog "Found existing ESD at $esdFilePath, skipping download"
     }
 
     return $esdFilePath
@@ -4405,7 +4419,7 @@ function Get-FFUEnvironment {
     }
 
     #Run shared cleanup to avoid duplicated logic
-    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -KBPath:$KBPath
+    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
 
     # Remove existing Apps.iso
     if (Test-Path -Path $AppsISO) {
@@ -6782,11 +6796,16 @@ try {
             Dismount-DiskImage -ImagePath $ISOPath | Out-null
             WriteLog 'Done'
         }
-        #If $wimPath is an esd file, remove it
-        If ($wimPath -match '.esd') {
-            WriteLog "Deleting $wimPath file"
-            Remove-Item -Path $wimPath -Force
-            WriteLog "$wimPath deleted"
+        # If $wimPath is an ESD file, remove it only when configured
+        If ($wimPath -match '\.esd$') {
+            if ($RemoveDownloadedESD -and (Test-Path -Path $wimPath)) {
+                WriteLog "Deleting $wimPath file"
+                Remove-Item -Path $wimPath -Force
+                WriteLog "$wimPath deleted"
+            }
+            else {
+                WriteLog "Keeping downloaded ESD file $wimPath"
+            }
         }
     
     }
@@ -6868,10 +6887,15 @@ catch {
         WriteLog 'Done'
     }
     else {
-        #Remove ESD file
-        WriteLog "Deleting ESD file"
-        Remove-Item -Path $wimPath -Force
-        WriteLog "ESD File deleted"
+        # Remove ESD file only when configured
+        if ($RemoveDownloadedESD -and -not [string]::IsNullOrWhiteSpace($wimPath) -and ($wimPath -match '\.esd$') -and (Test-Path -Path $wimPath)) {
+            WriteLog "Deleting ESD file $wimPath"
+            Remove-Item -Path $wimPath -Force
+            WriteLog "ESD File deleted"
+        }
+        else {
+            WriteLog "Keeping downloaded ESD file $wimPath"
+        }
     }
     throw $_
     
@@ -7238,7 +7262,7 @@ If ($BuildUSBDrive) {
 
 Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 # Delegated post-build cleanup to common module
-Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -KBPath:$KBPath
+Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
 
 
 # Remove WinGetWin32Apps.json so it is always rebuilt next run

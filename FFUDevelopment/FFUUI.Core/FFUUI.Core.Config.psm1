@@ -82,6 +82,7 @@ function Get-UIConfig {
         RemoveApps                     = $State.Controls.chkRemoveApps.IsChecked
         RemoveFFU                      = $State.Controls.chkRemoveFFU.IsChecked
         RemoveUpdates                  = $State.Controls.chkRemoveUpdates.IsChecked
+        RemoveDownloadedESD            = $State.Controls.chkRemoveDownloadedESD.IsChecked
         ShareName                      = $State.Controls.txtShareName.Text
         UpdateADK                      = $State.Controls.chkUpdateADK.IsChecked
         UpdateEdge                     = $State.Controls.chkUpdateEdge.IsChecked
@@ -461,6 +462,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkRemoveFFU' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveFFU' -State $State
     Set-UIValue -ControlName 'chkRemoveApps' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveApps' -State $State
     Set-UIValue -ControlName 'chkRemoveUpdates' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveUpdates' -State $State
+    Set-UIValue -ControlName 'chkRemoveDownloadedESD' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveDownloadedESD' -State $State
 
     # Hyper-V Settings
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
@@ -908,7 +910,8 @@ function Invoke-RestoreDefaults {
             -RemoveDrivers:$true `
             -RemoveFFU:$true `
             -RemoveApps:$true `
-            -RemoveUpdates:$true
+            -RemoveUpdates:$true `
+            -RemoveDownloadedESD:$true
 
         # Clear UI lists / state
         if ($null -ne $State.Data.allDriverModels) { $State.Data.allDriverModels.Clear() }

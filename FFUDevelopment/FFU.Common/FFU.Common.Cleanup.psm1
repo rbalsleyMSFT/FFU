@@ -16,12 +16,13 @@ function Invoke-FFUPostBuildCleanup {
         [bool]$RemoveDrivers = $false,
         [bool]$RemoveFFU = $false,
         [bool]$RemoveApps = $false,
-        [bool]$RemoveUpdates = $false
+        [bool]$RemoveUpdates = $false,
+        [bool]$RemoveDownloadedESD = $false
     )
     $originalProgressPreference = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'
     try {
-        WriteLog "CommonCleanup: Starting cleanup (CaptureISO=$RemoveCaptureISO DeployISO=$RemoveDeployISO AppsISO=$RemoveAppsISO Drivers=$RemoveDrivers FFU=$RemoveFFU Apps=$RemoveApps Updates=$RemoveUpdates KBPath=$KBPath)."
+        WriteLog "CommonCleanup: Starting cleanup (CaptureISO=$RemoveCaptureISO DeployISO=$RemoveDeployISO AppsISO=$RemoveAppsISO Drivers=$RemoveDrivers FFU=$RemoveFFU Apps=$RemoveApps Updates=$RemoveUpdates RemoveDownloadedESD=$RemoveDownloadedESD KBPath=$KBPath)."
 
         # Primary ISO paths (new naming/location)
         if ($RemoveCaptureISO -and -not [string]::IsNullOrWhiteSpace($CaptureISOPath) -and (Test-Path -LiteralPath $CaptureISOPath)) {
@@ -120,6 +121,20 @@ function Invoke-FFUPostBuildCleanup {
                 # Remove Windows/.NET CU downloads stored under KB
                 WriteLog "CommonCleanup: Removing downloaded updates in $KBPath"
                 try { Remove-Item -LiteralPath $KBPath -Recurse -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $KBPath : $($_.Exception.Message)" }
+            }
+        }
+
+        # Remove downloaded ESD files from the root path when requested
+        if ($RemoveDownloadedESD -and -not [string]::IsNullOrWhiteSpace($RootPath) -and (Test-Path -LiteralPath $RootPath -PathType Container)) {
+            WriteLog "CommonCleanup: Removing downloaded ESD files in $RootPath"
+            Get-ChildItem -LiteralPath $RootPath -Filter *.esd -File -ErrorAction SilentlyContinue | ForEach-Object {
+                try {
+                    WriteLog "CommonCleanup: Removing ESD $($_.FullName)"
+                    Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                }
+                catch {
+                    WriteLog "CommonCleanup: Failed removing ESD $($_.FullName) : $($_.Exception.Message)"
+                }
             }
         }
 
