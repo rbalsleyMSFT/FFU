@@ -2223,6 +2223,8 @@ function Get-Office {
     # Run setup.exe with config.xml and modify xml file to download to $OfficePath
     $xmlContent = [xml](Get-Content $OfficeDownloadXML)
     $xmlContent.Configuration.Add.SourcePath = $OfficePath
+    # Back up existing XML content before changing it so cancel cleanup can restore pre-run state.
+    Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $OfficeDownloadXML
     $xmlContent.Save($OfficeDownloadXML)
     Mark-DownloadInProgress -FFUDevelopmentPath $FFUDevelopmentPath -TargetPath $OfficePath
     WriteLog "Downloading M365 Apps/Office to $OfficePath"
@@ -2238,6 +2240,8 @@ function Get-Office {
     $installOfficePath = Join-Path -Path $orchestrationpath -ChildPath "Install-Office.ps1"
     # Create the Install-Office.ps1 file
     $installOfficeCommand = "& d:\Office\setup.exe /configure d:\office\$OfficeInstallXML"
+    # Back up any pre-existing script with the same name before overwrite.
+    Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $installOfficePath
     Set-Content -Path $installOfficePath -Value $installOfficeCommand -Force
     WriteLog "Install-Office.ps1 created successfully at $installOfficePath"
 
@@ -2553,20 +2557,20 @@ function Get-Index {
     if ($editionIdCandidates.Count -gt 0) {
         # Build per-index metadata (EditionId, InstallationType) to match deterministically
         $imageMetadata = @(foreach ($imageIndex in $imageIndexes) {
-            try {
-                $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
-                [pscustomobject]@{
-                    ImageIndex       = $details.ImageIndex
-                    ImageName        = $details.ImageName
-                    ImageSize        = $details.ImageSize
-                    EditionId        = $details.EditionId
-                    InstallationType = $details.InstallationType
+                try {
+                    $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
+                    [pscustomobject]@{
+                        ImageIndex       = $details.ImageIndex
+                        ImageName        = $details.ImageName
+                        ImageSize        = $details.ImageSize
+                        EditionId        = $details.EditionId
+                        InstallationType = $details.InstallationType
+                    }
                 }
-            }
-            catch {
-                $null
-            }
-        }) | Where-Object { $null -ne $_ }
+                catch {
+                    $null
+                }
+            }) | Where-Object { $null -ne $_ }
 
         # Match by EditionId first
         $imageMatches = $imageMetadata | Where-Object { $_.EditionId -in $editionIdCandidates }
@@ -4341,10 +4345,10 @@ function Get-FFUEnvironment {
             WriteLog "Cleanup-CurrentRunDownloads failed: $($_.Exception.Message)"
         }
         try {
-            Restore-RunJsonBackups -FFUDevelopmentPath $FFUDevelopmentPath
+            Restore-RunBackups -FFUDevelopmentPath $FFUDevelopmentPath
         }
         catch {
-            WriteLog "Restore-RunJsonBackups failed: $($_.Exception.Message)"
+            WriteLog "Restore-RunBackups failed: $($_.Exception.Message)"
         }
     }
     # Check for running VMs that start with '_FFU-' and are in the 'Off' state
@@ -4536,38 +4540,38 @@ Function Remove-DisabledArtifacts {
         if ($removed) { WriteLog 'Removal complete' }
     }
 
-        # Remove Edge artifacts if Edge update is disabled
-        if (-not $UpdateEdge) {
-            $removed = $false
-            if (Test-Path -Path $installEdgePath) {
-                WriteLog "Update Edge disabled - removing $installEdgePath"
-                Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
-                $removed = $true
-            }
-            if (Test-Path -Path $EdgePath) {
-                WriteLog "Update Edge disabled - removing $EdgePath"
-                Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
-                $removed = $true
-            }
-            if ($removed) { WriteLog 'Removal complete' }
+    # Remove Edge artifacts if Edge update is disabled
+    if (-not $UpdateEdge) {
+        $removed = $false
+        if (Test-Path -Path $installEdgePath) {
+            WriteLog "Update Edge disabled - removing $installEdgePath"
+            Remove-Item -Path $installEdgePath -Force -ErrorAction SilentlyContinue
+            $removed = $true
         }
-    
-        # Remove LTSC CU in-VM artifacts when this scenario is not selected
-        if (-not ($UpdateLatestCU -and $installationType -eq 'Client' -and $WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like '*LTS*')) {
-            $removed = $false
-            if (Test-Path -Path $InstallLTSCUpdatePath) {
-                WriteLog "Windows 10 LTSB/LTSC latest CU in-VM install not selected - removing $InstallLTSCUpdatePath"
-                Remove-Item -Path $InstallLTSCUpdatePath -Force -ErrorAction SilentlyContinue
-                $removed = $true
-            }
-            if (Test-Path -Path $LtscCUStagePath) {
-                WriteLog "Windows 10 LTSB/LTSC latest CU in-VM install not selected - removing $LtscCUStagePath"
-                Remove-Item -Path $LtscCUStagePath -Recurse -Force -ErrorAction SilentlyContinue
-                $removed = $true
-            }
-            if ($removed) { WriteLog 'Removal complete' }
+        if (Test-Path -Path $EdgePath) {
+            WriteLog "Update Edge disabled - removing $EdgePath"
+            Remove-Item -Path $EdgePath -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
         }
+        if ($removed) { WriteLog 'Removal complete' }
     }
+    
+    # Remove LTSC CU in-VM artifacts when this scenario is not selected
+    if (-not ($UpdateLatestCU -and $installationType -eq 'Client' -and $WindowsRelease -in 2016, 2019, 2021 -and $WindowsSKU -like '*LTS*')) {
+        $removed = $false
+        if (Test-Path -Path $InstallLTSCUpdatePath) {
+            WriteLog "Windows 10 LTSB/LTSC latest CU in-VM install not selected - removing $InstallLTSCUpdatePath"
+            Remove-Item -Path $InstallLTSCUpdatePath -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if (Test-Path -Path $LtscCUStagePath) {
+            WriteLog "Windows 10 LTSB/LTSC latest CU in-VM install not selected - removing $LtscCUStagePath"
+            Remove-Item -Path $LtscCUStagePath -Recurse -Force -ErrorAction SilentlyContinue
+            $removed = $true
+        }
+        if ($removed) { WriteLog 'Removal complete' }
+    }
+}
 
 function Export-ConfigFile {
     [CmdletBinding()]
@@ -4639,9 +4643,12 @@ function New-RunSession {
         if (-not (Test-Path $inprogDir)) { New-Item -ItemType Directory -Path $inprogDir -Force | Out-Null }
 
         $manifest = [ordered]@{
+            SchemaVersion    = 2
             RunStartUtc      = (Get-Date).ToUniversalTime().ToString('o')
             JsonBackups      = @()
             OfficeXmlBackups = @()
+            FileBackups      = @()
+            DownloadTargets  = @()
         }
 
         if ($DriversFolder) {
@@ -4698,6 +4705,56 @@ function Save-RunManifest {
     $manifestPath = Join-Path $FFUDevelopmentPath '.session\currentRun.json'
     $Manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
 }
+function Backup-RunFile {
+    param(
+        [string]$FFUDevelopmentPath,
+        [string]$Path
+    )
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath) -or [string]::IsNullOrWhiteSpace($Path)) { return }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+
+    $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
+    if ($null -eq $manifest) { return }
+
+    # Ensure FileBackups exists for newer schema while remaining compatible with older manifests.
+    if ($null -eq $manifest.PSObject.Properties['FileBackups']) {
+        Add-Member -InputObject $manifest -MemberType NoteProperty -Name FileBackups -Value @()
+    }
+
+    # Skip when this path is already backed up (legacy or current schema).
+    $alreadyBackedUp = $false
+    foreach ($entry in @($manifest.FileBackups) + @($manifest.JsonBackups) + @($manifest.OfficeXmlBackups)) {
+        if ($entry.Path -eq $Path) {
+            $alreadyBackedUp = $true
+            break
+        }
+    }
+    if ($alreadyBackedUp) { return }
+
+    try {
+        # Store a uniquely named backup file so restore can safely overwrite or recreate the original path.
+        $backupDir = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'backups'
+        if (-not (Test-Path -Path $backupDir)) {
+            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        }
+
+        $safeLeaf = Split-Path -Path $Path -Leaf
+        $backupName = "{0}_{1}" -f ([guid]::NewGuid().ToString('N')), $safeLeaf
+        $backupPath = Join-Path $backupDir $backupName
+
+        Copy-Item -LiteralPath $Path -Destination $backupPath -Force
+
+        $fileBackups = @($manifest.FileBackups)
+        $fileBackups += @{ Path = $Path; Backup = $backupPath }
+        $manifest.FileBackups = $fileBackups
+        Save-RunManifest -FFUDevelopmentPath $FFUDevelopmentPath -Manifest $manifest
+
+        WriteLog "Backed up existing file before modification: $Path"
+    }
+    catch {
+        WriteLog "Backup-RunFile failed for $($Path): $($_.Exception.Message)"
+    }
+}
 function Mark-DownloadInProgress {
     param([string]$FFUDevelopmentPath, [string]$TargetPath)
     if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath) -or [string]::IsNullOrWhiteSpace($TargetPath)) { return }
@@ -4706,6 +4763,30 @@ function Mark-DownloadInProgress {
     $marker = Join-Path $sessionInprog ("{0}.marker" -f ([guid]::NewGuid()))
     $payload = @{ TargetPath = $TargetPath; CreatedUtc = (Get-Date).ToUniversalTime().ToString('o') }
     $payload | ConvertTo-Json -Depth 3 | Set-Content -Path $marker -Encoding UTF8
+
+    # Track file download targets so cleanup can remove them even when BITS preserves old source timestamps.
+    try {
+        if ([System.IO.Path]::HasExtension($TargetPath)) {
+            $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
+            if ($manifest) {
+                if ($null -eq $manifest.PSObject.Properties['DownloadTargets']) {
+                    Add-Member -InputObject $manifest -MemberType NoteProperty -Name DownloadTargets -Value @()
+                }
+
+                $downloadTargets = @($manifest.DownloadTargets)
+                if ($TargetPath -notin $downloadTargets) {
+                    $downloadTargets += $TargetPath
+                    $manifest.DownloadTargets = $downloadTargets
+                    Save-RunManifest -FFUDevelopmentPath $FFUDevelopmentPath -Manifest $manifest
+                    WriteLog "Registered current-run download target: $TargetPath"
+                }
+            }
+        }
+    }
+    catch {
+        WriteLog "Failed registering current-run download target $($TargetPath): $($_.Exception.Message)"
+    }
+
     WriteLog "Marked in-progress: $TargetPath"
 }
 function Clear-DownloadInProgress {
@@ -4830,13 +4911,59 @@ function Remove-InProgressItems {
             WriteLog "Failed Remove-InProgressItems marker '$($_.FullName)': $($_.Exception.Message)"
         }
     }
-    # Also clean up any driver content created this run (model folders and temp folders),
-    # even when broader current-run cleanup is not requested.
+    # Also clean up any driver content created this run (model folders, temp folders, and files)
+    # only when broader current-run cleanup is requested.
     try {
         if ($DriversFolder -and (Test-Path $DriversFolder)) {
             $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
-            if ($manifest -and $manifest.RunStartUtc) {
+            $driverProcessingMarker = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'driverProcessing.active'
+            $shouldCleanupDriverCurrentRun = ($CleanupCurrentRunDownloads -or (Test-Path -LiteralPath $driverProcessingMarker))
+
+            if ($manifest -and $manifest.RunStartUtc -and $shouldCleanupDriverCurrentRun) {
+                if (-not $CleanupCurrentRunDownloads) {
+                    WriteLog 'Driver processing marker detected during cancel; running in-progress driver cleanup for current run.'
+                }
                 $runStart = [datetime]::Parse($manifest.RunStartUtc)
+                $affectedMakeRoots = @{}
+
+                # Remove tracked driver download targets for this run.
+                # This handles BITS files whose timestamps can be inherited from source metadata.
+                # Preserve HP platform list artifacts because they are model-list cache assets, not per-model download artifacts.
+                if ($manifest.PSObject.Properties['DownloadTargets']) {
+                    foreach ($downloadTarget in @($manifest.DownloadTargets)) {
+                        if ([string]::IsNullOrWhiteSpace($downloadTarget)) { continue }
+
+                        try {
+                            $fullTarget = [System.IO.Path]::GetFullPath($downloadTarget).TrimEnd('\')
+                            $driversRoot = [System.IO.Path]::GetFullPath($DriversFolder).TrimEnd('\')
+                            if (-not $fullTarget.StartsWith($driversRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+                            $leafName = [System.IO.Path]::GetFileName($fullTarget)
+                            if ($leafName -in @('platformList.cab', 'platformList.xml')) { continue }
+
+                            if (Test-Path -LiteralPath $downloadTarget -PathType Leaf) {
+                                WriteLog "Removing tracked driver file from current run: $downloadTarget"
+                                $removed = $false
+                                try { $removed = Remove-PathWithRetry -path $downloadTarget -isDirectory:$false } catch {}
+
+                                if ($removed) {
+                                    $relative = $fullTarget.Substring($driversRoot.Length).TrimStart('\')
+                                    $parts = $relative -split '\\'
+                                    if ($parts.Length -ge 1 -and -not [string]::IsNullOrWhiteSpace($parts[0])) {
+                                        $makeRoot = Join-Path $DriversFolder $parts[0]
+                                        $affectedMakeRoots[$makeRoot] = $true
+                                    }
+                                }
+                                else {
+                                    WriteLog "Failed removing tracked driver file from current run after retries: $downloadTarget"
+                                }
+                            }
+                        }
+                        catch {
+                            WriteLog "Failed removing tracked driver target '$($downloadTarget)': $($_.Exception.Message)"
+                        }
+                    }
+                }
 
                 # Remove OEM temp folders like _TEMP_* (safe to always remove)
                 Get-ChildItem -Path $DriversFolder -Directory -Recurse -ErrorAction SilentlyContinue |
@@ -4844,6 +4971,22 @@ function Remove-InProgressItems {
                 ForEach-Object {
                     WriteLog "Removing driver temp folder: $($_.FullName)"
                     Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                }
+
+                # Remove residual BITS temp files under Drivers regardless of timestamp.
+                Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    $makeRoot = $_.FullName
+                    Get-ChildItem -Path $makeRoot -File -Recurse -Force -Filter 'BIT*.tmp' -ErrorAction SilentlyContinue | ForEach-Object {
+                        WriteLog "Removing residual BITS temp file: $($_.FullName)"
+                        $removed = $false
+                        try { $removed = Remove-PathWithRetry -path $_.FullName -isDirectory:$false } catch {}
+                        if ($removed) {
+                            $affectedMakeRoots[$makeRoot] = $true
+                        }
+                        else {
+                            WriteLog "Failed removing residual BITS temp file after retries: $($_.FullName)"
+                        }
+                    }
                 }
 
                 # Remove model folders created/modified this run; never remove top-level make roots
@@ -4854,21 +4997,40 @@ function Remove-InProgressItems {
                     Where-Object { $_.CreationTimeUtc -ge $runStart -or $_.LastWriteTimeUtc -ge $runStart } |
                     ForEach-Object {
                         WriteLog "Removing driver model folder from current run: $($_.FullName)"
+                        $affectedMakeRoots[$makeRoot] = $true
                         Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
                     }
                 }
 
-                # Remove make root folders created this run (if empty)
-                Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.CreationTimeUtc -ge $runStart -and $_.LastWriteTimeUtc -ge $runStart } |
-                ForEach-Object {
-                    $any = Get-ChildItem -Path $_.FullName -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-                    if ($null -eq $any) {
-                        WriteLog "Removing empty make root folder created this run: $($_.FullName)"
-                        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                # Remove run-created driver files that can live outside model folders
+                # (for example BITS temp files and vendor index JSON files under make roots).
+                Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    $makeRoot = $_.FullName
+                    Get-ChildItem -Path $makeRoot -File -Recurse -Force -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CreationTimeUtc -ge $runStart } |
+                    ForEach-Object {
+                        WriteLog "Removing driver file from current run: $($_.FullName)"
+                        $affectedMakeRoots[$makeRoot] = $true
+                        $removed = $false
+                        try { $removed = Remove-PathWithRetry -path $_.FullName -isDirectory:$false } catch {}
+                        if (-not $removed) {
+                            WriteLog "Failed removing driver file from current run after retries: $($_.FullName)"
+                        }
                     }
-                    else {
-                        WriteLog "Skipping non-empty make root folder: $($_.FullName)"
+                }
+
+                # Remove empty make root folders that were affected during this run.
+                Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    $makeRoot = $_.FullName
+                    if ($affectedMakeRoots.ContainsKey($makeRoot)) {
+                        $any = Get-ChildItem -Path $makeRoot -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($null -eq $any) {
+                            WriteLog "Removing empty make root folder after current-run cleanup: $makeRoot"
+                            Remove-Item -Path $makeRoot -Recurse -Force -ErrorAction SilentlyContinue
+                        }
+                        else {
+                            WriteLog "Skipping non-empty affected make root folder: $makeRoot"
+                        }
                     }
                 }
             }
@@ -4884,7 +5046,77 @@ function Cleanup-CurrentRunDownloads {
     if ($null -eq $manifest) { WriteLog "No current run manifest; skipping current-run cleanup."; return }
     $runStart = [datetime]::Parse($manifest.RunStartUtc)
 
-    # 1) Generic current-run scrub across known roots (includes Orchestration now)
+    # Remove tracked file download targets for this run.
+    # This handles BITS files that may keep old source timestamps and bypass time-based cleanup.
+    $affectedDriverMakeRoots = @{}
+    if ($manifest.PSObject.Properties['DownloadTargets']) {
+        foreach ($downloadTarget in @($manifest.DownloadTargets)) {
+            if ([string]::IsNullOrWhiteSpace($downloadTarget)) { continue }
+
+            try {
+                if (Test-Path -LiteralPath $downloadTarget -PathType Leaf) {
+                    WriteLog "Removing tracked current-run download file: $downloadTarget"
+
+                    $removed = $false
+                    for ($i = 0; $i -lt 5; $i++) {
+                        try {
+                            try { (Get-Item -LiteralPath $downloadTarget -ErrorAction SilentlyContinue).Attributes = 'Normal' } catch {}
+                            Remove-Item -LiteralPath $downloadTarget -Force -ErrorAction Stop
+                            $removed = $true
+                            break
+                        }
+                        catch {
+                            Start-Sleep -Milliseconds 400
+                        }
+                    }
+
+                    if ($removed) {
+                        if ($DriversFolder) {
+                            try {
+                                $fullTarget = [System.IO.Path]::GetFullPath($downloadTarget).TrimEnd('\')
+                                $driversRoot = [System.IO.Path]::GetFullPath($DriversFolder).TrimEnd('\')
+                                if ($fullTarget.StartsWith($driversRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                    $parent = Split-Path -Path $fullTarget -Parent
+                                    $parentParent = Split-Path -Path $parent -Parent
+                                    if ($parent -and $parentParent) {
+                                        $fullParentParent = [System.IO.Path]::GetFullPath($parentParent).TrimEnd('\')
+                                        if ($fullParentParent -ieq $driversRoot) {
+                                            $affectedDriverMakeRoots[$parent] = $true
+                                        }
+                                    }
+                                }
+                            }
+                            catch {}
+                        }
+                    }
+                    else {
+                        WriteLog "Failed removing tracked current-run download file after retries: $downloadTarget"
+                    }
+                }
+            }
+            catch {
+                WriteLog "Failed removing tracked current-run download file $($downloadTarget): $($_.Exception.Message)"
+            }
+        }
+    }
+
+    # Remove empty make roots affected by tracked download file removal.
+    foreach ($makeRoot in $affectedDriverMakeRoots.Keys) {
+        try {
+            if (Test-Path -LiteralPath $makeRoot -PathType Container) {
+                $any = Get-ChildItem -Path $makeRoot -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($null -eq $any) {
+                    WriteLog "Removing empty make root folder after tracked download cleanup: $makeRoot"
+                    Remove-Item -LiteralPath $makeRoot -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        catch {
+            WriteLog "Failed removing empty make root folder '$($makeRoot)': $($_.Exception.Message)"
+        }
+    }
+
+    # 1) Generic current-run scrub across known download roots.
     $roots = @()
     if ($AppsPath) { $roots += (Join-Path $AppsPath 'Win32'); $roots += (Join-Path $AppsPath 'MSStore') }
     if ($DefenderPath) { $roots += $DefenderPath }
@@ -4893,7 +5125,6 @@ function Cleanup-CurrentRunDownloads {
     if ($EdgePath) { $roots += $EdgePath }
     if ($KBPath) { $roots += $KBPath }
     if ($DriversFolder) { $roots += $DriversFolder }
-    if ($orchestrationPath) { $roots += $orchestrationPath }
 
     foreach ($root in $roots | Where-Object { $_ -and (Test-Path $_) }) {
         $isDriversRoot = $false
@@ -4931,7 +5162,7 @@ function Cleanup-CurrentRunDownloads {
             }
 
             # Remove driver files created this run
-            Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue |
+            Get-ChildItem -Path $root -File -Recurse -Force -ErrorAction SilentlyContinue |
             Where-Object { $_.CreationTimeUtc -ge $runStart } |
             ForEach-Object {
                 try {
@@ -4939,6 +5170,16 @@ function Cleanup-CurrentRunDownloads {
                     Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
                 }
                 catch { WriteLog "Failed removing driver file $($_.FullName): $($_.Exception.Message)" }
+            }
+
+            # Remove residual BITS temp files under Drivers regardless of timestamp.
+            Get-ChildItem -Path $root -File -Recurse -Force -Filter 'BIT*.tmp' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                try {
+                    WriteLog "Removing residual BITS temp file: $($_.FullName)"
+                    Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+                }
+                catch { WriteLog "Failed removing residual BITS temp file $($_.FullName): $($_.Exception.Message)" }
             }
 
             # Prune empty driver folders (skip existing make roots)
@@ -4967,9 +5208,9 @@ function Cleanup-CurrentRunDownloads {
         }
         else {
             WriteLog "Scanning for current-run items in $root"
-            # Remove folders created/modified this run (legacy behavior for non-Drivers roots)
+            # Remove only folders created this run so pre-existing modified files are not deleted.
             Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTimeUtc -ge $runStart } |
+            Where-Object { $_.CreationTimeUtc -ge $runStart } |
             Sort-Object FullName -Descending | ForEach-Object {
                 try {
                     WriteLog "Removing current-run folder: $($_.FullName)"
@@ -4977,9 +5218,9 @@ function Cleanup-CurrentRunDownloads {
                 }
                 catch { WriteLog "Failed removing folder $($_.FullName): $($_.Exception.Message)" }
             }
-            # Remove files created/modified this run (preserve Office XMLs)
+            # Remove only files created this run so pre-existing modified files are restored instead of removed.
             Get-ChildItem -Path $root -File -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTimeUtc -ge $runStart -and $_.Name -notin @('DeployFFU.xml', 'DownloadFFU.xml') } |
+            Where-Object { $_.CreationTimeUtc -ge $runStart -and $_.Name -notin @('DeployFFU.xml', 'DownloadFFU.xml') } |
             ForEach-Object {
                 try {
                     WriteLog "Removing current-run file: $($_.FullName)"
@@ -4990,12 +5231,16 @@ function Cleanup-CurrentRunDownloads {
         }
     }
 
-    # 2) Office folder policy: keep XML configs, remove everything else
+    # 2) Office folder policy: keep XML configs, remove only current-run Office content
     if ($OfficePath -and (Test-Path $OfficePath)) {
         $preserve = @('DeployFFU.xml', 'DownloadFFU.xml')
-        WriteLog "Cleaning Office folder: preserving $($preserve -join ', ') and removing other content."
-        Get-ChildItem -Path $OfficePath -Force | ForEach-Object {
-            if ($preserve -notcontains $_.Name) {
+        $officeItemsToRemove = Get-ChildItem -Path $OfficePath -Force -ErrorAction SilentlyContinue | Where-Object {
+            ($preserve -notcontains $_.Name) -and ($_.CreationTimeUtc -ge $runStart)
+        }
+
+        if ($officeItemsToRemove) {
+            WriteLog "Cleaning Office folder: preserving $($preserve -join ', ') and removing current-run content only."
+            $officeItemsToRemove | ForEach-Object {
                 try {
                     WriteLog "Removing Office item: $($_.FullName)"
                     if ($_.PSIsContainer) {
@@ -5008,26 +5253,38 @@ function Cleanup-CurrentRunDownloads {
                 catch { WriteLog "Failed removing Office item $($_.FullName): $($_.Exception.Message)" }
             }
         }
+        else {
+            WriteLog 'Skipping Office cleanup: no current-run Office content detected.'
+        }
     }
 
-    # 3) Remove generated update artifacts under Orchestration (Update-*.ps1) created this run
+    # 3) Remove generated orchestration artifacts created this run when there was no pre-run backup.
     if ($orchestrationPath -and (Test-Path $orchestrationPath)) {
-        try {
-            Get-ChildItem -Path $orchestrationPath -Filter 'Update-*.ps1' -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTimeUtc -ge $runStart } | ForEach-Object {
-                WriteLog "Removing current-run artifact: $($_.FullName)"
-                Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue
+        $generatedArtifacts = @(
+            'Update-Defender.ps1',
+            'Update-MSRT.ps1',
+            'Update-OneDrive.ps1',
+            'Update-Edge.ps1',
+            'Install-Office.ps1',
+            'Install-LTSCUpdate.ps1',
+            'AppsScriptVariables.json'
+        )
+
+        foreach ($artifactName in $generatedArtifacts) {
+            try {
+                $artifactPath = Join-Path $orchestrationPath $artifactName
+                if (Test-Path -LiteralPath $artifactPath) {
+                    $hasBackup = (@($manifest.FileBackups) + @($manifest.JsonBackups) + @($manifest.OfficeXmlBackups)) | Where-Object { $_.Path -eq $artifactPath } | Select-Object -First 1
+                    if ($null -eq $hasBackup) {
+                        $fi = Get-Item -LiteralPath $artifactPath
+                        if ($fi.LastWriteTimeUtc -ge $runStart) {
+                            WriteLog "Removing current-run artifact: $artifactPath"
+                            Remove-Item -LiteralPath $artifactPath -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
             }
-        }
-        catch { WriteLog "Failed removing Update-*.ps1 artifacts: $($_.Exception.Message)" }
-        # Also remove Install-Office.ps1 if created this run
-        $installOffice = Join-Path $orchestrationPath 'Install-Office.ps1'
-        if (Test-Path $installOffice) {
-            $fi = Get-Item $installOffice
-            if ($fi.LastWriteTimeUtc -ge $runStart) {
-                WriteLog "Removing current-run artifact: $installOffice"
-                Remove-Item -Path $installOffice -Force -ErrorAction SilentlyContinue
-            }
+            catch { WriteLog "Failed removing generated artifact $($artifactName): $($_.Exception.Message)" }
         }
     }
 
@@ -5065,65 +5322,78 @@ function Cleanup-CurrentRunDownloads {
         }
     }
 }
-function Restore-RunJsonBackups {
+function Restore-RunBackups {
     param([string]$FFUDevelopmentPath)
     $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
     if ($null -eq $manifest) { return }
     $runStart = [datetime]::Parse($manifest.RunStartUtc)
 
-    foreach ($entry in $manifest.JsonBackups) {
+    # Build a unified backup list for compatibility across manifest versions.
+    $allBackups = @()
+    if ($manifest.PSObject.Properties['FileBackups']) { $allBackups += @($manifest.FileBackups) }
+    if ($manifest.PSObject.Properties['JsonBackups']) { $allBackups += @($manifest.JsonBackups) }
+    if ($manifest.PSObject.Properties['OfficeXmlBackups']) { $allBackups += @($manifest.OfficeXmlBackups) }
+
+    # Restore any pre-existing files that were backed up before in-run modification.
+    foreach ($entry in $allBackups) {
+        if ($null -eq $entry -or [string]::IsNullOrWhiteSpace($entry.Path) -or [string]::IsNullOrWhiteSpace($entry.Backup)) { continue }
         $path = $entry.Path
         $backup = $entry.Backup
         try {
-            if (Test-Path $backup) {
-                WriteLog "Restoring JSON from backup: $path"
-                Copy-Item -Path $backup -Destination $path -Force
+            if (Test-Path -LiteralPath $backup) {
+                WriteLog "Restoring file from backup: $path"
+                Copy-Item -LiteralPath $backup -Destination $path -Force
             }
         }
         catch { WriteLog "Failed restoring backup for $($path): $($_.Exception.Message)" }
     }
 
+    # Remove current-run JSON files that were generated this run and had no pre-run backup.
     $candidateJsons = @()
     if ($DriversFolder) { $candidateJsons += (Join-Path $DriversFolder 'DriverMapping.json') }
     if ($orchestrationPath) { $candidateJsons += (Join-Path $orchestrationPath 'WinGetWin32Apps.json') }
 
     foreach ($jp in $candidateJsons) {
-        if (Test-Path $jp) {
-            $hasBackup = $manifest.JsonBackups | Where-Object { $_.Path -eq $jp }
+        if (Test-Path -LiteralPath $jp) {
+            $hasBackup = $allBackups | Where-Object { $_.Path -eq $jp } | Select-Object -First 1
             if ($null -eq $hasBackup) {
-                $fi = Get-Item $jp
+                $fi = Get-Item -LiteralPath $jp
                 if ($fi.LastWriteTimeUtc -ge $runStart) {
                     WriteLog "Removing current-run JSON: $jp"
-                    Remove-Item -Path $jp -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $jp -Force -ErrorAction SilentlyContinue
                 }
             }
         }
     }
-}
 
-# Restore Office XML backups if present; ensure Office folder exists and only XMLs remain
-if ($manifest.OfficeXmlBackups -and $OfficePath) {
-    if (-not (Test-Path $OfficePath)) {
-        try { New-Item -ItemType Directory -Path $OfficePath -Force | Out-Null } catch {}
-    }
-    foreach ($ox in $manifest.OfficeXmlBackups) {
-        try {
-            WriteLog "Restoring Office XML from backup: $($ox.Path)"
-            Copy-Item -Path $ox.Backup -Destination $ox.Path -Force
+    # Restore Office XML backups if present; ensure Office folder exists and only XMLs remain.
+    if ($manifest.OfficeXmlBackups -and $OfficePath) {
+        if (-not (Test-Path $OfficePath)) {
+            try { New-Item -ItemType Directory -Path $OfficePath -Force | Out-Null } catch {}
         }
-        catch { WriteLog "Failed restoring Office XML $($ox.Path): $($_.Exception.Message)" }
-    }
-    # Ensure only DeployFFU.xml and DownloadFFU.xml remain
-    $preserve = @('DeployFFU.xml', 'DownloadFFU.xml')
-    Get-ChildItem -Path $OfficePath -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($preserve -notcontains $_.Name) {
+        foreach ($ox in $manifest.OfficeXmlBackups) {
             try {
-                if ($_.PSIsContainer) { Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
-                else { Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue }
+                WriteLog "Restoring Office XML from backup: $($ox.Path)"
+                Copy-Item -Path $ox.Backup -Destination $ox.Path -Force
             }
-            catch { WriteLog "Failed removing extra Office item $($_.FullName): $($_.Exception.Message)" }
+            catch { WriteLog "Failed restoring Office XML $($ox.Path): $($_.Exception.Message)" }
+        }
+        # Ensure only DeployFFU.xml and DownloadFFU.xml remain.
+        $preserve = @('DeployFFU.xml', 'DownloadFFU.xml')
+        Get-ChildItem -Path $OfficePath -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($preserve -notcontains $_.Name) {
+                try {
+                    if ($_.PSIsContainer) { Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+                    else { Remove-Item -Path $_.FullName -Force -ErrorAction SilentlyContinue }
+                }
+                catch { WriteLog "Failed removing extra Office item $($_.FullName): $($_.Exception.Message)" }
+            }
         }
     }
+}
+function Restore-RunJsonBackups {
+    param([string]$FFUDevelopmentPath)
+    Restore-RunBackups -FFUDevelopmentPath $FFUDevelopmentPath
 }
 
 ###END FUNCTIONS
@@ -5597,15 +5867,36 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         }
         
         WriteLog "Starting parallel driver processing using Invoke-ParallelProcessing..."
-        # Use the configured Threads value to control driver download concurrency
-        $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $driversToProcess `
-            -TaskType 'DownloadDriverByMake' `
-            -TaskArguments $taskArguments `
-            -IdentifierProperty 'Model' `
-            -WindowObject $null `
-            -ListViewControl $null `
-            -MainThreadLogPath $LogFile `
-            -ThrottleLimit $Threads
+        # Mark driver processing as active so Cancel+No can still clean partial driver artifacts.
+        $driverProcessingMarker = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'driverProcessing.active'
+        try {
+            Set-Content -Path $driverProcessingMarker -Value ((Get-Date).ToUniversalTime().ToString('o')) -Encoding UTF8
+        }
+        catch {
+            WriteLog "Failed to create driver processing marker at $($driverProcessingMarker): $($_.Exception.Message)"
+        }
+
+        try {
+            # Use the configured Threads value to control driver download concurrency
+            $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $driversToProcess `
+                -TaskType 'DownloadDriverByMake' `
+                -TaskArguments $taskArguments `
+                -IdentifierProperty 'Model' `
+                -WindowObject $null `
+                -ListViewControl $null `
+                -MainThreadLogPath $LogFile `
+                -ThrottleLimit $Threads
+        }
+        finally {
+            if (Test-Path -Path $driverProcessingMarker) {
+                try {
+                    Remove-Item -Path $driverProcessingMarker -Force -ErrorAction SilentlyContinue
+                }
+                catch {
+                    WriteLog "Failed to remove driver processing marker at $($driverProcessingMarker): $($_.Exception.Message)"
+                }
+            }
+        }
 
         # After processing, update the driver mapping file and detect failures
         $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -6005,6 +6296,8 @@ if ($InstallApps) {
 
                     # Create Update-Defender.ps1
                     WriteLog "Creating $installDefenderPath"
+                    # Back up any pre-existing script with the same name before overwrite.
+                    Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $installDefenderPath
                     Set-Content -Path $installDefenderPath -Value $installDefenderCommand -Force
                     if (Test-Path -Path $installDefenderPath) {
                         WriteLog "$installDefenderPath created successfully"
@@ -6062,6 +6355,8 @@ if ($InstallApps) {
                     $installMSRTPath = Join-Path -Path $orchestrationPath -ChildPath "Update-MSRT.ps1"
                     WriteLog "Creating $installMSRTPath"
                     $installMSRTCommand = "& d:\MSRT\$MSRTFileName /quiet"
+                    # Back up any pre-existing script with the same name before overwrite.
+                    Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $installMSRTPath
                     Set-Content -Path $installMSRTPath -Value $installMSRTCommand -Force
                     # Validate that the file created successfully
                     if (Test-Path -Path $installMSRTPath) {
@@ -6113,6 +6408,8 @@ if ($InstallApps) {
                     $installODPath = Join-Path -Path $orchestrationPath -ChildPath "Update-OneDrive.ps1"
                     WriteLog "Creating $installODPath"
                     $installODCommand = "& d:\OneDrive\OneDriveSetup.exe /allusers /silent"
+                    # Back up any pre-existing script with the same name before overwrite.
+                    Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $installODPath
                     Set-Content -Path $installODPath -Value $installODCommand -Force
                     # Validate that the file created successfully
                     if (Test-Path -Path $installODPath) {
@@ -6167,6 +6464,8 @@ if ($InstallApps) {
                     $installEdgePath = Join-Path -Path $orchestrationPath -ChildPath "Update-Edge.ps1"
                     WriteLog "Creating $installEdgePath"
                     $installEdgeCommand = "& d:\Edge\$EdgeMSIFileName /quiet /norestart"
+                    # Back up any pre-existing script with the same name before overwrite.
+                    Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $installEdgePath
                     Set-Content -Path $installEdgePath -Value $installEdgeCommand -Force
                     # Validate that the file created successfully
                     if (Test-Path -Path $installEdgePath) {
@@ -6177,11 +6476,13 @@ if ($InstallApps) {
                         throw "$installEdgePath failed to create"
                     }
                 }
-                
+                        
             }
-
+        
             # Process AppsScriptVariables - Create json file
             if ($AppsScriptVariables) {
+                # Back up any pre-existing JSON before overwrite.
+                Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $appsScriptVarsJsonPath
                 $AppsScriptVariables | ConvertTo-Json | Out-File -FilePath $appsScriptVarsJsonPath -Encoding UTF8
                 WriteLog "AppsScriptVariables exported to $appsScriptVarsJsonPath for use during orchestration"
             }
@@ -6979,7 +7280,7 @@ if ($InstallApps -and $installLatestCuInVm) {
             }
         }
 
-         # Stage CU payload into Apps content so it is included in Apps ISO
+        # Stage CU payload into Apps content so it is included in Apps ISO
         if (-not (Test-Path -Path $LtscCUStagePath)) {
             WriteLog "Creating LTSC CU staging folder $LtscCUStagePath"
             New-Item -Path $LtscCUStagePath -ItemType Directory -Force | Out-Null
@@ -7061,6 +7362,8 @@ if (`$wusaExitCode -eq 0 -or `$wusaExitCode -eq 2359302) {
 throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
 "@
 
+        # Back up any pre-existing script with the same name before overwrite.
+        Backup-RunFile -FFUDevelopmentPath $FFUDevelopmentPath -Path $InstallLTSCUpdatePath
         Set-Content -Path $InstallLTSCUpdatePath -Value $installLtscUpdateCommand -Force
         if (-not (Test-Path -Path $InstallLTSCUpdatePath)) {
             throw "Failed to create $InstallLTSCUpdatePath"

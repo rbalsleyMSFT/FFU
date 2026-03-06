@@ -157,6 +157,79 @@ function Invoke-Process {
     return $cmd
 }
 
+function Get-RunManifestPathForDownloadTarget {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Destination
+    )
+
+    try {
+        $currentPath = Split-Path -Path $Destination -Parent
+        if ([string]::IsNullOrWhiteSpace($currentPath)) { return $null }
+
+        while ($currentPath) {
+            $manifestPath = Join-Path -Path $currentPath -ChildPath '.session\currentRun.json'
+            if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+                return $manifestPath
+            }
+
+            $parentPath = Split-Path -Path $currentPath -Parent
+            if ([string]::IsNullOrWhiteSpace($parentPath) -or $parentPath -eq $currentPath) {
+                break
+            }
+            $currentPath = $parentPath
+        }
+    }
+    catch {
+        WriteLog "Get-RunManifestPathForDownloadTarget failed for '$Destination': $($_.Exception.Message)"
+    }
+
+    return $null
+}
+
+function Register-CurrentRunDownloadTarget {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Destination
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Destination)) { return }
+
+    $manifestPath = Get-RunManifestPathForDownloadTarget -Destination $Destination
+    if ([string]::IsNullOrWhiteSpace($manifestPath)) { return }
+
+    $mutexName = 'Global\FFUCurrentRunDownloadTargetsMutex'
+    $mutex = New-Object System.Threading.Mutex($false, $mutexName)
+
+    try {
+        $null = $mutex.WaitOne()
+
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $manifest) { return }
+
+        if ($null -eq $manifest.PSObject.Properties['DownloadTargets']) {
+            Add-Member -InputObject $manifest -MemberType NoteProperty -Name DownloadTargets -Value @()
+        }
+
+        $downloadTargets = @($manifest.DownloadTargets)
+        if ($Destination -notin $downloadTargets) {
+            $downloadTargets += $Destination
+            $manifest.DownloadTargets = $downloadTargets
+            $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+            WriteLog "Registered current-run download target: $Destination"
+        }
+    }
+    catch {
+        WriteLog "Register-CurrentRunDownloadTarget failed for '$Destination': $($_.Exception.Message)"
+    }
+    finally {
+        try { $mutex.ReleaseMutex() | Out-Null } catch {}
+        $mutex.Dispose()
+    }
+}
+
 # Function to download a file using BITS with retry and error handling
 function Start-BitsTransferWithRetry {
     param (
@@ -180,6 +253,10 @@ function Start-BitsTransferWithRetry {
             $Priority = 'Normal'
         }
     }
+
+    # Register destination so cancel cleanup can remove this run's downloaded files
+    # even when file timestamps are inherited from the source.
+    Register-CurrentRunDownloadTarget -Destination $Destination
 
     $attempt = 0
     $lastError = $null

@@ -211,6 +211,14 @@ function Save-DellDriversTask {
             Invoke-Process -FilePath Expand.exe -ArgumentList """$modelCabPath"" ""$modelXmlPath""" | Out-Null
             Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue
             if (-not (Test-Path $modelXmlPath)) { throw "Model XML not found after extraction: $modelXmlPath" }
+
+            # Track extracted model XML so cancel cleanup can remove it even if file timestamps are preserved from source metadata.
+            try {
+                Register-CurrentRunDownloadTarget -Destination $modelXmlPath
+            }
+            catch {
+                WriteLog "Failed to register Dell model XML for current-run cleanup ($modelXmlPath): $($_.Exception.Message)"
+            }
             
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Selecting latest drivers...' }
             $packages = Get-DellLatestDriverPackages -ModelXmlPath $modelXmlPath -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
