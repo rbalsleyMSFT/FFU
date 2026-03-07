@@ -1934,8 +1934,8 @@ function Get-ProductsCab {
         [string]$BuildVersion
     )
 
-    $productsArchitecture = if ($Architecture -eq 'arm64') { 'arm64' } else { 'amd64' }
-    $productsParam = "PN=Windows.Products.Cab.$productsArchitecture&V=$BuildVersion"
+    # Always request the amd64 products catalog because it contains both x64 and arm64 media entries.
+    $productsParam = "PN=Windows.Products.Cab.amd64&V=$BuildVersion"
     $deviceAttributes = "DUScan=1;OSVersion=10.0.26100.1"
 
     $bodyObj = [ordered]@{
