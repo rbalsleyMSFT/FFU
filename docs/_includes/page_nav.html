@@ -1,0 +1,17 @@
+<!-- docs/_includes/page_nav.html -->
+<div class="d-flex flex-justify-between mt-6">
+  {% assign prev_url   = include.prev_url  | default: page.prev_url %}
+  {% assign prev_label = include.prev_label| default: page.prev_label | default: 'Home' %}
+  {% assign next_url   = include.next_url  | default: page.next_url %}
+  {% assign next_label = include.next_label| default: page.next_label | default: 'Next' %}
+
+  {% if prev_url %}
+    <a class="btn btn-outline" href="{{ prev_url | relative_url }}">← {{ prev_label }}</a>
+  {% else %}
+    <span></span>
+  {% endif %}
+
+  {% if next_url %}
+    <a class="btn btn-blue" href="{{ next_url | relative_url }}">{{ next_label }} →</a>
+  {% endif %}
+</div>

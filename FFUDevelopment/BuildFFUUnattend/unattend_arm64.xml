@@ -5,7 +5,7 @@
             <RunAsynchronous>
                 <RunAsynchronousCommand wcm:action="add">
                     <Order>1</Order>
-                    <Path>d:\InstallAppsandSysprep.cmd</Path>
+                    <Path>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -File "d:\orchestration\orchestrator.ps1"</Path>
                 </RunAsynchronousCommand>
             </RunAsynchronous>
         </component>

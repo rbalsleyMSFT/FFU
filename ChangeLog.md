@@ -1,25 +1,312 @@
 # Change Log
 
+# 2602.1 UI Preview
+
+## What's Changed
+
+### Improved Automatic Matching for Surface devices
+
+To keep inline with HP, Dell, and Lenovo, added support for Surface devices to leverage the SystemSKU values from WMI when doing automatic driver matching during deployment. Check https://github.com/rbalsleyMSFT/FFU/pull/394 for more information. Long story short, there's a new `SurfaceDriverIndex.json` file that is created when getting the models which gathers the WMI information per model as well as the download links for each model. This info is used to generate the DriverMapping.json file for Surface to allow for better matching.
+
+There'll be deeper documentation on the new [docs site](https://rbalsleymsft.github.io/FFU/)
+
+### Improved driver injection error handling when deploying drivers via USB
+
+When drivers failed to be added from the USB drive during deployment, ApplyFFU.ps1 would fail with an error message and the deployment wouldn't complete. ApplyFFU.ps1 will now continue on failure and log the error and capture the setupapi.offline.log to the USB drive for troubleshooting if needed.
+
+### Fixed an issue with Windows image index for non-English media
+
+In some cases non-English media would cause the end-user to have to select which Windows SKU to select due to parsing the image name output and assuming the output was in English. BuildFFUVM.ps1 will now parse the edition metadata for each index. This should improve the experience for those that are creating FFUs from non-English media.
+
+### Run builds in separate pwsh process instead of background jobs
+
+In https://github.com/rbalsleyMSFT/FFU/pull/393, by changing the deprecated Get-WmiObject calls to Get-CimInstance, this actually broke console output. Still don't fully understand why GWMI was allowing background jobs to output console output to the calling pwsh Window but get-ciminstance wouldn't (WinRM, PowerShell Remoting, etc), but this required changing to running the build in a separate pwsh process. Between this and https://github.com/rbalsleyMSFT/FFU/pull/393, this should fix those that might build their FFUs on Servers and still expect to see console output.
+
+### Fixed an issue with USB drive selection for same-model USB drives
+
+When using the UI and selecting specific USB drives to create, the UI would allow you to select multiple of the same name, but would only create one of the drives. You should now be able to multi-select multiple USB drives with the same name and they should build as expected.
+
+### Created new docs site
+
+[FFU Builder docs](https://rbalsleymsft.github.io/FFU/) are now available! I'm still working on adding more documentation, but the layout of the site, the prereqs, quick start, and UI overview are done. I still have some stuff to migrate from the old docx file and some deep dive stuff to write up (Drivers, Apps, FAQs, Troubleshooting, etc). It should work well on both mobile and desktop. It also has built-in search capabilities to make it easy to find what you're interested in.
+
+## New Contributors
+
+* @JGehl99 made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/393
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2601.1Preview...v2602.1Preview
+
+# 2601.1 UI Preview
+
+## What's Changed
+
+### Improved WinPE driver copy reliability and logging
+
+Fixed a bug where some drivers weren't being copied into WinPE media when using **Use Drivers Folder as PE Drivers Source** option (`UseDriversAsPEDrivers` parameter)
+
+### Improved driver injection for long driver folder paths
+
+In some cases some drivers weren't being copied to the FFU or WinPE deployment media due to long paths. This required some significant refactoring. [See this post](https://github.com/rbalsleyMSFT/FFU/discussions/375) for more details on the changes that were made and the reasoning behind them.
+
+### Fixed an issue with WingetWin32Apps.Json file corruption during parallel app updates
+
+A code refactor that was done to consolidate some of the winget application download work that both the UI and BuildFFUVM.ps1 script caused an issue where parallel writes to the WingetWin32Apps.json file was causing the file to corrupt, resulting in apps not installing as expected.
+
+### Winget App installs now follow Applist.json order
+
+Winget application installs were installing in an indeterministic way when the WingetWin32Apps.json file was created. The order will now follow the order listed in the AppList.json file.
+
+### Support added for Winget Win32 app dependency handling
+
+Some apps (Camtasia) require dependency apps to be installed first. Winget will download said dependency apps. Dependent applications will now install before the calling application. There is also deduplication support added in the event multiple applications have the same dependencies.
+
+**Full Changelog**: [https://github.com/rbalsleyMSFT/FFU/compare/v2512.1Preview...v2601.1Preview](https://github.com/rbalsleyMSFT/FFU/compare/v2512.1Preview...v2601.1Preview)
+
+# 2512.1 UI Preview
+
+## What's Changed
+
+### Refactored Cleanup logic into a shared module
+
+Consolidates duplicated cleanup code by moving logic into a shared function, eliminating redundant implementations across multiple locations.
+
+Removes standalone cleanup functions (Remove-FFU, Remove-Apps, Remove-Updates) and replaces scattered cleanup calls with a single invocation of Invoke-FFUPostBuildCleanup.
+
+### Add 30 second delay to allow for Windows Security Platform to install
+
+There was an issue where the Windows Security Platform would attempt to install in the VM during the build via `Update-Defender.ps1` however the install didn't always happen and on deployment of the FFU, Windows Update would show that the Windows Security Platform needed an update. I suspect this is related to the AppxSVC not being ready during Audit Mode. Adding a 30 second delay appears to work more reliably.
+
+### Windows and .NET CU's now persist across builds
+
+Content in the FFUDevelopment\KB folder was always deleted once it was used. Since the Windows CU is so large now, it doesn't make sense to delete it if a user wants it again and may not be using cached VHDX files.
+
+Deletion of the KB folder is now correctly handled via the **Remove Downloaded Update Files** option on the Build tab.
+
+### Skip CU downloads if the Windows ESD version is current or newer
+
+Now that the Windows ESD media is kept up to date, there rarely will be a need to download the latest CU. There will always be a slight gap when the latest CU comes out and the updated media is available, but that's generally just a few days to a week.
+
+The script will now do some parsing of the windows version of the ESD file and the latest CU and if the ESD is newer, the CU will not be downloaded.
+
+### Fixes an issue with WingetWin32Apps.json file not being created if applications were pre-downloaded via the UI
+
+Fixed a bug due to some code consolidation that broke scenarios where applications that were downloaded via the UI, but were not installing in the VM.
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2511.1preview...v2511.2
+
+# 2511.1 UI Preview
+
+## What's Changed
+
+### Major changes to drivers
+
+A few weeks ago I wrote a [lengthy post](https://github.com/rbalsleyMSFT/FFU/discussions/350) asking for some help testing some changes that were added.
+
+The summary of that post is that there have been significant changes for both Dell and HP driver downloads to leverage the SystemID for each model. This increases the total number of driver models that are exposed in the UI. This also requires the `DriverMapping.json` to be modified to require the SystemID and query the SystemID from WMI when doing automatic matching.
+
+#### Driver folder structure changes on the USB drive - breaking change
+
+Driver folder structure on the USB drive has also changed. The new structure is `Drivers\Make\Model` (e.g. `D:\Drivers\Lenovo\Lenovo 300w`). This structure is consistent with how the UI and `BuildFFUVM.ps1` script download and store drivers and automatically copy them. So if you've been following that, then no changes are required.
+
+Please read [the post](https://github.com/rbalsleyMSFT/FFU/discussions/350) for more details on these changes to drivers.
+
+### Windows 11 25H2 is now the default option for MCT/ESD downloads
+
+For MCT/ESD downloads: Adds dynamic products.cab download functionality for Windows 11 using Windows Update service API instead of static MCT links. This is due to a change in how the MCT pulls the products.cab file. In other words, the Windows 11 25H2 ESD media is now updated each month (usually shortly after patch Tuesday)
+
+### Added 8 new hardware manufactures for automatic driver matching during deployment
+
+Extends hardware detection and driver mapping capabilities to support Panasonic, Viglen, AZW, Fujitsu, Getac, ByteSpeed, and Intel devices when applying the FFU to a device. This does not mean FFU Builder supports downloading drivers from these manufacturers. You'll still need to download the drivers for them manually. You can now create your own `DriverMapping.json` file to include these manufacturers.
+
+Thanks to @arwidmark and the [Modern Driver Management](https://msendpointmgr.com/modern-driver-management/) team for the WMI queries.
+
+### Fixed an issue with long paths when applying drivers from USB
+
+Implemented SUBST drive mappings to shorten driver file paths within WinPE as some paths were causing dism to error when servicing drivers. You should see a Z:\ drive when applying drivers from the USB drive.
+
+### Added an option to skip driver selection when multiple driver models are detected during deployment
+
+Allows users to bypass driver installation by entering 0 at the selection prompt, providing flexibility for deployments that don't require driver updates.
+
+### Add HTTP fallback for BITS transfer network authentication errors
+
+Fixes an issue with standard users elevating PowerShell as Admin and getting BITS errors when trying to download content.
+
+### Add -BitsPriority script parameter
+
+Introduces a new parameter `-BitsPriority` with options `(Foreground, High, Normal, Low)` to control BITS download priority across the build system and UI, allowing users to optimize transfer speeds when needed.
+
+The feature adds a priority selector to the UI with four options (Foreground, High, Normal, Low) and propagates the selection through the build script and common modules. Priority can be set via UI or command-line parameter with Normal as the default.
+
+### BYO Apps: Add MSI path quoting to handle spaces in msiexec arguments
+
+When specifying Build Your Own Apps msiexec arguments, if there were spaces in the argument list that weren't quoted properly, you'd get an error. This should now automatically add missing spaces in case you forget to add them or there are spaces in your application name.
+
+### Misc Fixes
+
+* Fixed some reliability issues when trying to download Lenovo drivers
+* Fixed an issue with PPKG files with spaces
+* Replaced SerialNumber with UniqueID for USB drive identification when building USB drives. USB drive manufacturers may use the same serial number for different drives, potentially causing data loss if the wrong drive is chosen.
+* `-Threads` parameter has been added to `BuildFFUVM.ps1` which defaults to 5, matching the UI behavior. This value can be 1-64.
+* ESD media downloads now use BITS by default
+* Fixed an issue with multi-disk devices. Prior, if multiple disks were detected, ApplyFFU.ps1 would fail. Now a menu pops up asking the end user to select the disk they want to deploy the FFU to
+
+## New Contributors
+
+* @arwidmark made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/325
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2509.1preview...v2511.1preview
+
+# 2509.1 UI Preview
+
+## What's Changed
+
+### [Refactor: Enhance artifact cleanup for disabled features](https://github.com/rbalsleyMSFT/FFU/commit/1ab4093d54b7d9bda9f47d7819694e66ae8de357)
+
+  Renames `Remove-DisabledUpdates` to `Remove-DisabledArtifacts` to better reflect its expanded scope.
+
+  This function now also removes Office installation scripts and downloaded content if the Office installation is disabled via the `$InstallOffice` flag.
+
+  The function call is moved to run before app installations to ensure artifacts are removed prior to the installation phase.
+
+### [Removes the VM workaround for MCT ESD builds](https://github.com/rbalsleyMSFT/FFU/commit/dc5877f398316969299ee03800f3d07c7d98a9ab)
+
+  Comments out the logic that forces app installation when building from a downloaded ESD file. This workaround was implemented to prevent an OOBE reboot loop but is no longer required. This should speed up scenarios where you want to download the ESD media, install the latest CU and .NET CU, and capture the FFU.
+
+### [Update default disk size to 50GB in FFU scripts and UI](https://github.com/rbalsleyMSFT/FFU/commit/372360d7392ad945be0db889a68e1fff0ed3b5d6)
+
+  Changed the default disk size parameter from 30GB to 50GB in BuildFFUVM.ps1 and FFUUI.Core.psm1 to accommodate larger virtual machines.
+  Updated tooltip and default value in the UI XAML file to reflect the new disk size.
+
+### [Adds auto-loading of previous configuration on startup](https://github.com/rbalsleyMSFT/FFU/commit/3ef26f2918977906ebe14e328f015ce4f1941dc3)
+
+Implements a new feature to automatically load the previously saved environment when the UI is launched.
+
+This improves user experience by restoring the last saved configuration, including selected applications and drivers, eliminating the need to manually reload them on each run.
+
+The process loads the main `FFUConfig.json` and then proceeds to load associated Winget, BYO App, and Driver lists if they are defined. UI elements and checkboxes are updated accordingly to reflect the loaded state.
+
+### [Improves UI state after environment autoload](https://github.com/rbalsleyMSFT/FFU/commit/bdf1b63833c83171aed63e8fc16702078ccd577b)
+
+Updates the visibility of UI panels for Winget and drivers when a previous environment is automatically loaded.
+
+This ensures that if Winget apps or driver models are present, their corresponding UI sections are made visible. Additionally, it updates the "select all" checkbox state for Winget results and attempts to pre-select the hardware make for loaded drivers.
+
+### [Add restore defaults and centralize cleanup logic](https://github.com/rbalsleyMSFT/FFU/commit/f3316a017b73bf12cf1a66e3d03a63e29c437cb1)
+
+Introduces a "Restore Defaults" feature in the UI to reset the environment. This action removes generated configuration files, ISOs, downloaded apps, updates, drivers, and FFUs.
+
+The post-build cleanup logic is refactored from the main build script into a new common function. This new function is used by both the standard build process and the new restore defaults feature, promoting code reuse and simplifying maintenance.
+
+### [Add option to dynamically build PE drivers](https://github.com/rbalsleyMSFT/FFU/commit/e2ccd11f07217b389f1622a69794224412e046e1)
+
+Thanks to @JonasKloseBW for the original code for this in https://github.com/rbalsleyMSFT/FFU/pull/115
+
+Introduces a new parameter, `UseDriversAsPEDrivers`, that allows WinPE drivers to be sourced directly from the main driver repository.
+
+When enabled, the script scans all available drivers, parses their INF files, and copies only the essential driver types (e.g., storage, mouse, keyboard, touchpad, system devices) needed for WinPE. This eliminates the need to maintain a separate, manually curated `PEDrivers` folder.
+
+The UI is updated with a new checkbox that becomes visible when "Copy PE Drivers" is selected, making this a sub-option. Parameter validation is also adjusted to support this new workflow.
+
+### [Improve model name normalization for driver mapping](https://github.com/rbalsleyMSFT/FFU/commit/50713188bffcb64f1b0c1f9eb89e02a300e3de98)
+
+Enhances the model name normalization function to better handle variations in hardware model strings. This change introduces specific rules to canonicalize "All-in-One" and screen size variants (e.g., "-in" or "inch") for more reliable matching against driver mapping rules.
+
+Additionally, optimizes performance by normalizing the system model once before the comparison loop. Logging is also added to show the original and normalized model strings for easier debugging.
+
+### [Defer cleanup of compressed driver source folders](https://github.com/rbalsleyMSFT/FFU/commit/c30ed923b68b933f719b9a2941043b813bf4fd3f)
+
+Implements a deferred cleanup mechanism for driver source folders when they are compressed to a WIM and also used for WinPE.
+
+When drivers are compressed, the original source folders are now preserved if they are also needed for WinPE driver injection. A marker file is created in these preserved folders.
+
+A new cleanup step is added after the WinPE media creation to remove these preserved folders, ensuring they are available when needed but not left behind permanently.
+
+### [Refactor config loading and improve error handling](https://github.com/rbalsleyMSFT/FFU/commit/8d7e4d106620761d0ae1a5133f6d6ba301131471)
+
+Extracts the logic for importing supplemental assets (Winget, BYO, Drivers) into a new reusable function. This function is now called by both the manual and automatic configuration loaders, reducing code duplication.
+
+Enhances the manual configuration loading process with more robust error handling. It now provides specific user-facing error messages for file read failures, empty files, and invalid JSON, improving the user experience when loading a malformed configuration.
+
+When loading a configuration, if optional supplemental files like AppList.json are referenced but not found, an informational message is now displayed to the user instead of failing silently.
+
+### [Add robust sanitization for names used in paths](https://github.com/rbalsleyMSFT/FFU/commit/cb14e84a26acaf5863aa3bb094dbf18424798875)
+
+Introduces a new common function, `ConvertTo-SafeName`, to sanitize strings by removing characters that are invalid in Windows file paths.
+
+This function is now used consistently when creating directory and file names for drivers (Dell, HP, Lenovo, Microsoft) and applications to prevent path-related errors. It replaces several ad-hoc sanitization methods with a single, more robust implementation.
+
+### [Includes exit code fields when using Copy Apps button](https://github.com/rbalsleyMSFT/FFU/commit/f37647599a318da29b62154bebff8c8a857d3002)
+
+Adds persistence of AdditionalExitCodes and IgnoreNonZeroExitCodes when exporting the UI list to prevent losing custom exit handling settings and maintain parity with the primary save routine.
+
+### [Sanitizes app names for storage and paths](https://github.com/rbalsleyMSFT/FFU/commit/d1ca1231045e38316733495e1fdb8590a225be67)
+
+Applies name sanitization when persisting the app list and when building/checking Win32 and Store download directories.
+Prevents invalid characters in folder names, aligns persisted names with on-disk structure, and improves detection of existing content to avoid redundant downloads and errors.
+
+### [Adds exit-code overrides and UI for winget apps](https://github.com/rbalsleyMSFT/FFU/commit/d9c0c9c68ee1769230c9789b5c7cb84bcff4d642)
+
+Adds per-app control for additional accepted exit codes and ignoring non‑zero exit codes to improve handling of installers with nonstandard returns.
+
+Exposes editable fields in the app list UI, persists them across search defaults, import/export, and pre-download save, and applies overrides during app resolution to honor configured behavior.
+
+### [Adds UI/CLI to copy additional FFUs to USB build](https://github.com/rbalsleyMSFT/FFU/commit/15a5b16b39887b71ae545c638d57183c97bdf629)
+
+- Enables selecting multiple existing FFU images to include on the deployment USB for easier distribution and testing.
+- Adds a UI option with selectable, sortable list from the capture folder, refresh support, and persisted selections.
+- Validates that selections exist when the option is enabled to prevent empty runs.
+- Supports unattended/CLI flows by prompting early or accepting a preselected list for USB creation; deduplicates and logs chosen files.
+- Always includes the just-built (or latest available) FFU as a base.
+- Improves no-FFU handling and streamlines multi-FFU selection workflow.
+
+### [Standardizes JSON output: depth, UTF-8, key order](https://github.com/rbalsleyMSFT/FFU/commit/6562d16ce500197b428b51915332c6649df302df)
+
+- Sorts top-level config keys before serialization for deterministic files and cleaner diffs.
+- Increases JSON depth to 10 to retain nested settings.
+- Writes JSON as UTF-8 via Set-Content for consistent encoding.
+- Applies across config export and UI save flows.
+
+### [Adds Windows 11 25H2 mapping](https://github.com/rbalsleyMSFT/FFU/commit/eaa3e1e6af5c25e0f8b185f8107e017782b0f00f)
+
+Extends supported Windows 11 releases to include 25H2. Default is still 24H2.
+
+* Update USBImagingToolCreator.ps1 by @jrollmann in https://github.com/rbalsleyMSFT/FFU/pull/262
+
+## New Contributors
+
+* @jrollmann made their first contribution in https://github.com/rbalsleyMSFT/FFU/pull/262
+
+# 2507.1 UI Preview
+
+Waaay too many to list. Just watch the Youtube video in the Readme :)
+
 # 2505.1
 
-Highly recommended that you upgrade to this release. Fixes the issue with the May 2025 cumulative update and some SKU naming issues for SKUs other than Pro. 
+Highly recommended that you upgrade to this release. Fixes the issue with the May 2025 cumulative update and some SKU naming issues for SKUs other than Pro.
 
 # Support for Windows LTSB/LTSC
-Thanks to @zehadialam for the code to allow support for LTSB and LTSC. This has been a requested feature from a number of customers and some might be opting for LTSC when Windows 10 support ends in October. We support LTSB 2016, LTSC 2019, 2021, 2024 including the N and IoT variants. Extensive testing has gone into validating CU and .net support. File an issue if you see any weird behavior. 
+
+Thanks to @zehadialam for the code to allow support for LTSB and LTSC. This has been a requested feature from a number of customers and some might be opting for LTSC when Windows 10 support ends in October. We support LTSB 2016, LTSC 2019, 2021, 2024 including the N and IoT variants. Extensive testing has gone into validating CU and .net support. File an issue if you see any weird behavior.
 
 # Support for automating computer naming via CSV
+
 Thanks to @JonasKloseBW for PR #150
+
 - Allows setting the computer name with a predefined list (SerialComputerNames.csv) of serial numbers and matching computer names
 - Defaults to FFU-{Random} if no matching serial number is found in list so FFU deployment can continue without user input
 
 # Fixes
+
 - Thanks to @JonasKloseBW for PR #129 for adding the -AppListPath parameter
 - Fixed an issue where if AppsScriptVariables was configured in a config file, the hashtable wasn't being created by the script when setting the variable.
 - Fixed a crash where shortening the Windows SKU was creating duplicate shortened names for certain SKUs (EDU mainly, but others too)
 - Fix an issue with checkpoint CUs and May 2025-05B CU. Should future proof new checkpoint CUs in the future.
 
 # Additional Fixes
+
 BuildFFUVM.ps1
+
 - Added parameter definitions that were missing:
   - AppListPath - Path to a JSON file containing a list of applications to install using WinGet. Default is $FFUDevelopmentPath\Apps\AppList.json.
   - PEDriversFolder - Path to the folder containing drivers to be injected into the WinPE deployment media. Default is $FFUDevelopmentPath\PEDrivers.
@@ -41,30 +328,35 @@ BuildFFUVM.ps1
 - VHDXCaching will now recurse the KBPath folder when finding downloaded KBs to include in its config file
 
 Sample_default.json
+
 - Added new/missing parameters
   - ApplistPath
   - UpdateADK
   - UpdateLatestMicrocode
 
 CaptureFFU.ps1
+
 - `$WindowsVersion` 2016 and 2019 for LTSC releases
 - Changed some SKU spacing to make things more consistent and included Enterprise N LTSC
 
 ApplyFFU.ps1
+
 - Updated version to 2505.1
 
 # 2412.1
 
-This is a major release with a number of quality-of-life improvements that will reduce the time it takes to create FFUs. I highly recommend you update to this release. 
+This is a major release with a number of quality-of-life improvements that will reduce the time it takes to create FFUs. I highly recommend you update to this release.
 
 ## Windows Server Support
-Thanks to [JonasKloseBW](https://github.com/JonasKloseBW) we have added support for Windows Server! This includes support for Windows Server 2016 through 2025 and supports both core and desktop experience. It will require you to provide your own Server ISO 
+
+Thanks to [JonasKloseBW](https://github.com/JonasKloseBW) we have added support for Windows Server! This includes support for Windows Server 2016 through 2025 and supports both core and desktop experience. It will require you to provide your own Server ISO
 using the `-ISOPath` parameter since we can't automatically download it like we can with client. You also will want to set the `-WindowsSKU` parameter to either `'Standard', 'Datacenter', 'Standard (Desktop Experience)', or 'Datacenter (Desktop Experience)'` depending on your needs.
 
-Cumulative Updates for Windows and .NET should work as expected. Defender updates should work too. If you notice anything that doesn't work, open an issue. 
+Cumulative Updates for Windows and .NET should work as expected. Defender updates should work too. If you notice anything that doesn't work, open an issue.
 
 ## VHDX Caching Support
-Thanks again to Jonas for adding VHDX caching support #89. For those of you that might be making many FFUs for different configurations, instead of building the VHDX every time, you can cache the VHDX and re-use it for your next build. In testing, this seems to save about 10 minutes, depending on how you're installing Windows (via MCT download, or your own ISO and how old your media is). 
+
+Thanks again to Jonas for adding VHDX caching support #89. For those of you that might be making many FFUs for different configurations, instead of building the VHDX every time, you can cache the VHDX and re-use it for your next build. In testing, this seems to save about 10 minutes, depending on how you're installing Windows (via MCT download, or your own ISO and how old your media is).
 
 The way this works is a VHDXCache folder is created in the FFUDevelopment folder. If `-AllowVHDXCaching $true`, we store the VHDX file and a config file that keeps track of the following info
 
@@ -89,19 +381,21 @@ The way this works is a VHDXCache folder is created in the FFUDevelopment folder
   ]
 }
 ```
+
 The VHDX files are cached before boot, so they've never been sysprepped. On subsequent runs, if `-AllowVHDXCaching $true` is set, we search the VHDXCache folder, loop through any config files, and look to see if we find one that matches the build information you've passed to the script. If a match is found, robocopy copies in the VHDX and uses the cached VHDX to build the FFU VM.
 
 ## Configuration File Support
-A configuration file can now be used to configure the parameters in lieu of, or in conjunction with, parameters specified on the command line. Configuration files are especially helpful for those making FFUs for different models, Windows releases, application sets, and more. 
+
+A configuration file can now be used to configure the parameters in lieu of, or in conjunction with, parameters specified on the command line. Configuration files are especially helpful for those making FFUs for different models, Windows releases, application sets, and more.
 
 To use, run:
 `.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose`
 
 ### Creating your own Configuration Json file
 
-If you have a command line that you’ve been using for awhile and would like to convert it to a json file automatically, run your command line like normal, adding 
-`-exportConfigFile 'C:\FFUDevelopment\config\YourConfigFile.json'` 
-to the end of the command. Doing this will generate a well-formatted json file with your configuration settings. 
+If you have a command line that you’ve been using for awhile and would like to convert it to a json file automatically, run your command line like normal, adding
+`-exportConfigFile 'C:\FFUDevelopment\config\YourConfigFile.json'`
+to the end of the command. Doing this will generate a well-formatted json file with your configuration settings.
 
 You can also temporarily overwrite parameters while using a config file. Using the following sample command:
 
@@ -111,14 +405,15 @@ If you’d like to not include Office (the Sample_default.json file installs Off
 
 `.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose -InstallOffice $False`
 
-Doing this will temporarily overwrite whatever is in the json for the `InstallOffice` parameter. It will not modify the json file. If you would like to change the json file, you can add `-exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'` and that will overwrite the json file with the new parameter. 
+Doing this will temporarily overwrite whatever is in the json for the `InstallOffice` parameter. It will not modify the json file. If you would like to change the json file, you can add `-exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'` and that will overwrite the json file with the new parameter.
 
 `.\BuildFFUVM.ps1 -ConfigFile 'C:\FFUDevelopment\config\Sample_default.json' -verbose -InstallOffice $False -exportConfigFile 'C:\FFUDevelopment\config\Sample_default.json'`
 
 ## Custom FFU Naming Support
+
 Thanks to Jonas, we now have custom FFU naming support. A new parameter -CustomFFUNameTemplate has been added.
 
-This parameter sets a custom FFU output name with placeholders. Allowed placeholders are: 
+This parameter sets a custom FFU output name with placeholders. Allowed placeholders are:
 
 `{WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}`
 
@@ -155,16 +450,18 @@ Would result in:
 `Win11_24h2_Pro_Office_2024-12-20_1225.ffu`
 
 ## Additional PRs added
+
 #79 Includes the latest Microsoft Software Removal Tool from `@zehadialam` - use `-UpdateLatestMSRT $true`
 
-#72 Includes some Unattend Sample files from @HedgeComp in the `$FFUDevelopment\Unattend` folder 
+#72 Includes some Unattend Sample files from @HedgeComp in the `$FFUDevelopment\Unattend` folder
 
-#74 Includes some improvements to the USBImagingToolCreator.ps1 file from @w0 
+#74 Includes some improvements to the USBImagingToolCreator.ps1 file from @w0
 
-#103 Includes some additional improvements to the USBImagingToolCreator.ps1 file from @MKellyCBSD 
+#103 Includes some additional improvements to the USBImagingToolCreator.ps1 file from @MKellyCBSD
 
 ## Misc Fixes
-- Added server skus to validateset for $WindowsSKU 
+
+- Added server skus to validateset for $WindowsSKU
 - Added new variable $installationType which uses $WindowsRelease to determine Server or Client. If $installationType is Server, $WindowsRelease version is used to set $WindowsVersion to the appropriate version (1607, 1809, 21H2)
 - Fixed an issue where the recovery partition wouldn't be created on server OSes due to winre.wim being hidden. Never saw this on client OSes even though it also was hidden IIRC.
 - Removed verbosity for Optimize-Volume as it was outputting when -verbose was not specified.
@@ -183,13 +480,13 @@ Would result in:
 - Changed some minor formatting items
 - Added Get-Childprocesses function to return child processes of parent process
 - Added a new -Wait boolean parameter to Invoke-Process function. This is to control whether Invoke-Process should wait in order to track stdout and stderr output. This is needed for processes that may hang, waiting for user input and there isn't a way to bypass (some Intel drivers provided by Dell leave dialog windows even when running silently)
--Invoke-Process now returns process information (returns $cmd). This allows for process tracking when calling the function.
+  -Invoke-Process now returns process information (returns $cmd). This allows for process tracking when calling the function.
 - Since Invoke-Process now returns the process information, also needed to add Out-Null to the majority of the Invoke-Process references to prevent Invoke-Process from writing to the terminal
 - Refactored a lot of the Get-DellDrivers function due to inconsistencies with how driver extraction behaves between client and server devices. For client, /s /e seemed to work fine, but for server it would only extract the driver installer content and other dell related files, rather than the driver files themselves. We have since switched to using /s /drivers= which will extract the driver content. Not all drivers support /drivers= and may output some information to the terminal that looks like help documentation. If a driver doesn't support /drivers, the script falls back to using /s /e to do the extraction. If this doesn't work for you, you can always provide your own drivers that you manually download from Dell's website.
 - Updated Malicious Software Removal Tool (MSRT) code to handle Windows Server
 - Refactored the Get-ODTURL function to fix recent download issues. Also added some better error handling
 - Moved the odtsetup.exe download to the FFUDevelopment folder and will clean it up after office has downloaded
-Updated parameter definition block to be alphabetized (not to be confused by the param block, which is not alphabetized)
+  Updated parameter definition block to be alphabetized (not to be confused by the param block, which is not alphabetized)
 - Added $PEDriversFolder script variable to the param block (for some reason it was missing)
 - Added ConfigFile and ExportConfigFile parameters to support json config files
 - Changed Version to 2412.1
