@@ -1,5 +1,67 @@
 # Change Log
 
+# 2603.1
+
+## What's Changed
+
+### UI Out of Preview
+
+The UI is finally out of preview and the code from the UI branch has been pushed to main.
+
+### Remove old MSU files before servicing
+
+Fixes an issue where older cumulative update MSU files were mixed with newer files. In Windows 11 24H2, dism treats all MSU files in the same folder as possible update sources, causing servicing issues.
+
+This will primarily be an issue for those of you who use ISO files that don't have the latest updates, or those of you who create your FFUs with the ESD media shortly after patch Tuesday.
+
+### Adds OS-scoped update KB folders
+
+The KB folder where the CU and .NET updates downloads to will now have sub-folders for each Windows version. You may notice that if selecting 25H2, that the KB sub-folder for Windows 11 will show 24H2, this is to keep consistent with Windows 11 LTSC 2024 and Windows Server 2025, which all use the same 24H2 source OS (25H2 is just an eKB, not a full OS Swap Windows release like 24H2 was).
+
+### .NET Updates stored under their own dedicated KB folder
+
+This is more so to keep things clean, rather than fixing any sort of technical issue
+
+### Reworked Windows 10 LTSB\LTSC Cumulative Update Installation
+
+Since Windows 10 is out of support, offline servicing Windows 10 LTSC builds that are still supported fails due to extended security update requirements. The workaround to this is to install the updates in audit mode. FFU Builder now creates an Apps\LTSCUpdate folder and copies the LCU for Windows 10 LTSC builds still in support to the folder and installs the update in audit mode.
+
+### Fixes an issue with Update ADK failing for non-English languages
+
+Fixed a bug where updating the ADK would fail on non-English installations of Windows due to an assumption that the add/remove programs display information would be in English. Update ADK should correctly identify if the latest release of the ADK is installed and work as expected.
+
+### Added dependency validation when selecting Build USB drive and Copy Drivers
+
+Fixed an issue where a build would begin even though Copy Drivers to USB was set to true but no USB was inserted. FFU Builder will now check before the build gets started and inform the user if no USB drive is inserted.
+
+### Normalizes Windows LTSC release versions to handle driver downloads
+
+Driver downloads would fail if you were building certain LTSC releases due to FFU Builder incorrectly using the LTSC release year instead of the base Windows client version information. When build LTSC FFUs, the drivers should now download as expected.
+
+### Scopes select-all to visible filtered list items in drivers listview
+
+When filtering the drivers listview and selecting all driver models using the select all header checkbox, the select all behavior was selecting everything, even the hidden models in the list. If then selecting Download Selected, FFU Builder would download all models, even hidden ones. This now fixes that issue to only select all visible models and download those selected models.
+
+### Retain downloaded ESD files
+
+FFU Builder will now allow you to retain a downloaded ESD file. There's a new option on the Build tab to Remove Downloaded ESD File(s) which is checked by default to keep with the previous behavior. The intent here is to prevent from having to re-download the ESD file every time you're doing a build. This gives you another option along with Allow VHDX Caching to reduce the need of redownloading media.
+
+### Reduce the size of cached VHDX files
+
+Added some code to reduce the size of the cached VHDX files.
+
+### Include disk size in VHDX cache validation
+
+Prevents reusing cached images when the requested disk size changes. Ensures the disk size property is properly saved and verified against existing cache items to maintain configuration accuracy. This makes it so that if you create a new build with a larger disk size and have Allow VHDX caching selected, it won't use a cached VHDX with a smaller size.
+
+### Enhances file backup and cleanup for cancelled builds
+
+Improves the current-run cleanup mechanism by tracking file downloads explicitly. This ensures that files downloaded via BITS or preserving older timestamps are correctly identified and removed during cleanup. Extends the run manifest schema to support file backups, allowing for safe restoration of pre-existing scripts and configuration files modified during a run. Additional cleanup logic now correctly prunes residual empty directories after tracked files are removed.
+
+### Fixed an issue with arm64 ESD downloads
+
+With the change to how ESD downloads work with 25H2 and the Media Creation Tool, arm64 was broken. This was fixed.
+
 # 2602.1 UI Preview
 
 ## What's Changed
