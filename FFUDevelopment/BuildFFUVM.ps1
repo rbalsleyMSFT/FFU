@@ -5692,7 +5692,8 @@ If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
     Get-FFUEnvironment
 }
 WriteLog 'Creating dirty.txt file'
-New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
+$dirtyFilePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'dirty.txt'
+New-Item -Path $dirtyFilePath -ItemType "file" | Out-Null
 
 # Early CLI prompt for additional FFUs (only if enabled and not provided)
 if ($BuildUSBDrive -and $CopyAdditionalFFUFiles -and ((-not $AdditionalFFUFiles) -or ($AdditionalFFUFiles.Count -eq 0))) {
@@ -7615,7 +7616,8 @@ else {
 }
 
 #Clean up dirty.txt file
-Remove-Item -Path .\dirty.txt -Force | out-null
+$dirtyFilePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'dirty.txt'
+Remove-Item -Path $dirtyFilePath -Force | out-null
 # Remove per-run session folder if present
 $sessionDir = Join-Path $FFUDevelopmentPath '.session'
 if (Test-Path -Path $sessionDir) { 
