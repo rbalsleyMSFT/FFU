@@ -2781,11 +2781,25 @@ function Add-BootFiles {
         [string]$OsPartitionDriveLetter,
         [Parameter(Mandatory = $true)]
         [string]$SystemPartitionDriveLetter,
+        [Parameter(Mandatory = $true)]
+        [string]$AdkPath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string]$WindowsArch,
         [string]$FirmwareType = 'UEFI'
     )
 
-    WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`"..."
-    Invoke-Process bcdboot "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
+    # Use the ADK copy of BCDBoot so the boot binaries come from the validated ADK toolset
+    # instead of the local OS installation, which can differ based on Secure Boot servicing state.
+    $bcdBootArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+    $bcdBootPath = Join-Path $AdkPath "Assessment and Deployment Kit\Deployment Tools\$bcdBootArchitecture\BCDBoot\bcdboot.exe"
+
+    if (-not (Test-Path -Path $bcdBootPath)) {
+        throw "ADK BCDBoot was not found at $bcdBootPath"
+    }
+
+    WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`" using ADK BCDBoot at `"$bcdBootPath`"..."
+    Invoke-Process $bcdBootPath "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
     WriteLog "Done."
 }
 
@@ -7026,7 +7040,7 @@ try {
 
         WriteLog 'All necessary partitions created.'
 
-        Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
+        Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1] -AdkPath $adkPath -WindowsArch $WindowsArch
     
         #Add Windows packages
         if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
