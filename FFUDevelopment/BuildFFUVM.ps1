@@ -3415,7 +3415,6 @@ function New-PEMedia {
         "WinPE-PowerShell.cab",
         "en-us\WinPE-PowerShell_en-us.cab",
         "WinPE-SecureBootCmdlets.cab",
-        "en-us\WinPE-SecureBootCmdlets_en-us.cab",
         "WinPE-StorageWMI.cab",
         "en-us\WinPE-StorageWMI_en-us.cab",
         "WinPE-DismCmdlets.cab",
