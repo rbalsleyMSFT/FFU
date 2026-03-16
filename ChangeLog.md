@@ -1,5 +1,29 @@
 # Change Log
 
+# 2603.2
+
+## What's Changed
+
+Highly recommended to upgrade to this release due to potential SecureBoot issues
+
+### Fixes SecureBoot-related boot issues on newly deployed FFUs
+
+Fixes an issue where some devices may not boot after an FFU was applied if the FFU was built from a machine that had been updated to the Windows UEFI CA 2023 SecureBoot certificates.
+
+Sometime at the start of this calendar year (Either January or February), a change was made in Windows to how BCDBoot functioned. If you took a CU from either of these months, BCDBoot will now check to see if the device has the 2011 or 2023 CA certificates. If 2023, the local BCDBoot will use the 2023 signed boot files when creating the System partition and these boot files will be deployed to the target system when the FFU is deployed. If the target machine hasn't updated to the 2023 certificates, boot will fail.
+
+To fix this, FFU Builder now uses the version of BCDBoot from the ADK instead of the locally installed version. The version of BCDBoot from the 10.1.26100.2454 ADK December 2024 version (which is what FFU Builder considers the latest), will provide the boot files signed with the 2011 certs.
+
+The version of [BCDBoot from the 10.1.28000.1 ADK](https://learn.microsoft.com/en-us/windows-hardware/get-started/what-s-new-in-kits-and-tools#bcd-boot) from November 2025 will default to using the 2023 certs as long as the machine supports the 2023 CA. This has been documented since this ADK was released. The behavior of this version of BCDBoot is what we're seeing now in devices that have been recently updated.
+
+I suspect that when 26H2 is released, there will be a new ADK around that time and at that point we'll move to using that version of the ADK, which that version of BCDBoot will default to using the 2023 signed boot files and I suspect WinPE will probably default to doing the same. By then, hopefully, most in-market devices should have the 2023 certificates in UEFI and those that don't will need to get the certs or downgrade their ADK version to use the 2011 signed boot files.
+
+### Fixes working directory handling
+
+Creation and deletion of the dirty.txt marker file now use an explicit path based on $FFUDevelopmentPath, avoiding ambiguity and potential issues with relative paths.
+
+**Full Changelog**: https://github.com/rbalsleyMSFT/FFU/compare/v2603.1...v2603.2
+
 # 2603.1
 
 ## What's Changed
