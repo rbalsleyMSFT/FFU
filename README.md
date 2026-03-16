@@ -1,3 +1,9 @@
+# Updates
+
+## 2026-03-16 - [2603.2 Released](https://github.com/rbalsleyMSFT/FFU/releases)
+
+Fixes an issue with devices not booting after applying an FFU. Highly recommended you update today. 
+
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
 What if you could have a Windows image (Windows 10/11/Server/LTSC) that has:
@@ -20,7 +26,7 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Getting Started
 
-If you're new, check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html).
+If you're new to FFU Builder or new to the FFU Builder UI version, check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html).
 
 This will be the fastest way to create your first FFU. There's a new [FFU Builder Quickstart Youtube video](https://youtu.be/kOIK5OmDugc) based on the 2602.1 UI Preview release.
 
