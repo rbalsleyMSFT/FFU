@@ -1,5 +1,3 @@
-**Update 2026-02-04:** [2602.1 UI Preview is now available](https://github.com/rbalsleyMSFT/FFU/releases) - click the link to get the build and check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html)
-
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
 What if you could have a Windows image (Windows 10/11/Server/LTSC) that has:
@@ -22,14 +20,12 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Getting Started
 
-If you're new, check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html). This will be the fastest way to create your first FFU. There's a new [FFU Builder Quickstart Youtube video](https://youtu.be/kOIK5OmDugc) based on the 2602.1 UI Preview release.
+If you're new, check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html).
 
-Older Youtube Videos
+This will be the fastest way to create your first FFU. There's a new [FFU Builder Quickstart Youtube video](https://youtu.be/kOIK5OmDugc) based on the 2602.1 UI Preview release.
+
+## Older Youtube Videos
 
 [2507.1 UI Preview Video](https://www.youtube.com/watch?v=oozG1aVcg9M) - First UI Preview release video. This goes deeper than the quick start video, but is missing some features that have been added since 2507.1 was released.
 
 [2407.2 Video](https://www.youtube.com/watch?v=rqXRbgeeKSQ) - This was the main deep-dive video on FFU Builder (before it had that name). This is a good deep dive into how the BuildFFUVM.ps1 script works, but a lot has changed since that build.
-
-# UI Progress
-
-The UI builds are in a good spot now that most people should have moved over to using the UI if you haven't yet. I'll likely be updating main with the UI branch code within the next month or so.
