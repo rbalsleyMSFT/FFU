@@ -464,7 +464,7 @@ param(
     [switch]$Cleanup
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2603.1'
+$version = '2603.2'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
@@ -2781,11 +2781,25 @@ function Add-BootFiles {
         [string]$OsPartitionDriveLetter,
         [Parameter(Mandatory = $true)]
         [string]$SystemPartitionDriveLetter,
+        [Parameter(Mandatory = $true)]
+        [string]$AdkPath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('x86', 'x64', 'arm64')]
+        [string]$WindowsArch,
         [string]$FirmwareType = 'UEFI'
     )
 
-    WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`"..."
-    Invoke-Process bcdboot "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
+    # Use the ADK copy of BCDBoot so the boot binaries come from the validated ADK toolset
+    # instead of the local OS installation, which can differ based on Secure Boot servicing state.
+    $bcdBootArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+    $bcdBootPath = Join-Path $AdkPath "Assessment and Deployment Kit\Deployment Tools\$bcdBootArchitecture\BCDBoot\bcdboot.exe"
+
+    if (-not (Test-Path -Path $bcdBootPath)) {
+        throw "ADK BCDBoot was not found at $bcdBootPath"
+    }
+
+    WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`" using ADK BCDBoot at `"$bcdBootPath`"..."
+    Invoke-Process $bcdBootPath "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
     WriteLog "Done."
 }
 
@@ -5692,7 +5706,8 @@ If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
     Get-FFUEnvironment
 }
 WriteLog 'Creating dirty.txt file'
-New-Item -Path .\ -Name "dirty.txt" -ItemType "file" | Out-Null
+$dirtyFilePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'dirty.txt'
+New-Item -Path $dirtyFilePath -ItemType "file" | Out-Null
 
 # Early CLI prompt for additional FFUs (only if enabled and not provided)
 if ($BuildUSBDrive -and $CopyAdditionalFFUFiles -and ((-not $AdditionalFFUFiles) -or ($AdditionalFFUFiles.Count -eq 0))) {
@@ -7024,7 +7039,7 @@ try {
 
         WriteLog 'All necessary partitions created.'
 
-        Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1]
+        Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $systemPartitionDriveLetter[1] -AdkPath $adkPath -WindowsArch $WindowsArch
     
         #Add Windows packages
         if ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU ) {
@@ -7615,7 +7630,8 @@ else {
 }
 
 #Clean up dirty.txt file
-Remove-Item -Path .\dirty.txt -Force | out-null
+$dirtyFilePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'dirty.txt'
+Remove-Item -Path $dirtyFilePath -Force | out-null
 # Remove per-run session folder if present
 $sessionDir = Join-Path $FFUDevelopmentPath '.session'
 if (Test-Path -Path $sessionDir) { 

@@ -293,9 +293,10 @@ $script:uiState.Controls.btnRun.Add_Click({
                 )
 
                 $startCleanupParams = @{
-                    FilePath     = $pwshPath
-                    ArgumentList = $cleanupArgs
-                    PassThru     = $true
+                    FilePath         = $pwshPath
+                    ArgumentList     = $cleanupArgs
+                    WorkingDirectory = $ffuDevPath
+                    PassThru         = $true
                 }
                 if ($Host.Name -eq 'ConsoleHost') {
                     $startCleanupParams['NoNewWindow'] = $true
@@ -455,9 +456,10 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
 
             $startBuildParams = @{
-                FilePath     = $pwshPath
-                ArgumentList = $pwshArgs
-                PassThru     = $true
+                FilePath         = $pwshPath
+                ArgumentList     = $pwshArgs
+                WorkingDirectory = $config.FFUDevelopmentPath
+                PassThru         = $true
             }
             if ($Host.Name -eq 'ConsoleHost') {
                 $startBuildParams['NoNewWindow'] = $true
