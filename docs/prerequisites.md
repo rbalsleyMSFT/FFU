@@ -16,7 +16,7 @@ If possible, use an unmanaged Windows 11 or Windows Server machine. In some envi
 
 FFU Builder creates a 50GB dynamic VHDX disk by default which can be configured larger if that's not big enough. When the latest updated Windows media is installed to the VHDX, the VHDX size by itself will be about 15GB or so. If you service the media with the latest CU, that could grow the VHDX by double (~30GB in this case). If you install Office, additional applications, drivers, etc. the VHDX can get large quick. The FFU capture process will compress the size significantly, but between the VHDX size, the Windows media, the application and driver source content, the captured FFU, WinPE, etc. you can easily have over 100GB of used space.
 
-So err on the side of having more free disk space. **Recommended to have at least 100GB free disk space**. 
+So err on the side of having more free disk space. **Recommended to have at least 100GB free disk space**.
 
 ## Enable Hyper-V
 
@@ -47,7 +47,7 @@ Once Hyper-V has been enabled and you have rebooted, create either an external o
 
 If you haven't [downloaded the latest release yet, do so](https://github.com/rbalsleyMSFT/FFU/releases)
 
-Once downloaded, extract the zip file to `C:\FFUDevelopment`. You can use another location, just be sure set your FFUDevelopmentPath to the new location (e.g. `D:\FFUDevelopment`).
+Once downloaded, open the zip file and copy the content of the FFUDevelopment folder to `C:\FFUDevelopment`. You can use another location, just be sure set your FFUDevelopmentPath to the new location (e.g. `D:\FFUDevelopment`).
 
 After extraction, you most likely will need to unblock the files as they'll be tagged with the mark of the web. In PowerShell run:
 
