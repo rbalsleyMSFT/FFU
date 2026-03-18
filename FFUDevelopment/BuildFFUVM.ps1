@@ -6215,6 +6215,7 @@ if ($InstallApps) {
                 foreach ($app in $userAppList) {
                     WriteLog "$($app.name)"
                 }
+                Copy-Item -Path $UserAppListPath -Destination "$AppsPath\UserAppListFinal.json"
             }
 
             # Remove residual update artifacts for any updates disabled via flags

@@ -249,8 +249,8 @@ function Install-Applications {
 
 # Define paths for the JSON files
 $wingetAppsJsonFile = "$PSScriptRoot\WinGetWin32Apps.json"
-# Look for UserAppList.json one directory level up from the script's location. This keeps the user specific json files (AppList.json and UserAppList.json in the Apps dir)
-$userAppsJsonFile = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "UserAppList.json"
+# Look for UserAppListFinal.json one directory level up from the script's location. This keeps the user specific json files (AppList.json and UserAppList.json in the Apps dir)
+$userAppsJsonFile = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "UserAppListFinal.json"
 
 # Initialize empty arrays for apps from each source
 $wingetApps = @()
@@ -288,7 +288,7 @@ if ($wingetApps.Count -gt 0) {
 
 # Read the UserAppList.json file if it exists
 if (Test-Path -Path $userAppsJsonFile) {
-    Write-Host "Processing UserAppList.json..."
+    Write-Host "Processing UserAppList..."
     try {
         $userContent = Get-Content -Path $userAppsJsonFile -Raw -ErrorAction Stop | ConvertFrom-Json
         if ($userContent -is [array]) {
@@ -300,15 +300,15 @@ if (Test-Path -Path $userAppsJsonFile) {
             Write-Host "Found 1 user-defined app."
         }
         else {
-            Write-Host "UserAppList.json is empty or invalid."
+            Write-Host "UserAppList is empty or invalid."
         }
     }
     catch {
-        Write-Error "Failed to read or parse UserAppList.json file: $_"
+        Write-Error "Failed to read or parse UserAppList file: $_"
     }
 }
 else {
-    Write-Host "UserAppList.json file not found. Skipping."
+    Write-Host "UserAppList file not found. Skipping."
 }
 
 # Install User apps if any were found
@@ -318,7 +318,7 @@ if ($userApps.Count -gt 0) {
 
 # Check if any apps were installed at all
 if ($wingetApps.Count -eq 0 -and $userApps.Count -eq 0) {
-    Write-Host "No Win32 apps found in either WinGetWin32Apps.json or UserAppList.json. Exiting."
+    Write-Host "No Win32 apps found in either WinGetWin32Apps.json or UserAppList. Exiting."
     exit 0
 }
 
