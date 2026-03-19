@@ -633,6 +633,7 @@ if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
 if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
 if (-not $UserAppListPath) { $UserAppListPath = "$AppsPath\UserAppList.json" }
 if (-not $OrchestrationPath) { $OrchestrationPath = "$AppsPath\Orchestration" }
+if (-not $appInstallConfigPath) { $appInstallConfigPath = "$OrchestrationPath\AppInstallConfig.json" }
 if (-not $wingetWin32jsonFile) { $wingetWin32jsonFile = "$OrchestrationPath\WinGetWin32Apps.json" }
 if (-not $InstallOfficePath) { $InstallOfficePath = "$OrchestrationPath\Install-Office.ps1" }
 if (-not $InstallDefenderPath) { $InstallDefenderPath = "$OrchestrationPath\Update-Defender.ps1" }
@@ -2435,6 +2436,54 @@ function Save-KB {
         }
     }
     return $fileName
+}
+
+function Sync-UserAppListForOrchestration {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SourcePath,
+        [Parameter(Mandatory)]
+        [string]$AppsPath,
+        [Parameter(Mandatory)]
+        [string]$OrchestrationPath,
+        [Parameter(Mandatory)]
+        [string]$AppInstallConfigPath
+    )
+
+    # Ensure the orchestration folder exists before writing runtime configuration.
+    if (-not (Test-Path -Path $OrchestrationPath -PathType Container)) {
+        New-Item -Path $OrchestrationPath -ItemType Directory -Force | Out-Null
+    }
+
+    # Persist the runtime BYO app list path so Orchestrator can honor custom file names.
+    $appInstallConfig = [ordered]@{
+        UserAppListPath = $null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SourcePath) -and (Test-Path -Path $SourcePath -PathType Leaf)) {
+        $stagedUserAppListName = Split-Path -Path $SourcePath -Leaf
+        $stagedUserAppListPath = Join-Path -Path $AppsPath -ChildPath $stagedUserAppListName
+
+        if (-not [string]::Equals([System.IO.Path]::GetFullPath($SourcePath), [System.IO.Path]::GetFullPath($stagedUserAppListPath), [System.StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -Path $SourcePath -Destination $stagedUserAppListPath -Force | Out-Null
+            WriteLog "Staged BYO app list for orchestration: $SourcePath -> $stagedUserAppListPath"
+        }
+        else {
+            WriteLog "Using BYO app list already staged at $stagedUserAppListPath"
+        }
+
+        $appInstallConfig.UserAppListPath = "D:\$stagedUserAppListName"
+    }
+    elseif (Test-Path -Path (Join-Path -Path $AppsPath -ChildPath 'UserAppList.json') -PathType Leaf) {
+        $appInstallConfig.UserAppListPath = "D:\UserAppList.json"
+        WriteLog "Using default BYO app list path for orchestration."
+    }
+    else {
+        WriteLog "No BYO app list found at configured path '$SourcePath'."
+    }
+
+    $appInstallConfig | ConvertTo-Json | Set-Content -Path $AppInstallConfigPath -Encoding UTF8
+    WriteLog "Wrote app install config to $AppInstallConfigPath"
 }
 
 function New-AppsISO {
@@ -6082,7 +6131,19 @@ if ($InstallApps) {
     Set-Progress -Percentage 6 -Message "Downloading and preparing applications..."
     if (Test-Path -Path $AppsISO) {
         WriteLog "Apps ISO exists at: $AppsISO"
-        WriteLog "Will use existing ISO"
+
+        # Refresh the Apps ISO when a BYO app list is present so the staged manifest
+        # and AppInstallConfig.json stay in sync with the current build inputs.
+        if (Test-Path -Path $UserAppListPath) {
+            WriteLog "Configured BYO app list detected. Refreshing Apps ISO to include the latest BYO app list data."
+            Sync-UserAppListForOrchestration -SourcePath $UserAppListPath -AppsPath $AppsPath -OrchestrationPath $OrchestrationPath -AppInstallConfigPath $appInstallConfigPath
+            Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+            New-AppsISO
+            WriteLog "Apps ISO refreshed to include the latest BYO app list data."
+        }
+        else {
+            WriteLog "Will use existing ISO"
+        }
     }
     else {
         try {
@@ -6125,7 +6186,7 @@ if ($InstallApps) {
                 # If there are no existing apps, use the original AppList.json directly
                 if (-not $hasExistingApps) {
                     WriteLog "No existing applications found. Using original AppList.json for all apps."
-                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
+                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -UserAppListPath $UserAppListPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
                 }
                 else {
                     # Compare apps in AppList.json with existing installations
@@ -6197,7 +6258,7 @@ if ($InstallApps) {
             
                         # Download missing apps
                         WriteLog "Downloading missing applications"
-                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
+                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -UserAppListPath $UserAppListPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
                         
                         # Cleanup modified app list
                         Remove-Item -Path $modifiedAppListPath -Force
@@ -6207,11 +6268,11 @@ if ($InstallApps) {
                     }
                 }
             }
-            # Check is UserAppList.json exists and output to the user which apps will be installed
-            # It's expected that the user will have already copied the applications and created the UserAppList.json file
+            # Check if the configured BYO app list exists and output which apps will be installed.
+            # It is expected that the user will have already copied the applications and created the BYO app list file.
             if (Test-Path -Path $UserAppListPath) {
                 $userAppList = Get-Content -Path $UserAppListPath -Raw | ConvertFrom-Json
-                WriteLog "UserAppList.json found, the following apps will be installed:"
+                WriteLog "$(Split-Path -Path $UserAppListPath -Leaf) found, the following apps will be installed:"
                 foreach ($app in $userAppList) {
                     WriteLog "$($app.name)"
                 }
@@ -6525,6 +6586,9 @@ if ($InstallApps) {
                     WriteLog "InjectUnattend is true but source file missing: $unattendSource. Skipping unattend injection."
                 }
             }
+            # Stage the configured BYO app list and runtime config before creating the Apps ISO.
+            Sync-UserAppListForOrchestration -SourcePath $UserAppListPath -AppsPath $AppsPath -OrchestrationPath $OrchestrationPath -AppInstallConfigPath $appInstallConfigPath
+
             Set-Progress -Percentage 10 -Message "Creating Apps ISO..."
             WriteLog "Creating $AppsISO file"
             New-AppsISO
@@ -7434,6 +7498,7 @@ if ($InstallApps) {
                 Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
                 WriteLog 'Removal complete'
             }
+            Sync-UserAppListForOrchestration -SourcePath $UserAppListPath -AppsPath $AppsPath -OrchestrationPath $OrchestrationPath -AppInstallConfigPath $appInstallConfigPath
             New-AppsISO
             WriteLog "Apps ISO refreshed with LTSC CU assets"
         }
@@ -7619,6 +7684,13 @@ Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -Dr
 if (Test-Path -Path $wingetWin32jsonFile -PathType Leaf) {
     WriteLog "Removing $wingetWin32jsonFile"
     Remove-Item -Path $wingetWin32jsonFile -Force -ErrorAction SilentlyContinue
+    WriteLog "Removal complete"
+}
+
+# Remove AppInstallConfig.json so it is always rebuilt next run
+if (Test-Path -Path $appInstallConfigPath -PathType Leaf) {
+    WriteLog "Removing $appInstallConfigPath"
+    Remove-Item -Path $appInstallConfigPath -Force -ErrorAction SilentlyContinue
     WriteLog "Removal complete"
 }
 #Set $LongPathsEnabled registry value back to original value. $LongPathsEnabled could be $null if the registry value was not found

@@ -108,6 +108,7 @@ function Get-GeneralDefaults {
     $ffuCapturePath = Join-Path -Path $FFUDevelopmentPath -ChildPath "FFU"
     $officePath = Join-Path -Path $appsPath -ChildPath "Office"
     $appListJsonPath = Join-Path -Path $appsPath -ChildPath "AppList.json"
+    $userAppListPath = Join-Path -Path $appsPath -ChildPath "UserAppList.json"
     $driversJsonPath = Join-Path -Path $driversPath -ChildPath "Drivers.json"
 
     return [PSCustomObject]@{
@@ -163,6 +164,7 @@ function Get-GeneralDefaults {
         InstallApps                    = $false
         ApplicationPath                = $appsPath
         AppListJsonPath                = $appListJsonPath
+        UserAppListPath                = $userAppListPath
         InstallWingetApps              = $false
         BringYourOwnApps               = $false
         # M365 Apps/Office Tab Defaults
@@ -305,6 +307,7 @@ function Update-ApplicationPanelVisibility {
     $subOptionVisibility = if ($installAppsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.applicationPathPanel.Visibility = $subOptionVisibility
     $State.Controls.appListJsonPathPanel.Visibility = $subOptionVisibility
+    $State.Controls.userAppListPathPanel.Visibility = $subOptionVisibility
     $State.Controls.chkInstallWingetApps.Visibility = $subOptionVisibility
     $State.Controls.chkBringYourOwnApps.Visibility = $subOptionVisibility
     $State.Controls.chkDefineAppsScriptVariables.Visibility = $subOptionVisibility

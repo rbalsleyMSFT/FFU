@@ -358,6 +358,8 @@ function Start-WingetAppDownloadTask {
         [string]$AppListJsonPath,
         [Parameter(Mandatory = $true)]
         [string]$AppsPath,
+        [Parameter()]
+        [string]$UserAppListPath,
         [Parameter(Mandatory = $true)]
         [string]$OrchestrationPath,
         [Parameter(Mandatory = $true)]
@@ -379,11 +381,11 @@ function Start-WingetAppDownloadTask {
     WriteLog "Starting download task for $($appName) with ID $($appId) from source $($source)."
 
     try {
-        # Define paths
-        $userAppListPath = Join-Path -Path $AppsPath -ChildPath "UserAppList.json"
+        # Resolve the BYO app list path so duplicate checks honor custom file names.
+        $userAppListPath = if (-not [string]::IsNullOrWhiteSpace($UserAppListPath)) { $UserAppListPath } else { Join-Path -Path $AppsPath -ChildPath "UserAppList.json" }
         $appFound = $false
 
-        # 1. Check UserAppList.json and content
+        # 1. Check the configured BYO app list and content
         if (Test-Path -Path $userAppListPath) {
             try {
                 $userAppListContent = Get-Content -Path $userAppListPath -Raw | ConvertFrom-Json
@@ -724,6 +726,8 @@ function Get-Apps {
         [string]$AppList,
         [Parameter(Mandatory = $true)]
         [string]$AppsPath,
+        [Parameter()]
+        [string]$UserAppListPath,
         [Parameter(Mandatory = $true)]
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
@@ -787,6 +791,7 @@ function Get-Apps {
     # CLI builds should create WinGetWin32Apps.json, so SkipWin32Json is false
     $taskArguments = @{
         AppsPath          = $AppsPath
+        UserAppListPath   = $UserAppListPath
         AppListJsonPath   = $AppList
         OrchestrationPath = $OrchestrationPath
         WindowsArch       = $WindowsArch

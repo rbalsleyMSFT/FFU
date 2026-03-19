@@ -270,16 +270,29 @@
                                 </Grid>
                             </StackPanel>
 
-                            <!-- AppList.json Path - Shows only when Install Applications is checked -->
+                            <!-- Winget AppList Path - Shows only when Install Applications is checked -->
                             <StackPanel x:Name="appListJsonPathPanel" Visibility="Collapsed" Margin="25,5,5,10">
-                                <TextBlock Text="AppList.json Path:" Margin="0,0,0,5" ToolTip="Path to the AppList.json file"/>
+                                <TextBlock Text="Winget AppList Path:" Margin="0,0,0,5" ToolTip="Path to the Winget AppList JSON file"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="txtAppListJsonPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the AppList.json file"/>
+                                    <TextBox x:Name="txtAppListJsonPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the Winget AppList JSON file (AppList.json)"/>
                                     <Button x:Name="btnBrowseAppListJsonPath" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- BYO AppList Path - Shows only when Install Applications is checked -->
+                            <StackPanel x:Name="userAppListPathPanel" Visibility="Collapsed" Margin="25,5,5,10">
+                                <TextBlock Text="BYO AppList Path:" Margin="0,0,0,5" ToolTip="Path to the Bring Your Own applications JSON file (UserAppList.json)"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="txtUserAppListPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the Bring Your Own applications JSON file (UserAppList.json)"/>
+                                    <Button x:Name="btnBrowseUserAppListPath" Grid.Column="1" Content="Browse..." Width="80" Margin="5,0,0,0" VerticalAlignment="Center"/>
                                 </Grid>
                             </StackPanel>
 
@@ -336,8 +349,8 @@
 
                                 <!-- Save/Import/Clear Buttons -->
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                                    <Button x:Name="btnSaveWingetList" Content="Save AppList.json" Padding="15,5" Margin="0,0,10,0" ToolTip="Save selected applications to a JSON file"/>
-                                    <Button x:Name="btnImportWingetList" Content="Import AppList.json" Padding="15,5" Margin="0,0,10,0" ToolTip="Import applications from a JSON file"/>
+                                    <Button x:Name="btnSaveWingetList" Content="Save Winget AppList" Padding="15,5" Margin="0,0,10,0" ToolTip="Save selected applications to a JSON file"/>
+                                    <Button x:Name="btnImportWingetList" Content="Import Winget AppList" Padding="15,5" Margin="0,0,10,0" ToolTip="Import applications from a JSON file"/>
                                     <Button x:Name="btnDownloadSelected" Content="Download Selected" Padding="15,5" Margin="0,0,10,0" ToolTip="Download all selected applications"/>
                                     <Button x:Name="btnClearWingetList" Content="Clear List" Padding="15,5" ToolTip="Clear all applications from the list"/>
                                 </StackPanel>
@@ -405,8 +418,8 @@
 
                                 <!-- Save/Import/Clear Buttons -->
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,10">
-                                    <Button x:Name="btnSaveBYOApplications" Content="Save UserAppList.json" Margin="0,0,10,0" Padding="10,5" ToolTip="Save application list to JSON file"/>
-                                    <Button x:Name="btnLoadBYOApplications" Content="Import UserAppList.json" Margin="0,0,10,0" Padding="10,5" ToolTip="Import application list from JSON file"/>
+                                    <Button x:Name="btnSaveBYOApplications" Content="Save BYO AppList" Margin="0,0,10,0" Padding="10,5" ToolTip="Save application list to JSON file"/>
+                                    <Button x:Name="btnLoadBYOApplications" Content="Import BYO AppList" Margin="0,0,10,0" Padding="10,5" ToolTip="Import application list from JSON file"/>
                                     <Button x:Name="btnEditApplication" Content="Edit Application" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Edit the selected application's details"/>
                                     <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
                                     <Button x:Name="btnRemoveSelectedBYOApps" Content="Remove Selected" IsEnabled="False" Margin="0,0,10,0" Padding="10,5" ToolTip="Remove selected applications from the list"/>

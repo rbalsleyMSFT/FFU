@@ -435,8 +435,16 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select AppList.json File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select Winget AppList File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
             if ($selectedPath) { $localState.Controls.txtAppListJsonPath.Text = $selectedPath }
+        })
+
+    $State.Controls.btnBrowseUserAppListPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select BYO AppList File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
+            if ($selectedPath) { $localState.Controls.txtUserAppListPath.Text = $selectedPath }
         })
 
     $State.Controls.btnBrowseAppSource.Add_Click({
@@ -466,17 +474,23 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $initialDir = $localState.Controls.txtApplicationPath.Text
+            # Default the save dialog to the configured BYO app list path.
+            $currentPath = $localState.Controls.txtUserAppListPath.Text
+            $initialDir = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Parent } else { $localState.Controls.txtApplicationPath.Text }
             if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
+            $fileName = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Leaf } else { "UserAppList.json" }
             
             $savePath = Invoke-BrowseAction -Type 'SaveFile' `
-                -Title "Save Application List" `
+                -Title "Save BYO App List" `
                 -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
                 -InitialDirectory $initialDir `
-                -FileName "UserAppList.json" `
+                -FileName $fileName `
                 -DefaultExt ".json"
 
-            if ($savePath) { Save-BYOApplicationList -Path $savePath -State $localState }
+            if ($savePath) {
+                $localState.Controls.txtUserAppListPath.Text = $savePath
+                Save-BYOApplicationList -Path $savePath -State $localState
+            }
         })
 
     $State.Controls.btnLoadBYOApplications.Add_Click({
@@ -484,15 +498,18 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $initialDir = $localState.Controls.txtApplicationPath.Text
+            # Default the import dialog to the configured BYO app list path.
+            $currentPath = $localState.Controls.txtUserAppListPath.Text
+            $initialDir = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Parent } else { $localState.Controls.txtApplicationPath.Text }
             if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
             
             $loadPath = Invoke-BrowseAction -Type 'OpenFile' `
-                -Title "Import Application List" `
+                -Title "Import BYO App List" `
                 -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
                 -InitialDirectory $initialDir
 
-            if ($loadPath) { 
+            if ($loadPath) {
+                $localState.Controls.txtUserAppListPath.Text = $loadPath
                 Import-BYOApplicationList -Path $loadPath -State $localState
                 Update-CopyButtonState -State $localState
             }

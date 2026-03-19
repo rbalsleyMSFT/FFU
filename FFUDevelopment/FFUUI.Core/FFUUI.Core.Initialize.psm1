@@ -70,8 +70,10 @@ function Initialize-UIControls {
     $State.Controls.txtWingetModuleVersion = $window.FindName('txtWingetModuleVersion')
     $State.Controls.applicationPathPanel = $window.FindName('applicationPathPanel')
     $State.Controls.appListJsonPathPanel = $window.FindName('appListJsonPathPanel')
+    $State.Controls.userAppListPathPanel = $window.FindName('userAppListPathPanel')
     $State.Controls.btnBrowseApplicationPath = $window.FindName('btnBrowseApplicationPath')
     $State.Controls.btnBrowseAppListJsonPath = $window.FindName('btnBrowseAppListJsonPath')
+    $State.Controls.btnBrowseUserAppListPath = $window.FindName('btnBrowseUserAppListPath')
     $State.Controls.chkBringYourOwnApps = $window.FindName('chkBringYourOwnApps')
     $State.Controls.byoApplicationPanel = $window.FindName('byoApplicationPanel')
     $State.Controls.wingetSearchPanel = $window.FindName('wingetSearchPanel')
@@ -159,6 +161,7 @@ function Initialize-UIControls {
     $State.Controls.chkUpdatePreviewCU = $window.FindName('chkUpdatePreviewCU')
     $State.Controls.txtApplicationPath = $window.FindName('txtApplicationPath')
     $State.Controls.txtAppListJsonPath = $window.FindName('txtAppListJsonPath')
+    $State.Controls.txtUserAppListPath = $window.FindName('txtUserAppListPath')
     $State.Controls.chkInstallDrivers = $window.FindName('chkInstallDrivers')
     $State.Controls.chkCopyDrivers = $window.FindName('chkCopyDrivers')
     $State.Controls.chkCompressDriversToWIM = $window.FindName('chkCompressDriversToWIM')
@@ -305,6 +308,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkInstallApps.IsChecked = $State.Defaults.generalDefaults.InstallApps
     $State.Controls.txtApplicationPath.Text = $State.Defaults.generalDefaults.ApplicationPath
     $State.Controls.txtAppListJsonPath.Text = $State.Defaults.generalDefaults.AppListJsonPath
+    $State.Controls.txtUserAppListPath.Text = $State.Defaults.generalDefaults.UserAppListPath
     $State.Controls.chkInstallWingetApps.IsChecked = $State.Defaults.generalDefaults.InstallWingetApps
     $State.Controls.chkBringYourOwnApps.IsChecked = $State.Defaults.generalDefaults.BringYourOwnApps
 

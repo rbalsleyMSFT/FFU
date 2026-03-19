@@ -93,7 +93,7 @@ function Get-UIConfig {
         UpdateLatestNet                = $State.Controls.chkUpdateLatestNet.IsChecked
         UpdateOneDrive                 = $State.Controls.chkUpdateOneDrive.IsChecked
         UpdatePreviewCU                = $State.Controls.chkUpdatePreviewCU.IsChecked
-        UserAppListPath                = "$($State.Controls.txtApplicationPath.Text)\UserAppList.json"
+        UserAppListPath                = $State.Controls.txtUserAppListPath.Text
         USBDriveList                   = @{}
         Username                       = $State.Controls.txtUsername.Text
         Threads                        = [int]$State.Controls.txtThreads.Text
@@ -585,6 +585,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkBringYourOwnApps' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'BringYourOwnApps' -State $State
     Set-UIValue -ControlName 'txtApplicationPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'AppsPath' -State $State
     Set-UIValue -ControlName 'txtAppListJsonPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'AppListPath' -State $State
+    Set-UIValue -ControlName 'txtUserAppListPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UserAppListPath' -State $State
 
     # Handle AppsScriptVariables
     $appsScriptVarsKeyExists = $false

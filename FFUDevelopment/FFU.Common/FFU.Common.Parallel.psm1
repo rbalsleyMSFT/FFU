@@ -161,6 +161,7 @@ function Invoke-ParallelProcessing {
                             ApplicationItemData = $currentItem
                             AppListJsonPath     = $localJobArgs['AppListJsonPath']
                             AppsPath            = $localJobArgs['AppsPath']
+                            UserAppListPath     = $localJobArgs['UserAppListPath']
                             OrchestrationPath   = $localJobArgs['OrchestrationPath']
                             ProgressQueue       = $localProgressQueue
                             WindowsArch         = $localJobArgs['WindowsArch']
