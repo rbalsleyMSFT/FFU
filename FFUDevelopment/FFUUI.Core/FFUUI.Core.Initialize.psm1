@@ -112,6 +112,9 @@ function Initialize-UIControls {
     $State.Controls.cmbWindowsRelease = $window.FindName('cmbWindowsRelease')
     $State.Controls.cmbWindowsVersion = $window.FindName('cmbWindowsVersion')
     $State.Controls.txtISOPath = $window.FindName('txtISOPath')
+    $State.Controls.rbDownloadESD = $window.FindName('rbDownloadESD')
+    $State.Controls.rbProvideISO = $window.FindName('rbProvideISO')
+    $State.Controls.isoPathPanel = $window.FindName('isoPathPanel')
     $State.Controls.btnBrowseISO = $window.FindName('btnBrowseISO')
     $State.Controls.cmbWindowsArch = $window.FindName('cmbWindowsArch')
     $State.Controls.cmbWindowsLang = $window.FindName('cmbWindowsLang')
@@ -389,7 +392,12 @@ function Initialize-UIDefaults {
     $State.Controls.cmbLogicalSectorSize.SelectedItem = ($State.Controls.cmbLogicalSectorSize.Items | Where-Object { $_.Content -eq $State.Defaults.generalDefaults.LogicalSectorSize.ToString() })
    
     # Populate Windows Release, Version, and SKU comboboxes
-    Get-WindowsSettingsCombos -isoPath $State.Defaults.windowsSettingsDefaults.DefaultISOPath -State $State
+    # Initialize Windows settings combos based on media source mode
+    $initIsoPath = $State.Defaults.windowsSettingsDefaults.DefaultISOPath
+    if ($null -ne $State.Controls.rbProvideISO -and -not $State.Controls.rbProvideISO.IsChecked) {
+        $initIsoPath = ''
+    }
+    Get-WindowsSettingsCombos -isoPath $initIsoPath -State $State
     
     # Windows Settings tab defaults
     $State.Controls.cmbWindowsLang.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedLanguages

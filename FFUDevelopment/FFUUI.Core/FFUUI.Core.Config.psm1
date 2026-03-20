@@ -54,6 +54,7 @@ function Get-UIConfig {
         InstallOffice                  = $State.Controls.chkInstallOffice.IsChecked
         InstallWingetApps              = $State.Controls.chkInstallWingetApps.IsChecked
         ISOPath                        = $State.Controls.txtISOPath.Text
+        WindowsMediaSource             = if ($null -ne $State.Controls.rbProvideISO -and $State.Controls.rbProvideISO.IsChecked) { "Provide Windows ISO" } else { "Download Windows ESD" }
         LogicalSectorSizeBytes         = [int]$State.Controls.cmbLogicalSectorSize.SelectedItem.Content
         # Make                           = $null
         MediaType                      = $State.Controls.cmbMediaType.SelectedItem
@@ -486,6 +487,15 @@ function Update-UIFromConfig {
 
     # Windows Settings
     Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ISOPath' -State $State
+    # Load Windows Media Source setting
+    if ($null -ne $ConfigContent.PSObject.Properties.Item('WindowsMediaSource')) {
+        if ($ConfigContent.WindowsMediaSource -eq 'Provide Windows ISO') {
+            $State.Controls.rbProvideISO.IsChecked = $true
+        }
+        else {
+            $State.Controls.rbDownloadESD.IsChecked = $true
+        }
+    }
     
     # Special handling for Windows Release and SKU due to value collision (e.g., 2019 for Server and LTSC)
     if (($null -ne $ConfigContent.PSObject.Properties.Item('WindowsRelease')) -and ($null -ne $ConfigContent.PSObject.Properties.Item('WindowsSKU'))) {

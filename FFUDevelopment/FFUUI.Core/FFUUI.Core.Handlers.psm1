@@ -392,12 +392,31 @@ function Register-EventHandlers {
         })
 
     # Windows Settings tab Event Handlers
-    $State.Controls.txtISOPath.Add_TextChanged({
-            param($eventSource, $textChangedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            Get-WindowsSettingsCombos -isoPath $localState.Controls.txtISOPath.Text -State $localState
-        })
+    # Windows Media Source radio buttons
+    if ($null -ne $State.Controls.rbProvideISO) {
+        $State.Controls.rbProvideISO.Add_Checked({
+                param($eventSource, $routedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) { return }
+                $localState = $window.Tag
+                $localState.Controls.isoPathPanel.Visibility = 'Visible'
+                # Use a placeholder .iso path to trigger ISO mode even before a real path is provided
+                $isoPath = $localState.Controls.txtISOPath.Text
+                if ([string]::IsNullOrWhiteSpace($isoPath)) {
+                    $isoPath = 'placeholder.iso'
+                }
+                Get-WindowsSettingsCombos -isoPath $isoPath -State $localState
+            })
+        $State.Controls.rbProvideISO.Add_Unchecked({
+                param($eventSource, $routedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) { return }
+                $localState = $window.Tag
+                $localState.Controls.isoPathPanel.Visibility = 'Collapsed'
+                $localState.Controls.txtISOPath.Text = ''
+                Get-WindowsSettingsCombos -isoPath '' -State $localState
+            })
+    }
 
     $State.Controls.cmbWindowsRelease.Add_SelectionChanged({
             param($eventSource, $selectionChangedEventArgs)
@@ -407,7 +426,13 @@ function Register-EventHandlers {
             if ($null -ne $localState.Controls.cmbWindowsRelease.SelectedItem) {
                 $selectedReleaseValue = $localState.Controls.cmbWindowsRelease.SelectedItem.Value
             }
-            Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $localState.Controls.txtISOPath.Text -State $localState
+            # Determine ISO path based on radio button state
+            $isoPath = ''
+            if ($null -ne $localState.Controls.rbProvideISO -and $localState.Controls.rbProvideISO.IsChecked) {
+                $isoPath = $localState.Controls.txtISOPath.Text
+                if ([string]::IsNullOrWhiteSpace($isoPath)) { $isoPath = 'placeholder.iso' }
+            }
+            Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath -State $localState
             Update-WindowsSkuCombo -State $localState
             Update-WindowsArchCombo -State $localState
 

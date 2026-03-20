@@ -223,16 +223,24 @@
             <!-- TAB: Windows Settings -->
             <ScrollViewer x:Name="pageWindows" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                     <StackPanel Margin="16">
-                        <!-- Windows ISO Path -->
-                        <TextBlock Text="Windows ISO Path" Margin="0,0,0,4" ToolTip="Path to the Windows ISO file."/>
-                        <Grid Margin="0,0,0,24">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="txtISOPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Windows ISO file."/>
-                            <Button x:Name="btnBrowseISO" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                        </Grid>
+                        <!-- Windows Media Source -->
+                        <TextBlock Text="Windows Media Source" Margin="0,0,0,8" ToolTip="Choose whether to download Windows ESD from Microsoft or provide your own Windows ISO file."/>
+                        <StackPanel x:Name="cmbWindowsMediaSource" Margin="0,0,0,24">
+                            <RadioButton x:Name="rbDownloadESD" Content="Download Windows ESD" IsChecked="True" Margin="0,0,0,8" GroupName="WindowsMediaSource" ToolTip="Download the latest Windows ESD file from Microsoft."/>
+                            <RadioButton x:Name="rbProvideISO" Content="Provide Windows ISO" Margin="0" GroupName="WindowsMediaSource" ToolTip="Use your own Windows ISO file."/>
+                        </StackPanel>
+                        <!-- Windows ISO Path (visible only when "Provide Windows ISO" is selected) -->
+                        <StackPanel x:Name="isoPathPanel" Visibility="Collapsed">
+                            <TextBlock Text="Windows ISO Path" Margin="0,0,0,4" ToolTip="Path to the Windows ISO file."/>
+                            <Grid Margin="0,0,0,24">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="txtISOPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Windows ISO file."/>
+                                <Button x:Name="btnBrowseISO" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
                         <!-- Windows Release -->
                         <TextBlock Text="Windows Release" Margin="0,0,0,4" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
                         <ComboBox x:Name="cmbWindowsRelease" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
