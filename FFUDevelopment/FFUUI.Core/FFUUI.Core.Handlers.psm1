@@ -203,18 +203,17 @@ function Register-EventHandlers {
         })
 
     # Build USB Drive Settings Event Handlers
+    # The USB Expander is always visible; the checkbox controls child settings only
     $State.Controls.chkBuildUSBDriveEnable.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $localState.Controls.usbSection.Visibility = 'Visible'
             $localState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $true
         })
     $State.Controls.chkBuildUSBDriveEnable.Add_Unchecked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $localState.Controls.usbSection.Visibility = 'Collapsed'
             $localState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $false
             $localState.Controls.chkSelectSpecificUSBDrives.IsChecked = $false
             $localState.Controls.lstUSBDrives.Items.Clear()

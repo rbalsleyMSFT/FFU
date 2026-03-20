@@ -372,7 +372,6 @@ function Initialize-UIDefaults {
     $State.Controls.chkRemoveUpdates.IsChecked = $State.Defaults.generalDefaults.RemoveUpdates
     $State.Controls.chkRemoveDownloadedESD.IsChecked = $State.Defaults.generalDefaults.RemoveDownloadedESD
     $State.Controls.chkVerbose.IsChecked = $State.Defaults.generalDefaults.Verbose
-    $State.Controls.usbSection.Visibility = if ($State.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.chkSelectSpecificUSBDrives.IsEnabled = $State.Controls.chkBuildUSBDriveEnable.IsChecked
     $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked

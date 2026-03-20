@@ -764,34 +764,32 @@
                                 <sys:String>Low</sys:String>
                             </ComboBox>
                         </StackPanel>
-                        <!-- Row 8: General Build Options Header -->
-                        <TextBlock Grid.Row="8" Text="General Build Options" FontSize="20" FontWeight="SemiBold" Margin="0,8,0,4"/>
-
-                        <!-- Row 9: General Build Options Checkboxes -->
-                        <WrapPanel Grid.Row="9" Margin="0,4">
-                            <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
-                            <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
-                            <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="8" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
-                            <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
-                            <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
-                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
-                            <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
-                            <CheckBox x:Name="chkInjectUnattend" Content="Inject Unattend.xml" Margin="8" VerticalAlignment="Center" Tag="When set to $true and Install Apps is enabled, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend into Apps\Unattend\Unattend.xml to be used by sysprep."/>
-                            <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
-                        </WrapPanel>
+                        <!-- Row 8-9: General Build Options -->
+                        <Expander Grid.Row="8" Grid.RowSpan="2" Header="General Build Options" IsExpanded="False" Margin="0,8,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                            <StackPanel Margin="0,4,0,0">
+                                <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
+                                <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
+                                <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
+                                <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
+                                <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
+                                <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
+                                <CheckBox x:Name="chkInjectUnattend" Content="Inject Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true and Install Apps is enabled, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend into Apps\Unattend\Unattend.xml to be used by sysprep."/>
+                                <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="0" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
+                            </StackPanel>
+                        </Expander>
 
                         <!-- Row 10: Build USB Drive Section -->
-                        <StackPanel Grid.Row="10" Margin="0,8,0,4" x:Name="usbDriveSection" Visibility="Collapsed">
-                            <TextBlock Text="Build USB Drive Settings" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Expander Grid.Row="10" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,8,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                             <StackPanel Margin="4,0,0,8">
-                                <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
-                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="4,4,4,4" IsEnabled="False" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
-                                <CheckBox x:Name="chkSelectSpecificUSBDrives" Content="Select Specific USB Drives" Margin="8" VerticalAlignment="Center" Tag="Enable to select specific USB drives for building"/>
+                                <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
+                                <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
+                                <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="0,0,0,8" IsEnabled="False" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
+                                <CheckBox x:Name="chkSelectSpecificUSBDrives" Content="Select Specific USB Drives" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Enable to select specific USB drives for building"/>
                                 <!-- Added Missing Checkboxes -->
-                                <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
-                                <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
-                                <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
-                                <CheckBox x:Name="chkCopyAdditionalFFUFiles" Content="Copy Additional FFU Files" Margin="8" VerticalAlignment="Center" Tag="When set to $true, allows selecting existing FFU files in the capture folder to also copy to the USB drive."/>
+                                <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
+                                <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
+                                <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
+                                <CheckBox x:Name="chkCopyAdditionalFFUFiles" Content="Copy Additional FFU Files" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, allows selecting existing FFU files in the capture folder to also copy to the USB drive."/>
 
                                 <!-- Additional FFU Selection Section -->
                                 <Grid x:Name="additionalFFUPanel" Margin="4,0,0,8" Visibility="Collapsed">
@@ -843,21 +841,22 @@
                                         </ListView.View>
                                     </ListView>
                                 </Grid>
-                            </StackPanel>
-                        </StackPanel>
-
-                        <!-- Row 11: Post-Build Cleanup -->
-                        <StackPanel Grid.Row="11" Margin="0,8,0,4">
-                            <TextBlock Text="Post-Build Cleanup" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                            <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="8" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
-                            <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="8" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
-                            <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="8" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
-                            <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="8" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
-                            <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="8" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>
-                            <CheckBox x:Name="chkRemoveApps" Content="Remove Apps Folder Content" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will remove the application content in the Apps folder after the FFU has been captured."/>
-                            <CheckBox x:Name="chkRemoveUpdates" Content="Remove Downloaded Update Files" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded CU, .NET, MSRT, Defender, Edge, and OneDrive files after being applied/included."/>
-                            <CheckBox x:Name="chkRemoveDownloadedESD" Content="Remove Downloaded ESD file(s)" Margin="8" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded Windows ESD file(s) after they are used."/>
-                        </StackPanel>
+                                </StackPanel>
+                            </Expander>
+    
+                                <!-- Row 11: Post-Build Cleanup -->
+                            <Expander Grid.Row="11" Header="Post-Build Cleanup" IsExpanded="False" Margin="0,8,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                <StackPanel Margin="0,4,0,0">
+                                    <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
+                                    <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
+                                    <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
+                                    <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
+                                    <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>
+                                    <CheckBox x:Name="chkRemoveApps" Content="Remove Apps Folder Content" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will remove the application content in the Apps folder after the FFU has been captured."/>
+                                    <CheckBox x:Name="chkRemoveUpdates" Content="Remove Downloaded Update Files" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded CU, .NET, MSRT, Defender, Edge, and OneDrive files after being applied/included."/>
+                                    <CheckBox x:Name="chkRemoveDownloadedESD" Content="Remove Downloaded ESD file(s)" Margin="0" VerticalAlignment="Center" Tag="When set to $true, will remove downloaded Windows ESD file(s) after they are used."/>
+                                </StackPanel>
+                            </Expander>
                     </Grid>
                 </ScrollViewer>
 
