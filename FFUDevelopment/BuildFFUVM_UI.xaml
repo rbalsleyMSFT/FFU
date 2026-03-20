@@ -760,7 +760,7 @@
                         <!-- Row 6: Threads -->
                         <StackPanel Grid.Row="6" Margin="0,0,0,24">
                             <TextBlock Text="Threads" Margin="0,0,0,4" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
-                            <TextBox x:Name="txtThreads" Width="50" HorizontalAlignment="Left" Text="5" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
+                            <TextBox x:Name="txtThreads" Width="80" HorizontalAlignment="Left" Text="5" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
                         </StackPanel>
                         <!-- Row 7: BITS Priority -->
                         <StackPanel Grid.Row="7" Margin="0,0,0,24">
