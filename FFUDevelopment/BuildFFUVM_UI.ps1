@@ -55,7 +55,8 @@ $script:uiState = [PSCustomObject]@{
         lastSortProperty                  = $null;
         lastSortAscending                 = $true;
         isBuilding                        = $false;
-        isCleanupRunning                  = $false
+        isCleanupRunning                  = $false;
+        isFluentSupported                 = $false
     };
     Defaults           = @{};
     LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
@@ -119,6 +120,9 @@ $xamlString = Get-Content $xamlPath -Raw
 $reader = New-Object System.IO.StringReader($xamlString)
 $xmlReader = [System.Xml.XmlReader]::Create($reader)
 $window = [Windows.Markup.XamlReader]::Load($xmlReader)
+
+# Apply Fluent theme before the window renders (requires PowerShell 7.5+ / .NET 9+)
+Initialize-FluentTheme -Window $window -ThemeMode "System" -State $script:uiState
 
 $window.Add_Loaded({
         # Pass the state object to all initialization functions
@@ -390,8 +394,11 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Not currently building: start a new build
             $btnRun.IsEnabled = $false
 
-            # Switch to Monitor Tab
-            $script:uiState.Controls.MainTabControl.SelectedItem = $script:uiState.Controls.MonitorTab
+            # Switch to Monitor page via navigation
+            $monitorIndex = 8 # Monitor is the 9th item (index 8) in the navigation list
+            if ($null -ne $script:uiState.Controls.lstNavigation) {
+                $script:uiState.Controls.lstNavigation.SelectedIndex = $monitorIndex
+            }
             
             # Clear previous log data and reset autoscroll
             if ($null -ne $script:uiState.Data.logData) {

@@ -99,6 +99,7 @@ function Get-UIConfig {
         Threads                        = [int]$State.Controls.txtThreads.Text
         BitsPriority                    = $State.Controls.cmbBitsPriority.SelectedItem
         MaxUSBDrives                   = [int]$State.Controls.txtMaxUSBDrives.Text
+        ThemeMode                      = if ($null -ne $State.Controls.cmbThemeMode -and $null -ne $State.Controls.cmbThemeMode.SelectedItem) { $State.Controls.cmbThemeMode.SelectedItem } else { "System" }
         Verbose                        = $State.Controls.chkVerbose.IsChecked
         VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
         VMLocation                     = $State.Controls.txtVMLocation.Text
@@ -426,6 +427,15 @@ function Update-UIFromConfig {
     )
 
     WriteLog "Applying loaded configuration to the UI."
+
+    # Apply theme mode from config (must be done before other controls load for proper styling)
+    if ($null -ne $ConfigContent.PSObject.Properties.Item('ThemeMode') -and $State.Flags.isFluentSupported) {
+        $configTheme = $ConfigContent.ThemeMode
+        if ($configTheme -in @("Light", "Dark", "System")) {
+            Initialize-FluentTheme -Window $State.Window -ThemeMode $configTheme -State $State
+            Set-UIValue -ControlName 'cmbThemeMode' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'ThemeMode' -State $State
+        }
+    }
 
     # Update Build tab values
     Set-UIValue -ControlName 'txtFFUDevPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUDevelopmentPath' -State $State

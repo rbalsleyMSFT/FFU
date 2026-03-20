@@ -13,6 +13,97 @@
     This module is critical for setting up the initial state of the application window when it first loads.
 #>
 
+function Initialize-FluentTheme {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Window]$Window,
+        [Parameter(Mandatory = $false)]
+        [string]$ThemeMode = "System",
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$State
+    )
+
+    # Check if the current .NET runtime supports Window.ThemeMode (requires .NET 9+ / PowerShell 7.5+)
+    $themeModeProperty = [System.Windows.Window].GetProperty("ThemeMode")
+    if ($null -eq $themeModeProperty) {
+        WriteLog "Fluent theme not available. Window.ThemeMode requires PowerShell 7.5+ (.NET 9+). Using default Aero2 theme."
+        if ($null -ne $State) {
+            $State.Flags.isFluentSupported = $false
+        }
+        # Still create tooltip styles for non-Fluent mode so Tag-to-ToolTip binding works
+        $controlTypes = @(
+            [System.Windows.Controls.TextBox],
+            [System.Windows.Controls.TextBlock],
+            [System.Windows.Controls.CheckBox]
+        )
+        foreach ($controlType in $controlTypes) {
+            $newStyle = New-Object System.Windows.Style($controlType)
+            $toolTipBinding = New-Object System.Windows.Data.Binding("Tag")
+            $toolTipBinding.RelativeSource = [System.Windows.Data.RelativeSource]::new([System.Windows.Data.RelativeSourceMode]::Self)
+            $toolTipSetter = New-Object System.Windows.Setter([System.Windows.FrameworkElement]::ToolTipProperty, $toolTipBinding)
+            $newStyle.Setters.Add($toolTipSetter)
+            if ($Window.Resources.Contains($controlType)) {
+                $Window.Resources.Remove($controlType)
+            }
+            $Window.Resources.Add($controlType, $newStyle)
+        }
+        WriteLog "Tooltip styles created for non-Fluent mode."
+        return
+    }
+
+    # Mark Fluent as supported in state
+    if ($null -ne $State) {
+        $State.Flags.isFluentSupported = $true
+    }
+
+    # Resolve the ThemeMode enum value using reflection to avoid compile-time experimental attribute issues
+    $themeModeType = [System.Windows.Window].GetProperty("ThemeMode").PropertyType
+    $themeModeValue = $null
+    switch ($ThemeMode) {
+        "Light" { $themeModeValue = $themeModeType::Light }
+        "Dark" { $themeModeValue = $themeModeType::Dark }
+        "System" { $themeModeValue = $themeModeType::System }
+        default { $themeModeValue = $themeModeType::System }
+    }
+
+    # Apply the Fluent theme mode to the window
+    $themeModeProperty.SetValue($Window, $themeModeValue)
+    WriteLog "Applied Fluent theme: $ThemeMode"
+
+    # Re-create implicit tooltip styles with BasedOn pointing to the Fluent base style
+    # This preserves the Tag-to-ToolTip binding while inheriting Fluent visual styling
+    $controlTypes = @(
+        [System.Windows.Controls.TextBox],
+        [System.Windows.Controls.TextBlock],
+        [System.Windows.Controls.CheckBox]
+    )
+
+    foreach ($controlType in $controlTypes) {
+        # Get the Fluent base style that was loaded by ThemeMode
+        $fluentBaseStyle = $Window.TryFindResource($controlType)
+
+        # Create a new implicit style with ToolTip binding
+        $newStyle = New-Object System.Windows.Style($controlType)
+        if ($null -ne $fluentBaseStyle) {
+            $newStyle.BasedOn = $fluentBaseStyle
+        }
+
+        # Add the ToolTip setter that binds to the Tag property
+        $toolTipBinding = New-Object System.Windows.Data.Binding("Tag")
+        $toolTipBinding.RelativeSource = [System.Windows.Data.RelativeSource]::new([System.Windows.Data.RelativeSourceMode]::Self)
+        $toolTipSetter = New-Object System.Windows.Setter([System.Windows.FrameworkElement]::ToolTipProperty, $toolTipBinding)
+        $newStyle.Setters.Add($toolTipSetter)
+
+        # Remove any existing implicit style for this type before adding the new one
+        if ($Window.Resources.Contains($controlType)) {
+            $Window.Resources.Remove($controlType)
+        }
+        $Window.Resources.Add($controlType, $newStyle)
+    }
+
+        WriteLog "Tooltip styles updated with Fluent base styles."
+    }
+
 function Initialize-UIControls {
     param([PSCustomObject]$State)
     WriteLog "Initializing UI control references..."
@@ -183,10 +274,27 @@ function Initialize-UIControls {
     $State.Controls.btnRestoreDefaults = $window.FindName('btnRestoreDefaults')
     $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
 
-    # Monitor Tab
-    $State.Controls.MainTabControl = $window.FindName('MainTabControl')
-    $State.Controls.MonitorTab = $window.FindName('MonitorTab')
+    # Settings page
+    $State.Controls.cmbThemeMode = $window.FindName('cmbThemeMode')
+
+    # Navigation controls
+    $State.Controls.lstNavigation = $window.FindName('lstNavigation')
+    $State.Controls.lstNavSettings = $window.FindName('lstNavSettings')
     $State.Controls.lstLogOutput = $window.FindName('lstLogOutput')
+
+    # Content pages (for navigation visibility toggling)
+    $State.Controls.navigationPages = @(
+        $window.FindName('pageHome'),
+        $window.FindName('pageHyperV'),
+        $window.FindName('pageWindows'),
+        $window.FindName('pageUpdates'),
+        $window.FindName('pageApplications'),
+        $window.FindName('pageOffice'),
+        $window.FindName('pageDrivers'),
+        $window.FindName('pageBuild'),
+        $window.FindName('pageMonitor')
+    )
+    $State.Controls.pageSettings = $window.FindName('pageSettings')
 
     # Initialize and bind the log data collection
     $State.Data.logData = New-Object System.Collections.ObjectModel.ObservableCollection[string]
@@ -349,23 +457,62 @@ function Initialize-UIDefaults {
     # Set initial state for InstallApps checkbox based on updates
     Update-InstallAppsState -State $State
 
+    # Set default theme mode and disable if Fluent is not supported
+    if ($null -ne $State.Controls.cmbThemeMode) {
+        $State.Controls.cmbThemeMode.SelectedItem = "System"
+        if (-not $State.Flags.isFluentSupported) {
+            $State.Controls.cmbThemeMode.IsEnabled = $false
+            $State.Controls.cmbThemeMode.Tag = "Fluent theme requires PowerShell 7.5+ (.NET 9+). Best experience on PowerShell 7.6+ (.NET 10)."
+        }
+    }
+
+    # Set default navigation selection to Home and show the Home page
+    if ($null -ne $State.Controls.lstNavigation) {
+        $State.Controls.lstNavigation.SelectedIndex = 0
+    }
+
     # Set initial state for Office panel visibility
     Update-OfficePanelVisibility -State $State
     
     # Set initial state for Application panel visibility
     Update-ApplicationPanelVisibility -State $State
     
-    # Set initial state for BYO Apps copy button
-    Update-CopyButtonState -State $State
-}
+        # Set initial state for BYO Apps copy button
+        Update-CopyButtonState -State $State
+    
+        # Apply accent color to primary action button only (per Windows design guidance)
+        if ($State.Flags.isFluentSupported) {
+            try {
+                $State.Controls.btnRun = $State.Window.FindName('btnRun')
+                if ($null -ne $State.Controls.btnRun) {
+                    # Use SetResourceReference for live accent color updates when user changes Windows theme
+                    $State.Controls.btnRun.SetResourceReference(
+                        [System.Windows.Controls.Control]::BackgroundProperty,
+                        [System.Windows.SystemColors]::AccentColorBrushKey
+                    )
+                    $State.Controls.btnRun.Foreground = [System.Windows.Media.Brushes]::White
+                }
+            }
+            catch {
+                WriteLog "Could not apply accent color to Build FFU button: $($_.Exception.Message)"
+            }
+        }
+    }
 
 function Initialize-DynamicUIElements {
     param([PSCustomObject]$State)
     WriteLog "Initializing dynamic UI elements (Grids, Columns)..."
 
+    # Get the Fluent base style for ListViewItem in GridView mode
+    # Must use GridViewItemContainerStyleKey (not the generic ListViewItem type key) because the
+    # generic Fluent ListViewItem style has a template without GridViewRowPresenter, which breaks
+    # column-based rendering and causes items to display their ToString() representation.
+    $listViewItemBaseStyle = $State.Window.TryFindResource([System.Windows.Controls.GridView]::GridViewItemContainerStyleKey)
+
     # Driver Models ListView setup
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleDriverModels = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleDriverModels.BasedOn = $listViewItemBaseStyle }
     $itemStyleDriverModels.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstDriverModels.ItemContainerStyle = $itemStyleDriverModels
 
@@ -401,6 +548,7 @@ function Initialize-DynamicUIElements {
 
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleWingetResults = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleWingetResults.BasedOn = $listViewItemBaseStyle }
     $itemStyleWingetResults.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstWingetResults.ItemContainerStyle = $itemStyleWingetResults
 
@@ -448,9 +596,11 @@ function Initialize-DynamicUIElements {
     $binding.Mode = [System.Windows.Data.BindingMode]::TwoWay
     $comboBoxFactory.SetBinding([System.Windows.Controls.ComboBox]::TextProperty, $binding)
 
-    # Create a style to disable the ComboBox for 'msstore' source
+    # Create a style to disable the ComboBox for 'msstore' source, inheriting the Fluent base style
     $comboBoxStyle = New-Object System.Windows.Style
     $comboBoxStyle.TargetType = [System.Windows.Controls.ComboBox]
+    $comboBoxBaseStyle = $State.Window.TryFindResource([System.Windows.Controls.ComboBox])
+    if ($null -ne $comboBoxBaseStyle) { $comboBoxStyle.BasedOn = $comboBoxBaseStyle }
     
     $dataTrigger = New-Object System.Windows.DataTrigger
     $dataTrigger.Binding = New-Object System.Windows.Data.Binding("Source")
@@ -557,6 +707,7 @@ function Initialize-DynamicUIElements {
 
     # Set ListViewItem style to stretch content horizontally
     $itemStyleBYOApps = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleBYOApps.BasedOn = $listViewItemBaseStyle }
     $itemStyleBYOApps.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstApplications.ItemContainerStyle = $itemStyleBYOApps
 
@@ -579,6 +730,7 @@ function Initialize-DynamicUIElements {
 
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleAppsScriptVars = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleAppsScriptVars.BasedOn = $listViewItemBaseStyle }
     $itemStyleAppsScriptVars.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstAppsScriptVariables.ItemContainerStyle = $itemStyleAppsScriptVars
 
@@ -641,6 +793,7 @@ function Initialize-DynamicUIElements {
     # USB Drives ListView setup
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleUSBDrives = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleUSBDrives.BasedOn = $listViewItemBaseStyle }
     $itemStyleUSBDrives.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstUSBDrives.ItemContainerStyle = $itemStyleUSBDrives
     
@@ -704,6 +857,7 @@ function Initialize-DynamicUIElements {
     
     # Additional FFUs ListView setup
     $itemStyleAdditionalFFUs = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleAdditionalFFUs.BasedOn = $listViewItemBaseStyle }
     $itemStyleAdditionalFFUs.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstAdditionalFFUs.ItemContainerStyle = $itemStyleAdditionalFFUs
     

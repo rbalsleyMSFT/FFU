@@ -87,6 +87,100 @@ function Register-EventHandlers {
             })
     }
 
+    # Navigation Sidebar Event Handlers
+    # Main navigation list - switches content pages based on selected nav item
+    if ($null -ne $State.Controls.lstNavigation) {
+        $State.Controls.lstNavigation.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                $localState = $window.Tag
+                $selectedIndex = $eventSource.SelectedIndex
+                if ($selectedIndex -lt 0) { return }
+
+                # Clear Settings selection when main nav is used
+                if ($null -ne $localState.Controls.lstNavSettings) {
+                    $localState.Controls.lstNavSettings.SelectedIndex = -1
+                }
+
+                # Hide all content pages
+                foreach ($page in $localState.Controls.navigationPages) {
+                    if ($null -ne $page) { $page.Visibility = 'Collapsed' }
+                }
+                if ($null -ne $localState.Controls.pageSettings) {
+                    $localState.Controls.pageSettings.Visibility = 'Collapsed'
+                }
+
+                # Show the selected page
+                if ($selectedIndex -lt $localState.Controls.navigationPages.Count) {
+                    $localState.Controls.navigationPages[$selectedIndex].Visibility = 'Visible'
+                }
+            })
+    }
+
+    # Settings navigation item
+    if ($null -ne $State.Controls.lstNavSettings) {
+        $State.Controls.lstNavSettings.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                $localState = $window.Tag
+                if ($eventSource.SelectedIndex -lt 0) { return }
+
+                # Clear main navigation selection
+                if ($null -ne $localState.Controls.lstNavigation) {
+                    $localState.Controls.lstNavigation.SelectedIndex = -1
+                }
+
+                # Hide all content pages
+                foreach ($page in $localState.Controls.navigationPages) {
+                    if ($null -ne $page) { $page.Visibility = 'Collapsed' }
+                }
+
+                # Show Settings page
+                if ($null -ne $localState.Controls.pageSettings) {
+                    $localState.Controls.pageSettings.Visibility = 'Visible'
+                }
+            })
+    }
+
+    # Hyperlink navigation handlers for Settings page links
+    $hyperlinkNames = @('linkGitHub', 'linkReleases', 'linkChangelog', 'linkDocs', 'linkVideo1', 'linkVideo2', 'linkVideo3')
+    foreach ($linkName in $hyperlinkNames) {
+        $link = $State.Window.FindName($linkName)
+        if ($null -ne $link) {
+            $link.Add_RequestNavigate({
+                    param($eventSource, $requestNavigateEventArgs)
+                    Start-Process $requestNavigateEventArgs.Uri.AbsoluteUri
+                    $requestNavigateEventArgs.Handled = $true
+                })
+        }
+    }
+
+    # Settings Page Event Handlers
+    # Theme mode selector - switches between Light, Dark, and System Fluent themes
+    if ($null -ne $State.Controls.cmbThemeMode) {
+        $State.Controls.cmbThemeMode.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                $localState = $window.Tag
+                if (-not $localState.Flags.isFluentSupported) {
+                    return
+                }
+                $selectedTheme = $eventSource.SelectedItem
+                if (-not [string]::IsNullOrWhiteSpace($selectedTheme)) {
+                    Initialize-FluentTheme -Window $window -ThemeMode $selectedTheme -State $localState
+                }
+            })
+    }
+
     # Build Tab Event Handlers
     $State.Controls.btnBrowseFFUDevPath.Add_Click({
             param($eventSource, $routedEventArgs)
