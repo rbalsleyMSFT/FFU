@@ -117,6 +117,14 @@ function Register-EventHandlers {
                 if ($selectedIndex -lt $localState.Controls.navigationPages.Count) {
                     $localState.Controls.navigationPages[$selectedIndex].Visibility = 'Visible'
                 }
+            
+                # Update the shared page title to match the selected navigation item
+                if ($null -ne $localState.Controls.txtPageTitle) {
+                    $selectedNavigationItem = $eventSource.SelectedItem
+                    if ($null -ne $selectedNavigationItem -and -not [string]::IsNullOrWhiteSpace([string]$selectedNavigationItem.Tag)) {
+                        $localState.Controls.txtPageTitle.Text = [string]$selectedNavigationItem.Tag
+                    }
+                }
             })
     }
 
@@ -144,6 +152,17 @@ function Register-EventHandlers {
                 # Show Settings page
                 if ($null -ne $localState.Controls.pageSettings) {
                     $localState.Controls.pageSettings.Visibility = 'Visible'
+                }
+            
+                # Update the shared page title to match the selected navigation item
+                if ($null -ne $localState.Controls.txtPageTitle) {
+                    $selectedNavigationItem = $eventSource.SelectedItem
+                    if ($null -ne $selectedNavigationItem -and -not [string]::IsNullOrWhiteSpace([string]$selectedNavigationItem.Tag)) {
+                        $localState.Controls.txtPageTitle.Text = [string]$selectedNavigationItem.Tag
+                    }
+                    else {
+                        $localState.Controls.txtPageTitle.Text = 'Settings'
+                    }
                 }
             })
     }

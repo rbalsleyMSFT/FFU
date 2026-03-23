@@ -280,6 +280,9 @@ function Initialize-UIControls {
     # Settings page
     $State.Controls.cmbThemeMode = $window.FindName('cmbThemeMode')
 
+    # Shared page shell
+    $State.Controls.txtPageTitle = $window.FindName('txtPageTitle')
+
     # Navigation controls
     $State.Controls.lstNavigation = $window.FindName('lstNavigation')
     $State.Controls.lstNavSettings = $window.FindName('lstNavSettings')
@@ -473,9 +476,20 @@ function Initialize-UIDefaults {
         }
     }
 
-    # Set default navigation selection to Home and show the Home page
+    # Set default navigation selection to Home and initialize the shared page title
     if ($null -ne $State.Controls.lstNavigation) {
         $State.Controls.lstNavigation.SelectedIndex = 0
+
+        # Keep the shell header aligned with the selected navigation item on first render
+        if ($null -ne $State.Controls.txtPageTitle) {
+            $selectedNavigationItem = $State.Controls.lstNavigation.SelectedItem
+            if ($null -ne $selectedNavigationItem -and -not [string]::IsNullOrWhiteSpace([string]$selectedNavigationItem.Tag)) {
+                $State.Controls.txtPageTitle.Text = [string]$selectedNavigationItem.Tag
+            }
+            else {
+                $State.Controls.txtPageTitle.Text = 'Home'
+            }
+        }
     }
 
     # Set initial state for Office panel visibility
