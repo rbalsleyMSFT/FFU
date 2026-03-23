@@ -816,78 +816,11 @@ function Get-MicrosoftDrivers {
         [int]$WindowsRelease
     )
 
-    $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
-
-    ### DOWNLOAD DRIVER PAGE CONTENT
-    WriteLog "Getting Surface driver information from $url"
-    $OriginalVerbosePreference = $VerbosePreference
-    $VerbosePreference = 'SilentlyContinue'
-    $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
-    $VerbosePreference = $OriginalVerbosePreference
+    # Use the shared Learn-based Microsoft model index so the CLI stays aligned with the UI.
+    WriteLog "Getting Surface driver information from the shared Microsoft model index"
+    $models = @(Get-SurfaceDriverModelIndex -DriversFolder $DriversFolder | Select-Object Model, Link)
     WriteLog "Complete"
-
-    ### PARSE THE DRIVER PAGE CONTENT FOR MODELS AND DOWNLOAD LINKS
-    WriteLog "Parsing web content for models and download links"
-    $html = $webContent.Content
-
-    # Regex to match divs with selectable-content-options__option-content classes
-    $divPattern = '<div[^>]*class="selectable-content-options__option-content(?: ocHidden)?"[^>]*>(.*?)</div>'
-    $divMatches = [regex]::Matches($html, $divPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-    $models = @()
-
-    foreach ($divMatch in $divMatches) {
-        $divContent = $divMatch.Groups[1].Value
-
-        # Find all tables within the div
-        $tablePattern = '<table[^>]*>(.*?)</table>'
-        $tableMatches = [regex]::Matches($divContent, $tablePattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-        foreach ($tableMatch in $tableMatches) {
-            $tableContent = $tableMatch.Groups[1].Value
-
-            # Find all rows in the table
-            $rowPattern = '<tr[^>]*>(.*?)</tr>'
-            $rowMatches = [regex]::Matches($tableContent, $rowPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-            foreach ($rowMatch in $rowMatches) {
-                $rowContent = $rowMatch.Groups[1].Value
-
-                # Extract cells from the row
-                $cellPattern = '<td[^>]*>\s*(?:<p[^>]*>)?(.*?)(?:</p>)?\s*</td>'
-                $cellMatches = [regex]::Matches($rowContent, $cellPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-                if ($cellMatches.Count -ge 2) {
-                    # Model name in the first TD
-                    $modelName = ($cellMatches[0].Groups[1].Value).Trim()
-
-                    # # Remove <p> and </p> tags if present
-                    # $modelName = $modelName -replace '<p[^>]*>', '' -replace '</p>', ''
-                    # $modelName = $modelName.Trim()
-
-
-                    # The second TD might contain a link or just text
-                    $secondTdContent = $cellMatches[1].Groups[1].Value.Trim()
-
-                    # Look for a link in the second TD
-                    $linkPattern = '<a[^>]+href="([^"]+)"[^>]*>'
-                    $linkMatch = [regex]::Match($secondTdContent, $linkPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-
-                    if ($linkMatch.Success) {
-                        $modelLink = $linkMatch.Groups[1].Value
-                    }
-                    else {
-                        # No link, just text instructions
-                        $modelLink = $secondTdContent
-                    }
-
-                    $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
-                }
-            }
-        }
-    }
-
-    WriteLog "Parsing complete"
+    WriteLog "Loaded $($models.Count) Surface models from the shared Microsoft model index."
 
     ### FIND THE MODEL IN THE LIST OF MODELS
     $selectedModel = $models | Where-Object { $_.Model -eq $Model }

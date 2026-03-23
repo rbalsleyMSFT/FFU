@@ -161,12 +161,181 @@ function ConvertTo-SurfaceComparableName {
 
     # Cleanup: remove orphaned "with" left behind by earlier removals (e.g., "Surface Pro 9 with Intel Processor")
     $value = $value -replace '(?i)\bwith\b', ''
-    $value = $value -replace '\s+', ' '
-
-    return $value.Trim().ToUpperInvariant()
-}
-
-function Get-SurfaceSystemSkuReferenceIndex {
+        $value = $value -replace '\s+', ' '
+    
+        return $value.Trim().ToUpperInvariant()
+    }
+    
+    function ConvertTo-SurfaceHtmlText {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true)]
+            [AllowEmptyString()]
+            [string]$HtmlFragment
+        )
+    
+        # Normalize HTML fragments from the Learn table into plain text values.
+        $textValue = $HtmlFragment -replace '<br\s*/?>', ' '
+        $textValue = $textValue -replace '<[^>]+>', ' '
+        $textValue = [System.Net.WebUtility]::HtmlDecode($textValue)
+        $textValue = $textValue -replace '\s+', ' '
+    
+        return $textValue.Trim()
+    }
+    
+    function ConvertTo-SurfaceDownloadCenterLink {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$LinkValue
+        )
+    
+        # Normalize Learn links down to the canonical Download Center details URL.
+        $decodedLink = [System.Net.WebUtility]::HtmlDecode($LinkValue).Trim()
+        if ([string]::IsNullOrWhiteSpace($decodedLink)) {
+            return $null
+        }
+    
+        if ($decodedLink.StartsWith('/')) {
+            $decodedLink = "https://www.microsoft.com$decodedLink"
+        }
+    
+        $downloadCenterMatch = [regex]::Match(
+            $decodedLink,
+            'https://www\.microsoft\.com(?:/en-us)?/download/details\.aspx\?id=\d+',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+    
+        if (-not $downloadCenterMatch.Success) {
+            return $null
+        }
+    
+        return ($downloadCenterMatch.Value -replace '/en-us/', '/')
+    }
+    
+    function Get-SurfaceDriverModelIndex {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true)]
+            [string]$DriversFolder
+        )
+    
+        $url = 'https://learn.microsoft.com/en-us/surface/manage-surface-driver-and-firmware-updates'
+        $minimumExpectedModelCount = 10
+    
+        # Load the cached model list first to keep Microsoft model discovery fast.
+        try {
+            $cache = Import-SurfaceDriverIndexCache -DriversFolder $DriversFolder
+            if (@($cache.ModelIndex).Count -gt 0) {
+                WriteLog "Surface cache: Using cached Microsoft model list ($(@($cache.ModelIndex).Count) models)."
+                return @($cache.ModelIndex)
+            }
+        }
+        catch {
+            WriteLog "Surface cache: Failed to load cached Microsoft model list. Falling back to the Learn source. Error: $($_.Exception.Message)"
+        }
+    
+        try {
+            # Download the Learn article that now contains the authoritative Surface package table.
+            WriteLog "Surface cache: Downloading Microsoft model index from $url"
+            $headers = @{
+                'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            }
+            $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $headers
+            $html = $webContent.Content
+    
+            # Parse each table row and keep only Download Center package links.
+            $rowMatches = [regex]::Matches($html, '<tr[^>]*>(.*?)</tr>', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+            $models = [System.Collections.Generic.List[pscustomobject]]::new()
+            $seenModelKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    
+            foreach ($rowMatch in $rowMatches) {
+                $rowContent = $rowMatch.Groups[1].Value
+                $cellMatches = [regex]::Matches($rowContent, '<td[^>]*>\s*(.*?)\s*</td>', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+                if ($cellMatches.Count -lt 2) {
+                    continue
+                }
+    
+                $rowLabel = ConvertTo-SurfaceHtmlText -HtmlFragment $cellMatches[0].Groups[1].Value
+                if ([string]::IsNullOrWhiteSpace($rowLabel) -or $rowLabel -notmatch '(?i)^Surface') {
+                    continue
+                }
+    
+                $downloadCellContent = $cellMatches[1].Groups[1].Value
+                $linkMatches = [regex]::Matches(
+                    $downloadCellContent,
+                    '<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+                    [System.Text.RegularExpressions.RegexOptions]::Singleline -bor [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+                )
+    
+                foreach ($linkMatch in $linkMatches) {
+                    $modelName = ConvertTo-SurfaceHtmlText -HtmlFragment $linkMatch.Groups[2].Value
+                    $modelLink = ConvertTo-SurfaceDownloadCenterLink -LinkValue $linkMatch.Groups[1].Value
+    
+                    if ([string]::IsNullOrWhiteSpace($modelName) -or [string]::IsNullOrWhiteSpace($modelLink)) {
+                        continue
+                    }
+    
+                    $modelKey = "$modelName`n$modelLink"
+                    if (-not $seenModelKeys.Add($modelKey)) {
+                        continue
+                    }
+    
+                    $models.Add([pscustomobject]@{
+                            Make  = 'Microsoft'
+                            Model = $modelName
+                            Link  = $modelLink
+                        })
+                }
+            }
+    
+            if ($models.Count -eq 0) {
+                throw "No Microsoft driver models were found in the Learn table."
+            }
+    
+            if ($models.Count -lt $minimumExpectedModelCount) {
+                WriteLog "Surface cache: Warning - Learn parsing returned only $($models.Count) Microsoft model entries."
+            }
+            else {
+                WriteLog "Surface cache: Parsed $($models.Count) Microsoft model entries from Learn."
+            }
+    
+            # Save the refreshed model list into the shared cache for both UI and CLI use.
+            try {
+                $cache = Import-SurfaceDriverIndexCache -DriversFolder $DriversFolder
+                $cache.ModelIndex = @($models)
+                Save-SurfaceDriverIndexCache -Cache $cache -DriversFolder $DriversFolder
+                WriteLog "Surface cache: Saved Microsoft model list to cache."
+            }
+            catch {
+                WriteLog "Surface cache: Failed to save Microsoft model list. Error: $($_.Exception.Message)"
+            }
+    
+            return @($models)
+        }
+        catch {
+            WriteLog "Surface cache: Failed to build Microsoft model list from Learn. Error: $($_.Exception.Message)"
+    
+            # Fall back to the last cached model list even if it is stale when the live request fails.
+            try {
+                $cachePath = Get-SurfaceDriverIndexCachePath -DriversFolder $DriversFolder
+                if (Test-Path -Path $cachePath -PathType Leaf) {
+                    $staleCache = Get-Content -Path $cachePath -Raw | ConvertFrom-Json -ErrorAction Stop
+                    if (@($staleCache.ModelIndex).Count -gt 0) {
+                        WriteLog "Surface cache: Using stale Microsoft model list ($(@($staleCache.ModelIndex).Count) models) because the live Learn request failed."
+                        return @($staleCache.ModelIndex)
+                    }
+                }
+            }
+            catch {
+                WriteLog "Surface cache: Failed to load stale Microsoft model list fallback. Error: $($_.Exception.Message)"
+            }
+    
+            throw "Failed to retrieve Microsoft Surface models."
+        }
+    }
+    
+    function Get-SurfaceSystemSkuReferenceIndex {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -586,6 +755,9 @@ Export-ModuleMember -Function `
     Import-SurfaceDriverIndexCache, `
     Save-SurfaceDriverIndexCache, `
     ConvertTo-SurfaceComparableName, `
+    ConvertTo-SurfaceHtmlText, `
+    ConvertTo-SurfaceDownloadCenterLink, `
+    Get-SurfaceDriverModelIndex, `
     Get-SurfaceSystemSkuReferenceIndex, `
     Get-SurfaceDownloadCenterDetails, `
     Get-SurfaceSystemSkuListForMicrosoftDriver
