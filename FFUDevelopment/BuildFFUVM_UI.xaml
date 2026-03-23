@@ -176,7 +176,7 @@
             <Grid Grid.Column="1" Margin="4,0,0,0">
                 <!-- PAGE: Home -->
                 <ScrollViewer x:Name="pageHome" VerticalScrollBarVisibility="Auto">
-                    <Grid Margin="16">
+                    <Grid Margin="16,0,16,16">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -187,7 +187,7 @@
 
                 <!-- PAGE: Hyper-V Settings -->
                 <ScrollViewer x:Name="pageHyperV" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <StackPanel Margin="16">
+                    <StackPanel Margin="16,0,16,16">
                         <!-- VM Switch Name -->
                         <TextBlock Text="VM Switch Name" Margin="0,0,0,4" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
                         <ComboBox x:Name="cmbVMSwitchName" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
@@ -222,7 +222,7 @@
 
             <!-- TAB: Windows Settings -->
             <ScrollViewer x:Name="pageWindows" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <StackPanel Margin="16">
+                    <StackPanel Margin="16,0,16,16">
                         <!-- Windows Media Source -->
                         <TextBlock Text="Windows Media Source" Margin="0,0,0,8" ToolTip="Choose whether to download Windows ESD from Microsoft or provide your own Windows ISO file."/>
                         <StackPanel x:Name="cmbWindowsMediaSource" Margin="0,0,0,24">
@@ -279,7 +279,7 @@
 
             <!-- TAB: Updates -->
             <ScrollViewer x:Name="pageUpdates" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <StackPanel Margin="16">
+                    <StackPanel Margin="16,0,16,16">
                         <CheckBox x:Name="chkUpdateLatestCU" Content="Update Latest Cumulative Update" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest cumulative update for Windows. Default is $false."/>
                         <CheckBox x:Name="chkUpdateLatestNet" Content="Update .NET" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest .NET Framework for Windows. Default is $false."/>
                         <CheckBox x:Name="chkUpdateLatestDefender" Content="Update Defender" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="When set to $true, will download and install the latest Windows Defender definitions and Defender platform update. Default is $false."/>
@@ -293,7 +293,7 @@
 
             <!-- TAB: Applications -->
             <ScrollViewer x:Name="pageApplications" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <Grid Margin="16">
+                    <Grid Margin="16,0,16,16">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
@@ -511,7 +511,7 @@
 
             <!-- TAB: M365 Apps/Office -->
             <ScrollViewer x:Name="pageOffice" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <StackPanel Margin="16">
+                    <StackPanel Margin="16,0,16,16">
                         <!-- Install Office -->
                         <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,0,24" ToolTip="Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM."/>
                         <!-- Office Path -->
@@ -547,7 +547,7 @@
 
             <!-- TAB: Drivers -->
             <ScrollViewer x:Name="pageDrivers" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <Grid Margin="16">
+                    <Grid Margin="16,0,16,16">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <!-- Drivers Folder -->
@@ -685,7 +685,7 @@
 
             <!-- TAB: Build -->
             <ScrollViewer x:Name="pageBuild" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                    <Grid Margin="16">
+                    <Grid Margin="16,0,16,16">
                         <!-- Define 12 rows for the Build tab -->
                         <Grid.RowDefinitions>
                             <!-- Row 0: Header -->
@@ -869,13 +869,13 @@
                 </ScrollViewer>
 
                     <!-- PAGE: Monitor -->
-                    <Grid x:Name="pageMonitor" Margin="16" Visibility="Collapsed">
+                    <Grid x:Name="pageMonitor" Margin="16,0,16,16" Visibility="Collapsed">
                         <ListBox x:Name="lstLogOutput" SelectionMode="Extended" Background="Transparent" BorderThickness="0" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch"/>
                     </Grid>
     
                     <!-- PAGE: Settings -->
                     <ScrollViewer x:Name="pageSettings" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                        <Grid Margin="16">
+                        <Grid Margin="16,0,16,16">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
