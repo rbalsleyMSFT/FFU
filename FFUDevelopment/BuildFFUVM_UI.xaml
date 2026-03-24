@@ -316,30 +316,30 @@
                             <ScrollViewer x:Name="pageHyperV" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                                 <StackPanel Margin="16,0,16,16">
                                     <!-- VM Switch Name -->
-                                    <TextBlock Text="VM Switch Name" Margin="0,0,0,4" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
-                                    <ComboBox x:Name="cmbVMSwitchName" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
+                                    <TextBlock Text="VM Switch Name" Margin="0,0,0,8" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
+                                    <ComboBox x:Name="cmbVMSwitchName" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
                                     <!-- Custom VM Switch Name -->
-                                    <TextBox x:Name="txtCustomVMSwitchName" HorizontalAlignment="Stretch" Visibility="Collapsed" Margin="0,0,0,24" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
+                                    <TextBox x:Name="txtCustomVMSwitchName" HorizontalAlignment="Stretch" Visibility="Collapsed" Margin="0,0,0,20" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
                                     <!-- VM Host IP Address -->
-                                    <TextBlock Text="VM Host IP Address" Margin="0,0,0,4" ToolTip="IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP)."/>
-                                    <TextBox x:Name="txtVMHostIPAddress" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="IP address of the Hyper-V host for FFU capture."/>
+                                    <TextBlock Text="VM Host IP Address" Margin="0,0,0,8" ToolTip="IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP)."/>
+                                    <TextBox x:Name="txtVMHostIPAddress" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="IP address of the Hyper-V host for FFU capture."/>
                                     <!-- Disk Size (GB) -->
-                                    <TextBlock Text="Disk Size (GB)" Margin="0,0,0,4" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
-                                    <TextBox x:Name="txtDiskSize" HorizontalAlignment="Stretch" Text="50" Margin="0,0,0,24" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
+                                    <TextBlock Text="Disk Size (GB)" Margin="0,0,0,8" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
+                                    <TextBox x:Name="txtDiskSize" HorizontalAlignment="Stretch" Text="50" Margin="0,0,0,20" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                                     <!-- Memory (GB) -->
-                                    <TextBlock Text="Memory (GB)" Margin="0,0,0,4" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
-                                    <TextBox x:Name="txtMemory" HorizontalAlignment="Stretch" Text="4" Margin="0,0,0,24" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
+                                    <TextBlock Text="Memory (GB)" Margin="0,0,0,8" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
+                                    <TextBox x:Name="txtMemory" HorizontalAlignment="Stretch" Text="4" Margin="0,0,0,20" ToolTip="Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Default is 4GB."/>
                                     <!-- Processors -->
-                                    <TextBlock Text="Processors" Margin="0,0,0,4" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
-                                    <TextBox x:Name="txtProcessors" HorizontalAlignment="Stretch" Text="4" Margin="0,0,0,24" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
+                                    <TextBlock Text="Processors" Margin="0,0,0,8" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
+                                    <TextBox x:Name="txtProcessors" HorizontalAlignment="Stretch" Text="4" Margin="0,0,0,20" ToolTip="Number of virtual processors for the virtual machine. Recommended to use at least 4."/>
                                     <!-- VM Location -->
-                                    <TextBlock Text="VM Location" Margin="0,0,0,4" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
-                                    <TextBox x:Name="txtVMLocation" HorizontalAlignment="Stretch" Text="{x:Static sys:Environment.CurrentDirectory}" Margin="0,0,0,24" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
+                                    <TextBlock Text="VM Location" Margin="0,0,0,8" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
+                                    <TextBox x:Name="txtVMLocation" HorizontalAlignment="Stretch" Text="{x:Static sys:Environment.CurrentDirectory}" Margin="0,0,0,20" ToolTip="Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to."/>
                                     <!-- VM Name Prefix -->
-                                    <TextBlock Text="VM Name Prefix" Margin="0,0,0,4" ToolTip="Prefix for the VM Name. The default is _FFU."/>
-                                    <TextBox x:Name="txtVMNamePrefix" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Prefix for the VM Name. The default is _FFU."/>
+                                    <TextBlock Text="VM Name Prefix" Margin="0,0,0,8" ToolTip="Prefix for the VM Name. The default is _FFU."/>
+                                    <TextBox x:Name="txtVMNamePrefix" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Prefix for the VM Name. The default is _FFU."/>
                                     <!-- Logical Sector Size -->
-                                    <TextBlock Text="Logical Sector Size" Margin="0,0,0,4" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
+                                    <TextBlock Text="Logical Sector Size" Margin="0,0,0,8" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
                                     <ComboBox x:Name="cmbLogicalSectorSize" HorizontalAlignment="Left" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
                                         <ComboBoxItem Content="512" IsSelected="True"/>
                                         <ComboBoxItem Content="4096"/>
@@ -352,14 +352,14 @@
                                 <StackPanel Margin="16,0,16,16">
                                     <!-- Windows Media Source -->
                                     <TextBlock Text="Windows Media Source" Margin="0,0,0,8" ToolTip="Choose whether to download Windows ESD from Microsoft or provide your own Windows ISO file."/>
-                                    <StackPanel x:Name="cmbWindowsMediaSource" Margin="0,0,0,24">
+                                    <StackPanel x:Name="cmbWindowsMediaSource" Margin="0,0,0,20">
                                         <RadioButton x:Name="rbDownloadESD" Content="Download Windows ESD" IsChecked="True" Margin="0,0,0,8" GroupName="WindowsMediaSource" ToolTip="Download the latest Windows ESD file from Microsoft."/>
                                         <RadioButton x:Name="rbProvideISO" Content="Provide Windows ISO" Margin="0" GroupName="WindowsMediaSource" ToolTip="Use your own Windows ISO file."/>
                                     </StackPanel>
                                     <!-- Windows ISO Path (visible only when "Provide Windows ISO" is selected) -->
                                     <StackPanel x:Name="isoPathPanel" Visibility="Collapsed">
-                                        <TextBlock Text="Windows ISO Path" Margin="0,0,0,4" ToolTip="Path to the Windows ISO file."/>
-                                        <Grid Margin="0,0,0,24">
+                                        <TextBlock Text="Windows ISO Path" Margin="0,0,0,8" ToolTip="Path to the Windows ISO file."/>
+                                        <Grid Margin="0,0,0,20">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
@@ -369,35 +369,35 @@
                                         </Grid>
                                     </StackPanel>
                                     <!-- Windows Release -->
-                                    <TextBlock Text="Windows Release" Margin="0,0,0,4" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
-                                    <ComboBox x:Name="cmbWindowsRelease" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
+                                    <TextBlock Text="Windows Release" Margin="0,0,0,8" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
+                                    <ComboBox x:Name="cmbWindowsRelease" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
                                     <!-- Windows Version -->
-                                    <TextBlock Text="Windows Version" Margin="0,0,0,4" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
-                                    <ComboBox x:Name="cmbWindowsVersion" Width="120" HorizontalAlignment="Left" IsEnabled="False" Margin="0,0,0,24" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
+                                    <TextBlock Text="Windows Version" Margin="0,0,0,8" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
+                                    <ComboBox x:Name="cmbWindowsVersion" Width="120" HorizontalAlignment="Left" IsEnabled="False" Margin="0,0,0,20" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
                                     <!-- Windows Architecture -->
-                                    <TextBlock Text="Windows Architecture" Margin="0,0,0,4" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
-                                    <ComboBox x:Name="cmbWindowsArch" Width="120" HorizontalAlignment="Left" Margin="0,0,0,24" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
+                                    <TextBlock Text="Windows Architecture" Margin="0,0,0,8" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
+                                    <ComboBox x:Name="cmbWindowsArch" Width="120" HorizontalAlignment="Left" Margin="0,0,0,20" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
                                     <!-- Windows Language -->
-                                    <StackPanel x:Name="WindowsLangStackPanel" Margin="0,0,0,4">
+                                    <StackPanel x:Name="WindowsLangStackPanel" Margin="0,0,0,8">
                                         <TextBlock Text="Windows Language" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
                                     </StackPanel>
-                                    <ComboBox x:Name="cmbWindowsLang" Width="120" HorizontalAlignment="Left" Margin="0,0,0,24" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
+                                    <ComboBox x:Name="cmbWindowsLang" Width="120" HorizontalAlignment="Left" Margin="0,0,0,20" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
                                     <!-- Windows SKU -->
-                                    <TextBlock Text="Windows SKU" Margin="0,0,0,4" ToolTip="Edition of Windows to be installed. Available SKUs depend on the selected Windows Release. Client (10/11): Home, Home N, Home Single Language, Education, Education N, Pro, Pro N, Pro Education, Pro Education N, Pro for Workstations, Pro N for Workstations, Enterprise, Enterprise N. LTSC (2016/2019/2021/2024): Enterprise 2016 LTSB, Enterprise N 2016 LTSB, Enterprise LTSC, Enterprise N LTSC, IoT Enterprise LTSC, IoT Enterprise N LTSC. Server (2016/2019/2022/2025): Standard, Standard (Desktop Experience), Datacenter, Datacenter (Desktop Experience)."/>
-                                    <ComboBox x:Name="cmbWindowsSKU" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Edition of Windows to be installed. Available SKUs depend on the selected Windows Release. Client (10/11): Home, Home N, Home Single Language, Education, Education N, Pro, Pro N, Pro Education, Pro Education N, Pro for Workstations, Pro N for Workstations, Enterprise, Enterprise N. LTSC (2016-2024): Enterprise LTSC, Enterprise N LTSC, IoT Enterprise LTSC. Server (2016-2025): Standard, Standard (Desktop Experience), Datacenter, Datacenter (Desktop Experience)."/>
+                                    <TextBlock Text="Windows SKU" Margin="0,0,0,8" ToolTip="Edition of Windows to be installed. Available SKUs depend on the selected Windows Release. Client (10/11): Home, Home N, Home Single Language, Education, Education N, Pro, Pro N, Pro Education, Pro Education N, Pro for Workstations, Pro N for Workstations, Enterprise, Enterprise N. LTSC (2016/2019/2021/2024): Enterprise 2016 LTSB, Enterprise N 2016 LTSB, Enterprise LTSC, Enterprise N LTSC, IoT Enterprise LTSC, IoT Enterprise N LTSC. Server (2016/2019/2022/2025): Standard, Standard (Desktop Experience), Datacenter, Datacenter (Desktop Experience)."/>
+                                    <ComboBox x:Name="cmbWindowsSKU" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Edition of Windows to be installed. Available SKUs depend on the selected Windows Release. Client (10/11): Home, Home N, Home Single Language, Education, Education N, Pro, Pro N, Pro Education, Pro Education N, Pro for Workstations, Pro N for Workstations, Enterprise, Enterprise N. LTSC (2016-2024): Enterprise LTSC, Enterprise N LTSC, IoT Enterprise LTSC. Server (2016-2025): Standard, Standard (Desktop Experience), Datacenter, Datacenter (Desktop Experience)."/>
                                     <!-- Media Type -->
-                                    <StackPanel x:Name="MediaTypeStackPanel" Margin="0,0,0,4">
+                                    <StackPanel x:Name="MediaTypeStackPanel" Margin="0,0,0,8">
                                         <TextBlock Text="Media Type" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
                                     </StackPanel>
-                                    <ComboBox x:Name="cmbMediaType" Width="120" HorizontalAlignment="Left" Margin="0,0,0,24" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
+                                    <ComboBox x:Name="cmbMediaType" Width="120" HorizontalAlignment="Left" Margin="0,0,0,20" ToolTip="String value of either 'business' or 'consumer'. This is used to identify which media type to download. Default is 'consumer'."/>
                                     <!-- Product Key -->
-                                    <TextBlock Text="Product Key" Margin="0,0,0,4" ToolTip="Product key for the Windows edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here."/>
-                                    <TextBox x:Name="txtProductKey" HorizontalAlignment="Stretch" Margin="0,0,0,24" ToolTip="Product key for the Windows edition. Recommended for MAK or KMS keys."/>
+                                    <TextBlock Text="Product Key" Margin="0,0,0,8" ToolTip="Product key for the Windows edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here."/>
+                                    <TextBox x:Name="txtProductKey" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Product key for the Windows edition. Recommended for MAK or KMS keys."/>
                                     <!-- Optional Features -->
-                                    <Expander x:Name="expOptionalFeatures" Header="Optional Features" IsExpanded="False" Margin="0,4,0,0" ExpandDirection="Down">
-                                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                            <StackPanel x:Name="stackFeaturesContainer" Margin="16,4">
-                                                <TextBlock Text="Selected features (semicolon):" Margin="0,8,0,4" FontStyle="Italic"/>
+                                    <Expander x:Name="expOptionalFeatures" Header="Optional Features" IsExpanded="False" Margin="0" ExpandDirection="Down">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                            <StackPanel x:Name="stackFeaturesContainer" Margin="32,0,0,0">
+                                                <TextBlock Text="Selected features (semicolon):" Margin="0,0,0,8" FontStyle="Italic"/>
                                             </StackPanel>
                                         </ScrollViewer>
                                     </Expander>
@@ -420,257 +420,257 @@
 
                             <!-- TAB: Applications -->
                             <ScrollViewer x:Name="pageApplications" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                                <Grid Margin="16,0,16,16">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-
-                                    <!-- Regular Applications Section -->
-                                    <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                                        <CheckBox x:Name="chkInstallApps" Content="Install Applications" Margin="8" ToolTip="Enable to install regular applications during the build process"/>
-
-                                        <!-- Application Path - Shows only when Install Applications is checked -->
-                                        <StackPanel x:Name="applicationPathPanel" Visibility="Collapsed" Margin="24,4,4,8">
-                                            <TextBlock Text="Application Path:" Margin="0,0,0,4" ToolTip="Path where applications will be downloaded and stored"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox x:Name="txtApplicationPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path where applications will be downloaded and stored"/>
-                                                <Button x:Name="btnBrowseApplicationPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </StackPanel>
-
-                                        <!-- Winget AppList Path - Shows only when Install Applications is checked -->
-                                        <StackPanel x:Name="appListJsonPathPanel" Visibility="Collapsed" Margin="24,4,4,8">
-                                            <TextBlock Text="Winget AppList Path:" Margin="0,0,0,4" ToolTip="Path to the Winget AppList JSON file"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox x:Name="txtAppListJsonPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the Winget AppList JSON file (AppList.json)"/>
-                                                <Button x:Name="btnBrowseAppListJsonPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </StackPanel>
-
-                                        <!-- BYO AppList Path - Shows only when Install Applications is checked -->
-                                        <StackPanel x:Name="userAppListPathPanel" Visibility="Collapsed" Margin="24,4,4,8">
-                                            <TextBlock Text="BYO AppList Path:" Margin="0,0,0,4" ToolTip="Path to the Bring Your Own applications JSON file (UserAppList.json)"/>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox x:Name="txtUserAppListPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the Bring Your Own applications JSON file (UserAppList.json)"/>
-                                                <Button x:Name="btnBrowseUserAppListPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </StackPanel>
-
-                                        <!-- Winget Applications Section - Indented under Install Applications -->
-                                        <CheckBox x:Name="chkInstallWingetApps" Content="Install Winget Applications" Margin="8" ToolTip="Enable to install applications using Windows Package Manager (winget)"/>
-
-                                        <!-- Winget Status Panel -->
-                                        <StackPanel x:Name="wingetPanel" Visibility="Collapsed" Margin="24,0,4,4">
-
-                                            <TextBlock Text="Winget Status" FontWeight="SemiBold" Margin="0,0,0,4"/>
-
-                                            <Grid Margin="0,0,0,8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-
-                                                <!-- Winget CLI Version Display -->
-                                                <TextBlock Text="Winget Version:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Winget CLI installed on the system"/>
-                                                <TextBlock x:Name="txtWingetVersion" Text="Not checked" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"/>
-
-                                                <!-- Winget PowerShell Module Version Display -->
-                                                <TextBlock Text="Module Version:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
-                                                <TextBlock x:Name="txtWingetModuleVersion" Text="Not checked" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"/>
-
-                                                <!-- Check/Install Button -->
-                                                <Button x:Name="btnCheckWingetModule" Content="Check Winget Status" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="12,4" HorizontalAlignment="Left" ToolTip="Check installation status and version of Winget CLI and PowerShell module. Will install or update if needed."/>
-                                            </Grid>
-                                        </StackPanel>
-
-                                        <!-- Winget Search Panel -->
-                                        <StackPanel x:Name="wingetSearchPanel" Visibility="Collapsed" Margin="24,8,4,20">
-
-                                            <TextBlock Text="Winget Search" FontWeight="SemiBold" Margin="0,0,0,4"/>
-
-                                            <Grid Margin="0,0,0,8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="100"/>
-                                                </Grid.ColumnDefinitions>
-
-                                                <TextBox x:Name="txtWingetSearch" Grid.Column="0" Margin="0,0,8,0" VerticalContentAlignment="Center" VerticalAlignment="Center" ToolTip="Enter an application name to search for"/>
-
-                                                <Button x:Name="btnWingetSearch" Grid.Column="1" Content="Search" VerticalAlignment="Center" ToolTip="Search for applications using Windows Package Manager"/>
-                                            </Grid>
-
-                                            <!-- Results ListView -->
-                                            <ListView x:Name="lstWingetResults" Height="300" Margin="0,0,0,8" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
-
-                                            <!-- Save/Import/Clear Buttons -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                                                <Button x:Name="btnSaveWingetList" Content="Save Winget AppList" Padding="12,4" Margin="0,0,8,0" ToolTip="Save selected applications to a JSON file"/>
-                                                <Button x:Name="btnImportWingetList" Content="Import Winget AppList" Padding="12,4" Margin="0,0,8,0" ToolTip="Import applications from a JSON file"/>
-                                                <Button x:Name="btnDownloadSelected" Content="Download Selected" Padding="12,4" Margin="0,0,8,0" ToolTip="Download all selected applications"/>
-                                                <Button x:Name="btnClearWingetList" Content="Clear List" Padding="12,4" ToolTip="Clear all applications from the list"/>
+                                    <Grid Margin="16,0,16,16">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+    
+                                        <!-- Regular Applications Section -->
+                                        <StackPanel Grid.Row="0" Margin="0">
+                                            <CheckBox x:Name="chkInstallApps" Content="Install Applications" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="Enable to install regular applications during the build process"/>
+    
+                                            <!-- Application Path - Shows only when Install Applications is checked -->
+                                            <StackPanel x:Name="applicationPathPanel" Visibility="Collapsed" Margin="24,0,0,20">
+                                                <TextBlock Text="Application Path:" Margin="0,0,0,8" ToolTip="Path where applications will be downloaded and stored"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="txtApplicationPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path where applications will be downloaded and stored"/>
+                                                    <Button x:Name="btnBrowseApplicationPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                </Grid>
                                             </StackPanel>
-                                        </StackPanel>
-
-                                        <CheckBox x:Name="chkBringYourOwnApps" Content="Bring Your Own Applications" Margin="8" ToolTip="Enable to bring your own applications during the build process"/>
-
-                                        <!-- Application Information Section -->
-                                        <StackPanel x:Name="byoApplicationPanel" Visibility="Collapsed" Margin="24,0,4,20">
-                                            <TextBlock Text="Application Information" FontWeight="SemiBold" Margin="0,4,0,8"/>
-
-                                            <!-- Name -->
-                                            <TextBlock Text="Name:" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="txtAppName" Margin="0,0,0,8" ToolTip="Enter the name of the application"/>
-
-                                            <!-- Command Line -->
-                                            <TextBlock Text="Command Line:" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="txtAppCommandLine" Margin="0,0,0,8" ToolTip="Enter the full path to the command line to install the application. This should start with D:\Win32 for exe, cmd, etc types of deployments (e.g. D:\Win32\Mozilla FireFox\setup.exe). For MSI installs, use msiexec and then fill in the rest of the arguments in the arguments field."/>
-
-                                            <!-- Arguments -->
-                                            <TextBlock Text="Arguments:" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="txtAppArguments" Margin="0,0,0,8" ToolTip="Enter the arguments for the command line. If the application is an msi, the command line should only contain msiexec and the rest of the command line arguments would go here (e.g. /i &quot;D:\Win32\Mozilla firefox\setup.msi&quot; /qn /norestart)."/>
-
-                                            <!-- Source -->
-                                            <TextBlock Text="Source:" Margin="0,0,0,4"/>
-                                            <Grid Margin="0,0,0,8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBox x:Name="txtAppSource" Grid.Column="0" VerticalAlignment="Center" ToolTip="Optional: Enter the source folder path of the application installation files. This is used to copy the files to the $AppsPath\Win32 directory by clicking the Copy Apps button"/>
-                                                <Button x:Name="btnBrowseAppSource" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                            </Grid>
-
-                                            <!-- Additional Exit Codes -->
-                                            <TextBlock Text="Additional Exit Codes:" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="txtAppAdditionalExitCodes" Margin="0,0,0,8" ToolTip="Enter a comma-separated list of additional success exit codes."/>
-
-                                            <!-- Ignore Non-Zero Exit Codes Checkbox -->
-                                            <CheckBox x:Name="chkIgnoreExitCodes" Content="Ignore all non-zero exit codes" Margin="0,0,0,8" ToolTip="If checked, any non-zero exit code will be considered a success."/>
-
-                                            <!-- Add Application Button -->
-                                            <Button x:Name="btnAddApplication" Content="Add Application" HorizontalAlignment="Left" Margin="0,8,0,8" Padding="12,4" ToolTip="Add the application to the list"/>
-
-                                            <!-- Grid to hold ListView and Reorder Buttons -->
-                                            <Grid Margin="0,0,0,8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-
-                                                <!-- Applications ListView -->
-                                                <ListView x:Name="lstApplications" Grid.Column="0" Height="200" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
-                                                </ListView>
-
-                                                <!-- Reorder Buttons -->
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Margin="8,0,0,0">
-                                                    <Button x:Name="btnMoveTop" Content="&#x2912;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" Margin="0,0,0,4" ToolTip="Move selected application to the top" />
-                                                    <Button x:Name="btnMoveUp" Content="&#x2191;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" Margin="0,0,0,4" ToolTip="Move selected application up" />
-                                                    <Button x:Name="btnMoveDown" Content="&#x2193;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" Margin="0,0,0,4" ToolTip="Move selected application down" />
-                                                    <Button x:Name="btnMoveBottom" Content="&#x2913;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" ToolTip="Move selected application to the bottom" />
+    
+                                            <!-- Winget AppList Path - Shows only when Install Applications is checked -->
+                                            <StackPanel x:Name="appListJsonPathPanel" Visibility="Collapsed" Margin="24,0,0,20">
+                                                <TextBlock Text="Winget AppList Path:" Margin="0,0,0,8" ToolTip="Path to the Winget AppList JSON file"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="txtAppListJsonPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the Winget AppList JSON file (AppList.json)"/>
+                                                    <Button x:Name="btnBrowseAppListJsonPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </StackPanel>
+    
+                                            <!-- BYO AppList Path - Shows only when Install Applications is checked -->
+                                            <StackPanel x:Name="userAppListPathPanel" Visibility="Collapsed" Margin="24,0,0,20">
+                                                <TextBlock Text="BYO AppList Path:" Margin="0,0,0,8" ToolTip="Path to the Bring Your Own applications JSON file (UserAppList.json)"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="txtUserAppListPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the Bring Your Own applications JSON file (UserAppList.json)"/>
+                                                    <Button x:Name="btnBrowseUserAppListPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </StackPanel>
+    
+                                            <!-- Winget Applications Section - Indented under Install Applications -->
+                                            <CheckBox x:Name="chkInstallWingetApps" Content="Install Winget Applications" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="Enable to install applications using Windows Package Manager (winget)"/>
+    
+                                            <!-- Winget Status Panel -->
+                                            <StackPanel x:Name="wingetPanel" Visibility="Collapsed" Margin="24,0,0,20">
+    
+                                                <TextBlock Text="Winget Status" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    
+                                                <Grid Margin="0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+    
+                                                    <!-- Winget CLI Version Display -->
+                                                    <TextBlock Text="Winget Version:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Winget CLI installed on the system"/>
+                                                    <TextBlock x:Name="txtWingetVersion" Text="Not checked" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"/>
+    
+                                                    <!-- Winget PowerShell Module Version Display -->
+                                                    <TextBlock Text="Module Version:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
+                                                    <TextBlock x:Name="txtWingetModuleVersion" Text="Not checked" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"/>
+    
+                                                    <!-- Check/Install Button -->
+                                                    <Button x:Name="btnCheckWingetModule" Content="Check Winget Status" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="12,4" HorizontalAlignment="Left" ToolTip="Check installation status and version of Winget CLI and PowerShell module. Will install or update if needed."/>
+                                                </Grid>
+                                            </StackPanel>
+    
+                                            <!-- Winget Search Panel -->
+                                            <StackPanel x:Name="wingetSearchPanel" Visibility="Collapsed" Margin="24,0,0,20">
+    
+                                                <TextBlock Text="Winget Search" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="100"/>
+                                                    </Grid.ColumnDefinitions>
+    
+                                                    <TextBox x:Name="txtWingetSearch" Grid.Column="0" Margin="0,0,8,0" VerticalContentAlignment="Center" VerticalAlignment="Center" ToolTip="Enter an application name to search for"/>
+    
+                                                    <Button x:Name="btnWingetSearch" Grid.Column="1" Content="Search" Padding="12,4" VerticalAlignment="Center" ToolTip="Search for applications using Windows Package Manager"/>
+                                                </Grid>
+    
+                                                <!-- Results ListView -->
+                                                <ListView x:Name="lstWingetResults" Height="300" Margin="0,0,0,8" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+    
+                                                <!-- Save/Import/Clear Buttons -->
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                                    <Button x:Name="btnSaveWingetList" Content="Save Winget AppList" Padding="12,4" Margin="0,0,8,0" ToolTip="Save selected applications to a JSON file"/>
+                                                    <Button x:Name="btnImportWingetList" Content="Import Winget AppList" Padding="12,4" Margin="0,0,8,0" ToolTip="Import applications from a JSON file"/>
+                                                    <Button x:Name="btnDownloadSelected" Content="Download Selected" Padding="12,4" Margin="0,0,8,0" ToolTip="Download all selected applications"/>
+                                                    <Button x:Name="btnClearWingetList" Content="Clear List" Padding="12,4" ToolTip="Clear all applications from the list"/>
                                                 </StackPanel>
-
-                                            </Grid>
-
-                                            <!-- Save/Import/Clear Buttons -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0,0,0,8">
-                                                <Button x:Name="btnSaveBYOApplications" Content="Save BYO AppList" Margin="0,0,8,0" Padding="12,4" ToolTip="Save application list to JSON file"/>
-                                                <Button x:Name="btnLoadBYOApplications" Content="Import BYO AppList" Margin="0,0,8,0" Padding="12,4" ToolTip="Import application list from JSON file"/>
-                                                <Button x:Name="btnEditApplication" Content="Edit Application" IsEnabled="False" Margin="0,0,8,0" Padding="12,4" ToolTip="Edit the selected application's details"/>
-                                                <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,8,0" Padding="12,4" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
-                                                <Button x:Name="btnRemoveSelectedBYOApps" Content="Remove Selected" IsEnabled="False" Margin="0,0,8,0" Padding="12,4" ToolTip="Remove selected applications from the list"/>
-                                                <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="12,4" ToolTip="Clear all applications from the list"/>
                                             </StackPanel>
-                                        </StackPanel>
+    
+                                            <CheckBox x:Name="chkBringYourOwnApps" Content="Bring Your Own Applications" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="Enable to bring your own applications during the build process"/>
+    
+                                            <!-- Application Information Section -->
+                                            <StackPanel x:Name="byoApplicationPanel" Visibility="Collapsed" Margin="24,0,0,20">
+                                                <TextBlock Text="Application Information" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    
+                                                <!-- Name -->
+                                                <TextBlock Text="Name:" Margin="0,0,0,8"/>
+                                                <TextBox x:Name="txtAppName" Margin="0,0,0,20" ToolTip="Enter the name of the application"/>
+    
+                                                <!-- Command Line -->
+                                                <TextBlock Text="Command Line:" Margin="0,0,0,8"/>
+                                                <TextBox x:Name="txtAppCommandLine" Margin="0,0,0,20" ToolTip="Enter the full path to the command line to install the application. This should start with D:\Win32 for exe, cmd, etc types of deployments (e.g. D:\Win32\Mozilla FireFox\setup.exe). For MSI installs, use msiexec and then fill in the rest of the arguments in the arguments field."/>
+    
+                                                <!-- Arguments -->
+                                                <TextBlock Text="Arguments:" Margin="0,0,0,8"/>
+                                                <TextBox x:Name="txtAppArguments" Margin="0,0,0,20" ToolTip="Enter the arguments for the command line. If the application is an msi, the command line should only contain msiexec and the rest of the command line arguments would go here (e.g. /i &quot;D:\Win32\Mozilla firefox\setup.msi&quot; /qn /norestart)."/>
+    
+                                                <!-- Source -->
+                                                <TextBlock Text="Source:" Margin="0,0,0,8"/>
+                                                <Grid Margin="0,0,0,20">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="txtAppSource" Grid.Column="0" VerticalAlignment="Center" ToolTip="Optional: Enter the source folder path of the application installation files. This is used to copy the files to the $AppsPath\Win32 directory by clicking the Copy Apps button"/>
+                                                    <Button x:Name="btnBrowseAppSource" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                </Grid>
+    
+                                                <!-- Additional Exit Codes -->
+                                                <TextBlock Text="Additional Exit Codes:" Margin="0,0,0,8"/>
+                                                <TextBox x:Name="txtAppAdditionalExitCodes" Margin="0,0,0,20" ToolTip="Enter a comma-separated list of additional success exit codes."/>
+    
+                                                <!-- Ignore Non-Zero Exit Codes Checkbox -->
+                                                <CheckBox x:Name="chkIgnoreExitCodes" Content="Ignore all non-zero exit codes" Margin="0,0,0,20" ToolTip="If checked, any non-zero exit code will be considered a success."/>
 
-                                        <!-- AppsScriptVariables Section -->
-                                        <CheckBox x:Name="chkDefineAppsScriptVariables" Content="Define Apps Script Variables" Margin="8" ToolTip="Enable to define key-value pairs for Apps Script Variables"/>
-                                        <StackPanel x:Name="appsScriptVariablesPanel" Visibility="Collapsed" Margin="24,0,4,20">
-                                            <TextBlock Text="Apps Script Variables" FontWeight="SemiBold" Margin="0,4,0,8"/>
-                                            <!-- Key Input -->
-                                            <TextBlock Text="Key:" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="txtAppsScriptKey" Margin="0,0,0,8" ToolTip="Enter the variable key"/>
+                                                <!-- Add Application Button -->
+                                                <Button x:Name="btnAddApplication" Content="Add Application" HorizontalAlignment="Left" Margin="0,0,0,8" Padding="12,4" ToolTip="Add the application to the list"/>
 
-                                            <!-- Value Input -->
-                                            <TextBlock Text="Value:" Margin="0,0,0,4"/>
-                                            <TextBox x:Name="txtAppsScriptValue" Margin="0,0,0,8" ToolTip="Enter the variable value"/>
+                                                <!-- Grid to hold ListView and Reorder Buttons -->
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
 
-                                            <!-- Add Variable Button -->
-                                            <Button x:Name="btnAddAppsScriptVariable" Content="Add Variable" HorizontalAlignment="Left" Margin="0,8,0,8" Padding="12,4" ToolTip="Add the key-value pair to the list"/>
+                                                    <!-- Applications ListView -->
+                                                    <ListView x:Name="lstApplications" Grid.Column="0" Height="200" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                    </ListView>
 
-                                            <!-- ListView for AppsScriptVariables -->
-                                            <ListView x:Name="lstAppsScriptVariables" Height="150" Margin="0,0,0,8" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
-                                                <ListView.View>
-                                                    <GridView>
-                                                        <GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="200"/>
-                                                        <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="300"/>
-                                                    </GridView>
-                                                </ListView.View>
-                                            </ListView>
+                                                    <!-- Reorder Buttons -->
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Margin="8,0,0,0">
+                                                        <Button x:Name="btnMoveTop" Content="&#x2912;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" Margin="0,0,0,8" ToolTip="Move selected application to the top" />
+                                                        <Button x:Name="btnMoveUp" Content="&#x2191;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" Margin="0,0,0,8" ToolTip="Move selected application up" />
+                                                        <Button x:Name="btnMoveDown" Content="&#x2193;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" Margin="0,0,0,8" ToolTip="Move selected application down" />
+                                                        <Button x:Name="btnMoveBottom" Content="&#x2913;" Width="40" Height="40" FontSize="28" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0" ToolTip="Move selected application to the bottom" />
+                                                    </StackPanel>
 
-                                            <!-- Action Buttons for ListView -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                                                <Button x:Name="btnRemoveSelectedAppsScriptVariables" Content="Remove Selected" Margin="0,0,8,0" Padding="12,4" ToolTip="Remove the selected variable(s) from the list"/>
-                                                <Button x:Name="btnClearAppsScriptVariables" Content="Clear All" Padding="12,4" ToolTip="Clear all variables from the list"/>
+                                                </Grid>
+
+                                                <!-- Save/Import/Clear Buttons -->
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="0">
+                                                    <Button x:Name="btnSaveBYOApplications" Content="Save BYO AppList" Margin="0,0,8,0" Padding="12,4" ToolTip="Save application list to JSON file"/>
+                                                    <Button x:Name="btnLoadBYOApplications" Content="Import BYO AppList" Margin="0,0,8,0" Padding="12,4" ToolTip="Import application list from JSON file"/>
+                                                    <Button x:Name="btnEditApplication" Content="Edit Application" IsEnabled="False" Margin="0,0,8,0" Padding="12,4" ToolTip="Edit the selected application's details"/>
+                                                    <Button x:Name="btnCopyBYOApps" Content="Copy Apps" IsEnabled="False" Margin="0,0,8,0" Padding="12,4" ToolTip="Copy applications with a specified source path to the AppsPath\Win32 folder"/>
+                                                    <Button x:Name="btnRemoveSelectedBYOApps" Content="Remove Selected" IsEnabled="False" Margin="0,0,8,0" Padding="12,4" ToolTip="Remove selected applications from the list"/>
+                                                    <Button x:Name="btnClearBYOApplications" Content="Clear List" Padding="12,4" ToolTip="Clear all applications from the list"/>
+                                                </StackPanel>
                                             </StackPanel>
+    
+                                            <!-- AppsScriptVariables Section -->
+                                            <CheckBox x:Name="chkDefineAppsScriptVariables" Content="Define Apps Script Variables" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="Enable to define key-value pairs for Apps Script Variables"/>
+                                            <StackPanel x:Name="appsScriptVariablesPanel" Visibility="Collapsed" Margin="24,0,0,0">
+                                                <TextBlock Text="Apps Script Variables" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                                <!-- Key Input -->
+                                                <TextBlock Text="Key:" Margin="0,0,0,8"/>
+                                                <TextBox x:Name="txtAppsScriptKey" Margin="0,0,0,20" ToolTip="Enter the variable key"/>
+    
+                                                <!-- Value Input -->
+                                                <TextBlock Text="Value:" Margin="0,0,0,8"/>
+                                                <TextBox x:Name="txtAppsScriptValue" Margin="0,0,0,20" ToolTip="Enter the variable value"/>
+    
+                                                <!-- Add Variable Button -->
+                                                <Button x:Name="btnAddAppsScriptVariable" Content="Add Variable" HorizontalAlignment="Left" Margin="0,0,0,20" Padding="12,4" ToolTip="Add the key-value pair to the list"/>
+    
+                                                <!-- ListView for AppsScriptVariables -->
+                                                <ListView x:Name="lstAppsScriptVariables" Height="150" Margin="0,0,0,20" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                    <ListView.View>
+                                                        <GridView>
+                                                            <GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="200"/>
+                                                            <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}" Width="300"/>
+                                                        </GridView>
+                                                    </ListView.View>
+                                                </ListView>
+    
+                                                <!-- Action Buttons for ListView -->
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                                    <Button x:Name="btnRemoveSelectedAppsScriptVariables" Content="Remove Selected" Margin="0,0,8,0" Padding="12,4" ToolTip="Remove the selected variable(s) from the list"/>
+                                                    <Button x:Name="btnClearAppsScriptVariables" Content="Clear All" Padding="12,4" ToolTip="Clear all variables from the list"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <!-- End AppsScriptVariables Section -->
                                         </StackPanel>
-                                        <!-- End AppsScriptVariables Section -->
-                                    </StackPanel>
-                                </Grid>
-                            </ScrollViewer>
-
-                            <!-- TAB: M365 Apps/Office -->
-                            <ScrollViewer x:Name="pageOffice" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                                <StackPanel Margin="16,0,16,16">
-                                    <!-- Install Office -->
-                                    <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,0,24" ToolTip="Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM."/>
-                                    <!-- Office Path -->
-                                    <StackPanel x:Name="OfficePathStackPanel" Margin="0,0,0,4">
-                                        <TextBlock Text="Office Path" ToolTip="Path to the Office directory that contains the DownloadFFU.xml and DeployFFU.xml files. This is where Office will be downloaded to from the ODT."/>
-                                    </StackPanel>
-                                    <Grid x:Name="OfficePathGrid" Margin="0,0,0,24">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Office directory that contains the DownloadFFU.xml and DeployFFU.xml files. This is where Office will be downloaded to from the ODT."/>
-                                        <Button x:Name="btnBrowseOfficePath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                     </Grid>
-                                    <!-- Copy Office Configuration XML -->
-                                    <StackPanel x:Name="CopyOfficeConfigXMLStackPanel" Margin="0,0,0,24">
-                                        <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" ToolTip="Enable to copy an Office configuration XML file to the Office folder."/>
+                                </ScrollViewer>
+    
+                                <!-- TAB: M365 Apps/Office -->
+                                <ScrollViewer x:Name="pageOffice" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                                    <StackPanel Margin="16,0,16,16">
+                                        <!-- Install Office -->
+                                        <CheckBox x:Name="chkInstallOffice" Content="Install Office" Margin="0,0,0,8" ToolTip="Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM."/>
+                                        <!-- Office Path -->
+                                        <StackPanel x:Name="OfficePathStackPanel" Margin="24,0,0,8">
+                                            <TextBlock Text="Office Path" ToolTip="Path to the Office directory that contains the DownloadFFU.xml and DeployFFU.xml files. This is where Office will be downloaded to from the ODT."/>
+                                        </StackPanel>
+                                        <Grid x:Name="OfficePathGrid" Margin="24,0,0,20">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="txtOfficePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Path to the Office directory that contains the DownloadFFU.xml and DeployFFU.xml files. This is where Office will be downloaded to from the ODT."/>
+                                            <Button x:Name="btnBrowseOfficePath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <!-- Copy Office Configuration XML -->
+                                        <StackPanel x:Name="CopyOfficeConfigXMLStackPanel" Margin="24,0,0,8">
+                                            <CheckBox x:Name="chkCopyOfficeConfigXML" Content="Copy Office Configuration XML" ToolTip="Enable to copy an Office configuration XML file to the Office folder."/>
+                                        </StackPanel>
+                                        <!-- Office Configuration XML File -->
+                                        <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel" Margin="32,0,0,8" Visibility="Collapsed">
+                                            <TextBlock Text="Office Configuration XML File" ToolTip="Specify the path to an Office configuration XML file. This file will be copied into the Office folder and used for the deployment of Office."/>
+                                        </StackPanel>
+                                        <Grid x:Name="OfficeConfigurationXMLFileGrid" Margin="32,0,0,20" Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="txtOfficeConfigXMLFilePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Specify the path to the Office configuration XML file."/>
+                                            <Button x:Name="btnBrowseOfficeConfigXMLFile" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                        </Grid>
                                     </StackPanel>
-                                    <!-- Office Configuration XML File -->
-                                    <StackPanel x:Name="OfficeConfigurationXMLFileStackPanel" Margin="0,0,0,4" Visibility="Collapsed">
-                                        <TextBlock Text="Office Configuration XML File" ToolTip="Specify the path to an Office configuration XML file. This file will be copied into the Office folder and used for the deployment of Office."/>
-                                    </StackPanel>
-                                    <Grid x:Name="OfficeConfigurationXMLFileGrid" Margin="0,0,0,24" Visibility="Collapsed">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="txtOfficeConfigXMLFilePath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Specify the path to the Office configuration XML file."/>
-                                        <Button x:Name="btnBrowseOfficeConfigXMLFile" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </StackPanel>
-                            </ScrollViewer>
+                                </ScrollViewer>
 
                             <!-- TAB: Drivers -->
                             <ScrollViewer x:Name="pageDrivers" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
@@ -709,8 +709,8 @@
                                     </Grid.ColumnDefinitions>
 
                                     <!-- Row 0: Drivers Folder -->
-                                    <StackPanel Grid.Row="0" Margin="8">
-                                        <TextBlock Text="Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers." Margin="0,0,0,4"/>
+                                    <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                                        <TextBlock Text="Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -722,8 +722,8 @@
                                     </StackPanel>
 
                                     <!-- Row 1: PE Drivers Folder -->
-                                    <StackPanel Grid.Row="1" Margin="8">
-                                        <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers." Margin="0,0,0,4"/>
+                                    <StackPanel Grid.Row="1" Margin="0,0,0,20">
+                                        <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -735,8 +735,8 @@
                                     </StackPanel>
 
                                     <!-- Row 2: Drivers.json Path -->
-                                    <StackPanel Grid.Row="2" Margin="8">
-                                        <TextBlock Text="Drivers.json Path:" VerticalAlignment="Center" ToolTip="Path to the Drivers.json file. Default is $FFUDevelopmentPath\Drivers\Drivers.json." Margin="0,0,0,4"/>
+                                    <StackPanel Grid.Row="2" Margin="0,0,0,20">
+                                        <TextBlock Text="Drivers.json Path:" VerticalAlignment="Center" ToolTip="Path to the Drivers.json file. Default is $FFUDevelopmentPath\Drivers\Drivers.json." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -748,39 +748,39 @@
                                     </StackPanel>
 
                                     <!-- Row 3: Download Drivers Checkbox -->
-                                    <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="8">
-                                        <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0,0,4,0" ToolTip="Download the drivers and put them in the Drivers folder."/>
+                                    <StackPanel Grid.Row="3" Margin="0,0,0,8">
+                                        <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0" VerticalAlignment="Center" ToolTip="Download the drivers and put them in the Drivers folder."/>
                                     </StackPanel>
 
                                     <!-- Row 4: Make Section (Indented) -->
-                                    <StackPanel x:Name="spMakeSection" Grid.Row="4" Visibility="Collapsed" Margin="24,4,4,0">
-                                        <TextBlock Text="Make:" Margin="0,0,0,4" ToolTip="Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'."/>
-                                        <ComboBox x:Name="cmbMake" Margin="0,0,0,4" HorizontalAlignment="Left" Width="200"/>
+                                    <StackPanel x:Name="spMakeSection" Grid.Row="4" Visibility="Collapsed" Margin="24,0,0,20">
+                                        <TextBlock Text="Make:" Margin="0,0,0,8" ToolTip="Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'."/>
+                                        <ComboBox x:Name="cmbMake" Margin="0" HorizontalAlignment="Left" Width="200"/>
                                         <!-- Model TextBox is removed from here, filtering will be done below -->
                                     </StackPanel>
 
                                     <!-- Row 5: Get Models Button (Indented) -->
-                                    <Button x:Name="btnGetModels" Grid.Row="5" Content="Get Models" Margin="24,4,4,8" HorizontalAlignment="Left" ToolTip="Retrieve available models for the selected Make." Visibility="Collapsed" Padding="12,4"/>
+                                    <Button x:Name="btnGetModels" Grid.Row="5" Content="Get Models" Margin="24,0,0,20" HorizontalAlignment="Left" ToolTip="Retrieve available models for the selected Make." Visibility="Collapsed" Padding="12,4"/>
 
                                     <!-- Row 6: Model Filter Section (Indented) -->
-                                    <StackPanel x:Name="spModelFilterSection" Grid.Row="6" Visibility="Collapsed" Margin="24,4,4,0">
-                                        <TextBlock Text="Model Filter" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                    <StackPanel x:Name="spModelFilterSection" Grid.Row="6" Visibility="Collapsed" Margin="24,0,0,20">
+                                        <TextBlock Text="Model Filter" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <!-- Removed Search button column -->
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="txtModelFilter" Grid.Row="1" Margin="0,0,0,8" VerticalContentAlignment="Center" Tag="Type to filter models by name" ToolTip="Type to filter driver models by name"/>
+                                            <TextBox x:Name="txtModelFilter" Grid.Row="1" Margin="0" VerticalContentAlignment="Center" Tag="Type to filter models by name" ToolTip="Type to filter driver models by name"/>
                                             <!-- Search button removed, filtering is real-time -->
                                         </Grid>
                                     </StackPanel>
 
                                     <!-- Row 7: Driver Models ListView (Indented) -->
-                                    <ListView x:Name="lstDriverModels" Grid.Row="7" Margin="24,0,4,4" Height="300" Visibility="Collapsed" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                    <ListView x:Name="lstDriverModels" Grid.Row="7" Margin="24,0,0,20" Height="300" Visibility="Collapsed" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     </ListView>
 
                                     <!-- Row 8: Driver Action Buttons (Indented) -->
-                                    <StackPanel x:Name="spDriverActionButtons" Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Left" Margin="24,4,4,8" Visibility="Collapsed">
+                                    <StackPanel x:Name="spDriverActionButtons" Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Left" Margin="24,0,0,20" Visibility="Collapsed">
                                         <Button x:Name="btnSaveDriversJson" Content="Save Drivers.json" Padding="12,4" Margin="0,0,8,0" ToolTip="Save selected drivers to a JSON file (Not Implemented)"/>
                                         <Button x:Name="btnImportDriversJson" Content="Import Drivers.json" Padding="12,4" Margin="0,0,8,0" ToolTip="Import drivers from a JSON file (Not Implemented)"/>
                                         <Button x:Name="btnDownloadSelectedDrivers" Content="Download Selected" Padding="12,4" Margin="0,0,8,0" ToolTip="Download all selected drivers"/>
@@ -788,24 +788,24 @@
                                     </StackPanel>
 
                                     <!-- Row 9: Install Drivers to FFU -->
-                                    <StackPanel Grid.Row="9" Orientation="Horizontal" Margin="8">
-                                        <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers to FFU" Margin="0,0,4,0" ToolTip="Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU."/>
+                                    <StackPanel Grid.Row="9" Margin="0,0,0,8">
+                                        <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers to FFU" Margin="0" VerticalAlignment="Center" ToolTip="Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU."/>
                                     </StackPanel>
 
                                     <!-- Row 10: Copy Drivers to USB -->
-                                    <StackPanel Grid.Row="10" Orientation="Horizontal" Margin="8">
-                                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers to USB drive" Margin="0,0,4,0" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false."/>
+                                    <StackPanel Grid.Row="10" Margin="0,0,0,8">
+                                        <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers to USB drive" Margin="0" VerticalAlignment="Center" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false."/>
                                     </StackPanel>
 
                                     <!-- Row 11: Compress Driver Model Folder to WIM -->
-                                    <StackPanel Grid.Row="11" Orientation="Horizontal" Margin="8">
-                                        <CheckBox x:Name="chkCompressDriversToWIM" Content="Compress Driver Model Folder to WIM" Margin="0,0,4,0" ToolTip="When set to $true, will compress each downloaded driver model folder into a separate WIM file within the Drivers folder. This is useful with Copy Drivers to USB drive."/>
+                                    <StackPanel Grid.Row="11" Margin="0,0,0,8">
+                                        <CheckBox x:Name="chkCompressDriversToWIM" Content="Compress Driver Model Folder to WIM" Margin="0" VerticalAlignment="Center" ToolTip="When set to $true, will compress each downloaded driver model folder into a separate WIM file within the Drivers folder. This is useful with Copy Drivers to USB drive."/>
                                     </StackPanel>
 
                                     <!-- Row 12: PE Driver Options (UseDriversAsPEDrivers is a dependent sub-option) -->
-                                    <StackPanel Grid.Row="12" Margin="8">
-                                        <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,0,4" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
-                                        <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="24,0,0,0" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
+                                    <StackPanel Grid.Row="12" Margin="0">
+                                        <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
+                                        <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="24,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
                                     </StackPanel>
                                 </Grid>
                             </ScrollViewer>
@@ -846,8 +846,8 @@
                                     <!-- Hidden internal header so the shared page shell owns the page title -->
                                     <TextBlock Grid.Row="0" Text="FFU Build Settings" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,8" Visibility="Collapsed"/>
                                     <!-- Row 1: FFU Development Path -->
-                                    <StackPanel Grid.Row="1" Margin="0,0,0,24">
-                                        <TextBlock Text="FFU Development Path" Margin="0,0,0,4" ToolTip="Path to the FFU development folder."/>
+                                    <StackPanel Grid.Row="1" Margin="0,0,0,20">
+                                        <TextBlock Text="FFU Development Path" Margin="0,0,0,8" ToolTip="Path to the FFU development folder."/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -858,13 +858,13 @@
                                         </Grid>
                                     </StackPanel>
                                     <!-- Row 2: Custom FFU Name Template -->
-                                    <StackPanel Grid.Row="2" Margin="0,0,0,24">
-                                        <TextBlock Text="Custom FFU Name Template" Margin="0,0,0,4" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                                    <StackPanel Grid.Row="2" Margin="0,0,0,20">
+                                        <TextBlock Text="Custom FFU Name Template" Margin="0,0,0,8" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
                                         <TextBox x:Name="txtCustomFFUNameTemplate" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
                                     </StackPanel>
                                     <!-- Row 3: FFU Capture Location -->
-                                    <StackPanel Grid.Row="3" Margin="0,0,0,24">
-                                        <TextBlock Text="FFU Capture Location" Margin="0,0,0,4" ToolTip="Path to the folder where the captured FFU will be stored."/>
+                                    <StackPanel Grid.Row="3" Margin="0,0,0,20">
+                                        <TextBlock Text="FFU Capture Location" Margin="0,0,0,8" ToolTip="Path to the folder where the captured FFU will be stored."/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -875,23 +875,23 @@
                                         </Grid>
                                     </StackPanel>
                                     <!-- Row 4: Share Name -->
-                                    <StackPanel Grid.Row="4" Margin="0,0,0,24">
-                                        <TextBlock Text="Share Name" Margin="0,0,0,4" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
+                                    <StackPanel Grid.Row="4" Margin="0,0,0,20">
+                                        <TextBlock Text="Share Name" Margin="0,0,0,8" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
                                         <TextBox x:Name="txtShareName" VerticalAlignment="Center" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
                                     </StackPanel>
                                     <!-- Row 5: Username -->
-                                    <StackPanel Grid.Row="5" Margin="0,0,0,24">
-                                        <TextBlock Text="Username" Margin="0,0,0,4" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
+                                    <StackPanel Grid.Row="5" Margin="0,0,0,20">
+                                        <TextBlock Text="Username" Margin="0,0,0,8" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
                                         <TextBox x:Name="txtUsername" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
                                     </StackPanel>
                                     <!-- Row 6: Threads -->
-                                    <StackPanel Grid.Row="6" Margin="0,0,0,24">
-                                        <TextBlock Text="Threads" Margin="0,0,0,4" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
+                                    <StackPanel Grid.Row="6" Margin="0,0,0,20">
+                                        <TextBlock Text="Threads" Margin="0,0,0,8" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
                                         <TextBox x:Name="txtThreads" Width="80" HorizontalAlignment="Left" Text="5" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
                                     </StackPanel>
                                     <!-- Row 7: BITS Priority -->
-                                    <StackPanel Grid.Row="7" Margin="0,0,0,24">
-                                        <TextBlock Text="BITS Priority" Margin="0,0,0,4" ToolTip="Controls the BITS download priority used by the UI and BuildFFUVM.ps1. Switch to Foreground to maximize download speed if needed."/>
+                                    <StackPanel Grid.Row="7" Margin="0,0,0,20">
+                                        <TextBlock Text="BITS Priority" Margin="0,0,0,8" ToolTip="Controls the BITS download priority used by the UI and BuildFFUVM.ps1. Switch to Foreground to maximize download speed if needed."/>
                                         <ComboBox x:Name="cmbBitsPriority" Width="150" HorizontalAlignment="Left" ToolTip="Controls the BITS download priority used by the UI and BuildFFUVM.ps1. Switch to Foreground to maximize download speed if needed.">
                                             <sys:String>Foreground</sys:String>
                                             <sys:String>High</sys:String>
@@ -900,8 +900,8 @@
                                         </ComboBox>
                                     </StackPanel>
                                     <!-- Row 8-9: General Build Options -->
-                                    <Expander Grid.Row="8" Grid.RowSpan="2" Header="General Build Options" IsExpanded="False" Margin="0,8,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                        <StackPanel Margin="0,4,0,0">
+                                    <Expander Grid.Row="8" Grid.RowSpan="2" Header="General Build Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkCompactOS" Content="Compact OS" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will compact the OS when building the FFU."/>
                                             <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
                                             <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
@@ -914,8 +914,8 @@
                                     </Expander>
 
                                     <!-- Row 10: Build USB Drive Section -->
-                                    <Expander Grid.Row="10" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,8,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                        <StackPanel Margin="4,0,0,8">
+                                    <Expander Grid.Row="10" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                                             <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
                                             <CheckBox x:Name="chkPromptExternalHardDiskMedia" Content="Prompt for External Hard Disk Media" Margin="0,0,0,8" IsEnabled="False" VerticalAlignment="Center" Tag="When set to $true, will prompt before using external hard disk media."/>
@@ -927,18 +927,18 @@
                                             <CheckBox x:Name="chkCopyAdditionalFFUFiles" Content="Copy Additional FFU Files" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, allows selecting existing FFU files in the capture folder to also copy to the USB drive."/>
 
                                             <!-- Additional FFU Selection Section -->
-                                            <Grid x:Name="additionalFFUPanel" Margin="4,0,0,8" Visibility="Collapsed">
+                                            <Grid x:Name="additionalFFUPanel" Margin="32,0,0,20" Visibility="Collapsed">
                                                 <Grid.RowDefinitions>
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="*"/>
                                                 </Grid.RowDefinitions>
                                                 <!-- Header row -->
-                                                <DockPanel Grid.Row="0" Margin="0,4" LastChildFill="False">
+                                                <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
                                                     <TextBlock Text="Additional FFU Files" DockPanel.Dock="Left" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                                     <Button x:Name="btnRefreshAdditionalFFUs" Content="Refresh" DockPanel.Dock="Left" Padding="12,4" ToolTip="Refresh the list of FFU files from the capture folder"/>
                                                 </DockPanel>
                                                 <!-- ListView row -->
-                                                <ListView x:Name="lstAdditionalFFUs" Grid.Row="1" Margin="0,4" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                <ListView x:Name="lstAdditionalFFUs" Grid.Row="1" Margin="0" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
                                                     <ListView.View>
                                                         <GridView>
                                                             <GridViewColumn Header="FFU Name" DisplayMemberBinding="{Binding Name}" Width="300"/>
@@ -949,23 +949,23 @@
                                             </Grid>
 
                                             <!-- Max USB Drives -->
-                                            <StackPanel Margin="0,0,0,24">
-                                                <TextBlock Text="Max USB Drives" Margin="0,0,0,4" ToolTip="Maximum number of USB drives to build at once. Enter 0 to process all discovered (or all selected) drives."/>
+                                            <StackPanel Margin="0,0,0,20">
+                                                <TextBlock Text="Max USB Drives" Margin="0,0,0,8" ToolTip="Maximum number of USB drives to build at once. Enter 0 to process all discovered (or all selected) drives."/>
                                                 <TextBox x:Name="txtMaxUSBDrives" Width="80" HorizontalAlignment="Left" Text="5" ToolTip="Maximum number of USB drives to build at once. Enter 0 to process all discovered (or all selected) drives."/>
                                             </StackPanel>
 
                                             <!-- USB Drive Selection Section -->
-                                            <Grid x:Name="usbDriveSelectionPanel" Margin="4,0,0,0">
+                                            <Grid x:Name="usbDriveSelectionPanel" Margin="32,0,0,0">
                                                 <Grid.RowDefinitions>
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="*"/>
                                                 </Grid.RowDefinitions>
                                                 <!-- Button and Select All row -->
-                                                <DockPanel Grid.Row="0" Margin="0,4" LastChildFill="False">
+                                                <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
                                                     <Button x:Name="btnCheckUSBDrives" Content="Check USB drives" DockPanel.Dock="Left" Padding="12,4"/>
                                                 </DockPanel>
                                                 <!-- ListView row -->
-                                                <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0,4" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
                                                     <ListView.View>
                                                         <GridView>
 
@@ -980,8 +980,8 @@
                                     </Expander>
 
                                     <!-- Row 11: Post-Build Cleanup -->
-                                    <Expander Grid.Row="11" Header="Post-Build Cleanup" IsExpanded="False" Margin="0,8,0,4" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                        <StackPanel Margin="0,4,0,0">
+                                    <Expander Grid.Row="11" Header="Post-Build Cleanup" IsExpanded="False" Margin="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
                                             <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
                                             <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
