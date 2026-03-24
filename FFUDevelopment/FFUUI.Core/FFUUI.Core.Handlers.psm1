@@ -167,8 +167,21 @@ function Register-EventHandlers {
             })
     }
 
-    # Hyperlink navigation handlers for Settings page links
-    $hyperlinkNames = @('linkGitHub', 'linkReleases', 'linkChangelog', 'linkDocs', 'linkVideo1', 'linkVideo2', 'linkVideo3')
+    # Hyperlink navigation handlers for Home page links
+    $hyperlinkNames = @(
+        'linkQuickStart',
+        'linkDocs',
+        'linkGitHub',
+        'linkReleases',
+        'linkChangelog',
+        'linkVideo1',
+        'linkDiscussion1',
+        'linkDiscussion2',
+        'linkDiscussion3',
+        'linkDiscussion4',
+        'linkDiscussion5',
+        'linkDiscussions'
+    )
     foreach ($linkName in $hyperlinkNames) {
         $link = $State.Window.FindName($linkName)
         if ($null -ne $link) {

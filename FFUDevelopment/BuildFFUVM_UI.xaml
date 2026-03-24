@@ -190,9 +190,125 @@
                                 <Grid Margin="16,0,16,16">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
-                                    <TextBlock Text="Welcome to FFU Builder" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" Grid.Row="0" Margin="0,0,0,20"/>
+
+                                    <StackPanel Grid.Row="0" Margin="0,0,0,24">
+                                        <TextBlock Text="Build Status" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                        <Border BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" CornerRadius="4" Padding="16,12">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="160"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <TextBlock Text="Current build" Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" Margin="0,0,12,8"/>
+                                                <TextBlock x:Name="txtHomeCurrentBuildValue" Text="Checking..." Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+                                                <TextBlock Text="Latest release" Grid.Row="1" Grid.Column="0" FontWeight="SemiBold" Margin="0,0,12,8"/>
+                                                <TextBlock x:Name="txtHomeLatestReleaseValue" Text="Checking GitHub..." Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+                                                <TextBlock Text="Status" Grid.Row="2" Grid.Column="0" FontWeight="SemiBold" Margin="0,0,12,8"/>
+                                                <TextBlock x:Name="txtHomeReleaseStatusValue" Text="Checking whether this build is current..." Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+                                                <TextBlock Text="What's New" Grid.Row="3" Grid.Column="0" FontWeight="SemiBold" Margin="0,0,12,0" VerticalAlignment="Top"/>
+                                                <StackPanel x:Name="spHomeReleaseNotesSections" Grid.Row="3" Grid.Column="1"/>
+                                            </Grid>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="1" Margin="0,0,0,24">
+                                        <TextBlock Text="Environment Checks" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                        <Border BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" CornerRadius="4" Padding="16,12">
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                                    <Ellipse x:Name="ellipseHomeDiskSpaceStatus" Width="14" Height="14" Fill="Gold" Margin="0,3,10,0" VerticalAlignment="Top"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Free disk space" FontWeight="SemiBold"/>
+                                                        <TextBlock x:Name="txtHomeDiskSpaceStatusValue" Text="Checking free disk space..." TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse x:Name="ellipseHomeHyperVStatus" Width="14" Height="14" Fill="Gold" Margin="0,3,10,0" VerticalAlignment="Top"/>
+                                                    <StackPanel>
+                                                        <TextBlock Text="Hyper-V status" FontWeight="SemiBold"/>
+                                                        <TextBlock x:Name="txtHomeHyperVStatusValue" Text="Checking Hyper-V installation status..." TextWrapping="Wrap"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="2" Margin="0,0,0,24">
+                                        <TextBlock Text="Latest Discussions" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                        <Border BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" CornerRadius="4" Padding="16,12">
+                                            <StackPanel>
+                                                <TextBlock x:Name="txtHomeDiscussionsStatusValue" Text="Checking latest discussions..." Margin="0,0,0,12" TextWrapping="Wrap"/>
+                                                <TextBlock x:Name="tbDiscussion1" Margin="0,0,0,8" Visibility="Collapsed">
+                                                    <Hyperlink x:Name="linkDiscussion1" NavigateUri="https://github.com/rbalsleyMSFT/FFU/discussions">
+                                                        <Run x:Name="runDiscussion1" Text=""/>
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock x:Name="tbDiscussion2" Margin="0,0,0,8" Visibility="Collapsed">
+                                                    <Hyperlink x:Name="linkDiscussion2" NavigateUri="https://github.com/rbalsleyMSFT/FFU/discussions">
+                                                        <Run x:Name="runDiscussion2" Text=""/>
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock x:Name="tbDiscussion3" Margin="0,0,0,8" Visibility="Collapsed">
+                                                    <Hyperlink x:Name="linkDiscussion3" NavigateUri="https://github.com/rbalsleyMSFT/FFU/discussions">
+                                                        <Run x:Name="runDiscussion3" Text=""/>
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock x:Name="tbDiscussion4" Margin="0,0,0,8" Visibility="Collapsed">
+                                                    <Hyperlink x:Name="linkDiscussion4" NavigateUri="https://github.com/rbalsleyMSFT/FFU/discussions">
+                                                        <Run x:Name="runDiscussion4" Text=""/>
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock x:Name="tbDiscussion5" Margin="0,0,0,8" Visibility="Collapsed">
+                                                    <Hyperlink x:Name="linkDiscussion5" NavigateUri="https://github.com/rbalsleyMSFT/FFU/discussions">
+                                                        <Run x:Name="runDiscussion5" Text=""/>
+                                                    </Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock x:Name="tbDiscussionsLink">
+                                                    <Hyperlink x:Name="linkDiscussions" NavigateUri="https://github.com/rbalsleyMSFT/FFU/discussions">View all discussions</Hyperlink>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Row="3">
+                                        <TextBlock Text="Resources" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                        <Border BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" CornerRadius="4" Padding="16,12">
+                                            <StackPanel>
+                                                <TextBlock Margin="0,0,0,8">
+                                                    <Hyperlink x:Name="linkQuickStart" NavigateUri="https://rbalsleymsft.github.io/FFU/quickstart.html">FFU Builder Quick Start</Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,0,0,8">
+                                                    <Hyperlink x:Name="linkDocs" NavigateUri="https://rbalsleymsft.github.io/FFU/">Documentation Home</Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,0,0,8">
+                                                    <Hyperlink x:Name="linkGitHub" NavigateUri="https://github.com/rbalsleyMSFT/FFU">GitHub Repository</Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,0,0,8">
+                                                    <Hyperlink x:Name="linkReleases" NavigateUri="https://github.com/rbalsleyMSFT/FFU/releases">GitHub Releases</Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock Margin="0,0,0,8">
+                                                    <Hyperlink x:Name="linkChangelog" NavigateUri="https://github.com/rbalsleyMSFT/FFU/blob/main/ChangeLog.md">Change Log</Hyperlink>
+                                                </TextBlock>
+                                                <TextBlock>
+                                                    <Hyperlink x:Name="linkVideo1" NavigateUri="https://youtu.be/kOIK5OmDugc">FFU Builder Quick Start Video</Hyperlink>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
                                 </Grid>
                             </ScrollViewer>
 
@@ -926,38 +1042,6 @@
                                             <StackPanel>
                                                 <TextBlock Text="FFU Builder" FontWeight="SemiBold" FontSize="16"/>
                                                 <TextBlock Text="Build and deploy Full Flash Update (FFU) images for Windows" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Margin="0,0,0,12"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </StackPanel>
-
-                                    <!-- Links Section -->
-                                    <StackPanel Grid.Row="3">
-                                        <TextBlock Text="Resources" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                        <Border BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" CornerRadius="4" Padding="16,12">
-                                            <StackPanel>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkGitHub" NavigateUri="https://github.com/rbalsleyMSFT/FFU">GitHub Repository</Hyperlink>
-                                                </TextBlock>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkReleases" NavigateUri="https://github.com/rbalsleyMSFT/FFU/releases">GitHub Releases</Hyperlink>
-                                                </TextBlock>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkChangelog" NavigateUri="https://github.com/rbalsleyMSFT/FFU/blob/main/ChangeLog.md">Change Log</Hyperlink>
-                                                </TextBlock>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkDocs" NavigateUri="https://rbalsleymsft.github.io/FFU/">Documentation</Hyperlink>
-                                                </TextBlock>
-                                                <Separator Margin="0,4,0,8"/>
-                                                <TextBlock Text="Videos" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkVideo1" NavigateUri="https://youtu.be/kOIK5OmDugc">FFU Builder Overview</Hyperlink>
-                                                </TextBlock>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkVideo2" NavigateUri="https://www.youtube.com/watch?v=oozG1aVcg9M">FFU Builder Deep Dive</Hyperlink>
-                                                </TextBlock>
-                                                <TextBlock Margin="0,0,0,8">
-                                                    <Hyperlink x:Name="linkVideo3" NavigateUri="https://www.youtube.com/watch?v=rqXRbgeeKSQ">FFU Deployment Walkthrough</Hyperlink>
-                                                </TextBlock>
                                             </StackPanel>
                                         </Border>
                                     </StackPanel>

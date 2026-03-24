@@ -472,6 +472,777 @@ function Update-DriverDownloadPanelVisibility {
 }
 
 # --------------------------------------------------------------------------
+# SECTION: Home Page Build Status
+# --------------------------------------------------------------------------
+
+# Function to normalize release strings so local builds and GitHub tags compare consistently
+function ConvertTo-NormalizedReleaseVersion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$Version
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        return $null
+    }
+
+    $normalizedVersion = $Version.Trim().ToLowerInvariant()
+    $normalizedVersion = $normalizedVersion -replace '^[v]', ''
+    return $normalizedVersion
+}
+
+# Function to read the current FFU Builder build from the main build script
+function Get-FFUBuilderCurrentBuild {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
+    )
+
+    $buildScriptPath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'BuildFFUVM.ps1'
+    if (-not (Test-Path -Path $buildScriptPath)) {
+        return 'Unknown'
+    }
+
+    try {
+        $buildScriptContent = Get-Content -Path $buildScriptPath -Raw -ErrorAction Stop
+        $versionMatch = [regex]::Match($buildScriptContent, '(?m)^\$version\s*=\s*''([^'']+)''')
+        if ($versionMatch.Success) {
+            return $versionMatch.Groups[1].Value
+        }
+    }
+    catch {
+        WriteLog "Unable to read the current FFU Builder build version: $($_.Exception.Message)"
+    }
+
+    return 'Unknown'
+}
+
+# Function to query GitHub for the latest published FFU Builder release
+function Get-FFUBuilderLatestRelease {
+    [CmdletBinding()]
+    param()
+
+    $releaseApiUri = 'https://api.github.com/repos/rbalsleyMSFT/FFU/releases/latest'
+    $releaseHeaders = @{
+        'User-Agent' = 'FFUBuilderUI'
+        'Accept' = 'application/vnd.github+json'
+    }
+
+    $releaseResponse = Invoke-RestMethod -Uri $releaseApiUri -Headers $releaseHeaders -TimeoutSec 5 -ErrorAction Stop
+    $releaseVersion = if (-not [string]::IsNullOrWhiteSpace([string]$releaseResponse.tag_name)) {
+        [string]$releaseResponse.tag_name
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace([string]$releaseResponse.name)) {
+        [string]$releaseResponse.name
+    }
+    else {
+        $null
+    }
+
+    return [PSCustomObject]@{
+        Version = $releaseVersion
+        HtmlUrl = [string]$releaseResponse.html_url
+        Body    = [string]$releaseResponse.body
+    }
+}
+
+# Function to build a user-friendly release status message for the Home page
+function Get-FFUBuilderReleaseStatusMessage {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CurrentBuild,
+        [Parameter(Mandatory = $true)]
+        [string]$LatestRelease
+    )
+
+    # Format the release string for Home page display while keeping compare logic normalized
+    $displayLatestRelease = if ([string]::IsNullOrWhiteSpace($LatestRelease)) {
+        $LatestRelease
+    }
+    else {
+        $LatestRelease -replace '^[vV]', ''
+    }
+
+    $normalizedCurrentBuild = ConvertTo-NormalizedReleaseVersion -Version $CurrentBuild
+    $normalizedLatestRelease = ConvertTo-NormalizedReleaseVersion -Version $LatestRelease
+
+    if ([string]::IsNullOrWhiteSpace($normalizedCurrentBuild)) {
+        return 'Installed build information is unavailable.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($normalizedLatestRelease)) {
+        return 'Unable to compare the installed build with the latest release.'
+    }
+
+    if ($normalizedCurrentBuild -eq $normalizedLatestRelease) {
+        return 'You are running the latest published build.'
+    }
+
+    $currentVersionMatch = [regex]::Match($normalizedCurrentBuild, '^\d+(?:\.\d+){0,3}')
+    $latestVersionMatch = [regex]::Match($normalizedLatestRelease, '^\d+(?:\.\d+){0,3}')
+
+    if ($currentVersionMatch.Success -and $latestVersionMatch.Success) {
+        try {
+            $currentVersion = [version]$currentVersionMatch.Value
+            $latestVersion = [version]$latestVersionMatch.Value
+
+            if ($currentVersion -lt $latestVersion) {
+                return "A newer release is available: $displayLatestRelease."
+            }
+
+            if ($currentVersion -gt $latestVersion) {
+                return "This build is newer than the latest published release: $displayLatestRelease."
+            }
+        }
+        catch {
+            WriteLog "Unable to compare FFU Builder release versions numerically: $($_.Exception.Message)"
+        }
+    }
+
+    return "Installed build $CurrentBuild differs from the latest published release $displayLatestRelease."
+}
+
+# Function to normalize a markdown heading for release-notes display
+function ConvertTo-ReleaseNotesHeadingText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$Line
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Line)) {
+        return ''
+    }
+
+    $cleanLine = $Line.Trim()
+    $cleanLine = $cleanLine -replace '^#+\s*', ''
+    $cleanLine = [regex]::Replace($cleanLine, '\[([^\]]+)\]\([^)]+\)', '$1')
+    $cleanLine = $cleanLine -replace '\*\*', ''
+    $cleanLine = $cleanLine -replace '`', ''
+    return $cleanLine.Trim()
+}
+
+# Function to clean plain text segments before rendering markdown-aware inlines
+function ConvertTo-ReleaseNotesPlainText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return ''
+    }
+
+    $cleanText = $Text
+    $cleanText = $cleanText -replace '\*\*', ''
+    $cleanText = $cleanText -replace '`', ''
+    return $cleanText
+}
+
+# Function to add markdown-aware inline content to a TextBlock
+function Add-ReleaseNotesInlinesToTextBlock {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Controls.TextBlock]$TextBlock,
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return
+    }
+
+    $matchPattern = '(?<MarkdownLink>\[(?<LinkText>[^\]]+)\]\((?<LinkUrl>https?://[^)\s]+)\))|(?<BareUrl>https?://[^\s)]+)|(?<Bold>\*\*(?<BoldText>.+?)\*\*)'
+    $currentIndex = 0
+
+    foreach ($match in [regex]::Matches($Text, $matchPattern)) {
+        if ($match.Index -gt $currentIndex) {
+            $plainText = ConvertTo-ReleaseNotesPlainText -Text $Text.Substring($currentIndex, $match.Index - $currentIndex)
+            if (-not [string]::IsNullOrWhiteSpace($plainText)) {
+                $TextBlock.Inlines.Add([System.Windows.Documents.Run]::new($plainText)) | Out-Null
+            }
+        }
+
+        if ($match.Groups['MarkdownLink'].Success) {
+            $hyperlink = [System.Windows.Documents.Hyperlink]::new()
+            $hyperlink.NavigateUri = [System.Uri]$match.Groups['LinkUrl'].Value
+            $hyperlink.ToolTip = $match.Groups['LinkUrl'].Value
+            $hyperlink.Inlines.Add([System.Windows.Documents.Run]::new($match.Groups['LinkText'].Value)) | Out-Null
+            $hyperlink.Add_RequestNavigate({
+                    param($eventSource, $requestNavigateEventArgs)
+                    Start-Process $requestNavigateEventArgs.Uri.AbsoluteUri
+                    $requestNavigateEventArgs.Handled = $true
+                })
+            $TextBlock.Inlines.Add($hyperlink) | Out-Null
+        }
+        elseif ($match.Groups['BareUrl'].Success) {
+            $bareUrl = $match.Groups['BareUrl'].Value.TrimEnd('.', ',', ';', ':')
+            $hyperlink = [System.Windows.Documents.Hyperlink]::new()
+            $hyperlink.NavigateUri = [System.Uri]$bareUrl
+            $hyperlink.ToolTip = $bareUrl
+            $hyperlink.Inlines.Add([System.Windows.Documents.Run]::new($bareUrl)) | Out-Null
+            $hyperlink.Add_RequestNavigate({
+                    param($eventSource, $requestNavigateEventArgs)
+                    Start-Process $requestNavigateEventArgs.Uri.AbsoluteUri
+                    $requestNavigateEventArgs.Handled = $true
+                })
+            $TextBlock.Inlines.Add($hyperlink) | Out-Null
+
+            $trailingCharactersLength = $match.Groups['BareUrl'].Value.Length - $bareUrl.Length
+            if ($trailingCharactersLength -gt 0) {
+                $trailingCharacters = $match.Groups['BareUrl'].Value.Substring($bareUrl.Length, $trailingCharactersLength)
+                $TextBlock.Inlines.Add([System.Windows.Documents.Run]::new($trailingCharacters)) | Out-Null
+            }
+        }
+        elseif ($match.Groups['Bold'].Success) {
+            $boldRun = [System.Windows.Documents.Run]::new((ConvertTo-ReleaseNotesPlainText -Text $match.Groups['BoldText'].Value))
+            $boldRun.FontWeight = 'SemiBold'
+            $TextBlock.Inlines.Add($boldRun) | Out-Null
+        }
+
+        $currentIndex = $match.Index + $match.Length
+    }
+
+    if ($currentIndex -lt $Text.Length) {
+        $remainingText = ConvertTo-ReleaseNotesPlainText -Text $Text.Substring($currentIndex)
+        if (-not [string]::IsNullOrWhiteSpace($remainingText)) {
+            $TextBlock.Inlines.Add([System.Windows.Documents.Run]::new($remainingText)) | Out-Null
+        }
+    }
+}
+
+# Function to build a formatted UI element for a release-notes section body
+function New-ReleaseNotesSectionContent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$Content
+    )
+
+    $contentPanel = New-Object System.Windows.Controls.StackPanel
+    $contentPanel.Margin = '0,2,0,2'
+
+    foreach ($contentLine in ($Content -split "`r?`n")) {
+        $trimmedLine = $contentLine.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmedLine)) {
+            continue
+        }
+
+        $isFirstRenderedLine = ($contentPanel.Children.Count -eq 0)
+
+        $textBlock = New-Object System.Windows.Controls.TextBlock
+        $textBlock.TextWrapping = 'Wrap'
+        $textBlock.Margin = if ($isFirstRenderedLine) { '0,2,0,0' } else { '0,12,0,0' }
+
+        $lineContent = $trimmedLine
+        $listItemMatch = [regex]::Match($trimmedLine, '^(?:[-*]|\d+\.)\s+(.+)$')
+        if ($listItemMatch.Success) {
+            $textBlock.Margin = if ($isFirstRenderedLine) { '0,2,0,0' } else { '0,10,0,0' }
+            $textBlock.Inlines.Add([System.Windows.Documents.Run]::new([string][char]0x2022 + ' ')) | Out-Null
+            $lineContent = $listItemMatch.Groups[1].Value
+        }
+
+        Add-ReleaseNotesInlinesToTextBlock -TextBlock $textBlock -Text $lineContent
+        $contentPanel.Children.Add($textBlock) | Out-Null
+    }
+
+    if ($contentPanel.Children.Count -eq 0) {
+        $fallbackTextBlock = New-Object System.Windows.Controls.TextBlock
+        $fallbackTextBlock.Text = 'No additional details were published for this section.'
+        $fallbackTextBlock.TextWrapping = 'Wrap'
+        $fallbackTextBlock.Margin = '0,2,0,0'
+        $contentPanel.Children.Add($fallbackTextBlock) | Out-Null
+    }
+
+    return $contentPanel
+}
+
+# Function to parse the full GitHub release notes into UI sections
+function Get-FFUBuilderReleaseNotesSections {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$ReleaseNotesBody
+    )
+
+    $releaseNoteSections = [System.Collections.Generic.List[object]]::new()
+
+    if ([string]::IsNullOrWhiteSpace($ReleaseNotesBody)) {
+        $releaseNoteSections.Add([PSCustomObject]@{
+                Title       = 'Release Notes'
+                Content     = 'No release notes were published for this release.'
+                UseExpander = $false
+                IsExpanded  = $true
+            })
+        return $releaseNoteSections
+    }
+
+    $currentTitle = 'Release Overview'
+    $currentLines = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($releaseNotesLine in ($ReleaseNotesBody -split "`r?`n")) {
+        $trimmedLine = $releaseNotesLine.Trim()
+
+        if ($trimmedLine -match '^#+\s*(.+)$') {
+            $sectionContent = ($currentLines -join [Environment]::NewLine).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($sectionContent)) {
+                $useExpander = (($sectionContent -split "`r?`n").Count -gt 2 -or $sectionContent.Length -gt 220)
+                $releaseNoteSections.Add([PSCustomObject]@{
+                        Title       = $currentTitle
+                        Content     = $sectionContent
+                        UseExpander = $useExpander
+                        IsExpanded  = ($releaseNoteSections.Count -eq 0)
+                    })
+            }
+
+            $currentTitle = ConvertTo-ReleaseNotesHeadingText -Line $matches[1]
+            $currentLines = [System.Collections.Generic.List[string]]::new()
+            continue
+        }
+
+        if ([string]::IsNullOrWhiteSpace($trimmedLine)) {
+            if ($currentLines.Count -gt 0 -and $currentLines[$currentLines.Count - 1] -ne '') {
+                $currentLines.Add('')
+            }
+            continue
+        }
+
+        $currentLines.Add($trimmedLine)
+    }
+
+    $finalSectionContent = ($currentLines -join [Environment]::NewLine).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($finalSectionContent)) {
+        $useExpander = (($finalSectionContent -split "`r?`n").Count -gt 2 -or $finalSectionContent.Length -gt 220)
+        $releaseNoteSections.Add([PSCustomObject]@{
+                Title       = $currentTitle
+                Content     = $finalSectionContent
+                UseExpander = $useExpander
+                IsExpanded  = ($releaseNoteSections.Count -eq 0)
+            })
+    }
+
+    if ($releaseNoteSections.Count -eq 0) {
+        $releaseNoteSections.Add([PSCustomObject]@{
+                Title       = 'Release Notes'
+                Content     = 'No release notes were published for this release.'
+                UseExpander = $false
+                IsExpanded  = $true
+            })
+    }
+
+    return $releaseNoteSections
+}
+
+# Function to render formatted release notes into the Home page
+function Set-HomeReleaseNotesContent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State,
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$ReleaseNotesBody
+    )
+
+    $releaseNotesPanel = $State.Controls.spHomeReleaseNotesSections
+    if ($null -eq $releaseNotesPanel) {
+        return
+    }
+
+    $releaseNotesPanel.Children.Clear()
+    $releaseNoteSections = @(Get-FFUBuilderReleaseNotesSections -ReleaseNotesBody $ReleaseNotesBody)
+
+    foreach ($releaseNoteSection in $releaseNoteSections) {
+        $sectionContent = New-ReleaseNotesSectionContent -Content $releaseNoteSection.Content
+
+        if ($releaseNoteSection.UseExpander) {
+            $headerTextBlock = New-Object System.Windows.Controls.TextBlock
+            $headerTextBlock.Text = $releaseNoteSection.Title
+            $headerTextBlock.TextWrapping = 'Wrap'
+            $headerTextBlock.FontWeight = 'SemiBold'
+
+            $releaseNotesExpander = New-Object System.Windows.Controls.Expander
+            $releaseNotesExpander.Header = $headerTextBlock
+            $releaseNotesExpander.IsExpanded = [bool]$releaseNoteSection.IsExpanded
+            $releaseNotesExpander.Margin = '0,0,0,8'
+            $releaseNotesExpander.Content = $sectionContent
+
+            $releaseNotesPanel.Children.Add($releaseNotesExpander) | Out-Null
+        }
+        else {
+            $releaseNotesSectionPanel = New-Object System.Windows.Controls.StackPanel
+            $releaseNotesSectionPanel.Margin = '0,0,0,8'
+
+            if (-not [string]::IsNullOrWhiteSpace($releaseNoteSection.Title)) {
+                $titleTextBlock = New-Object System.Windows.Controls.TextBlock
+                $titleTextBlock.Text = $releaseNoteSection.Title
+                $titleTextBlock.FontWeight = 'SemiBold'
+                $titleTextBlock.TextWrapping = 'Wrap'
+                $releaseNotesSectionPanel.Children.Add($titleTextBlock) | Out-Null
+            }
+
+            $releaseNotesSectionPanel.Children.Add($sectionContent) | Out-Null
+            $releaseNotesPanel.Children.Add($releaseNotesSectionPanel) | Out-Null
+        }
+    }
+}
+
+# Function to return a Home page status light brush for environment checks
+function Get-HomeStatusBrush {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Green', 'Yellow', 'Red')]
+        [string]$Level
+    )
+
+    switch ($Level) {
+        'Green' { return [System.Windows.Media.Brushes]::LimeGreen }
+        'Yellow' { return [System.Windows.Media.Brushes]::Gold }
+        'Red' { return [System.Windows.Media.Brushes]::IndianRed }
+    }
+}
+
+# Function to evaluate free disk space on the drive hosting the FFU development path
+function Get-FFUBuilderDiskSpaceStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FFUDevelopmentPath
+    )
+
+    try {
+        $resolvedPath = if (Test-Path -Path $FFUDevelopmentPath) {
+            (Resolve-Path -Path $FFUDevelopmentPath -ErrorAction Stop).Path
+        }
+        else {
+            $FFUDevelopmentPath
+        }
+
+        $driveRoot = [System.IO.Path]::GetPathRoot($resolvedPath)
+        if ([string]::IsNullOrWhiteSpace($driveRoot)) {
+            throw "Unable to determine a drive root for path $FFUDevelopmentPath"
+        }
+
+        $driveInfo = [System.IO.DriveInfo]::new($driveRoot)
+        $freeSpaceGb = [math]::Round($driveInfo.AvailableFreeSpace / 1GB, 2)
+
+        if ($freeSpaceGb -lt 50) {
+            return [PSCustomObject]@{
+                Level = 'Red'
+                Message = "$freeSpaceGb GB free on $driveRoot. FFU Builder is likely to run out of disk space and should have at least 100 GB free."
+            }
+        }
+
+        if ($freeSpaceGb -lt 100) {
+            return [PSCustomObject]@{
+                Level = 'Yellow'
+                Message = "$freeSpaceGb GB free on $driveRoot. FFU Builder recommends at least 100 GB free space."
+            }
+        }
+
+        return [PSCustomObject]@{
+            Level = 'Green'
+            Message = "$freeSpaceGb GB free on $driveRoot. Free space is within the recommended range."
+        }
+    }
+    catch {
+        WriteLog "Unable to determine free disk space for FFUDevelopmentPath: $($_.Exception.Message)"
+        return [PSCustomObject]@{
+            Level = 'Red'
+            Message = 'Unable to determine free disk space for the FFUDevelopmentPath drive.'
+        }
+    }
+}
+
+# Function to evaluate the local Hyper-V installation state
+function Get-FFUBuilderHyperVStatus {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction Stop
+        switch ([string]$hyperVFeature.State) {
+            'Enabled' {
+                return [PSCustomObject]@{
+                    Level = 'Green'
+                    Message = 'Hyper-V is installed and ready.'
+                }
+            }
+            'EnablePending' {
+                return [PSCustomObject]@{
+                    Level = 'Yellow'
+                    Message = 'Hyper-V is installed, but a reboot is required before it is ready.'
+                }
+            }
+            default {
+                return [PSCustomObject]@{
+                    Level = 'Red'
+                    Message = "Hyper-V is not installed. Current feature state: $($hyperVFeature.State)."
+                }
+            }
+        }
+    }
+    catch {
+        WriteLog "Unable to determine Hyper-V installation state: $($_.Exception.Message)"
+        return [PSCustomObject]@{
+            Level = 'Red'
+            Message = 'Unable to determine the Hyper-V installation state.'
+        }
+    }
+}
+
+# Function to update the Home page release status fields
+function Update-HomeReleaseStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State,
+        [Parameter(Mandatory = $true)]
+        [string]$CurrentBuild,
+        [Parameter(Mandatory = $true)]
+        [string]$LatestRelease,
+        [Parameter(Mandatory = $true)]
+        [string]$StatusMessage,
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseNotesBody
+    )
+
+    if ($null -ne $State.Controls.txtHomeCurrentBuildValue) {
+        $State.Controls.txtHomeCurrentBuildValue.Text = $CurrentBuild
+    }
+
+    if ($null -ne $State.Controls.txtHomeLatestReleaseValue) {
+        $State.Controls.txtHomeLatestReleaseValue.Text = $LatestRelease
+    }
+
+    if ($null -ne $State.Controls.txtHomeReleaseStatusValue) {
+        $State.Controls.txtHomeReleaseStatusValue.Text = $StatusMessage
+    }
+
+    # Render the full release notes into structured sections on the Home page
+    Set-HomeReleaseNotesContent -State $State -ReleaseNotesBody $ReleaseNotesBody
+}
+
+# Function to update the Home page environment check fields
+function Update-HomeEnvironmentStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State,
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$DiskSpaceStatus,
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$HyperVStatus
+    )
+
+    if ($null -ne $State.Controls.ellipseHomeDiskSpaceStatus) {
+        $State.Controls.ellipseHomeDiskSpaceStatus.Fill = Get-HomeStatusBrush -Level $DiskSpaceStatus.Level
+    }
+
+    if ($null -ne $State.Controls.txtHomeDiskSpaceStatusValue) {
+        $State.Controls.txtHomeDiskSpaceStatusValue.Text = $DiskSpaceStatus.Message
+    }
+
+    if ($null -ne $State.Controls.ellipseHomeHyperVStatus) {
+        $State.Controls.ellipseHomeHyperVStatus.Fill = Get-HomeStatusBrush -Level $HyperVStatus.Level
+    }
+
+    if ($null -ne $State.Controls.txtHomeHyperVStatusValue) {
+        $State.Controls.txtHomeHyperVStatusValue.Text = $HyperVStatus.Message
+    }
+}
+
+# Function to retrieve latest public GitHub discussions for Home page display
+function Get-FFUBuilderLatestDiscussions {
+    [CmdletBinding()]
+    param()
+
+    $discussionUri = 'https://github.com/rbalsleyMSFT/FFU/discussions'
+    $discussionHeaders = @{
+        'User-Agent' = 'FFUBuilderUI'
+        'Accept' = 'text/html,application/xhtml+xml'
+    }
+
+    $discussionResponse = Invoke-WebRequest -Uri $discussionUri -Headers $discussionHeaders -TimeoutSec 5 -ErrorAction Stop
+    $discussionContent = [string]$discussionResponse.Content
+    $latestDiscussions = New-Object System.Collections.Generic.List[PSCustomObject]
+    $seenDiscussionUrls = @{}
+
+    # Parse the raw HTML instead of Invoke-WebRequest Links because GitHub's page structure
+    # does not reliably surface the discussion topic anchors through the Links collection.
+    $discussionMatches = [regex]::Matches(
+        $discussionContent,
+        '<a[^>]+href="(?<Href>/rbalsleyMSFT/FFU/discussions/(?<Id>\d+))"[^>]*>(?<InnerHtml>.*?)</a>',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Singleline
+    )
+
+    foreach ($discussionMatch in $discussionMatches) {
+        $discussionHref = [string]$discussionMatch.Groups['Href'].Value
+        $discussionUrl = "https://github.com$discussionHref"
+
+        if ($seenDiscussionUrls.ContainsKey($discussionUrl)) {
+            continue
+        }
+
+        $discussionInnerHtml = [string]$discussionMatch.Groups['InnerHtml'].Value
+        $discussionTitle = [regex]::Replace($discussionInnerHtml, '<[^>]+>', ' ')
+        $discussionTitle = [System.Net.WebUtility]::HtmlDecode($discussionTitle)
+        $discussionTitle = [regex]::Replace($discussionTitle, '\s+', ' ').Trim()
+
+        if ([string]::IsNullOrWhiteSpace($discussionTitle)) {
+            continue
+        }
+
+        # Skip links that resolve to comment counts or other numeric-only link text.
+        if ($discussionTitle -match '^\d+$') {
+            continue
+        }
+
+        $seenDiscussionUrls[$discussionUrl] = $true
+        $latestDiscussions.Add([PSCustomObject]@{
+                Title = $discussionTitle
+                Url   = $discussionUrl
+            })
+
+        if ($latestDiscussions.Count -ge 5) {
+            break
+        }
+    }
+
+    return $latestDiscussions
+}
+
+# Function to update the Home page discussions card
+function Update-HomeDiscussions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State,
+        [Parameter(Mandatory = $true)]
+        [string]$StatusMessage,
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [System.Collections.IEnumerable]$Discussions
+    )
+
+    if ($null -ne $State.Controls.txtHomeDiscussionsStatusValue) {
+        $State.Controls.txtHomeDiscussionsStatusValue.Text = $StatusMessage
+    }
+
+    $discussionItems = @($Discussions)
+    for ($index = 1; $index -le 5; $index++) {
+        $container = $State.Controls["tbDiscussion$index"]
+        $link = $State.Controls["linkDiscussion$index"]
+        $run = $State.Controls["runDiscussion$index"]
+
+        if ($null -eq $container -or $null -eq $link -or $null -eq $run) {
+            continue
+        }
+
+        if ($index -le $discussionItems.Count -and $null -ne $discussionItems[$index - 1]) {
+            $discussionItem = $discussionItems[$index - 1]
+            $run.Text = $discussionItem.Title
+            $link.NavigateUri = [System.Uri]$discussionItem.Url
+            $container.Visibility = 'Visible'
+        }
+        else {
+            $run.Text = ''
+            $link.NavigateUri = [System.Uri]'https://github.com/rbalsleyMSFT/FFU/discussions'
+            $container.Visibility = 'Collapsed'
+        }
+    }
+
+    if ($null -ne $State.Controls.tbDiscussionsLink) {
+        $State.Controls.tbDiscussionsLink.Visibility = 'Visible'
+    }
+}
+
+# Function to populate the Home page build status after the window has rendered
+function Start-HomeStatusRefresh {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$State
+    )
+
+    # Populate local status checks immediately so Home is useful even before network requests complete
+    $currentBuild = Get-FFUBuilderCurrentBuild -FFUDevelopmentPath $State.FFUDevelopmentPath
+    $diskSpaceStatus = Get-FFUBuilderDiskSpaceStatus -FFUDevelopmentPath $State.FFUDevelopmentPath
+    $hyperVStatus = Get-FFUBuilderHyperVStatus
+
+    Update-HomeReleaseStatus -State $State -CurrentBuild $currentBuild -LatestRelease 'Checking GitHub...' -StatusMessage 'Checking whether this build is current...' -ReleaseNotesBody 'Checking latest release notes...'
+    Update-HomeEnvironmentStatus -State $State -DiskSpaceStatus $diskSpaceStatus -HyperVStatus $hyperVStatus
+    Update-HomeDiscussions -State $State -StatusMessage 'Checking latest discussions...' -Discussions @()
+
+    if ($null -eq $State.Window) {
+        return
+    }
+
+    # Capture the state values before dispatching to avoid losing them in the deferred callback
+    $refreshState = $State
+    $refreshCurrentBuild = $currentBuild
+    $refreshAction = {
+        $latestReleaseDisplay = 'Unable to check'
+        $statusMessage = 'Unable to check the latest release right now. Check GitHub Releases when you are back online.'
+        $releaseNotesBody = 'Unable to load the latest release notes right now.'
+        $discussionsStatusMessage = 'Unable to load the latest GitHub discussions right now.'
+        $latestDiscussions = @()
+
+        try {
+            $latestRelease = Get-FFUBuilderLatestRelease
+            if ($null -ne $latestRelease -and -not [string]::IsNullOrWhiteSpace($latestRelease.Version)) {
+                # Strip the GitHub tag prefix so Home shows the same style as the installed build
+                $latestReleaseDisplay = $latestRelease.Version -replace '^[vV]', ''
+                $statusMessage = Get-FFUBuilderReleaseStatusMessage -CurrentBuild $refreshCurrentBuild -LatestRelease $latestRelease.Version
+                $releaseNotesBody = if ([string]::IsNullOrWhiteSpace($latestRelease.Body)) {
+                    'No release notes were published for this release.'
+                }
+                else {
+                    $latestRelease.Body
+                }
+            }
+        }
+        catch {
+            WriteLog "Unable to retrieve the latest FFU Builder release: $($_.Exception.Message)"
+        }
+
+        try {
+            $latestDiscussions = @(Get-FFUBuilderLatestDiscussions)
+            if ($latestDiscussions.Count -gt 0) {
+                $discussionsStatusMessage = 'Latest public GitHub discussions.'
+            }
+            else {
+                $discussionsStatusMessage = 'No recent public discussion topics were found.'
+            }
+        }
+        catch {
+            WriteLog "Unable to retrieve the latest FFU Builder discussions: $($_.Exception.Message)"
+        }
+
+        Update-HomeReleaseStatus -State $refreshState -CurrentBuild $refreshCurrentBuild -LatestRelease $latestReleaseDisplay -StatusMessage $statusMessage -ReleaseNotesBody $releaseNotesBody
+        Update-HomeDiscussions -State $refreshState -StatusMessage $discussionsStatusMessage -Discussions $latestDiscussions
+    }.GetNewClosure()
+
+    # Queue the network checks after the UI renders so startup remains responsive
+    $null = $State.Window.Dispatcher.BeginInvoke(
+        [System.Action]$refreshAction,
+        [System.Windows.Threading.DispatcherPriority]::Background
+    )
+}
+
+# --------------------------------------------------------------------------
 # SECTION: Module Export
 # --------------------------------------------------------------------------
 

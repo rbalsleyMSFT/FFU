@@ -133,6 +133,9 @@ $window.Add_Loaded({
         Initialize-DynamicUIElements -State $script:uiState
         Register-EventHandlers -State $script:uiState
 
+        # Populate the Home page build and release status after the window initializes
+        Start-HomeStatusRefresh -State $script:uiState
+
         # Attempt automatic load of previous environment (silent)
         try {
             Invoke-AutoLoadPreviousEnvironment -State $script:uiState
