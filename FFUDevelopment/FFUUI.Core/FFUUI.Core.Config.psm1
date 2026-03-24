@@ -669,6 +669,7 @@ function Update-UIFromConfig {
     }
     # Update the ListView's ItemsSource after populating the data list
     $lstAppsScriptVars.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    Request-ListViewColumnAutoResize -ListView $lstAppsScriptVars
     # Update the header checkbox state
     if ($null -ne $State.Controls.chkSelectAllAppsScriptVariables) {
         Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $State.Controls.chkSelectAllAppsScriptVariables
@@ -737,6 +738,7 @@ function Update-UIFromConfig {
             }
         }
         $State.Controls.lstUSBDrives.Items.Refresh()
+        Request-ListViewColumnAutoResize -ListView $State.Controls.lstUSBDrives
 
         # Update the Select All header checkbox state
         $headerChk = $State.Controls.chkSelectAllUSBDrivesHeader
@@ -797,6 +799,7 @@ function Update-UIFromConfig {
                         }
                     }
                     $State.Controls.lstAdditionalFFUs.Items.Refresh()
+                    Request-ListViewColumnAutoResize -ListView $State.Controls.lstAdditionalFFUs
                     $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
                     if ($null -ne $headerChk) {
                         Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
@@ -856,7 +859,7 @@ function Invoke-RestoreDefaults {
         $rootPath = $State.FFUDevelopmentPath
 
         # Normalize potential array values to single strings
-        function Normalize-PathScalar {
+        function Get-PathScalar {
             param([object]$value)
             if ($null -eq $value) { return $null }
             if ($value -is [System.Array]) {
@@ -871,14 +874,14 @@ function Invoke-RestoreDefaults {
         }
 
         $appsPath = Join-Path $rootPath 'Apps'
-        $driversRaw = Normalize-PathScalar -value $State.Controls.txtDriversFolder.Text
+        $driversRaw = Get-PathScalar -value $State.Controls.txtDriversFolder.Text
         if ([string]::IsNullOrWhiteSpace($driversRaw)) {
             $driversPath = Join-Path $rootPath 'Drivers'
         }
         else {
             $driversPath = $driversRaw
         }
-        $ffuCaptureRaw = Normalize-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
+        $ffuCaptureRaw = Get-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
         $ffuCapturePath = if ([string]::IsNullOrWhiteSpace($ffuCaptureRaw)) { Join-Path $rootPath 'FFU' } else { $ffuCaptureRaw }
 
         $captureISOPath = Join-Path $rootPath 'WinPECaptureFFUFiles\WinPE-Capture.iso'
@@ -1060,6 +1063,7 @@ function Import-ConfigSupplementalAssets {
                             })
                     }
                     $State.Controls.lstWingetResults.ItemsSource = $appsBuffer.ToArray()
+                    Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
                     $loadedWinget = $true
                     if ($null -ne $State.Controls.wingetSearchPanel) {
                         $State.Controls.wingetSearchPanel.Visibility = 'Visible'
@@ -1194,6 +1198,7 @@ function Import-ConfigSupplementalAssets {
                         }
                     }
                     $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+                    Request-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels
                     if (Get-Command -Name Update-SelectAllHeaderCheckBoxState -ErrorAction SilentlyContinue) {
                         $headerChk = $State.Controls.chkSelectAllDriverModels
                         if ($null -ne $headerChk) {

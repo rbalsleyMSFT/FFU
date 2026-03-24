@@ -182,6 +182,7 @@ function Add-BYOApplication {
         
         # Refresh the ListView to show the changes
         $listView.Items.Refresh()
+        Request-ListViewColumnAutoResize -ListView $listView
 
         # Reset state
         $State.Data.editingBYOApplication = $null
@@ -212,6 +213,7 @@ function Add-BYOApplication {
             CopyStatus             = ""
         }
         $listView.Items.Add($application)
+        Request-ListViewColumnAutoResize -ListView $listView
     }
 
     # Clear form and update button states for both add and update operations
@@ -285,6 +287,7 @@ function Add-AppsScriptVariable {
     }
     $State.Data.appsScriptVariablesDataList.Add($newItem)
     $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    Request-ListViewColumnAutoResize -ListView $State.Controls.lstAppsScriptVariables
     $State.Controls.txtAppsScriptKey.Clear()
     $State.Controls.txtAppsScriptValue.Clear()
     # Update the header checkbox state
@@ -311,6 +314,7 @@ function Remove-SelectedAppsScriptVariable {
         $State.Data.appsScriptVariablesDataList.Remove($itemToRemove)
     }
     $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    Request-ListViewColumnAutoResize -ListView $State.Controls.lstAppsScriptVariables
 
     # Update the header checkbox state
     if ($null -ne $State.Controls.chkSelectAllAppsScriptVariables) {

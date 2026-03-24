@@ -24,7 +24,7 @@ function Register-EventHandlers {
 
     # Define a handler to validate pasted text, ensuring it's only integers
     $integerPastingHandler = {
-        param($sender, $pastingEventArgs)
+        param($eventSource, $pastingEventArgs)
         if ($pastingEventArgs.DataObject.GetDataPresent([string])) {
             $pastedText = $pastingEventArgs.DataObject.GetData([string])
             # Check if the pasted text consists ONLY of one or more digits.
@@ -345,6 +345,7 @@ function Register-EventHandlers {
                 $driveObject | Add-Member -MemberType NoteProperty -Name 'IsSelected' -Value $false -Force
                 $localState.Controls.lstUSBDrives.Items.Add($driveObject)
             }
+            Request-ListViewColumnAutoResize -ListView $localState.Controls.lstUSBDrives
             if ($localState.Controls.lstUSBDrives.Items.Count -gt 0) {
                 $localState.Controls.lstUSBDrives.SelectedIndex = 0
             }

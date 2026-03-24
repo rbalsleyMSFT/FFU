@@ -591,6 +591,9 @@ function Initialize-DynamicUIElements {
         }
     )
 
+    # Keep driver model columns sized to the current visible content.
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels -FixedColumnIndexes @(0)
+
     # Winget Search ListView setup
     $wingetGridView = New-Object System.Windows.Controls.GridView
     $State.Controls.lstWingetResults.View = $wingetGridView # Assign GridView to ListView first
@@ -750,6 +753,9 @@ function Initialize-DynamicUIElements {
         }
     )
 
+    # Keep Winget result columns sized to the current visible content.
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults -FixedColumnIndexes @(0)
+
     # BYO Applications ListView setup
     $byoAppsGridView = New-Object System.Windows.Controls.GridView
     $State.Controls.lstApplications.View = $byoAppsGridView
@@ -772,6 +778,9 @@ function Initialize-DynamicUIElements {
     Add-SortableColumn -gridView $byoAppsGridView -header "Exit Codes" -binding "AdditionalExitCodes" -width 100 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $byoAppsGridView -header "Ignore Exit Codes" -binding "IgnoreExitCodes" -width 120 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $byoAppsGridView -header "Copy Status" -binding "CopyStatus" -width 150 -headerHorizontalAlignment Left
+
+    # Keep BYO application columns sized to the current visible content.
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstApplications -FixedColumnIndexes @(0)
 
     # Apps Script Variables ListView setup
     # Bind ItemsSource to the data list
@@ -826,6 +835,9 @@ function Initialize-DynamicUIElements {
                 }
             }
         )
+
+        # Keep apps script variable columns sized to the current visible content.
+        Enable-ListViewColumnAutoResize -ListView $State.Controls.lstAppsScriptVariables -FixedColumnIndexes @(0)
     }
     else {
         WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
@@ -899,6 +911,9 @@ function Initialize-DynamicUIElements {
                 }
             }
         )
+
+        # Keep USB drive columns sized to the current visible content.
+        Enable-ListViewColumnAutoResize -ListView $State.Controls.lstUSBDrives -FixedColumnIndexes @(0)
     }
     else {
         WriteLog "Warning: lstUSBDrives.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
@@ -945,6 +960,9 @@ function Initialize-DynamicUIElements {
                 }
             }
         )
+
+        # Keep additional FFU columns sized to the current visible content.
+        Enable-ListViewColumnAutoResize -ListView $State.Controls.lstAdditionalFFUs -FixedColumnIndexes @(0)
     }
     else {
         WriteLog "Warning: lstAdditionalFFUs.View is not a GridView. Selectable column not added, and sorting cannot be enabled."

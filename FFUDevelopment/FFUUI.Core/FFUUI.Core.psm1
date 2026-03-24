@@ -268,6 +268,7 @@ function Update-AdditionalFFUList {
             foreach ($it in $items) { $listView.Items.Add($it) | Out-Null }
             WriteLog "Additional FFUs: Found $($listView.Items.Count) FFU files in $ffuFolder."
         }
+        Request-ListViewColumnAutoResize -ListView $listView
         $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
         if ($null -ne $headerChk) {
             Update-SelectAllHeaderCheckBoxState -ListView $listView -HeaderCheckBox $headerChk

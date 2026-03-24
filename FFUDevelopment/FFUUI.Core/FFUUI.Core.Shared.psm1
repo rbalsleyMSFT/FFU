@@ -20,6 +20,7 @@ function Update-ListViewPriorities {
         }
     }
     $ListView.Items.Refresh()
+    Request-ListViewColumnAutoResize -ListView $ListView
 }
 
 # Function to move selected item to the top
@@ -133,6 +134,7 @@ function Update-ListViewItemStatus {
             if ($null -ne $itemToUpdate) {
                 $itemToUpdate.$StatusProperty = $StatusValue
                 $ListView.Items.Refresh() # Refresh the view to show the change
+                Request-ListViewColumnAutoResize -ListView $ListView
             }
             else {
                 # Log if item not found (for debugging)
@@ -494,6 +496,209 @@ function Add-SelectableGridViewColumn {
     WriteLog "Add-SelectableGridViewColumn: Successfully added selectable column to '$($ListView.Name)'."
 }
 
+# Function to request a deferred GridView column auto-size pass
+function Request-ListViewColumnAutoResize {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView
+    )
+
+    # Skip startup calls until the visual tree has finished loading.
+    if (-not $ListView.IsLoaded) {
+        return
+    }
+
+    # Ensure the ListView has registered auto-resize metadata before scheduling work.
+    $autoResizeStateKey = 'FFU.ListViewColumnAutoResizeState'
+    if (-not $ListView.Resources.Contains($autoResizeStateKey)) {
+        return
+    }
+
+    if (-not ($ListView.View -is [System.Windows.Controls.GridView])) {
+        return
+    }
+
+    $autoResizeState = $ListView.Resources[$autoResizeStateKey]
+    if ($autoResizeState.ResizePending) {
+        return
+    }
+
+    $autoResizeState.ResizePending = $true
+    $previousErrorActionPreference = $ErrorActionPreference
+
+    try {
+        $ErrorActionPreference = 'Stop'
+
+        $gridView = [System.Windows.Controls.GridView]$ListView.View
+        $fixedColumnIndexes = @($autoResizeState.FixedColumnIndexes)
+        $visibleItems = [System.Collections.Generic.List[object]]::new()
+
+        if ($null -ne $ListView.ItemsSource) {
+            $collectionView = [System.Windows.Data.CollectionViewSource]::GetDefaultView($ListView.ItemsSource)
+            if ($null -ne $collectionView) {
+                foreach ($visibleItem in $collectionView) {
+                    $visibleItems.Add($visibleItem)
+                }
+            }
+        }
+        else {
+            foreach ($visibleItem in $ListView.Items) {
+                $visibleItems.Add($visibleItem)
+            }
+        }
+
+        $ListView.UpdateLayout()
+
+        $columnIndex = 0
+        foreach ($column in $gridView.Columns) {
+            if ($fixedColumnIndexes -contains $columnIndex) {
+                $columnIndex++
+                continue
+            }
+
+            if ($null -eq $column) {
+                $columnIndex++
+                continue
+            }
+
+            $headerText = ""
+            $propertyName = $null
+
+            if ($null -ne $column.DisplayMemberBinding -and $null -ne $column.DisplayMemberBinding.Path) {
+                $propertyName = [string]$column.DisplayMemberBinding.Path.Path
+            }
+
+            if ($column.Header -is [System.Windows.Controls.GridViewColumnHeader]) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$column.Header.Content)) {
+                    $headerText = [string]$column.Header.Content
+                }
+                if ([string]::IsNullOrWhiteSpace($propertyName) -and -not [string]::IsNullOrWhiteSpace([string]$column.Header.Tag)) {
+                    $propertyName = [string]$column.Header.Tag
+                }
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace([string]$column.Header)) {
+                $headerText = [string]$column.Header
+            }
+
+            if ([string]::IsNullOrWhiteSpace($headerText)) {
+                $headerText = $propertyName
+            }
+
+            $headerMeasureBlock = New-Object System.Windows.Controls.TextBlock
+            $headerMeasureBlock.Text = if ([string]::IsNullOrWhiteSpace($headerText)) { ' ' } else { $headerText }
+            $headerMeasureBlock.FontFamily = $ListView.FontFamily
+            $headerMeasureBlock.FontSize = $ListView.FontSize
+            $headerMeasureBlock.FontStyle = $ListView.FontStyle
+            $headerMeasureBlock.FontWeight = $ListView.FontWeight
+            $headerMeasureBlock.FontStretch = $ListView.FontStretch
+            $headerMeasureBlock.Measure([System.Windows.Size]::new([double]::PositiveInfinity, [double]::PositiveInfinity))
+
+            $calculatedWidth = [math]::Ceiling($headerMeasureBlock.DesiredSize.Width + 36)
+
+            foreach ($item in $visibleItems) {
+                if ($null -eq $item -or [string]::IsNullOrWhiteSpace($propertyName)) {
+                    continue
+                }
+
+                $itemProperty = $null
+                if ($null -ne $item.PSObject -and $null -ne $item.PSObject.Properties) {
+                    $matchedProperties = $item.PSObject.Properties.Match($propertyName)
+                    if ($null -ne $matchedProperties -and $matchedProperties.Count -gt 0) {
+                        $itemProperty = $matchedProperties | Select-Object -First 1
+                    }
+                }
+
+                if ($null -eq $itemProperty) {
+                    continue
+                }
+
+                $itemText = [string]$itemProperty.Value
+                $extraWidth = 28
+
+                switch ($propertyName) {
+                    'Architecture' {
+                        $extraWidth = 52
+                    }
+                    'AdditionalExitCodes' {
+                        $extraWidth = 44
+                    }
+                    'IgnoreNonZeroExitCodes' {
+                        $itemText = ' '
+                        $extraWidth = 48
+                    }
+                    'IgnoreExitCodes' {
+                        $extraWidth = 28
+                    }
+                }
+
+                $itemMeasureBlock = New-Object System.Windows.Controls.TextBlock
+                $itemMeasureBlock.Text = if ([string]::IsNullOrWhiteSpace($itemText)) { ' ' } else { $itemText }
+                $itemMeasureBlock.FontFamily = $ListView.FontFamily
+                $itemMeasureBlock.FontSize = $ListView.FontSize
+                $itemMeasureBlock.FontStyle = $ListView.FontStyle
+                $itemMeasureBlock.FontWeight = $ListView.FontWeight
+                $itemMeasureBlock.FontStretch = $ListView.FontStretch
+                $itemMeasureBlock.Measure([System.Windows.Size]::new([double]::PositiveInfinity, [double]::PositiveInfinity))
+
+                $itemWidth = [math]::Ceiling($itemMeasureBlock.DesiredSize.Width + $extraWidth)
+                if ($itemWidth -gt $calculatedWidth) {
+                    $calculatedWidth = $itemWidth
+                }
+            }
+
+            if ($propertyName -eq 'IgnoreNonZeroExitCodes') {
+                $calculatedWidth = [math]::Max($calculatedWidth, 120)
+            }
+
+            $column.Width = [math]::Max($calculatedWidth, 40)
+            $columnIndex++
+        }
+    }
+    catch {
+        WriteLog "Request-ListViewColumnAutoResize: Failed for '$($ListView.Name)': $($_.Exception.Message)"
+        if (-not [string]::IsNullOrWhiteSpace($_.InvocationInfo.PositionMessage)) {
+            WriteLog $_.InvocationInfo.PositionMessage
+        }
+        if (-not [string]::IsNullOrWhiteSpace($_.ScriptStackTrace)) {
+            WriteLog $_.ScriptStackTrace
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        $autoResizeState.ResizePending = $false
+    }
+}
+
+# Function to enable reusable auto-resizing for GridView-backed ListViews
+function Enable-ListViewColumnAutoResize {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Windows.Controls.ListView]$ListView,
+
+        [int[]]$FixedColumnIndexes = @()
+    )
+
+    $autoResizeStateKey = 'FFU.ListViewColumnAutoResizeState'
+
+    # Only GridView-backed lists can participate in column auto-sizing.
+    if (-not ($ListView.View -is [System.Windows.Controls.GridView])) {
+        WriteLog "Enable-ListViewColumnAutoResize: ListView '$($ListView.Name)' is not using a GridView. Skipping registration."
+        return
+    }
+
+    if ($ListView.Resources.Contains($autoResizeStateKey)) {
+        return
+    }
+
+    $autoResizeState = [PSCustomObject]@{
+        FixedColumnIndexes = @($FixedColumnIndexes)
+        ResizePending      = $false
+    }
+    $ListView.Resources[$autoResizeStateKey] = $autoResizeState
+}
+
 # Function to update the IsChecked state of a "Select All" header CheckBox
 function Update-SelectAllHeaderCheckBoxState {
     param(
@@ -573,6 +778,7 @@ function Invoke-ListViewItemToggle {
     # Toggle the IsSelected property
     $selectedItem.IsSelected = -not $selectedItem.IsSelected
     $ListView.Items.Refresh()
+    Request-ListViewColumnAutoResize -ListView $ListView
 
     # Update the 'Select All' header checkbox state
     $headerChk = $State.Controls[$HeaderCheckBoxKeyName]
@@ -743,6 +949,8 @@ function Invoke-ListViewSort {
             $newView.Filter = $existingFilter
         }
     }
+
+    Request-ListViewColumnAutoResize -ListView $listView
 }
 
 # --------------------------------------------------------------------------
@@ -1043,6 +1251,7 @@ function Clear-ListViewContent {
         }
         
         $ListViewControl.Items.Refresh()
+        Request-ListViewColumnAutoResize -ListView $ListViewControl
 
         # Clear any specified textboxes
         if ($null -ne $TextBoxesToClear) {

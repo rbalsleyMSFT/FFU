@@ -59,6 +59,7 @@ function Search-WingetApps {
 
         # Update the ListView's ItemsSource using the passed-in State object
         $State.Controls.lstWingetResults.ItemsSource = $finalAppList.ToArray()
+        Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
 
         # Update status text
         $statusText = ""
@@ -178,6 +179,7 @@ function Import-WingetList {
             }
 
             $State.Controls.lstWingetResults.ItemsSource = $newAppListForItemsSource.ToArray()
+            Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
             $State.Controls.txtAppListJsonPath.Text = $ofd.FileName
 
             [System.Windows.MessageBox]::Show("Winget app list imported successfully.", "Success", "OK", "Information")

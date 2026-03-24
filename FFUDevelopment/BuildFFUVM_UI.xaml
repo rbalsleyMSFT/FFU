@@ -576,7 +576,7 @@
                                                     </Grid.ColumnDefinitions>
 
                                                     <!-- Applications ListView -->
-                                                    <ListView x:Name="lstApplications" Grid.Column="0" Height="200" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                    <ListView x:Name="lstApplications" Grid.Column="0" Height="200" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                                     </ListView>
 
                                                     <!-- Reorder Buttons -->
@@ -616,7 +616,7 @@
                                                 <Button x:Name="btnAddAppsScriptVariable" Content="Add Variable" HorizontalAlignment="Left" Margin="0,0,0,20" Padding="12,4" ToolTip="Add the key-value pair to the list"/>
     
                                                 <!-- ListView for AppsScriptVariables -->
-                                                <ListView x:Name="lstAppsScriptVariables" Height="150" Margin="0,0,0,20" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                <ListView x:Name="lstAppsScriptVariables" Height="150" Margin="0,0,0,20" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                                     <ListView.View>
                                                         <GridView>
                                                             <GridViewColumn Header="Key" DisplayMemberBinding="{Binding Key}" Width="200"/>
@@ -938,7 +938,7 @@
                                                     <Button x:Name="btnRefreshAdditionalFFUs" Content="Refresh" DockPanel.Dock="Left" Padding="12,4" ToolTip="Refresh the list of FFU files from the capture folder"/>
                                                 </DockPanel>
                                                 <!-- ListView row -->
-                                                <ListView x:Name="lstAdditionalFFUs" Grid.Row="1" Margin="0" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                <ListView x:Name="lstAdditionalFFUs" Grid.Row="1" Margin="0" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                                     <ListView.View>
                                                         <GridView>
                                                             <GridViewColumn Header="FFU Name" DisplayMemberBinding="{Binding Name}" Width="300"/>
@@ -965,7 +965,7 @@
                                                     <Button x:Name="btnCheckUSBDrives" Content="Check USB drives" DockPanel.Dock="Left" Padding="12,4"/>
                                                 </DockPanel>
                                                 <!-- ListView row -->
-                                                <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+                                                <ListView x:Name="lstUSBDrives" Grid.Row="1" Margin="0" Height="150" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                                     <ListView.View>
                                                         <GridView>
 
