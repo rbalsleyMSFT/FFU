@@ -36,9 +36,6 @@ Switch to run cleanup-only mode. When specified, the script performs cleanup and
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
-.PARAMETER CleanupCaptureISO
-When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true.
-
 .PARAMETER CleanupCurrentRunDownloads
 When set to $true, cleanup mode will remove downloads created during the current run and restore backed up run JSON files. Default is $false.
 
@@ -74,9 +71,6 @@ When set to $true, will copy the provisioning package from the $FFUDevelopmentPa
 
 .PARAMETER CopyUnattend
 When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
-
-.PARAMETER CreateCaptureMedia
-When set to $true, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM, and the boot order will be changed to automate the capture of the FFU.
 
 .PARAMETER CreateDeploymentMedia
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
@@ -177,9 +171,6 @@ When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive
 .PARAMETER RemoveDownloadedESD
 When set to $true, will remove downloaded Windows ESD files after they have been applied. Default is $true.
 
-.PARAMETER ShareName
-Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
-
 .PARAMETER Threads
 Controls the throttle applied to parallel tasks inside the script. Default is 5, matching the UI Threads field, and applies to driver downloads invoked through Invoke-ParallelProcessing.
 
@@ -228,17 +219,11 @@ User agent string to use when downloading files.
 .PARAMETER UserAppListPath
 Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json.
 
-.PARAMETER Username
-Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account.
-
-.PARAMETER VMHostIPAddress
-IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this, or use the UI to auto-detect.
-
 .PARAMETER VMLocation
 Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.
 
 .PARAMETER VMSwitchName
-Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set to capture the FFU from the VM.
+Name of the Hyper-V virtual switch. Optional when building with InstallApps. Provide it only if the VM needs network connectivity during provisioning.
 
 .PARAMETER WindowsArch
 String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
@@ -257,25 +242,25 @@ String value of the Windows version to download. This is used to identify which 
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
 
 Command line for most people who want to create an FFU with Office and drivers and have downloaded their own ISO. This assumes you have copied this script and associated files to the C:\FFUDevelopment folder. If you need to use another drive or folder, change the -FFUDevelopment parameter (e.g. -FFUDevelopment 'D:\FFUDevelopment')
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who just want a FFU with no drivers, apps, or Office and have downloaded their own ISO.
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateCaptureMedia $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who just want a FFU with Apps and drivers, no Office and have downloaded their own ISO.
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 .NOTES
     Additional notes about your script.
@@ -336,12 +321,7 @@ param(
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
     [string]$FFUCaptureLocation,
-    [string]$ShareName = "FFUCaptureShare",
-    [string]$Username = "ffu_user",
     [string]$CustomFFUNameTemplate,
-    [Parameter(Mandatory = $false)]
-    [string]$VMHostIPAddress,
-    [bool]$CreateCaptureMedia = $true,
     [bool]$CreateDeploymentMedia,
     [ValidateScript({
             $allowedFeatures = @("Windows-Defender-Default-Definitions", "Printing-PrintToPDFServices-Features", "Printing-XPSServices-Features", "TelnetClient", "TFTP",
@@ -425,7 +405,6 @@ param(
     [bool]$CopyUnattend,
     [bool]$CopyAutopilot,
     [bool]$CompactOS = $true,
-    [bool]$CleanupCaptureISO = $true,
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true,
     [bool]$RemoveUpdates = $true,
@@ -647,7 +626,6 @@ if (-not $LtscCUStagePath) { $LtscCUStagePath = "$AppsPath\LTSCUpdate" }
 
 if (-not $AppsScriptVarsJsonPath) { $AppsScriptVarsJsonPath = "$OrchestrationPath\AppsScriptVariables.json" }
 if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy_$WindowsArch.iso" }
-if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture_$WindowsArch.iso" }
 if (-not $OfficePath) { $OfficePath = "$AppsPath\Office" }
 if (-not $OfficeDownloadXML) { $OfficeDownloadXML = "$OfficePath\DownloadFFU.xml" }
 if (-not $OfficeInstallXML) { $OfficeInstallXML = "DeployFFU.xml" }
@@ -2848,69 +2826,6 @@ function New-FFUVM {
     return $VM
 }
 
-Function Set-CaptureFFU {
-    $CaptureFFUScriptPath = "$FFUDevelopmentPath\WinPECaptureFFUFiles\CaptureFFU.ps1"
-
-    # Workaround for PowerShell 7 issue on Windows 11 23H2 and earlier
-    # https://github.com/PowerShell/PowerShell/issues/21645
-    $osBuild = (Get-CimInstance -ClassName Win32_OperatingSystem).BuildNumber
-    if ($osBuild -le 22631) {
-        WriteLog "Applying workaround for PowerShell 7 LocalAccounts module issue on Windows 11 build $osBuild"
-        Import-Module Microsoft.PowerShell.LocalAccounts -UseWindowsPowerShell
-    }
-
-    If (-not (Test-Path -Path $FFUCaptureLocation)) {
-        WriteLog "Creating FFU capture location at $FFUCaptureLocation"
-        New-Item -Path $FFUCaptureLocation -ItemType Directory -Force
-        WriteLog "Successfully created FFU capture location at $FFUCaptureLocation"
-    }
-
-    # Create a standard user
-    $UserExists = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
-    if (-not $UserExists) {
-        WriteLog "Creating FFU_User account as standard user"
-        New-LocalUser -Name $UserName -AccountNeverExpires -NoPassword | Out-null
-        WriteLog "Successfully created FFU_User account"
-    }
-
-    # Create a random password for the standard user
-    $Password = New-Guid | Select-Object -ExpandProperty Guid
-    $SecurePassword = ConvertTo-SecureString -String $Password -AsPlainText -Force
-    Set-LocalUser -Name $UserName -Password $SecurePassword -PasswordNeverExpires:$true
-
-    # Create a share of the $FFUCaptureLocation variable
-    $ShareExists = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
-    if (-not $ShareExists) {
-        WriteLog "Creating $ShareName and giving access to $UserName"
-        New-SmbShare -Name $ShareName -Path $FFUCaptureLocation -FullAccess $UserName | Out-Null
-        WriteLog "Share created"
-    }
-
-    # Return the share path in the format of \\<IPAddress>\<ShareName> /user:<UserName> <password>
-    $SharePath = "\\$VMHostIPAddress\$ShareName /user:$UserName $Password"
-    $SharePath = "net use W: " + $SharePath + ' 2>&1'
-    
-    # Update CaptureFFU.ps1 script
-    if (Test-Path -Path $CaptureFFUScriptPath) {
-        $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
-        #Update variables in CaptureFFU.ps1 script ($VMHostIPAddress, $ShareName, $UserName, $Password)
-        WriteLog 'Updating CaptureFFU.ps1 script with new share information'
-        $ScriptContent = $ScriptContent -replace '(\$VMHostIPAddress = ).*', "`$1'$VMHostIPAddress'"
-        $ScriptContent = $ScriptContent -replace '(\$ShareName = ).*', "`$1'$ShareName'"
-        $ScriptContent = $ScriptContent -replace '(\$UserName = ).*', "`$1'$UserName'"
-        $ScriptContent = $ScriptContent -replace '(\$Password = ).*', "`$1'$Password'"
-        if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
-            $ScriptContent = $ScriptContent -replace '(\$CustomFFUNameTemplate = ).*', "`$1'$CustomFFUNameTemplate'"
-            WriteLog 'Updating CaptureFFU.ps1 script with new ffu name template information'
-        }
-        Set-Content -Path $CaptureFFUScriptPath -Value $ScriptContent
-        WriteLog 'Update complete'
-    }
-    else {
-        throw "CaptureFFU.ps1 script not found at $CaptureFFUScriptPath"
-    }
-}
-
 function Get-PrivateProfileString {
     param (
         [Parameter()]
@@ -3371,12 +3286,7 @@ function Copy-Drivers {
 }
 
 function New-PEMedia {
-    param (
-        [Parameter()]
-        [bool]$Capture,
-        [Parameter()]
-        [bool]$Deploy
-    )
+    param ()
     #Need to use the Demployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
@@ -3431,64 +3341,49 @@ function New-PEMedia {
         Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
         WriteLog "Adding package complete"
     }
-    If ($Capture) {
-        WriteLog "Copying $FFUDevelopmentPath\WinPECaptureFFUFiles\* to WinPE capture media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
-        WriteLog "Copy complete"
-        #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
-        #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
-        # $WinPEISOName = 'WinPE_FFU_Capture.iso'
-        $WinPEISOFile = $CaptureISO
-        # $Capture = $false
-    }
-    If ($Deploy) {
-        WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
-        WriteLog 'Copy complete'
-        #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
-        if ($CopyPEDrivers) {
-            if ($UseDriversAsPEDrivers) {
-                WriteLog "UseDriversAsPEDrivers is set. Building WinPE driver set from Drivers folder (bypassing PEDrivers folder contents)."
-                if (Test-Path -Path $PEDriversFolder) {
-                    try {
-                        Remove-Item -Path (Join-Path $PEDriversFolder '*') -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-                    }
-                    catch {
-                        WriteLog "Warning: Failed clearing existing PEDriversFolder contents: $($_.Exception.Message)"
-                    }
+    WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
+    Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
+    WriteLog 'Copy complete'
+    #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
+    if ($CopyPEDrivers) {
+        if ($UseDriversAsPEDrivers) {
+            WriteLog "UseDriversAsPEDrivers is set. Building WinPE driver set from Drivers folder (bypassing PEDrivers folder contents)."
+            if (Test-Path -Path $PEDriversFolder) {
+                try {
+                    Remove-Item -Path (Join-Path $PEDriversFolder '*') -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
                 }
-                else {
-                    try {
-                        New-Item -Path $PEDriversFolder -ItemType Directory -Force | Out-Null
-                    }
-                    catch {
-                        WriteLog "Error: Failed to create PEDriversFolder at $PEDriversFolder - continuing may fail when adding drivers."
-                    }
+                catch {
+                    WriteLog "Warning: Failed clearing existing PEDriversFolder contents: $($_.Exception.Message)"
                 }
-                WriteLog "Copying required WinPE drivers from Drivers folder"
-                Copy-Drivers -Path $DriversFolder -Output $PEDriversFolder
             }
             else {
-                WriteLog "Copying PE drivers from PEDrivers folder"
+                try {
+                    New-Item -Path $PEDriversFolder -ItemType Directory -Force | Out-Null
+                }
+                catch {
+                    WriteLog "Error: Failed to create PEDriversFolder at $PEDriversFolder - continuing may fail when adding drivers."
+                }
             }
-            
-            WriteLog "Adding drivers to WinPE media"
-            try {
-                $WinPEMount = "$WinPEFFUPath\Mount"
-
-                # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
-                Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $PEDriversFolder
-            }
-            catch {
-                WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
-            }
-            WriteLog "Adding drivers complete"
+            WriteLog "Copying required WinPE drivers from Drivers folder"
+            Copy-Drivers -Path $DriversFolder -Output $PEDriversFolder
         }
-        # $WinPEISOName = 'WinPE_FFU_Deploy.iso'
-        $WinPEISOFile = $DeployISO
+        else {
+            WriteLog "Copying PE drivers from PEDrivers folder"
+        }
+        
+        WriteLog "Adding drivers to WinPE media"
+        try {
+            $WinPEMount = "$WinPEFFUPath\Mount"
 
-        # $Deploy = $false
+            # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
+            Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $PEDriversFolder
+        }
+        catch {
+            WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
+        }
+        WriteLog "Adding drivers complete"
     }
+    $WinPEISOFile = $DeployISO
     WriteLog 'Dismounting WinPE media' 
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
     WriteLog 'Dismount complete'
@@ -3503,21 +3398,10 @@ function New-PEMedia {
     WriteLog "Creating WinPE ISO at $WinPEISOFile"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
     if ($WindowsArch -eq 'x64') {
-        if ($Capture) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        if ($Deploy) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
     }
     elseif ($WindowsArch -eq 'arm64') {
-        if ($Capture) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        if ($Deploy) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
     }
     Invoke-Process $OSCDIMG $OSCDIMGArgs | Out-Null
     WriteLog "ISO created successfully"
@@ -3525,7 +3409,7 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
     # Deferred cleanup of preserved driver model folders (only after WinPE Deploy media is created)
-    if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $Deploy -and $CopyPEDrivers) {
+    if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $CopyPEDrivers) {
         WriteLog "Beginning deferred cleanup of preserved driver model folders (UseDriversAsPEDrivers + compression scenario)."
         $removedCount = 0
         $skippedCount = 0
@@ -3616,6 +3500,40 @@ function Optimize-FFUCaptureDrive {
     }
 }
 
+function Get-CaptureVhdContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VhdxPath
+    )
+
+    WriteLog 'Resolving VHDX context for host-side FFU capture'
+
+    $vhdInfo = Get-VHD -Path $VhdxPath
+    if ($vhdInfo.Attached) {
+        WriteLog 'VHDX is already mounted for capture'
+        $captureDisk = Get-Disk -Number $vhdInfo.DiskNumber
+    }
+    else {
+        WriteLog 'Mounting VHDX for capture'
+        $captureDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+    }
+
+    $captureOsPartition = $captureDisk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' } | Select-Object -First 1
+    if ($null -eq $captureOsPartition) {
+        throw 'Unable to resolve Windows partition for FFU capture.'
+    }
+    if ([string]::IsNullOrWhiteSpace($captureOsPartition.DriveLetter)) {
+        throw 'Unable to resolve Windows partition drive letter for FFU capture.'
+    }
+
+    return [pscustomobject]@{
+        Disk                   = $captureDisk
+        OsPartition            = $captureOsPartition
+        OsPartitionDriveLetter = $captureOsPartition.DriveLetter
+        WindowsPartition       = "$($captureOsPartition.DriveLetter):\"
+    }
+}
+
 function Get-ShortenedWindowsSKU {
     param (
         [string]$WindowsSKU
@@ -3703,89 +3621,53 @@ function New-FFUFileName {
 }
 
 function New-FFU {
-    param (
-        [Parameter(Mandatory = $false)]
-        [string]$VMName
-    )
-    #If $InstallApps = $true, configure the VM
-    If ($InstallApps) {
-        WriteLog 'Creating FFU from VM'
-        WriteLog "Setting $CaptureISO as first boot device"
-        $VMDVDDrive = Get-VMDvdDrive -VMName $VMName
-        Set-VMFirmware -VMName $VMName -FirstBootDevice $VMDVDDrive
-        Set-VMDvdDrive -VMName $VMName -Path $CaptureISO
-        $VMSwitch = Get-VMSwitch -name $VMSwitchName
-        WriteLog "Setting $($VMSwitch.Name) as VMSwitch"
-        get-vm $VMName | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $VMSwitch.Name
-        WriteLog "Configuring VM complete"
+    $captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath
+    $captureDisk = $captureContext.Disk
+    $osPartitionDriveLetter = $captureContext.OsPartitionDriveLetter
+    $WindowsPartition = $captureContext.WindowsPartition
 
-        #Start VM
-        Set-Progress -Percentage 68 -Message "Capturing FFU from VM..."
-        WriteLog "Starting VM"
-        Start-VM -Name $VMName
-
-        # Wait for the VM to turn off
-        do {
-            $FFUVM = Get-VM -Name $VMName
-            Start-Sleep -Seconds 5
-        } while ($FFUVM.State -ne 'Off')
-        WriteLog "VM Shutdown"
-        # Check for .ffu files in the FFUDevelopment folder
-        WriteLog "Checking for FFU Files"
-        $FFUFiles = Get-ChildItem -Path $FFUCaptureLocation -Filter "*.ffu" -File
-
-        # If there's more than one .ffu file, get the most recent and store its path in $FFUFile
-        if ($FFUFiles.Count -gt 0) {
-            WriteLog 'Getting the most recent FFU file'
-            $FFUFile = ($FFUFiles | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1).FullName
-            WriteLog "Most recent .ffu file: $FFUFile"
-        }
-        else {
-            WriteLog "No .ffu files found in $FFUCaptureLocation"
-            throw $_
-        }
-    }
-    elseif (-not $InstallApps -and (-not $AllowVHDXCaching)) {
-        #Get Windows Version Information from the VHDX
-        $winverinfo = Get-WindowsVersionInfo
-        WriteLog 'Creating FFU File Name'
-        if ($CustomFFUNameTemplate) {
-            $FFUFileName = New-FFUFileName
-        }
-        else {
-            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
-        }
-        WriteLog "FFU file name: $FFUFileName"
-        $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Capture the FFU
+    try {
         Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
-        WriteLog 'Capturing FFU'
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
-        WriteLog 'FFU Capture complete'
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
-    }
-    elseif (-not $InstallApps -and $AllowVHDXCaching) {
-        # Make $FFUFileName based on values in the config.json file
-        WriteLog 'Creating FFU File Name'
-        if ($CustomFFUNameTemplate) {
-            $FFUFileName = New-FFUFileName
-        }
-        else {
-            $BuildDate = Get-Date -UFormat %b%Y
-            # Get Windows Information to make the FFU file name from the cachedVHDXInfo file
-            if ($installationType -eq 'Client') {
-                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
+
+        if ($InstallApps -or (-not $AllowVHDXCaching)) {
+            # Resolve live Windows metadata from the mounted VHDX when the image was customized in a VM.
+            $winverinfo = Get-WindowsVersionInfo
+            WriteLog 'Creating FFU File Name'
+            if ($CustomFFUNameTemplate) {
+                $FFUFileName = New-FFUFileName
             }
             else {
-                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
-            } 
+                $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
+            }
+            WriteLog "FFU file name: $FFUFileName"
+            $FFUFile = "$FFUCaptureLocation\$FFUFileName"
+            WriteLog 'Capturing FFU from mounted VHDX on host'
+            Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($captureDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
         }
-        WriteLog "FFU file name: $FFUFileName"
-        $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Capture the FFU
-        WriteLog 'Capturing FFU'
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null     
+        else {
+            # Use cached Windows metadata only when the VHDX contents were reused without VM customization.
+            WriteLog 'Creating FFU File Name'
+            if ($CustomFFUNameTemplate) {
+                $FFUFileName = New-FFUFileName
+            }
+            else {
+                $BuildDate = Get-Date -UFormat %b%Y
+                if ($installationType -eq 'Client') {
+                    $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
+                }
+                else {
+                    $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
+                }
+            }
+            WriteLog "FFU file name: $FFUFileName"
+            $FFUFile = "$FFUCaptureLocation\$FFUFileName"
+            WriteLog 'Capturing FFU from mounted VHDX on host'
+            Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($captureDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
+        }
+
         WriteLog 'FFU Capture complete'
+    }
+    finally {
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
@@ -3893,15 +3775,6 @@ function Remove-FFUVM {
     Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
 }
-Function Remove-FFUUserShare {
-    WriteLog "Removing $ShareName"
-    Remove-SmbShare -Name $ShareName -Force | Out-null
-    WriteLog 'Removal complete'
-    WriteLog "Removing $Username"
-    Remove-LocalUser -Name $Username | Out-Null
-    WriteLog 'Removal complete'
-}
-
 Function Get-WindowsVersionInfo {
     #This sleep prevents CBS/CSI corruption which causes issues with Windows update after deployment. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for. This seems to affect VHDX-only captures, not VM captures. 
     WriteLog 'Sleep 60 seconds before opening registry to grab Windows version info '
@@ -4441,16 +4314,8 @@ function Get-FFUEnvironment {
         Invoke-Process reg "unload HKLM\FFU" | Out-Null
     }
 
-    #Remove FFU User and Share
-    $UserExists = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
-    if ($UserExists) {
-        WriteLog "Removing FFU User and Share"
-        Remove-FFUUserShare
-        WriteLog 'Removal complete'
-    }
-
     #Run shared cleanup to avoid duplicated logic
-    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
+    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
 
     # Remove existing Apps.iso
     if (Test-Path -Path $AppsISO) {
@@ -5576,14 +5441,6 @@ if ($CopyUnattend) {
     WriteLog 'Unattend validation complete'
 }
 
-# If InstallApps is true, we need capture media.
-if ($InstallApps) {
-    if (-not $CreateCaptureMedia) {
-        WriteLog "InstallApps is true, but CreateCaptureMedia is false. Forcing to true to allow for VM capture to FFU."
-        $CreateCaptureMedia = $true
-    }
-}
-
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
 #from vhdx doesn't work (you get an older style OOBE screen and get stuck in an OOBE reboot loop when hitting next).
 #This behavior doesn't happen with WIM files.
@@ -5595,45 +5452,14 @@ if ($InstallApps) {
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
 }
-if (($InstallApps -and ($VMSwitchName -eq ''))) {
-    throw "If variable InstallApps is set to `$true, VMSwitchName must also be set to capture the FFU. Please set -VMSwitchName and try again."
-}
-
-if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
-    throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU. Please set -VMHostIPAddress and try again."
-}
-
-if (($VMHostIPAddress) -and ($VMSwitchName)) {
-    WriteLog "Validating -VMSwitchName $VMSwitchName and -VMHostIPAddress $VMHostIPAddress"
+if ($VMSwitchName) {
+    WriteLog "Validating -VMSwitchName $VMSwitchName"
     #Check $VMSwitchName by using Get-VMSwitch
     $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
     if (-not $VMSwitch) {
         throw "-VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
     }
-    #Find the IP address of $VMSwitch and check if it matches $VMHostIPAddress
-    $interfaceAlias = "vEthernet ($VMSwitchName)"
-    $VMSwitchIPAddress = (Get-NetIPAddress -InterfaceAlias $interfaceAlias -AddressFamily 'IPv4' -ErrorAction SilentlyContinue).IPAddress
-    if (-not $VMSwitchIPAddress) {
-        throw "IP address for -VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
-    }
-    if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
-        try {
-            # Bypass the check for systems that could have a Hyper-V NAT switch
-            $null = Get-NetNat -ErrorAction Stop
-            $NetNat = @(Get-NetNat -ErrorAction Stop)
-        }
-        catch {
-            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
-        }
-        if ($NetNat.Count -gt 0) {
-            WriteLog "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress!"
-            WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
-        }
-        else {
-            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
-        }
-    }
-    WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
+    WriteLog '-VMSwitchName validation complete'
 }
 
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
@@ -7455,32 +7281,6 @@ if ($InstallApps) {
         throw $_
         
     }
-    #Create ffu user and share to capture FFU to
-    try {
-        Set-CaptureFFU
-    }
-    catch {
-        Write-Host 'Set-CaptureFFU function failed'
-        WriteLog "Set-CaptureFFU function failed with error $_"
-        Remove-FFUVM -VMName $VMName
-        throw $_
-        
-    }
-    If ($CreateCaptureMedia) {
-        #Create Capture Media
-        try {
-            Set-Progress -Percentage 45 -Message "Creating WinPE capture media..."
-            #This should happen while the FFUVM is building
-            New-PEMedia -Capture $true
-        }
-        catch {
-            Write-Host 'Creating capture media failed'
-            WriteLog "Creating capture media failed with error $_"
-            Remove-FFUVM -VMName $VMName
-            throw $_
-        
-        }
-    }    
 }
 #Capture FFU file
 try {
@@ -7490,6 +7290,10 @@ try {
         New-Item -Path $FFUCaptureLocation -ItemType Directory -Force
         WriteLog "Successfully created FFU capture location at $FFUCaptureLocation"
     }
+    #Shorten Windows SKU for use in FFU file name to remove spaces and long names
+    WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
+    $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
+    WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
     #Check if VM is done provisioning
     If ($InstallApps) {
         Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
@@ -7502,13 +7306,9 @@ try {
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
-        New-FFU $FFUVM.Name
+        New-FFU
     }
     else {
-        #Shorten Windows SKU for use in FFU file name to remove spaces and long names
-        WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
-        $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
-        WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
         #Create FFU file
         New-FFU
     }    
@@ -7526,18 +7326,6 @@ Catch {
     throw $_
     
 }
-#Clean up ffu_user and Share and clean up apps
-If ($InstallApps) {
-    try {
-        Remove-FFUUserShare
-    }
-    catch {
-        Write-Host 'Cleaning up FFU User and/or share failed'
-        WriteLog "Cleaning up FFU User and/or share failed with error $_"
-        Remove-FFUVM -VMName $VMName
-        throw $_
-    }
-}
 #Clean up VM or VHDX
 try {
     Remove-FFUVM
@@ -7554,7 +7342,7 @@ catch {
 If ($CreateDeploymentMedia) {
     Set-Progress -Percentage 91 -Message "Creating deployment media..."
     try {
-        New-PEMedia -Deploy $true
+        New-PEMedia
     }
     catch {
         Write-Host 'Creating deployment media failed'
@@ -7611,7 +7399,7 @@ If ($BuildUSBDrive) {
 
 Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 # Delegated post-build cleanup to common module
-Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
+Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
 
 
 # Remove WinGetWin32Apps.json so it is always rebuilt next run

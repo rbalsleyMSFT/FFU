@@ -25,7 +25,6 @@ function Get-UIConfig {
         else { $null }
         BuildUSBDrive                  = $State.Controls.chkBuildUSBDriveEnable.IsChecked
         CleanupAppsISO                 = $State.Controls.chkCleanupAppsISO.IsChecked
-        CleanupCaptureISO              = $State.Controls.chkCleanupCaptureISO.IsChecked
         CleanupDeployISO               = $State.Controls.chkCleanupDeployISO.IsChecked
         CleanupDrivers                 = $State.Controls.chkCleanupDrivers.IsChecked
         CompactOS                      = $State.Controls.chkCompactOS.IsChecked
@@ -38,7 +37,6 @@ function Get-UIConfig {
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
         CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
-        CreateCaptureMedia             = $State.Controls.chkCreateCaptureMedia.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
         CustomFFUNameTemplate          = $State.Controls.txtCustomFFUNameTemplate.Text
@@ -84,7 +82,6 @@ function Get-UIConfig {
         RemoveFFU                      = $State.Controls.chkRemoveFFU.IsChecked
         RemoveUpdates                  = $State.Controls.chkRemoveUpdates.IsChecked
         RemoveDownloadedESD            = $State.Controls.chkRemoveDownloadedESD.IsChecked
-        ShareName                      = $State.Controls.txtShareName.Text
         UpdateADK                      = $State.Controls.chkUpdateADK.IsChecked
         UpdateEdge                     = $State.Controls.chkUpdateEdge.IsChecked
         UpdateLatestCU                 = $State.Controls.chkUpdateLatestCU.IsChecked
@@ -96,13 +93,11 @@ function Get-UIConfig {
         UpdatePreviewCU                = $State.Controls.chkUpdatePreviewCU.IsChecked
         UserAppListPath                = $State.Controls.txtUserAppListPath.Text
         USBDriveList                   = @{}
-        Username                       = $State.Controls.txtUsername.Text
         Threads                        = [int]$State.Controls.txtThreads.Text
         BitsPriority                    = $State.Controls.cmbBitsPriority.SelectedItem
         MaxUSBDrives                   = [int]$State.Controls.txtMaxUSBDrives.Text
         ThemeMode                      = if ($null -ne $State.Controls.cmbThemeMode -and $null -ne $State.Controls.cmbThemeMode.SelectedItem) { $State.Controls.cmbThemeMode.SelectedItem } else { "System" }
         Verbose                        = $State.Controls.chkVerbose.IsChecked
-        VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
         VMLocation                     = $State.Controls.txtVMLocation.Text
         VMSwitchName                   = if ($State.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
             $State.Controls.txtCustomVMSwitchName.Text
@@ -414,7 +409,6 @@ function Select-VMSwitchFromConfig {
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
         $State.Controls.txtCustomVMSwitchName.Text = $configSwitch
         $State.Data.customVMSwitchName = $configSwitch
-        $State.Data.customVMHostIP = $ConfigContent.VMHostIPAddress
         WriteLog "LoadConfig: VMSwitchName '$configSwitch' not found. Selected 'Other' and populated custom VM Switch Name textbox."
     }
 }
@@ -442,8 +436,6 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtFFUDevPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUDevelopmentPath' -State $State
     Set-UIValue -ControlName 'txtCustomFFUNameTemplate' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'CustomFFUNameTemplate' -State $State
     Set-UIValue -ControlName 'txtFFUCaptureLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUCaptureLocation' -State $State
-    Set-UIValue -ControlName 'txtShareName' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ShareName' -State $State
-    Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Username' -State $State
     Set-UIValue -ControlName 'txtThreads' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Threads' -State $State
     Set-UIValue -ControlName 'cmbBitsPriority' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'BitsPriority' -State $State
     Set-UIValue -ControlName 'txtMaxUSBDrives' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'MaxUSBDrives' -State $State
@@ -455,7 +447,6 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkAllowExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AllowExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'PromptExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkCopyAdditionalFFUFiles' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAdditionalFFUFiles' -State $State
-    Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateCaptureMedia' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
     Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
     Set-UIValue -ControlName 'chkVerbose' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'Verbose' -State $State
@@ -467,7 +458,6 @@ function Update-UIFromConfig {
     
     # Post Build Cleanup group (Build Tab)
     Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupAppsISO' -State $State
-    Set-UIValue -ControlName 'chkCleanupCaptureISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupCaptureISO' -State $State
     Set-UIValue -ControlName 'chkCleanupDeployISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupDeployISO' -State $State
     Set-UIValue -ControlName 'chkCleanupDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupDrivers' -State $State
     Set-UIValue -ControlName 'chkRemoveFFU' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveFFU' -State $State
@@ -477,7 +467,6 @@ function Update-UIFromConfig {
 
     # Hyper-V Settings
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
-    Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State
     Set-UIValue -ControlName 'txtMemory' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Memory' -TransformValue { param($val) $val / 1GB } -State $State
     Set-UIValue -ControlName 'txtProcessors' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Processors' -State $State
@@ -884,11 +873,10 @@ function Invoke-RestoreDefaults {
         $ffuCaptureRaw = Get-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
         $ffuCapturePath = if ([string]::IsNullOrWhiteSpace($ffuCaptureRaw)) { Join-Path $rootPath 'FFU' } else { $ffuCaptureRaw }
 
-        $captureISOPath = Join-Path $rootPath 'WinPECaptureFFUFiles\WinPE-Capture.iso'
         $deployISOPath = Join-Path $rootPath 'WinPEDeployFFUFiles\WinPE-Deploy.iso'
         $appsISOPath = Join-Path $rootPath 'Apps.iso'
         
-        $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Capture, Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
+        $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
         $result = [System.Windows.MessageBox]::Show($msg, "Confirm Restore Defaults", "YesNo", "Warning")
         if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
             WriteLog "RestoreDefaults: User cancelled."
@@ -924,11 +912,9 @@ function Invoke-RestoreDefaults {
             -AppsPath $appsPath `
             -DriversPath $driversPath `
             -FFUCapturePath $ffuCapturePath `
-            -CaptureISOPath $captureISOPath `
             -DeployISOPath $deployISOPath `
             -AppsISOPath $appsISOPath `
             -KBPath (Join-Path $rootPath 'KB') `
-            -RemoveCaptureISO:$true `
             -RemoveDeployISO:$true `
             -RemoveAppsISO:$true `
             -RemoveDrivers:$true `

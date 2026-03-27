@@ -79,25 +79,9 @@ Result: `Win11_24h2_Pro_Nov2025.ffu`
 
 The FFU Capture Location sets the `-FFUCaptureLocation` parameter that determines where completed `.ffu` images are written. By default it points to `$FFUDevelopmentPath\FFU`, and the build script creates the folder automatically if it does not already exist.
 
-When apps are installed in a VM, the host converts this folder into a temporary SMB share using the **Share Name** and **Username** fields. The capture WinPE environment maps that share as drive `W:` and streams the captured image directly into this folder. When the build finishes, the share and local account are removed, but the FFU files remain unless a cleanup option deletes them.
+When apps are installed in a VM, the build still uses the VM for application installs and sysprep, but the actual FFU capture now happens on the host after the VHDX is optimized and remounted. That means completed images are written directly to this folder without creating a temporary SMB share, temporary local account, or capture ISO.
 
 Choose a path on fast storage with plenty of free space—the directory must be local to the host running `BuildFFUVM.ps1`, and large captures can easily exceed 25–30 GB. This location also feeds other options such as **Copy Additional FFU Files**, **Build USB Drive**, and **Remove FFU**, so keeping all finished images here keeps those workflows simple.
-
-## Share Name
-
-The Share Name sets the `-ShareName` parameter that defines the name of the temporary SMB share created during the FFU capture process. The default is `FFUCaptureShare`.
-
-During the build, the host creates an SMB share that points to the **FFU Capture Location** and grants access to the temporary local user account defined in **Username**. The capture WinPE environment maps this share as drive `W:` using `net use` and streams the captured FFU image directly to it.
-
-When the build completes, the share is automatically removed along with the temporary user account, leaving only the captured FFU files behind in the FFU Capture Location.
-
-## Username
-
-The Username field sets the `-Username` parameter that `BuildFFUVM.ps1` uses when creating the temporary SMB share user. The value becomes a local standard user account that is granted Full Control on the **FFU Capture Location** share (default C:\FFUDevelopment\FFU) so the capture WinPE session can copy the FFU over `net use `. The default `ffu_user` account name works for most scenarios, but you can supply any other local account name that meets your organization's policies.
-
-When the build starts, the script ensures the account exists, rotates its password to a randomly generated GUID, and grants it access to the share. The Capture WinPE environment maps drive `W:` with those credentials, then writes the captured image directly into the FFU Capture Location.
-
-After the build finishes, the share is removed and the temporary account is deleted, leaving only the FFU files stored in the capture folder.
 
 ## Threads
 
@@ -471,28 +455,6 @@ VHDX caching trades disk space for speed. The `VHDXCache` folder can grow over t
 >
 > To force a full rebuild, delete the contents of `$FFUDevelopmentPath\VHDXCache` (or disable **Allow VHDX Caching**) and run the build again.
 
-## Create Capture Media
-
-Controls the `-CreateCaptureMedia` parameter.
-
-When enabled, FFU Builder creates WinPE capture media that is used during VM-based builds (when apps are installed in the VM). FFU Builder attaches this media to the VM and adjusts boot order so the VM can reboot into WinPE and automatically capture the FFU to your **FFU Capture Location**.
-
-The capture media uses the parameter values from `VMHostIPAddress`, `ShareName`, `UserName`, and `CustomFFUNameTemplate` and inserts them into `CaptureFFU.ps1` which is what is responsible for capturing the FFU from the guest VM to the Host.
-
-**Default:** Enabled (`-CreateCaptureMedia $true`)
-
-{: .note-title}
-
-> Note
->
-> This option is only relevant when **Install Apps** is enabled. If **Install Apps** is enabled, the build forces `-CreateCaptureMedia` to `$true` because capture media is required to capture an FFU from the VM.
-
-{: .tip-title}
-
-> Tip
->
-> If you just need to re-create media, you can use the `Create-PEMedia.ps1` script to regenerate the capture or deploy ISO using `Create-PEMedia.ps1 -Capture $true` or `CreatePEMedia.ps1 -Deploy $true`.
-
 ## Create Deployment Media
 
 Controls the `-CreateDeploymentMedia` parameter.
@@ -513,7 +475,7 @@ The deployment media is saved as an ISO file at `$FFUDevelopmentPath\WinPE_FFU_D
 
 > Tip
 >
-> If you just need to re-create media, you can use the `Create-PEMedia.ps1` script to regenerate the capture or deploy ISO using `Create-PEMedia.ps1 -Capture $true` or `CreatePEMedia.ps1 -Deploy $true`.
+> If you just need to re-create deployment media, you can use the `Create-PEMedia.ps1` script to regenerate the deploy ISO without running a full build.
 
 ## Inject Unattend.xml
 
@@ -603,12 +565,6 @@ You may want to disable Cleanup Apps ISO in the following scenarios:
 > Note
 >
 > The Apps ISO is only created when applications are configured for installation. If no apps are being installed in the FFU, this option has no effect. Keeping this option enabled helps conserve disk space by removing temporary build artifacts.
-
-## Cleanup Capture ISO
-
-Controls the `-CleanupCaptureISO` parameter. When checked, the WinPE capture ISO file is automatically deleted after the FFU has been successfully captured. The default is **checked**.
-
-It's recommended to keep this checked as each new build re-creates the local username account (e.g. `ffu_user`) and its password. If you were to retain the capture ISO from a previous build, it'd be using an old password and the capture would fail.
 
 ## Cleanup Deploy ISO
 

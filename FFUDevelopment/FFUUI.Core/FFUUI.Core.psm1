@@ -115,8 +115,6 @@ function Get-GeneralDefaults {
         # Build Tab Defaults
         CustomFFUNameTemplate          = "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}"
         FFUCaptureLocation             = $ffuCapturePath
-        ShareName                      = "FFUCaptureShare"
-        Username                       = "ffu_user"
         Threads                        = 5
         BitsPriority                   = 'Normal'
         MaxUSBDrives                   = 5
@@ -124,7 +122,6 @@ function Get-GeneralDefaults {
         CompactOS                      = $true
         Optimize                       = $true
         AllowVHDXCaching               = $false
-        CreateCaptureMedia             = $true
         CreateDeploymentMedia          = $true
         Verbose                        = $false
         AllowExternalHardDiskMedia     = $false
@@ -136,7 +133,6 @@ function Get-GeneralDefaults {
         CopyPPKG                       = $false
         InjectUnattend                 = $false
         CleanupAppsISO                 = $true
-        CleanupCaptureISO              = $true
         CleanupDeployISO               = $true
         CleanupDrivers                 = $false
         RemoveFFU                      = $false
@@ -144,7 +140,6 @@ function Get-GeneralDefaults {
         RemoveUpdates                  = $false 
         RemoveDownloadedESD            = $true
         # Hyper-V Settings Defaults
-        VMHostIPAddress                = ""
         DiskSizeGB                     = 50
         MemoryGB                       = 4
         Processors                     = 4

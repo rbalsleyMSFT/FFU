@@ -45,7 +45,7 @@ Follow the [prerequisites](/FFU/prerequisites.html) documentation before getting
 
 Click the Hyper-V Settings tab
 
-You should be able to keep these settings at the defaults. For VM Switch Name and VM Host IP Address, you'll want to make sure the switch you created in the prerequisites section is listed. FFU Builder should automatically figure out the IP address of the swtich for you.
+You should be able to keep these settings at the defaults. If the VM needs network connectivity during provisioning, make sure the switch you created in the prerequisites section is listed under VM Switch Name. If the build does not need VM networking, you can leave the switch unset.
 
 One setting you might need to set is the Logical Sector Size. 512 is the default and that's what most physical disks use today. However 4kn drives and UFS drives use 4k sector sizes, which would require you to select 4096. For now, select 512. If you have issues during deployment, there is error logging that will tell you if you need to set to 4096 on your device.
 

@@ -320,9 +320,6 @@
                                     <ComboBox x:Name="cmbVMSwitchName" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
                                     <!-- Custom VM Switch Name -->
                                     <TextBox x:Name="txtCustomVMSwitchName" HorizontalAlignment="Stretch" Visibility="Collapsed" Margin="0,0,0,20" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
-                                    <!-- VM Host IP Address -->
-                                    <TextBlock Text="VM Host IP Address" Margin="0,0,0,8" ToolTip="IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this. The script will not auto-detect your IP (depending on your network adapters, it may not find the correct IP)."/>
-                                    <TextBox x:Name="txtVMHostIPAddress" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="IP address of the Hyper-V host for FFU capture."/>
                                     <!-- Disk Size (GB) -->
                                     <TextBlock Text="Disk Size (GB)" Margin="0,0,0,8" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                                     <TextBox x:Name="txtDiskSize" HorizontalAlignment="Stretch" Text="50" Margin="0,0,0,20" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
@@ -823,13 +820,13 @@
                                         <RowDefinition Height="Auto"/>
                                         <!-- Row 3: FFU Capture Location -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 4: Share Name -->
+                                        <!-- Row 4: Threads -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 5: Username -->
+                                        <!-- Row 5: BITS Priority -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 6: Threads -->
+                                        <!-- Row 6: Max USB Drives -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 7: BITS Priority -->
+                                        <!-- Row 7: Build USB Drive -->
                                         <RowDefinition Height="Auto"/>
                                         <!-- Row 8: General Build Options Header -->
                                         <RowDefinition Height="Auto"/>
@@ -874,16 +871,6 @@
                                             <Button x:Name="btnBrowseFFUCaptureLocation" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                         </Grid>
                                     </StackPanel>
-                                    <!-- Row 4: Share Name -->
-                                    <StackPanel Grid.Row="4" Margin="0,0,0,20">
-                                        <TextBlock Text="Share Name" Margin="0,0,0,8" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
-                                        <TextBox x:Name="txtShareName" VerticalAlignment="Center" ToolTip="Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed."/>
-                                    </StackPanel>
-                                    <!-- Row 5: Username -->
-                                    <StackPanel Grid.Row="5" Margin="0,0,0,20">
-                                        <TextBlock Text="Username" Margin="0,0,0,8" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
-                                        <TextBox x:Name="txtUsername" VerticalAlignment="Center" ToolTip="Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account."/>
-                                    </StackPanel>
                                     <!-- Row 6: Threads -->
                                     <StackPanel Grid.Row="6" Margin="0,0,0,20">
                                         <TextBlock Text="Threads" Margin="0,0,0,8" ToolTip="Controls the number of parallel threads used by ForEach-Object -Parallel and sets the value of the -ThrottleLimit parameter. Default is 5. Used in Winget, Application Copy, and driver downloads"/>
@@ -906,7 +893,6 @@
                                             <CheckBox x:Name="chkUpdateADK" Content="Update ADK" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, the script will check for and install/update to the latest Windows ADK and WinPE add-on."/>
                                             <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
                                             <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
-                                            <CheckBox x:Name="chkCreateCaptureMedia" Content="Create Capture Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE capture media for use when InstallApps is set to $true."/>
                                             <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
                                             <CheckBox x:Name="chkInjectUnattend" Content="Inject Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true and Install Apps is enabled, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend into Apps\Unattend\Unattend.xml to be used by sysprep."/>
                                             <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="0" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
@@ -983,7 +969,6 @@
                                     <Expander Grid.Row="11" Header="Post-Build Cleanup" IsExpanded="False" Margin="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                         <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
-                                            <CheckBox x:Name="chkCleanupCaptureISO" Content="Cleanup Capture ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE capture ISO after FFU capture."/>
                                             <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>
                                             <CheckBox x:Name="chkCleanupDrivers" Content="Cleanup Drivers" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove drivers folder after FFU capture."/>
                                             <CheckBox x:Name="chkRemoveFFU" Content="Remove FFU" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove FFU after copying to USB drive."/>

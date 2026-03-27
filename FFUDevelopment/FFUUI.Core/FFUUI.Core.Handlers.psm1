@@ -391,30 +391,13 @@ function Register-EventHandlers {
                 if ([string]::IsNullOrWhiteSpace($localState.Controls.txtCustomVMSwitchName.Text) -and $null -ne $localState.Data.customVMSwitchName) {
                     $localState.Controls.txtCustomVMSwitchName.Text = $localState.Data.customVMSwitchName
                 }
-                if ($null -ne $localState.Data.customVMHostIP -and -not [string]::IsNullOrWhiteSpace($localState.Data.customVMHostIP)) {
-                    $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.customVMHostIP
-                }
             }
             else {
                 $localState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-                if ($null -ne $selectedItem -and $localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
-                    $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.vmSwitchMap[$selectedItem]
-                }
-                else {
-                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found or key null
-                }
             }
         })
 
-    # Persist custom VM switch name/IP when user edits them while 'Other' is selected
-    $State.Controls.txtVMHostIPAddress.Add_LostFocus({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            if ($localState.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
-                $localState.Data.customVMHostIP = $localState.Controls.txtVMHostIPAddress.Text
-            }
-        })
+    # Persist custom VM switch name when user edits it while 'Other' is selected
     $State.Controls.txtCustomVMSwitchName.Add_LostFocus({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

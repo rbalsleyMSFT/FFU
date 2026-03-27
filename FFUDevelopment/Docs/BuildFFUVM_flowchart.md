@@ -85,12 +85,10 @@ graph TD
         subgraph "VM-Based Capture (-InstallApps)"
             direction LR
             BB[Create Hyper-V VM from VHDX];
-            BB --> BC["Create WinPE Capture Media iso"];
-            BC --> BD[Configure network share for capture];
-            BD --> BE["Start VM: Boots to Audit Mode"];
+            BB --> BE["Start VM: Boots to Audit Mode"];
             BE --> BF[Orchestrator runs: Installs apps, syspreps, shuts down];
-            BF --> BG[VM reboots from Capture Media];
-            BG --> BH["CaptureFFU.ps1 runs, saves FFU to share, shuts down"];
+            BF --> BG[Host optimizes and remounts VHDX];
+            BG --> BH["DISM captures FFU directly from host-mounted VHDX"];
         end
 
         subgraph "Direct VHDX Capture"

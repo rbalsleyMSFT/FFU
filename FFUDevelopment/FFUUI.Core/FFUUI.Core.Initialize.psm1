@@ -206,20 +206,16 @@ function Initialize-UIControls {
     $State.Controls.pbOverallProgress = $window.FindName('progressBar')
     $State.Controls.txtOverallStatus = $window.FindName('txtStatus')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
-    $State.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')
     $State.Controls.txtCustomVMSwitchName = $window.FindName('txtCustomVMSwitchName')
     $State.Controls.txtFFUDevPath = $window.FindName('txtFFUDevPath')
     $State.Controls.txtCustomFFUNameTemplate = $window.FindName('txtCustomFFUNameTemplate')
     $State.Controls.txtFFUCaptureLocation = $window.FindName('txtFFUCaptureLocation')
-    $State.Controls.txtShareName = $window.FindName('txtShareName')
-    $State.Controls.txtUsername = $window.FindName('txtUsername')
     $State.Controls.txtThreads = $window.FindName('txtThreads')
     $State.Controls.cmbBitsPriority = $window.FindName('cmbBitsPriority')
     $State.Controls.txtMaxUSBDrives = $window.FindName('txtMaxUSBDrives')
     $State.Controls.chkCompactOS = $window.FindName('chkCompactOS')
     $State.Controls.chkOptimize = $window.FindName('chkOptimize')
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
-    $State.Controls.chkCreateCaptureMedia = $window.FindName('chkCreateCaptureMedia')
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
     $State.Controls.chkInjectUnattend = $window.FindName('chkInjectUnattend')
     $State.Controls.chkVerbose = $window.FindName('chkVerbose')
@@ -227,7 +223,6 @@ function Initialize-UIControls {
     $State.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
     $State.Controls.chkCopyPPKG = $window.FindName('chkCopyPPKG')
     $State.Controls.chkCleanupAppsISO = $window.FindName('chkCleanupAppsISO')
-    $State.Controls.chkCleanupCaptureISO = $window.FindName('chkCleanupCaptureISO')
     $State.Controls.chkCleanupDeployISO = $window.FindName('chkCleanupDeployISO')
     $State.Controls.chkCleanupDrivers = $window.FindName('chkCleanupDrivers')
     $State.Controls.chkRemoveFFU = $window.FindName('chkRemoveFFU')
@@ -351,18 +346,11 @@ function Initialize-VMSwitchData {
     if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
         $State.Controls.cmbVMSwitchName.SelectedIndex = 0
         $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
-        if ($null -ne $firstSwitch -and $State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
-        }
-        else {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found or key null
-        }
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
     }
     else {
         $State.Controls.cmbVMSwitchName.SelectedItem = 'Other'
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-        $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default
     }
 }
 
@@ -378,8 +366,6 @@ function Initialize-UIDefaults {
     $State.Controls.txtFFUDevPath.Text = $State.FFUDevelopmentPath 
     $State.Controls.txtCustomFFUNameTemplate.Text = $State.Defaults.generalDefaults.CustomFFUNameTemplate
     $State.Controls.txtFFUCaptureLocation.Text = $State.Defaults.generalDefaults.FFUCaptureLocation
-    $State.Controls.txtShareName.Text = $State.Defaults.generalDefaults.ShareName
-    $State.Controls.txtUsername.Text = $State.Defaults.generalDefaults.Username
     $State.Controls.txtThreads.Text = $State.Defaults.generalDefaults.Threads
     $State.Controls.cmbBitsPriority.SelectedItem = $State.Defaults.generalDefaults.BitsPriority
     $State.Controls.txtMaxUSBDrives.Text = $State.Defaults.generalDefaults.MaxUSBDrives
@@ -389,7 +375,6 @@ function Initialize-UIDefaults {
     $State.Controls.chkOptimize.IsChecked = $State.Defaults.generalDefaults.Optimize
     $State.Controls.chkAllowVHDXCaching.IsChecked = $State.Defaults.generalDefaults.AllowVHDXCaching
     $State.Controls.chkInjectUnattend.IsChecked = $State.Defaults.generalDefaults.InjectUnattend
-    $State.Controls.chkCreateCaptureMedia.IsChecked = $State.Defaults.generalDefaults.CreateCaptureMedia
     $State.Controls.chkCreateDeploymentMedia.IsChecked = $State.Defaults.generalDefaults.CreateDeploymentMedia
     $State.Controls.chkAllowExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.AllowExternalHardDiskMedia
     $State.Controls.chkPromptExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.PromptExternalHardDiskMedia
@@ -398,7 +383,6 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyUnattend.IsChecked = $State.Defaults.generalDefaults.CopyUnattend
     $State.Controls.chkCopyPPKG.IsChecked = $State.Defaults.generalDefaults.CopyPPKG
     $State.Controls.chkCleanupAppsISO.IsChecked = $State.Defaults.generalDefaults.CleanupAppsISO
-    $State.Controls.chkCleanupCaptureISO.IsChecked = $State.Defaults.generalDefaults.CleanupCaptureISO
     $State.Controls.chkCleanupDeployISO.IsChecked = $State.Defaults.generalDefaults.CleanupDeployISO
     $State.Controls.chkCleanupDrivers.IsChecked = $State.Defaults.generalDefaults.CleanupDrivers
     $State.Controls.chkRemoveFFU.IsChecked = $State.Defaults.generalDefaults.RemoveFFU

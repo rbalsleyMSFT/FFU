@@ -9,7 +9,7 @@ parent: Helper Scripts
 ---
 # Create PE Media
 
-`Create-PEMedia.ps1` is a standalone helper script that creates WinPE capture or deployment ISO files outside the main build flow.
+`Create-PEMedia.ps1` is a standalone helper script that creates WinPE deployment ISO files outside the main build flow.
 
 This is useful when admins need to quickly generate a deploy ISO for a share (or local staging folder) that technicians will use with `USBImagingToolCreator.ps1`.
 
@@ -40,25 +40,19 @@ Default output file:
 Create deploy ISO for x64:
 
 ```powershell
-.\Create-PEMedia.ps1 -Deploy $true -WindowsArch 'x64'
+.\Create-PEMedia.ps1 -WindowsArch 'x64'
 ```
 
 Create deploy ISO for ARM64:
 
 ```powershell
-.\Create-PEMedia.ps1 -Deploy $true -WindowsArch 'arm64' -DeployISO "$PSScriptRoot\WinPE_FFU_Deploy_arm64.iso"
-```
-
-Create capture ISO only:
-
-```powershell
-.\Create-PEMedia.ps1 -Capture $true -Deploy $false
+.\Create-PEMedia.ps1 -WindowsArch 'arm64' -DeployISO "$PSScriptRoot\WinPE_FFU_Deploy_arm64.iso"
 ```
 
 Create deploy ISO and include PE drivers from `.\PEDrivers`:
 
 ```powershell
-.\Create-PEMedia.ps1 -Deploy $true -CopyPEDrivers $true
+.\Create-PEMedia.ps1 -CopyPEDrivers $true
 ```
 
 ## Stage output for USB imaging

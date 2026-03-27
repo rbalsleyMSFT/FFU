@@ -27,7 +27,6 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -BuildUSBDrive | bool | Build USB Drive | When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. |
 | -Cleanup | switch | Monitor cancel build action (no direct control) | Switch to run cleanup-only mode. When specified, the script performs cleanup and exits without starting a new build. |
 | -CleanupAppsISO | bool | Cleanup Apps ISO | When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true. |
-| -CleanupCaptureISO | bool | Cleanup Capture ISO | When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true. |
 | -CleanupCurrentRunDownloads | bool | Monitor cancel prompt option (no direct control) | When set to $true, cleanup mode will remove downloads created during the current run and restore backed up run JSON files. Default is $false. |
 | -CleanupDeployISO | bool | Cleanup Deploy ISO | When set to $true, will remove the WinPE deployment ISO after the FFU has been captured. Default is $true. |
 | -CleanupDrivers | bool | Cleanup Drivers | When set to $true, will remove the drivers folder after the FFU has been captured. Default is $true. |
@@ -40,7 +39,6 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -CopyPEDrivers | bool | Copy PE Drivers | When set to $true, enables adding WinPE drivers. By default copies drivers from $FFUDevelopmentPath\PEDrivers to the WinPE deployment media unless -UseDriversAsPEDrivers is also $true. |
 | -CopyPPKG | bool | Copy Provisioning Package | When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false. |
 | -CopyUnattend | bool | Copy Unattend.xml | When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false. |
-| -CreateCaptureMedia | bool | Create Capture Media | When set to $true, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM, and the boot order will be changed to automate the capture of the FFU. |
 | -CreateDeploymentMedia | bool | Create Deployment Media | When set to $true, this will create WinPE deployment media for use when deploying to a physical device. |
 | -CustomFFUNameTemplate | string | Custom FFU Name Template | Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}. |
 | -Disksize | uint64 | Disk Size (GB) | Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk. |
@@ -73,7 +71,6 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -RemoveApps | bool | Remove Apps Folder Content | When set to $true, will remove the application content in the Apps folder after the FFU has been captured. Default is $true. |
 | -RemoveFFU | bool | Remove FFU | When set to $true, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is $false. |
 | -RemoveUpdates | bool | Remove Downloaded Update Files | When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive, and .NET files downloaded. Default is $true. |
-| -ShareName | string | Share Name | Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed. |
 | -Threads | int | Threads | Controls the throttle applied to parallel tasks inside the script. Default is 5, matching the UI Threads field, and applies to driver downloads invoked through Invoke-ParallelProcessing. |
 | -UpdateADK | bool | Update ADK | When set to $true, the script will check for and install the latest Windows ADK and WinPE add-on if they are not already installed or up-to-date. Default is $true. |
 | -UpdateEdge | bool | Update Edge | When set to $true, will download and install the latest Microsoft Edge. Default is $false. |
@@ -88,10 +85,8 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -UseDriversAsPEDrivers | bool | Use Drivers Folder as PE Drivers Source | When set to $true (and -CopyPEDrivers is also $true), bypasses the contents of $FFUDevelopmentPath\PEDrivers and instead builds the WinPE driver set dynamically from the $DriversFolder path, copying only the required WinPE drivers. Has no effect if -CopyPEDrivers is not specified. Default is $false. |
 | -UserAgent | string | CLI only (no UI control) | User agent string to use when downloading files. |
 | -UserAppListPath | string | Application Path (derived UserAppList.json) | Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json. |
-| -Username | string | Username | Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account. |
-| -VMHostIPAddress | string | VM Host IP Address | IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this, or use the UI to auto-detect. |
 | -VMLocation | string | VM Location | Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to. |
-| -VMSwitchName | string | VM Switch Name + Custom VM Switch Name (when Other selected) | Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set to capture the FFU from the VM. |
+| -VMSwitchName | string | VM Switch Name + Custom VM Switch Name (when Other selected) | Name of the Hyper-V virtual switch. Provide it when the VM needs network connectivity during provisioning. |
 | -WindowsArch | string | Windows Architecture | String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'. |
 | -WindowsLang | string | Windows Language | String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'. |
 | -WindowsRelease | int | Windows Release | Integer value of 10, 11, 2016, 2019, 2021, 2022, 2024, or 2025. This is used to identify which Windows client/LTSC/server release to use. Default is 11. |

@@ -15,11 +15,7 @@ parent: UI Overview
 
 Drop down of detected VM Switches. There's also an **Other** option which allows you to specify a VM Switch Name. The other option is useful in scenarios where the machine you're running the UI from isn't going to be the machine where you plan to build the FFU from.
 
-## VM Host IP Address
-
-IP address of the selected Hyper-V switch that will be used for FFU capture. The UI will auto-detected this based on the VM Switch that was selected.
-
-If `$InstallApps` is set to `$true`, this parameter must be configured.
+This setting is now optional for FFU capture itself. VM-based builds still capture from the host-side VHDX after the VM shuts down, so you only need a switch when the VM requires network connectivity during provisioning.
 
 ## Disk Size (GB)
 
