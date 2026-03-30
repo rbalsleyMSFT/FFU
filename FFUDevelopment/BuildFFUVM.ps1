@@ -3680,88 +3680,97 @@ function Get-ShortenedWindowsSKU {
     return $shortenedWindowsSKU
 
 }
+function Get-FFUCaptureNamingInfo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ShortenedWindowsSKU,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InstallationType,
+
+        [bool]$IsWindows10LtscClient = $false
+    )
+
+    $windowsReleaseToken = [string]$WindowsRelease
+    if ($InstallationType -eq 'Client') {
+        if (($WindowsRelease -eq 10) -or $IsWindows10LtscClient) {
+            $windowsReleaseToken = 'Win10'
+        }
+        else {
+            $windowsReleaseToken = 'Win11'
+        }
+    }
+
+    $defaultFilePrefix = if ($InstallationType -eq 'Client') { $windowsReleaseToken } else { "Server$WindowsRelease" }
+    $buildDate = Get-Date -uformat %b%Y
+
+    return [pscustomobject]@{
+        WindowsReleaseToken = $windowsReleaseToken
+        WindowsVersion      = $WindowsVersion
+        BuildDate           = $buildDate
+        DefaultFileName     = "$defaultFilePrefix`_$WindowsVersion`_$ShortenedWindowsSKU`_$buildDate.ffu"
+        CaptureName         = "$windowsReleaseToken$WindowsVersion$ShortenedWindowsSKU"
+    }
+}
+
 function New-FFUFileName {
 
-    # $Winverinfo.name will be either Win10 or Win11 for client OSes
-    # Since WindowsRelease now includes dates, it breaks default name template in the config file
-    # This should keep in line with the naming that's done via VM Captures
-    if ($installationType -eq 'Client' -and $winverinfo) {
-        $WindowsRelease = $winverinfo.name
-    }
-        
-    $BuildDate = Get-Date -uformat %b%Y
+    $ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
+    $resolvedFFUNameTemplate = $CustomFFUNameTemplate
+
     # Replace '{WindowsRelease}' with the Windows release (e.g., 10, 11, 2016, 2019, 2022, 2025)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsRelease}', $WindowsRelease
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsRelease}', $ffuCaptureNamingInfo.WindowsReleaseToken
     # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsVersion}', $WindowsVersion
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsVersion}', $ffuCaptureNamingInfo.WindowsVersion
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
     # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{BuildDate}', $BuildDate
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{BuildDate}', $ffuCaptureNamingInfo.BuildDate
     # Replace '{yyyy}' with the current year in 4-digit format (e.g., 2023)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{yyyy}', (Get-Date -UFormat '%Y')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{yyyy}', (Get-Date -UFormat '%Y')
     # Replace '{MM}' with the current month in 2-digit format (e.g., 01 for January)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{MM}', (Get-Date -UFormat '%m')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{MM}', (Get-Date -UFormat '%m')
     # Replace '{dd}' with the current day of the month in 2-digit format (e.g., 05)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{dd}', (Get-Date -UFormat '%d')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{dd}', (Get-Date -UFormat '%d')
     # Replace '{HH}' with the current hour in 24-hour format (e.g., 14 for 2 PM)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{HH}', (Get-Date -UFormat '%H')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{HH}', (Get-Date -UFormat '%H')
     # Replace '{hh}' with the current hour in 12-hour format (e.g., 02 for 2 PM)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{hh}', (Get-Date -UFormat '%I')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{hh}', (Get-Date -UFormat '%I')
     # Replace '{mm}' with the current minute in 2-digit format (e.g., 09)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{mm}', (Get-Date -UFormat '%M')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{mm}', (Get-Date -UFormat '%M')
     # Replace '{tt}' with the current AM/PM designator (e.g., AM or PM)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{tt}', (Get-Date -UFormat '%p')
-    if ($CustomFFUNameTemplate -notlike '*.ffu') {
-        $CustomFFUNameTemplate += '.ffu'
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{tt}', (Get-Date -UFormat '%p')
+    if ($resolvedFFUNameTemplate -notlike '*.ffu') {
+        $resolvedFFUNameTemplate += '.ffu'
     }
-    return $CustomFFUNameTemplate
+    return $resolvedFFUNameTemplate
 }
 
 function New-FFU {
     $captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath
     $captureDisk = $captureContext.Disk
-    $osPartitionDriveLetter = $captureContext.OsPartitionDriveLetter
-    $WindowsPartition = $captureContext.WindowsPartition
+    $ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
 
     try {
         Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
 
-        if ($InstallApps -or (-not $AllowVHDXCaching)) {
-            # Resolve live Windows metadata from the mounted VHDX when the image was customized in a VM.
-            $winverinfo = Get-WindowsVersionInfo
-            WriteLog 'Creating FFU File Name'
-            if ($CustomFFUNameTemplate) {
-                $FFUFileName = New-FFUFileName
-            }
-            else {
-                $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
-            }
-            WriteLog "FFU file name: $FFUFileName"
-            $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-            WriteLog 'Capturing FFU from mounted VHDX on host'
-            Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($captureDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
+        WriteLog 'Creating FFU File Name'
+        if ($CustomFFUNameTemplate) {
+            $FFUFileName = New-FFUFileName
         }
         else {
-            # Use cached Windows metadata only when the VHDX contents were reused without VM customization.
-            WriteLog 'Creating FFU File Name'
-            if ($CustomFFUNameTemplate) {
-                $FFUFileName = New-FFUFileName
-            }
-            else {
-                $BuildDate = Get-Date -UFormat %b%Y
-                if ($installationType -eq 'Client') {
-                    $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
-                }
-                else {
-                    $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
-                }
-            }
-            WriteLog "FFU file name: $FFUFileName"
-            $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-            WriteLog 'Capturing FFU from mounted VHDX on host'
-            Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($captureDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
+            $FFUFileName = $ffuCaptureNamingInfo.DefaultFileName
         }
+        WriteLog "FFU file name: $FFUFileName"
+        $FFUFile = "$FFUCaptureLocation\$FFUFileName"
+        WriteLog 'Capturing FFU from mounted VHDX on host'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($captureDisk.DiskNumber) /Name:$($ffuCaptureNamingInfo.CaptureName) /Compress:Default" | Out-Null
 
         WriteLog 'FFU Capture complete'
     }
@@ -3872,65 +3881,6 @@ function Remove-FFUVM {
     WriteLog 'Remove unused mountpoints'
     Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
-}
-Function Get-WindowsVersionInfo {
-    #This sleep prevents CBS/CSI corruption which causes issues with Windows update after deployment. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for. This seems to affect VHDX-only captures, not VM captures. 
-    WriteLog 'Sleep 60 seconds before opening registry to grab Windows version info '
-    Start-sleep 60
-    WriteLog "Getting Windows Version info"
-    #Load Registry Hive
-    $Software = "$osPartitionDriveLetter`:\Windows\System32\config\software"
-    WriteLog "Loading Software registry hive: $Software"
-    Invoke-Process reg "load HKLM\FFU $Software" | Out-Null
-
-    #Find Windows version values
-    # $WindowsSKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
-    # WriteLog "Windows SKU: $WindowsSKU"
-    [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
-    WriteLog "Windows Build: $CurrentBuild"
-    #DisplayVersion does not exist for 1607 builds (RS1 and Server 2016) and Server 2019
-    if ($CurrentBuild -notin (14393, 17763)) {
-        $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
-        WriteLog "Windows Version: $DisplayVersion"
-    }
-    # For Windows 10 LTSC 2019, set DisplayVersion to 2019
-    if ($CurrentBuild -eq 17763 -and $InstallationType -eq "Client") {
-        $DisplayVersion = '2019'
-    }
-    
-    $BuildDate = Get-Date -uformat %b%Y
-
-    if ($shortenedWindowsSKU -notmatch "Srv") {
-        if ($CurrentBuild -ge 22000) {
-            $Name = 'Win11'
-        }
-        else {
-            $Name = 'Win10'
-        }
-    } 
-    else {
-        $Name = switch ($CurrentBuild) {
-            26100 { '2025' }
-            20348 { '2022' }
-            17763 { '2019' }
-            14393 { '2016' }
-            Default { $DisplayVersion }
-        }
-    }
-    
-    WriteLog "Unloading registry"
-    Invoke-Process reg "unload HKLM\FFU" | Out-Null
-    #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
-    WriteLog 'Sleep 60 seconds to allow registry to completely unload'
-    Start-sleep 60
-
-    return @{
-
-        DisplayVersion = $DisplayVersion
-        BuildDate      = $buildDate
-        Name           = $Name
-        # SKU            = $WindowsSKU
-    }
 }
 Function Get-USBDrive {
     # Log the start of the USB drive check
