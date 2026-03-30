@@ -140,6 +140,7 @@ function Get-GeneralDefaults {
         RemoveUpdates                  = $false 
         RemoveDownloadedESD            = $true
         # Hyper-V Settings Defaults
+        EnableVMNetworking             = $false
         DiskSizeGB                     = 50
         MemoryGB                       = 4
         Processors                     = 4

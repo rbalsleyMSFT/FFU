@@ -11,11 +11,17 @@ parent: UI Overview
 
 ![1759533067934](image/ui_overview/1759533067934.png)
 
+## Enable VM Networking (Experimental)
+
+Controls whether the build VM is connected to a Hyper-V switch during provisioning.
+
+Leave this off for the default offline build path. Turn it on only if you want to test internet-connected builds and understand there may be Sysprep or capture issues.
+
 ## VM Switch Name
 
 Drop down of detected VM Switches. There's also an **Other** option which allows you to specify a VM Switch Name. The other option is useful in scenarios where the machine you're running the UI from isn't going to be the machine where you plan to build the FFU from.
 
-This setting is now optional for FFU capture itself. VM-based builds still capture from the host-side VHDX after the VM shuts down, so you only need a switch when the VM requires network connectivity during provisioning.
+This setting is only used when **Enable VM Networking (Experimental)** is turned on. VM-based builds still capture from the host-side VHDX after the VM shuts down, so you only need a switch when the VM requires network connectivity during provisioning.
 
 ## Disk Size (GB)
 

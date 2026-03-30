@@ -205,6 +205,8 @@ function Initialize-UIControls {
     $State.Controls.txtStatus = $window.FindName('txtStatus')
     $State.Controls.pbOverallProgress = $window.FindName('progressBar')
     $State.Controls.txtOverallStatus = $window.FindName('txtStatus')
+    $State.Controls.chkEnableVMNetworking = $window.FindName('chkEnableVMNetworking')
+    $State.Controls.spVMNetworkingSettings = $window.FindName('spVMNetworkingSettings')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
     $State.Controls.txtCustomVMSwitchName = $window.FindName('txtCustomVMSwitchName')
     $State.Controls.txtFFUDevPath = $window.FindName('txtFFUDevPath')
@@ -345,7 +347,6 @@ function Initialize-VMSwitchData {
     $State.Controls.cmbVMSwitchName.Items.Add('Other') | Out-Null
     if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
         $State.Controls.cmbVMSwitchName.SelectedIndex = 0
-        $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
     }
     else {
@@ -398,7 +399,9 @@ function Initialize-UIDefaults {
     Update-BitsPrioritySetting -State $State
 
     # Hyper-V Settings defaults from General Defaults
+    $State.Controls.chkEnableVMNetworking.IsChecked = $State.Defaults.generalDefaults.EnableVMNetworking
     Initialize-VMSwitchData -State $State
+    $State.Controls.spVMNetworkingSettings.IsEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
     $State.Controls.txtDiskSize.Text = $State.Defaults.generalDefaults.DiskSizeGB
     $State.Controls.txtMemory.Text = $State.Defaults.generalDefaults.MemoryGB
     $State.Controls.txtProcessors.Text = $State.Defaults.generalDefaults.Processors

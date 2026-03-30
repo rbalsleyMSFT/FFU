@@ -44,6 +44,7 @@ function Get-UIConfig {
         DownloadDrivers                = $State.Controls.chkDownloadDrivers.IsChecked
         DriversFolder                  = $State.Controls.txtDriversFolder.Text
         DriversJsonPath                = $State.Controls.txtDriversJsonPath.Text
+        EnableVMNetworking             = $State.Controls.chkEnableVMNetworking.IsChecked
         FFUCaptureLocation             = $State.Controls.txtFFUCaptureLocation.Text
         FFUDevelopmentPath             = $State.Controls.txtFFUDevPath.Text
         FFUPrefix                      = $State.Controls.txtVMNamePrefix.Text
@@ -466,6 +467,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkRemoveDownloadedESD' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveDownloadedESD' -State $State
 
     # Hyper-V Settings
+    Set-UIValue -ControlName 'chkEnableVMNetworking' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'EnableVMNetworking' -State $State
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State
     Set-UIValue -ControlName 'txtMemory' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Memory' -TransformValue { param($val) $val / 1GB } -State $State
@@ -473,6 +475,10 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtVMLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMLocation' -State $State
     Set-UIValue -ControlName 'txtVMNamePrefix' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUPrefix' -State $State
     Set-UIValue -ControlName 'cmbLogicalSectorSize' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'LogicalSectorSizeBytes' -TransformValue { param($val) $val.ToString() } -State $State
+    $State.Controls.spVMNetworkingSettings.IsEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
+    if (-not ($true -eq $State.Controls.chkEnableVMNetworking.IsChecked)) {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+    }
 
     # Windows Settings
     Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ISOPath' -State $State

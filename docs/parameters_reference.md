@@ -44,6 +44,7 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -Disksize | uint64 | Disk Size (GB) | Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk. |
 | -DriversFolder | string | Drivers Folder | Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers. |
 | -DriversJsonPath | string | Drivers.json Path | Path to a JSON file that specifies which drivers to download. |
+| -EnableVMNetworking | bool | Enable VM Networking (Experimental) | When set to $true, connects the build VM to the selected Hyper-V switch during provisioning. Default is $false because internet-connected Sysprep is experimental. |
 | -ExportConfigFile | string | Save Config File | Path to a JSON file to export the parameters used for the script. |
 | -FFUCaptureLocation | string | FFU Capture Location | Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU. |
 | -FFUDevelopmentPath | string | FFU Development Path | Path to the FFU development folder. Default is $PSScriptRoot. |
@@ -86,7 +87,7 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -UserAgent | string | CLI only (no UI control) | User agent string to use when downloading files. |
 | -UserAppListPath | string | Application Path (derived UserAppList.json) | Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json. |
 | -VMLocation | string | VM Location | Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to. |
-| -VMSwitchName | string | VM Switch Name + Custom VM Switch Name (when Other selected) | Name of the Hyper-V virtual switch. Provide it when the VM needs network connectivity during provisioning. |
+| -VMSwitchName | string | VM Switch Name + Custom VM Switch Name (when Other selected) | Name of the Hyper-V virtual switch used when -EnableVMNetworking is set to $true. |
 | -WindowsArch | string | Windows Architecture | String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'. |
 | -WindowsLang | string | Windows Language | String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'. |
 | -WindowsRelease | int | Windows Release | Integer value of 10, 11, 2016, 2019, 2021, 2022, 2024, or 2025. This is used to identify which Windows client/LTSC/server release to use. Default is 11. |

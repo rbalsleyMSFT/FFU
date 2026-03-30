@@ -5,6 +5,28 @@
     This module is dedicated to managing user interactions within the FFU Builder UI. It contains the Register-EventHandlers function, which connects UI controls defined in the XAML to their corresponding actions in the PowerShell backend. This includes handling button clicks, text input validation, checkbox state changes, and list view interactions across all tabs, effectively wiring up the application's front-end to its core logic.
 #>
 
+function Update-VMNetworkingControls {
+    param([PSCustomObject]$State)
+
+    $isVmNetworkingEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
+    $State.Controls.spVMNetworkingSettings.IsEnabled = $isVmNetworkingEnabled
+
+    if (-not $isVmNetworkingEnabled) {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+        return
+    }
+
+    if ($State.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
+        if ([string]::IsNullOrWhiteSpace($State.Controls.txtCustomVMSwitchName.Text) -and $null -ne $State.Data.customVMSwitchName) {
+            $State.Controls.txtCustomVMSwitchName.Text = $State.Data.customVMSwitchName
+        }
+    }
+    else {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+    }
+}
+
 function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
@@ -379,22 +401,27 @@ function Register-EventHandlers {
         })
 
     # Hyper-V tab event handlers
+    $State.Controls.chkEnableVMNetworking.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Update-VMNetworkingControls -State $localState
+        })
+
+    $State.Controls.chkEnableVMNetworking.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Update-VMNetworkingControls -State $localState
+        })
+
     $State.Controls.cmbVMSwitchName.Add_SelectionChanged({
             param($eventSource, $selectionChangedEventArgs)
             # The state object is available via the parent window's Tag property
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $selectedItem = $eventSource.SelectedItem
-            if ($selectedItem -eq 'Other') {
-                $localState.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-                if ([string]::IsNullOrWhiteSpace($localState.Controls.txtCustomVMSwitchName.Text) -and $null -ne $localState.Data.customVMSwitchName) {
-                    $localState.Controls.txtCustomVMSwitchName.Text = $localState.Data.customVMSwitchName
-                }
-            }
-            else {
-                $localState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-            }
+            Update-VMNetworkingControls -State $localState
         })
 
     # Persist custom VM switch name when user edits it while 'Other' is selected

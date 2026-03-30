@@ -315,11 +315,15 @@
                             <!-- PAGE: Hyper-V Settings -->
                             <ScrollViewer x:Name="pageHyperV" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                                 <StackPanel Margin="16,0,16,16">
-                                    <!-- VM Switch Name -->
-                                    <TextBlock Text="VM Switch Name" Margin="0,0,0,8" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
-                                    <ComboBox x:Name="cmbVMSwitchName" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is '*external*', but you will likely need to change this."/>
-                                    <!-- Custom VM Switch Name -->
-                                    <TextBox x:Name="txtCustomVMSwitchName" HorizontalAlignment="Stretch" Visibility="Collapsed" Margin="0,0,0,20" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
+                                    <!-- Enable VM Networking -->
+                                    <CheckBox x:Name="chkEnableVMNetworking" Content="Enable VM Networking (Experimental)" Margin="0,0,0,12" ToolTip="Connect the build VM to the selected Hyper-V switch during provisioning. Leave this off for the default offline build path because internet-connected Sysprep is still experimental."/>
+                                    <StackPanel x:Name="spVMNetworkingSettings" Margin="0,0,0,20" IsEnabled="False">
+                                        <!-- VM Switch Name -->
+                                        <TextBlock Text="VM Switch Name" Margin="0,0,0,8" ToolTip="Select or enter the Hyper-V virtual switch to use when experimental VM networking is enabled."/>
+                                        <ComboBox x:Name="cmbVMSwitchName" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Select or enter the Hyper-V virtual switch to use when experimental VM networking is enabled."/>
+                                        <!-- Custom VM Switch Name -->
+                                        <TextBox x:Name="txtCustomVMSwitchName" HorizontalAlignment="Stretch" Visibility="Collapsed" Margin="0,0,0,0" ToolTip="Enter your custom VM Switch Name if 'Other' is selected."/>
+                                    </StackPanel>
                                     <!-- Disk Size (GB) -->
                                     <TextBlock Text="Disk Size (GB)" Margin="0,0,0,8" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                                     <TextBox x:Name="txtDiskSize" HorizontalAlignment="Stretch" Text="50" Margin="0,0,0,20" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>

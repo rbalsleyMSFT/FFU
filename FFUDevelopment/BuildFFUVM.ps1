@@ -90,6 +90,9 @@ Path to a JSON file that specifies which drivers to download.
 .PARAMETER ExportConfigFile
 Path to a JSON file to export the parameters used for the script.
 
+.PARAMETER EnableVMNetworking
+When set to $true, connects the build VM to the Hyper-V virtual switch named in -VMSwitchName during provisioning. Default is $false because internet-connected Sysprep is experimental.
+
 .PARAMETER FFUCaptureLocation
 Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU.
 
@@ -223,7 +226,7 @@ Path to a JSON file containing a list of user-defined applications to install. D
 Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.
 
 .PARAMETER VMSwitchName
-Name of the Hyper-V virtual switch. Optional when building with InstallApps. Provide it only if the VM needs network connectivity during provisioning.
+Name of the Hyper-V virtual switch used when -EnableVMNetworking is set to $true. Provide it only if the VM needs network connectivity during provisioning.
 
 .PARAMETER WindowsArch
 String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
@@ -317,6 +320,7 @@ param(
     [uint64]$Memory = 4GB,
     [uint64]$Disksize = 50GB,
     [int]$Processors = 4,
+    [bool]$EnableVMNetworking,
     [string]$VMSwitchName,
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
@@ -499,6 +503,13 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
             Set-Variable -Name $key -Value $value -Scope 0
         }
     }
+}
+
+$vmSwitchWasExplicitlyBound = $PSBoundParameters.ContainsKey('VMSwitchName')
+$enableVmNetworkingWasExplicitlyBound = $PSBoundParameters.ContainsKey('EnableVMNetworking')
+if (-not $EnableVMNetworking -and $vmSwitchWasExplicitlyBound -and -not $enableVmNetworkingWasExplicitlyBound) {
+    $EnableVMNetworking = $true
+    WriteLog 'EnableVMNetworking not explicitly set. Enabling VM networking because -VMSwitchName was supplied on the command line.'
 }
 
 # Validate that the selected Windows SKU is compatible with the chosen Windows release and ensure an ISO is provided for unsupported releases
@@ -2898,6 +2909,27 @@ function New-FFUVM {
     #Create new Gen2 VM
     $VM = New-VM -Name $VMName -Path $VMPath -MemoryStartupBytes $memory -VHDPath $VHDXPath -Generation 2
     Set-VMProcessor -VMName $VMName -Count $processors
+
+    # Connect the VM to the requested switch only when the experimental networking flag is enabled.
+    if ($EnableVMNetworking) {
+        $primaryVmNetworkAdapter = Get-VMNetworkAdapter -VMName $VMName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $primaryVmNetworkAdapter) {
+            if ($primaryVmNetworkAdapter.SwitchName -eq $VMSwitchName) {
+                WriteLog "VM '$VMName' is already connected to Hyper-V switch '$VMSwitchName'."
+            }
+            else {
+                Connect-VMNetworkAdapter -VMNetworkAdapter $primaryVmNetworkAdapter -SwitchName $VMSwitchName -ErrorAction Stop
+                WriteLog "Connected VM '$VMName' to Hyper-V switch '$VMSwitchName'."
+            }
+        }
+        else {
+            Add-VMNetworkAdapter -VMName $VMName -SwitchName $VMSwitchName -Name 'FFUNetworkAdapter' -ErrorAction Stop | Out-Null
+            WriteLog "Added VM network adapter for '$VMName' on Hyper-V switch '$VMSwitchName'."
+        }
+    }
+    else {
+        WriteLog "VM networking is disabled for '$VMName'."
+    }
 
     #Mount AppsISO
     Add-VMDvdDrive -VMName $VMName -Path $AppsISO
@@ -5500,14 +5532,26 @@ if ($CopyUnattend) {
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
 }
-if ($VMSwitchName) {
-    WriteLog "Validating -VMSwitchName $VMSwitchName"
-    #Check $VMSwitchName by using Get-VMSwitch
-    $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
-    if (-not $VMSwitch) {
-        throw "-VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
+if ($EnableVMNetworking) {
+    if ($InstallApps -eq $false) {
+        WriteLog 'EnableVMNetworking is set to true, but InstallApps is false. No VM will be created, so VM networking will be ignored.'
     }
-    WriteLog '-VMSwitchName validation complete'
+    else {
+        if ([string]::IsNullOrWhiteSpace($VMSwitchName)) {
+            throw '-EnableVMNetworking requires -VMSwitchName. Select or enter a Hyper-V switch and try again.'
+        }
+
+        WriteLog "Experimental VM networking enabled. Validating -VMSwitchName $VMSwitchName"
+        #Check $VMSwitchName by using Get-VMSwitch
+        $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
+        if (-not $VMSwitch) {
+            throw "-VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
+        }
+        WriteLog '-EnableVMNetworking validation complete'
+    }
+}
+elseif ($VMSwitchName) {
+    WriteLog "VM networking is disabled. Stored -VMSwitchName $VMSwitchName will not be used unless -EnableVMNetworking is `$true."
 }
 
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {

@@ -425,6 +425,13 @@ $script:uiState.Controls.btnRun.Add_Click({
                 return
             }
 
+            if ($config.EnableVMNetworking -and $config.InstallApps -and [string]::IsNullOrWhiteSpace([string]$config.VMSwitchName)) {
+                [System.Windows.MessageBox]::Show("Select or enter a VM Switch Name before enabling VM networking.", "VM Switch Required", "OK", "Warning") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: VM switch required for experimental networking."
+                return
+            }
+
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
             # Sort top-level keys alphabetically for consistent output
             $sortedConfig = [ordered]@{}
