@@ -587,6 +587,55 @@ public static extern uint GetPrivateProfileSection(
 '@
 Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru | Out-Null
 
+function Get-WindowsTargetRuntimeState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsSKU,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CurrentWindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$UpdateLatestCU
+    )
+
+    $localInstallationType = if ($WindowsSKU -like 'Standard*' -or $WindowsSKU -like 'Datacenter*') { 'Server' } else { 'Client' }
+    $localWindowsVersion = $CurrentWindowsVersion
+    $localIsLTSC = $false
+
+    if ($localInstallationType -eq 'Server') {
+        switch ($WindowsRelease) {
+            2016 { $localWindowsVersion = '1607' }
+            2019 { $localWindowsVersion = '1809' }
+            2022 { $localWindowsVersion = '21H2' }
+            2025 { $localWindowsVersion = '24H2' }
+        }
+    }
+
+    if ($WindowsSKU -like '*LTS*') {
+        switch ($WindowsRelease) {
+            2016 { $localWindowsVersion = '1607' }
+            2019 { $localWindowsVersion = '1809' }
+            2021 { $localWindowsVersion = '21H2' }
+            2024 { $localWindowsVersion = '24H2' }
+        }
+        $localIsLTSC = $true
+    }
+
+    $localIsWindows10LtscClient = ($localInstallationType -eq 'Client') -and ($WindowsRelease -in 2016, 2019, 2021) -and $localIsLTSC
+
+    return [pscustomobject]@{
+        InstallationType      = $localInstallationType
+        WindowsVersion        = $localWindowsVersion
+        IsLTSC                = $localIsLTSC
+        IsWindows10LtscClient = $localIsWindows10LtscClient
+        InstallLatestCuInVm   = ($UpdateLatestCU -and $localIsWindows10LtscClient)
+    }
+}
+
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-CimInstance -ClassName win32_OperatingSystem
 $isServer = $osInfo.Caption -match 'server'
@@ -648,31 +697,13 @@ if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
 if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
-if (-not $installationType) { $installationType = if ($WindowsSKU -like "Standard*" -or $WindowsSKU -like "Datacenter*") { 'Server' } else { 'Client' } }
-if ($installationType -eq 'Server') {
-    #Map $WindowsRelease to $WindowsVersion for Windows Server
-    switch ($WindowsRelease) {
-        2016 { $WindowsVersion = '1607' }
-        2019 { $WindowsVersion = '1809' }
-        2022 { $WindowsVersion = '21H2' }
-        2025 { $WindowsVersion = '24H2' }
-    }
-}
 if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
-
-if ($WindowsSKU -like "*LTS*") {
-    switch ($WindowsRelease) {
-        2016 { $WindowsVersion = '1607' }
-        2019 { $WindowsVersion = '1809' }
-        2021 { $WindowsVersion = '21H2' }
-        2024 { $WindowsVersion = '24H2' }
-    }
-    $isLTSC = $true
-}
-
-# Determine runtime LTSC CU handling flags
-$isWindows10LtscClient = ($installationType -eq 'Client') -and ($WindowsRelease -in 2016, 2019, 2021) -and ($WindowsSKU -like '*LTS*')
-$installLatestCuInVm = ($UpdateLatestCU -and $isWindows10LtscClient)
+$windowsTargetRuntimeState = Get-WindowsTargetRuntimeState -WindowsRelease $WindowsRelease -WindowsSKU $WindowsSKU -CurrentWindowsVersion $WindowsVersion -UpdateLatestCU:$UpdateLatestCU
+$installationType = $windowsTargetRuntimeState.InstallationType
+$WindowsVersion = $windowsTargetRuntimeState.WindowsVersion
+$isLTSC = $windowsTargetRuntimeState.IsLTSC
+$isWindows10LtscClient = $windowsTargetRuntimeState.IsWindows10LtscClient
+$installLatestCuInVm = $windowsTargetRuntimeState.InstallLatestCuInVm
 $refreshAppsIsoForLtscCu = $false
 
 # Set the log path for the common logger
@@ -2423,13 +2454,76 @@ function Get-WimFromISO {
     return $wimPath
 }
 
-function Get-Index {
+function Get-ResolvedWindowsSKUFromImage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EditionId,
+
+        [string]$InstallationType,
+
+        [string]$ImageName,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease
+    )
+
+    $normalizedInstallationType = if ([string]::IsNullOrWhiteSpace($InstallationType)) { '' } else { $InstallationType.Trim() }
+
+    switch ($EditionId) {
+        'Core' { return 'Home' }
+        'CoreN' { return 'Home N' }
+        'CoreSingleLanguage' { return 'Home Single Language' }
+        'Education' { return 'Education' }
+        'EducationN' { return 'Education N' }
+        'Professional' { return 'Pro' }
+        'ProfessionalN' { return 'Pro N' }
+        'ProfessionalEducation' { return 'Pro Education' }
+        'ProfessionalEducationN' { return 'Pro Education N' }
+        'ProfessionalWorkstation' { return 'Pro for Workstations' }
+        'ProfessionalWorkstationN' { return 'Pro N for Workstations' }
+        'Enterprise' { return 'Enterprise' }
+        'EnterpriseN' { return 'Enterprise N' }
+        'EnterpriseS' {
+            if ($WindowsRelease -eq 2016 -or $ImageName -match 'LTSB') {
+                return 'Enterprise 2016 LTSB'
+            }
+            return 'Enterprise LTSC'
+        }
+        'EnterpriseSN' {
+            if ($WindowsRelease -eq 2016 -or $ImageName -match 'LTSB') {
+                return 'Enterprise N 2016 LTSB'
+            }
+            return 'Enterprise N LTSC'
+        }
+        'IoTEnterpriseS' { return 'IoT Enterprise LTSC' }
+        'IoTEnterpriseSN' { return 'IoT Enterprise N LTSC' }
+        'ServerStandard' {
+            if ($normalizedInstallationType -eq 'Server') {
+                return 'Standard (Desktop Experience)'
+            }
+            return 'Standard'
+        }
+        'ServerDatacenter' {
+            if ($normalizedInstallationType -eq 'Server') {
+                return 'Datacenter (Desktop Experience)'
+            }
+            return 'Datacenter'
+        }
+    }
+
+    return $null
+}
+
+function Get-WindowsImageSelection {
     param(
         [Parameter(Mandatory = $true)]
         [string]$WindowsImagePath,
 
         [Parameter(Mandatory = $true)]
-        [string]$WindowsSKU
+        [string]$WindowsSKU,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease
     )
 
     # Get the available indexes in the WIM/ESD
@@ -2514,25 +2608,26 @@ function Get-Index {
         }
     }
 
+    # Build per-index metadata (EditionId, InstallationType, resolved SKU) once for deterministic matching and fallback prompts.
+    $imageMetadata = @(foreach ($imageIndex in $imageIndexes) {
+            try {
+                $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
+                [pscustomobject]@{
+                    ImageIndex        = $details.ImageIndex
+                    ImageName         = $details.ImageName
+                    ImageSize         = $details.ImageSize
+                    EditionId         = $details.EditionId
+                    InstallationType  = $details.InstallationType
+                    ResolvedWindowsSKU = Get-ResolvedWindowsSKUFromImage -EditionId $details.EditionId -InstallationType $details.InstallationType -ImageName $details.ImageName -WindowsRelease $WindowsRelease
+                }
+            }
+            catch {
+                $null
+            }
+        }) | Where-Object { $null -ne $_ }
+
     # If we can map SKU -> EditionId, attempt a non-interactive match
     if ($editionIdCandidates.Count -gt 0) {
-        # Build per-index metadata (EditionId, InstallationType) to match deterministically
-        $imageMetadata = @(foreach ($imageIndex in $imageIndexes) {
-                try {
-                    $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
-                    [pscustomobject]@{
-                        ImageIndex       = $details.ImageIndex
-                        ImageName        = $details.ImageName
-                        ImageSize        = $details.ImageSize
-                        EditionId        = $details.EditionId
-                        InstallationType = $details.InstallationType
-                    }
-                }
-                catch {
-                    $null
-                }
-            }) | Where-Object { $null -ne $_ }
-
         # Match by EditionId first
         $imageMatches = $imageMetadata | Where-Object { $_.EditionId -in $editionIdCandidates }
 
@@ -2547,14 +2642,17 @@ function Get-Index {
         # If multiple matches remain, pick the largest image (Desktop Experience tends to be larger)
         if ($imageMatches.Count -gt 0) {
             $bestMatch = $imageMatches | Sort-Object -Property ImageSize -Descending | Select-Object -First 1
-            WriteLog "Selected Windows image index $($bestMatch.ImageIndex) (SKU='$WindowsSKU', EditionId='$($bestMatch.EditionId)', InstallationType='$($bestMatch.InstallationType)'): $($bestMatch.ImageName)"
-            return $bestMatch.ImageIndex
+            WriteLog "Selected Windows image index $($bestMatch.ImageIndex) (RequestedSKU='$WindowsSKU', ResolvedSKU='$($bestMatch.ResolvedWindowsSKU)', EditionId='$($bestMatch.EditionId)', InstallationType='$($bestMatch.InstallationType)'): $($bestMatch.ImageName)"
+            return $bestMatch
         }
     }
 
     # Final fallback: prompt the user to select an ImageName
     # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
-    $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
+    $relevantImageIndexes = @($imageMetadata | Where-Object { $_.ImageName -match "(10|11|2016|2019|202\d)" })
+    if ($relevantImageIndexes.Count -eq 0) {
+        $relevantImageIndexes = $imageMetadata
+    }
 
     WriteLog "No matching image index found for SKU '$WindowsSKU' in '$WindowsImagePath'. Prompting user to select an ImageName."
 
@@ -2575,8 +2673,8 @@ function Get-Index {
         $selectedImage = $relevantImageIndexes[$inputValue - 1]
 
         if ($selectedImage) {
-            WriteLog "User selected Windows image index $($selectedImage.ImageIndex) (SKU='$WindowsSKU'): $($selectedImage.ImageName)"
-            return $selectedImage.ImageIndex
+            WriteLog "User selected Windows image index $($selectedImage.ImageIndex) (RequestedSKU='$WindowsSKU', ResolvedSKU='$($selectedImage.ResolvedWindowsSKU)'): $($selectedImage.ImageName)"
+            return $selectedImage
         }
         else {
             Write-Host "Invalid selection, please try again."
@@ -6844,7 +6942,38 @@ try {
         }
         #If index not specified by user, try and find based on WindowsSKU
         if (-not($index) -and ($WindowsSKU)) {
-            $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+            $requestedWindowsSKU = $WindowsSKU
+            $previousInstallationType = $installationType
+            $previousWindowsVersion = $WindowsVersion
+            $previousIsLTSC = [bool]$isLTSC
+            $windowsImageSelection = Get-WindowsImageSelection -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU -WindowsRelease $WindowsRelease
+            $index = $windowsImageSelection.ImageIndex
+
+            if (-not [string]::IsNullOrWhiteSpace($windowsImageSelection.ResolvedWindowsSKU)) {
+                $WindowsSKU = $windowsImageSelection.ResolvedWindowsSKU
+                $windowsTargetRuntimeState = Get-WindowsTargetRuntimeState -WindowsRelease $WindowsRelease -WindowsSKU $WindowsSKU -CurrentWindowsVersion $WindowsVersion -UpdateLatestCU:$UpdateLatestCU
+                $installationType = $windowsTargetRuntimeState.InstallationType
+                $WindowsVersion = $windowsTargetRuntimeState.WindowsVersion
+                $isLTSC = $windowsTargetRuntimeState.IsLTSC
+                $isWindows10LtscClient = $windowsTargetRuntimeState.IsWindows10LtscClient
+                $installLatestCuInVm = $windowsTargetRuntimeState.InstallLatestCuInVm
+
+                if ($requestedWindowsSKU -ne $WindowsSKU) {
+                    WriteLog "Resolved WindowsSKU from '$requestedWindowsSKU' to '$WindowsSKU' based on image selection '$($windowsImageSelection.ImageName)'."
+                }
+
+                if (($previousInstallationType -ne $installationType) -or ($previousWindowsVersion -ne $WindowsVersion) -or ($previousIsLTSC -ne [bool]$isLTSC)) {
+                    WriteLog "Updated Windows target state after image selection: InstallationType='$installationType', WindowsVersion='$WindowsVersion', IsLTSC='$isLTSC'."
+                }
+
+                if (($InstallApps -eq $false) -and ($installLatestCuInVm -eq $true)) {
+                    WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, Edge, or the latest Windows 10 LTSB/LTSC cumulative update, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+                    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, Edge, MSRT, or the latest Windows 10 LTSB/LTSC cumulative update"
+                }
+            }
+            else {
+                WriteLog "Could not resolve a friendly WindowsSKU for selected image '$($windowsImageSelection.ImageName)'. Continuing with requested SKU '$WindowsSKU'."
+            }
         }
 
         $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
