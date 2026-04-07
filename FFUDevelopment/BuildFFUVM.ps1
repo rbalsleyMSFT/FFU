@@ -5571,10 +5571,10 @@ if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($Upda
     WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, Edge, or the latest Windows 10 LTSB/LTSC cumulative update, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
     throw "InstallApps variable must be set to `$true to update Defender, OneDrive, Edge, MSRT, or the latest Windows 10 LTSB/LTSC cumulative update"
 }
-if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
-    $InstallOffice = $false
-    WriteLog 'M365 Apps/Office currently fails to install on ARM64 VMs without an internet connection. Setting InstallOffice to false'
-}
+# if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
+#     $InstallOffice = $false
+#     WriteLog 'M365 Apps/Office currently fails to install on ARM64 VMs without an internet connection. Setting InstallOffice to false'
+# }
 
 if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
     $UpdateOneDrive = $false
