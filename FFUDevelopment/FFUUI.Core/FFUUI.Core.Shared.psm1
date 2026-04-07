@@ -1173,6 +1173,9 @@ function Invoke-BrowseAction {
             if (-not [string]::IsNullOrWhiteSpace($InitialDirectory)) {
                 $dialog.InitialDirectory = $InitialDirectory
             }
+            if (-not [string]::IsNullOrWhiteSpace($FileName)) {
+                $dialog.FileName = $FileName
+            }
             if ($dialog.ShowDialog()) {
                 return $dialog.FileName
             }

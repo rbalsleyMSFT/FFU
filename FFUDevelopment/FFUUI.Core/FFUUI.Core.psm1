@@ -106,10 +106,12 @@ function Get-GeneralDefaults {
     $peDriversPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "PEDrivers"
     $vmLocationPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "VM"
     $ffuCapturePath = Join-Path -Path $FFUDevelopmentPath -ChildPath "FFU"
+    $unattendPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "unattend"
     $officePath = Join-Path -Path $appsPath -ChildPath "Office"
     $appListJsonPath = Join-Path -Path $appsPath -ChildPath "AppList.json"
     $userAppListPath = Join-Path -Path $appsPath -ChildPath "UserAppList.json"
     $driversJsonPath = Join-Path -Path $driversPath -ChildPath "Drivers.json"
+    $deviceNamePrefixesPath = Join-Path -Path $unattendPath -ChildPath "prefixes.txt"
 
     return [PSCustomObject]@{
         # Build Tab Defaults
@@ -132,6 +134,10 @@ function Get-GeneralDefaults {
         CopyUnattend                   = $false
         CopyPPKG                       = $false
         InjectUnattend                 = $false
+        DeviceNamingMode               = 'None'
+        DeviceNameTemplate             = ''
+        DeviceNamePrefixesPath         = $deviceNamePrefixesPath
+        DeviceNamePrefixes             = @()
         CleanupAppsISO                 = $true
         CleanupDeployISO               = $true
         CleanupDrivers                 = $false

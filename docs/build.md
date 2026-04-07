@@ -199,24 +199,34 @@ This option is only available when **Build USB Drive** is checked.
 When enabled, the build process copies:
 
 - **unattend_x64.xml** (for x64 builds) or **unattend_arm64.xml** (for arm64 builds) → renamed to **Unattend.xml** on the USB drive
-- **prefixes.txt** (if present) → copied alongside the unattend file
+- **prefixes.txt** → created from the **Device Naming** prefixes list when that mode is selected
 
-During deployment, `ApplyFFU.ps1` detects the `Unattend` folder and uses these files to customize the device name and apply other Windows settings during OOBE.
+During deployment, `ApplyFFU.ps1` applies `Unattend.xml` whenever it is present. Device naming only happens when the **Device Naming** setting requires it, or when older media still uses the legacy prompt-based workflow.
 
 #### Device Naming
 
-Device naming can be done from PE. The way this works is by leveraging an unattend.xml file to either take input from the user at imaging time or read a list of prefix values and append the serial number of the device. There are some major benefits to doing this:
+Use the **Device Naming** expander to decide whether `ComputerName` should be set at deployment time. There are some major benefits to doing this:
 
 1. Total deployment time is reduced if naming is set at FFU deployment time since there is no additional reboot done during OOBE.
 2. Reduces the need for multiple provisioning packages or autopilot profiles. This means you can use a single PPKG or autopilot profile.
 
-#### Prompt for Device Name
+#### No Device Name
 
-If you want to be prompted for the device name, simply check **Copy Unattend.xml.** This tells the build script to copy the appropriate architecture unattend_arch.xml file from the `C:\FFUDevelopment\Unattend` folder to the `.\unattend` folder on the deploy partition of the USB drive.
+This is the default option. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
 
-#### Device Naming with prefixes.txt
+#### Specify Device Name
 
-If a `prefixes.txt` file exists in the `Unattend` folder and there are multiple prefixes in the file, the deployment script prompts the technician to select a prefix from the file. The prefix is combined with the device's serial number to create the computer name. If there is a single prefix, the technician is not prompted and the script will automatically select that prefix.
+Use this option when you want a static device name or a template such as `Comp-%serial%`.
+
+- With **Copy Unattend.xml**, `%serial%` is resolved during deployment in PE.
+- With **Inject Unattend.xml**, only static names are supported.
+- **Copy Unattend.xml** and **Inject Unattend.xml** are mutually exclusive. Select only one.
+
+#### Specify a list of Prefixes
+
+This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line or import an existing prefixes file. The source file can use any name because the UI now tracks the path separately.
+
+If there is a single prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one. The selected prefix is combined with the device serial number to create the computer name.
 
 For example, with a prefix of `CORP-` and a serial number of `ABC123`, the resulting computer name would be `CORP-ABC123` (truncated to 15 characters if necessary).
 
@@ -227,6 +237,10 @@ CORP-
 STORE-
 KIOSK-
 ```
+
+#### Legacy Prompt Behavior
+
+Older deployment media that still has an unattend file with `ComputerName` set to the legacy placeholder value and no `prefixes.txt` file will still prompt for a device name during deployment.
 
 {: .warning-title}
 
@@ -483,6 +497,8 @@ Controls the `-InjectUnattend` parameter. When checked, copies the architecture-
 
 This option is only available when **Install Apps** is checked.
 
+`Copy Unattend.xml` and `Inject Unattend.xml` are mutually exclusive. Select only one.
+
 ### How It Works
 
 When enabled, the build process:
@@ -522,7 +538,7 @@ This option is primarily intended for scenarios where:
 
 | Limitation                        | Description                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No prefixes.txt support** | Unlike the**Copy Unattend** option for USB drives, this method does not support `prefixes.txt` for dynamic device naming based on serial numbers |
+| **No prefixes.txt or %serial% support** | Unlike **Copy Unattend.xml**, this method does not support `prefixes.txt` or the `%serial%` variable for deployment-time device naming |
 | **Fixed configuration**     | The unattend settings are baked into the FFU at build time and cannot be changed at deployment time                                                      |
 | **Requires VM to be built** | This option only works when**Install Apps** is `$true` because the unattend file is included in the Apps ISO                                     |
 

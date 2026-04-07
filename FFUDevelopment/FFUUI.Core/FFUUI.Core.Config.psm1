@@ -36,6 +36,10 @@ function Get-UIConfig {
         UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
+        DeviceNamingMode               = Get-SelectedDeviceNamingMode -State $State
+        DeviceNameTemplate             = $State.Controls.txtDeviceNameTemplate.Text
+        DeviceNamePrefixesPath         = $State.Controls.txtDeviceNamePrefixesPath.Text
+        DeviceNamePrefixes             = @(Get-DeviceNamePrefixes -State $State)
         CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
@@ -456,6 +460,24 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State
     Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyUnattend' -State $State
     Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPPKG' -State $State
+    Set-UIValue -ControlName 'txtDeviceNamePrefixesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixesPath' -State $State
+    Set-UIValue -ControlName 'txtDeviceNameTemplate' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameTemplate' -State $State
+    Set-UIValue -ControlName 'txtDeviceNamePrefixes' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixes' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNamePrefixesPath.Text)) {
+        $State.Controls.txtDeviceNamePrefixesPath.Text = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+    }
+
+    $deviceNamingMode = 'None'
+    if ($ConfigContent.PSObject.Properties.Name -contains 'DeviceNamingMode') {
+        $deviceNamingMode = [string]$ConfigContent.DeviceNamingMode
+    }
+    if ($deviceNamingMode -notin @('None', 'Template', 'Prefixes')) {
+        $deviceNamingMode = 'None'
+    }
+    Set-DeviceNamingMode -State $State -Mode $deviceNamingMode
+    Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Update-DeviceNamingControls -State $State
     
     # Post Build Cleanup group (Build Tab)
     Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupAppsISO' -State $State

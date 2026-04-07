@@ -38,9 +38,13 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -CopyDrivers | bool | Copy Drivers to USB drive | When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false. |
 | -CopyPEDrivers | bool | Copy PE Drivers | When set to $true, enables adding WinPE drivers. By default copies drivers from $FFUDevelopmentPath\PEDrivers to the WinPE deployment media unless -UseDriversAsPEDrivers is also $true. |
 | -CopyPPKG | bool | Copy Provisioning Package | When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false. |
-| -CopyUnattend | bool | Copy Unattend.xml | When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false. |
+| -CopyUnattend | bool | Copy Unattend.xml | When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Cannot be used together with -InjectUnattend. Default is $false. |
 | -CreateDeploymentMedia | bool | Create Deployment Media | When set to $true, this will create WinPE deployment media for use when deploying to a physical device. |
 | -CustomFFUNameTemplate | string | Custom FFU Name Template | Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}. |
+| -DeviceNamingMode | string | Device Naming expander | Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Accepted values are Legacy, None, Template, and Prefixes. The UI uses None, Template, and Prefixes. |
+| -DeviceNameTemplate | string | Specify Device Name | Sets the device name used when DeviceNamingMode is Template. Supports a static name or the %serial% token when -CopyUnattend is used. |
+| -DeviceNamePrefixesPath | string | Prefixes File Path | Path to the source prefixes file used for legacy copy or when -DeviceNamePrefixes is not supplied. Default is $FFUDevelopmentPath\Unattend\prefixes.txt. |
+| -DeviceNamePrefixes | string[] | Specify a list of Prefixes | Sets the prefixes used when DeviceNamingMode is Prefixes. Each entry becomes a line in prefixes.txt on the deployment media. |
 | -Disksize | uint64 | Disk Size (GB) | Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk. |
 | -DriversFolder | string | Drivers Folder | Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers. |
 | -DriversJsonPath | string | Drivers.json Path | Path to a JSON file that specifies which drivers to download. |
@@ -50,7 +54,7 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -FFUDevelopmentPath | string | FFU Development Path | Path to the FFU development folder. Default is $PSScriptRoot. |
 | -FFUPrefix | string | VM Name Prefix | Prefix for the generated FFU file. Default is _FFU. |
 | -Headers | hashtable | CLI only (no UI control) | Headers to use when downloading files. Not recommended to modify. |
-| -InjectUnattend | bool | Inject Unattend.xml | When set to $true and InstallApps is also $true, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false. |
+| -InjectUnattend | bool | Inject Unattend.xml | When set to $true and InstallApps is also $true, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Cannot be used together with -CopyUnattend. Default is $false. |
 | -InstallApps | bool | Install Applications | When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created. |
 | -InstallDrivers | bool | Install Drivers to FFU | Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU. |
 | -InstallOffice | bool | Install Office | Install Microsoft Office if set to $true. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM. |

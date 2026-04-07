@@ -836,9 +836,11 @@
                                         <RowDefinition Height="Auto"/>
                                         <!-- Row 9: General Build Options Checkboxes -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 10: Build USB Drive Section -->
+                                        <!-- Row 10: Device Naming -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 11: Post-Build Cleanup -->
+                                        <!-- Row 11: Build USB Drive Section -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Row 12: Post-Build Cleanup -->
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
@@ -903,8 +905,40 @@
                                         </StackPanel>
                                     </Expander>
 
-                                    <!-- Row 10: Build USB Drive Section -->
-                                    <Expander Grid.Row="10" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <!-- Row 10: Device Naming -->
+                                    <Expander Grid.Row="10" x:Name="deviceNamingSection" Header="Device Naming" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <StackPanel Margin="0,8,0,0">
+                                            <TextBlock Text="Choose how the device should be named when unattend is applied." Margin="0,0,0,12" TextWrapping="Wrap"/>
+                                            <RadioButton x:Name="rbDeviceNamingNone" Content="No Device Name" GroupName="DeviceNamingMode" IsChecked="True" Margin="0,0,0,8" ToolTip="Apply unattend without setting a specific computer name."/>
+                                            <RadioButton x:Name="rbDeviceNamingTemplate" Content="Specify Device Name" GroupName="DeviceNamingMode" Margin="0,0,0,8" ToolTip="Use a static device name or the %serial% variable when Copy Unattend.xml is selected."/>
+                                            <StackPanel x:Name="deviceNameTemplatePanel" Margin="32,0,0,16" Visibility="Collapsed">
+                                                <TextBlock Text="Use static text, %serial%, or both together, for example Comp-%serial%." Margin="0,0,0,4" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Choose Copy Unattend.xml or Inject Unattend.xml below for static names. %serial% requires Copy Unattend.xml." Margin="0,0,0,8" TextWrapping="Wrap" Opacity="0.75"/>
+                                                <TextBox x:Name="txtDeviceNameTemplate" VerticalAlignment="Center" ToolTip="Examples: KIOSK-01 or Comp-%serial%"/>
+                                            </StackPanel>
+                                            <RadioButton x:Name="rbDeviceNamingPrefixes" Content="Specify a list of Prefixes" GroupName="DeviceNamingMode" Margin="0,0,0,8" ToolTip="Enter one prefix per line or import an existing prefixes file. This option requires Copy Unattend.xml."/>
+                                            <StackPanel x:Name="deviceNamePrefixesPanel" Margin="32,0,0,0" Visibility="Collapsed">
+                                                <TextBlock Text="Prefixes File Path" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                                <Grid Margin="0,0,0,8">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="txtDeviceNamePrefixesPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the prefixes source file. You can use any file name."/>
+                                                    <Button x:Name="btnBrowseDeviceNamePrefixesPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Browse to a prefixes source file path."/>
+                                                </Grid>
+                                                <TextBlock Text="Enter one prefix per line. Each prefix is combined with the device serial number during deployment." Margin="0,0,0,4" TextWrapping="Wrap"/>
+                                                <TextBlock Text="If you enter a single prefix, it is used automatically. If you enter multiple prefixes, the technician is prompted to choose one during deployment." Margin="0,0,0,8" TextWrapping="Wrap" Opacity="0.75"/>
+                                                <TextBox x:Name="txtDeviceNamePrefixes" MinHeight="120" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" ToolTip="Each line becomes a prefix option in prefixes.txt."/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" HorizontalAlignment="Left">
+                                                    <Button x:Name="btnSaveDeviceNamePrefixes" Content="Save Prefixes" Padding="12,4" ToolTip="Save the current prefixes list to the Prefixes File Path."/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- Row 11: Build USB Drive Section -->
+                                    <Expander Grid.Row="11" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                         <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                                             <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
@@ -969,8 +1003,8 @@
                                         </StackPanel>
                                     </Expander>
 
-                                    <!-- Row 11: Post-Build Cleanup -->
-                                    <Expander Grid.Row="11" Header="Post-Build Cleanup" IsExpanded="False" Margin="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <!-- Row 12: Post-Build Cleanup -->
+                                    <Expander Grid.Row="12" Header="Post-Build Cleanup" IsExpanded="False" Margin="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                         <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
                                             <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>

@@ -64,6 +64,68 @@ function Set-Computername($computername) {
     return $computername
 }
 
+function Get-UnattendComputerNameValue {
+    if ($null -eq $UnattendFile) {
+        return $null
+    }
+
+    [xml]$xml = Get-Content $UnattendFile
+    foreach ($component in $xml.unattend.settings.component) {
+        if ($component.ComputerName) {
+            return [string]$component.ComputerName
+        }
+    }
+
+    return $null
+}
+
+function Test-LegacyPromptComputerName($computername) {
+    if ([string]::IsNullOrWhiteSpace($computername)) {
+        return $false
+    }
+
+    $normalizedName = $computername.Trim().ToLowerInvariant()
+    return $normalizedName -in @('mycomputer', 'default')
+}
+
+function Get-NormalizedComputerName($computername) {
+    if ([string]::IsNullOrWhiteSpace($computername)) {
+        throw 'Computer name cannot be empty.'
+    }
+
+    $normalizedName = ($computername -replace "\s", '').Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedName)) {
+        throw 'Computer name cannot be empty after removing spaces.'
+    }
+
+    if ($normalizedName.Length -gt 15) {
+        $normalizedName = $normalizedName.Substring(0, 15)
+    }
+
+    return $normalizedName
+}
+
+function Resolve-ComputerNameTemplate($computerNameTemplate, $serialNumber) {
+    if ([string]::IsNullOrWhiteSpace($computerNameTemplate)) {
+        throw 'Computer name template cannot be empty.'
+    }
+
+    $resolvedName = $computerNameTemplate -replace '(?i)%serial%', $serialNumber
+    if ($resolvedName -match '%') {
+        throw 'Unsupported device name variable found. Only %serial% is supported.'
+    }
+
+    return Get-NormalizedComputerName($resolvedName)
+}
+
+function Set-ConfiguredComputerName($computername) {
+    $normalizedName = Get-NormalizedComputerName($computername)
+    $normalizedName = Set-Computername($normalizedName)
+    Writelog "Computer name will be set to $normalizedName"
+    Write-Host "Computer name will be set to $normalizedName"
+    return $normalizedName
+}
+
 function Invoke-Process {
     [CmdletBinding(SupportsShouldProcess)]
     param
@@ -1023,8 +1085,19 @@ If (Test-Path -Path $UnattendComputerNamePath) {
     }
 }
 
-#Ask for device name if unattend exists
-If ($Unattend -or $UnattendPrefix -or $UnattendComputerName) {
+$UnattendConfiguredComputerName = $null
+$RequiresLegacyDeviceNamePrompt = $false
+$RequiresTemplateDeviceName = $false
+if ($Unattend) {
+    $UnattendConfiguredComputerName = Get-UnattendComputerNameValue
+    $RequiresLegacyDeviceNamePrompt = Test-LegacyPromptComputerName($UnattendConfiguredComputerName)
+    if (-not [string]::IsNullOrWhiteSpace($UnattendConfiguredComputerName) -and $UnattendConfiguredComputerName -match '(?i)%serial%') {
+        $RequiresTemplateDeviceName = $true
+    }
+}
+
+#Ask for device name if naming is explicitly required
+If ($UnattendPrefix -or $UnattendComputerName -or $RequiresTemplateDeviceName -or $RequiresLegacyDeviceNamePrompt) {
     Write-SectionHeader 'Device Name Selection'
     if ($Unattend -and $UnattendPrefix) {
         Writelog 'Unattend file found with prefixes.txt. Getting prefixes.'
@@ -1060,17 +1133,8 @@ If ($Unattend -or $UnattendPrefix -or $UnattendComputerName) {
             WriteLog "Will use $PrefixToUse as device name prefix"
             Write-Host "Will use $PrefixToUse as device name prefix"
         }
-        #Get serial number to append. This can make names longer than 15 characters. Trim any leading or trailing whitespace
         $serial = (Get-CimInstance -ClassName win32_bios).SerialNumber.Trim()
-        #Combine prefix with serial
-        $computername = ($PrefixToUse + $serial) -replace "\s", "" # Remove spaces because windows does not support spaces in the computer names
-        #If computername is longer than 15 characters, reduce to 15. Sysprep/unattend doesn't like ComputerName being longer than 15 characters even though Windows accepts it
-        If ($computername.Length -gt 15) {
-            $computername = $computername.substring(0, 15)
-        }
-        $computername = Set-Computername($computername)
-        Writelog "Computer name will be set to $computername"
-        Write-Host "Computer name will be set to $computername"
+        $computername = Set-ConfiguredComputerName($PrefixToUse + $serial)
     }
     elseif ($Unattend -and $UnattendComputerName) {
         Writelog 'Unattend file found with SerialComputerNames.csv. Getting name for current computer.'
@@ -1080,31 +1144,30 @@ If ($Unattend -or $UnattendPrefix -or $UnattendComputerName) {
         $SCName = $SerialComputerNames | Where-Object { $_.SerialNumber -eq $SerialNumber }
 
         If ($SCName) {
-            [string]$computername = $SCName.ComputerName
-            $computername = Set-Computername($computername)
-            Writelog "Computer name will be set to $computername"
-            Write-Host "Computer name will be set to $computername"
+            [string]$computername = Set-ConfiguredComputerName($SCName.ComputerName)
         }
         else {
             Writelog 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
             Write-Host 'No matching serial number found in SerialComputerNames.csv. Setting random computer name to complete setup.'
-            [string]$computername = ("FFU-" + ( -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 11 | ForEach-Object { [char]$_ })))
-            $computername = Set-Computername($computername)
-            Writelog "Computer name will be set to $computername"
-            Write-Host "Computer name will be set to $computername"
+            [string]$computername = Set-ConfiguredComputerName(("FFU-" + ( -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 11 | ForEach-Object { [char]$_ }))))
         }
     }
-    elseif ($Unattend) {
+    elseif ($Unattend -and $RequiresTemplateDeviceName) {
+        Writelog 'Unattend file found with a %serial% computer name template. Resolving the template.'
+        $serialNumber = (Get-CimInstance -ClassName Win32_Bios).SerialNumber.Trim()
+        [string]$computername = Set-ConfiguredComputerName((Resolve-ComputerNameTemplate -computerNameTemplate $UnattendConfiguredComputerName -serialNumber $serialNumber))
+    }
+    elseif ($Unattend -and $RequiresLegacyDeviceNamePrompt) {
         Writelog 'Unattend file found with no prefixes.txt, asking for name'
         Write-Host 'Unattend file found but no prefixes.txt. Please enter a device name.'
-        [string]$computername = Read-Host 'Enter device name'
-        $computername = Set-Computername($computername)
-        Writelog "Computer name will be set to $computername"
-        Write-Host "Computer name will be set to $computername"
+        [string]$computername = Set-ConfiguredComputerName((Read-Host 'Enter device name'))
     }
     else {
         WriteLog 'Device naming assets detected without unattend.xml. Skipping device naming prompts.'
     }
+}
+elseif ($Unattend) {
+    WriteLog 'Unattend file found. Device naming is not required, but unattend settings will still be applied.'
 }
 else {
     WriteLog 'No unattend folder found. Device name will be set via PPKG, AP JSON, or default OS name.'
@@ -1568,8 +1631,9 @@ If ($PPKGFileToInstall) {
     }
 }
 #Set DeviceName
-If ($computername) {
-    Write-SectionHeader -Title 'Applying Computer Name and Unattend Configuration'
+If ($Unattend) {
+    $unattendSectionTitle = if ($computername) { 'Applying Computer Name and Unattend Configuration' } else { 'Applying Unattend Configuration' }
+    Write-SectionHeader -Title $unattendSectionTitle
     try {
         $PantherDir = 'w:\windows\panther'
         If (Test-Path -Path $PantherDir) {
@@ -1590,8 +1654,8 @@ If ($computername) {
         }
     }
     catch {
-        WriteLog "Copying Unattend.xml to name device failed"
-        Stop-Script -Message "Copying Unattend.xml to name device failed with error: $_"
+        WriteLog 'Copying Unattend.xml to Panther failed'
+        Stop-Script -Message "Copying Unattend.xml to Panther failed with error: $_"
     }   
 }
 

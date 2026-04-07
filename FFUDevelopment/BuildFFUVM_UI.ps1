@@ -432,6 +432,60 @@ $script:uiState.Controls.btnRun.Add_Click({
                 return
             }
 
+            if ($config.CopyUnattend -and $config.InjectUnattend) {
+                [System.Windows.MessageBox]::Show("Copy Unattend.xml and Inject Unattend.xml cannot both be selected. Choose only one unattend delivery method.", "Unattend Selection Required", "OK", "Warning") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: choose only one unattend delivery method."
+                return
+            }
+
+            if ($config.DeviceNamingMode -eq 'Template') {
+                if ([string]::IsNullOrWhiteSpace([string]$config.DeviceNameTemplate)) {
+                    [System.Windows.MessageBox]::Show("Specify a device name before using 'Specify Device Name'.", "Device Name Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: device name required."
+                    return
+                }
+
+                if (-not ($config.CopyUnattend -or $config.InjectUnattend)) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml or Inject Unattend.xml before using 'Specify Device Name'.", "Unattend Selection Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend delivery method required for device naming."
+                    return
+                }
+
+                $templateWithoutSupportedVariables = ([string]$config.DeviceNameTemplate) -replace '(?i)%serial%', ''
+                if ($templateWithoutSupportedVariables -match '%') {
+                    [System.Windows.MessageBox]::Show("Only the %serial% device name variable is supported.", "Unsupported Device Name Variable", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unsupported device name variable."
+                    return
+                }
+
+                if ($config.InjectUnattend -and (-not $config.CopyUnattend) -and ([string]$config.DeviceNameTemplate -match '(?i)%serial%')) {
+                    [System.Windows.MessageBox]::Show("The %serial% device name variable is only supported when Copy Unattend.xml is selected.", "Unsupported Inject Unattend Setting", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: %serial% requires Copy Unattend.xml."
+                    return
+                }
+            }
+            elseif ($config.DeviceNamingMode -eq 'Prefixes') {
+                if (-not $config.CopyUnattend) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Specify a list of Prefixes'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: prefixes require Copy Unattend.xml."
+                    return
+                }
+
+                $hasSavedPrefixesPath = -not [string]::IsNullOrWhiteSpace([string]$config.DeviceNamePrefixesPath) -and (Test-Path -Path $config.DeviceNamePrefixesPath -PathType Leaf)
+                if ((($null -eq $config.DeviceNamePrefixes) -or ($config.DeviceNamePrefixes.Count -eq 0)) -and -not $hasSavedPrefixesPath) {
+                    [System.Windows.MessageBox]::Show("Enter at least one prefix or choose a valid prefixes file before using 'Specify a list of Prefixes'.", "Prefixes Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: prefixes required."
+                    return
+                }
+            }
+
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
             # Sort top-level keys alphabetically for consistent output
             $sortedConfig = [ordered]@{}

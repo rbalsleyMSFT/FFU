@@ -220,6 +220,16 @@ function Initialize-UIControls {
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
     $State.Controls.chkInjectUnattend = $window.FindName('chkInjectUnattend')
+    $State.Controls.rbDeviceNamingNone = $window.FindName('rbDeviceNamingNone')
+    $State.Controls.rbDeviceNamingTemplate = $window.FindName('rbDeviceNamingTemplate')
+    $State.Controls.rbDeviceNamingPrefixes = $window.FindName('rbDeviceNamingPrefixes')
+    $State.Controls.deviceNameTemplatePanel = $window.FindName('deviceNameTemplatePanel')
+    $State.Controls.deviceNamePrefixesPanel = $window.FindName('deviceNamePrefixesPanel')
+    $State.Controls.txtDeviceNameTemplate = $window.FindName('txtDeviceNameTemplate')
+    $State.Controls.txtDeviceNamePrefixesPath = $window.FindName('txtDeviceNamePrefixesPath')
+    $State.Controls.btnBrowseDeviceNamePrefixesPath = $window.FindName('btnBrowseDeviceNamePrefixesPath')
+    $State.Controls.txtDeviceNamePrefixes = $window.FindName('txtDeviceNamePrefixes')
+    $State.Controls.btnSaveDeviceNamePrefixes = $window.FindName('btnSaveDeviceNamePrefixes')
     $State.Controls.chkVerbose = $window.FindName('chkVerbose')
     $State.Controls.chkCopyAutopilot = $window.FindName('chkCopyAutopilot')
     $State.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
@@ -383,6 +393,12 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyAutopilot.IsChecked = $State.Defaults.generalDefaults.CopyAutopilot
     $State.Controls.chkCopyUnattend.IsChecked = $State.Defaults.generalDefaults.CopyUnattend
     $State.Controls.chkCopyPPKG.IsChecked = $State.Defaults.generalDefaults.CopyPPKG
+    Set-DeviceNamingMode -State $State -Mode $State.Defaults.generalDefaults.DeviceNamingMode
+    $State.Controls.txtDeviceNameTemplate.Text = $State.Defaults.generalDefaults.DeviceNameTemplate
+    $State.Controls.txtDeviceNamePrefixesPath.Text = $State.Defaults.generalDefaults.DeviceNamePrefixesPath
+    $State.Controls.txtDeviceNamePrefixes.Text = ($State.Defaults.generalDefaults.DeviceNamePrefixes -join [System.Environment]::NewLine)
+    Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Update-DeviceNamingControls -State $State
     $State.Controls.chkCleanupAppsISO.IsChecked = $State.Defaults.generalDefaults.CleanupAppsISO
     $State.Controls.chkCleanupDeployISO.IsChecked = $State.Defaults.generalDefaults.CleanupDeployISO
     $State.Controls.chkCleanupDrivers.IsChecked = $State.Defaults.generalDefaults.CleanupDrivers

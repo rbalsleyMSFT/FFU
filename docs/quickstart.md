@@ -186,18 +186,26 @@ Another safety measure is **Select Specific USB Drives**. When you check **Selec
 
 **Device Naming**
 
-Device naming can be done from PE. The way this works is by leveraging an unattend.xml file to either take input from the user at imaging time or read a list of prefix values and append the serial number of the device. There are some major benefits to doing this:
+Use the **Device Naming** expander on the Build page to decide whether `ComputerName` should be set during deployment. There are some major benefits to doing this:
 
 1. Total deployment time is reduced if naming is set at FFU deployment time since there is no additional reboot done during OOBE.
 2. Reduces the need for multiple provisioning packages or autopilot profiles. This means you can use a single PPKG or autopilot profile.
 
-**Prompt for Device Name**
+**No Device Name**
 
-If you want to be prompted for the device name, simply check **Copy Unattend.xml.** This tells the build script to copy the appropriate architecture unattend_arch.xml file from the `C:\FFUDevelopment\Unattend` folder to the `.\unattend` folder on the deploy partition of the USB drive.
+This is the default option. The unattend file is still applied, but Windows generates a random computer name.
 
-**Specifying Multiple Name Prefixes**
+**Specify Device Name**
 
-If you have multiple device name prefixes for different locations or device use cases, or even a single prefix, you can specify a prefixes.txt file in the `C:\FFUDevelopment\unattend` folder. If the prefixes.txt file is detected and a single prefix is listed, the device will just use that prefix and append the serial number of the device. If there are multiple prefixes listed in the prefixes.txt file, you will be prompted to select which prefix you want to name the device and the serial number will be appended to that prefix. If you want a dash in the name, include the dash in the prefix (e.g. if ABCD- is in the prefixes.txt file, the device name will be ABCD-SerialNumber).
+Use this option when you want a static device name or a template such as `Comp-%serial%`.
+
+- With **Copy Unattend.xml**, `%serial%` is resolved during deployment in PE.
+- With **Inject Unattend.xml**, only static names are supported.
+- **Copy Unattend.xml** and **Inject Unattend.xml** are mutually exclusive. Select only one.
+
+**Specify a list of Prefixes**
+
+This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line or import an existing prefixes file. The source file can use any name because the UI tracks the prefixes path separately. If there is one prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one and the serial number is appended to that prefix.
 
 {: .warning-title}
 

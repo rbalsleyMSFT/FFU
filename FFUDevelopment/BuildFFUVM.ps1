@@ -72,6 +72,18 @@ When set to $true, will copy the provisioning package from the $FFUDevelopmentPa
 .PARAMETER CopyUnattend
 When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
 
+.PARAMETER DeviceNamingMode
+Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Template, and Prefixes.
+
+.PARAMETER DeviceNameTemplate
+Sets the device name used when DeviceNamingMode is Template. Supports a static name or the %serial% token when CopyUnattend is used.
+
+.PARAMETER DeviceNamePrefixes
+Sets the prefixes used when DeviceNamingMode is Prefixes. Each entry becomes a line in prefixes.txt on the deployment media.
+
+.PARAMETER DeviceNamePrefixesPath
+Path to the source prefixes file used for legacy copy or when DeviceNamePrefixes is not supplied. Default is $FFUDevelopmentPath\Unattend\prefixes.txt.
+
 .PARAMETER CreateDeploymentMedia
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
 
@@ -407,6 +419,11 @@ param(
     [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
+    [ValidateSet('Legacy', 'None', 'Template', 'Prefixes')]
+    [string]$DeviceNamingMode = 'Legacy',
+    [string]$DeviceNameTemplate,
+    [string[]]$DeviceNamePrefixes,
+    [string]$DeviceNamePrefixesPath,
     [bool]$CopyAutopilot,
     [bool]$CompactOS = $true,
     [bool]$CleanupDeployISO = $true,
@@ -505,11 +522,130 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     }
 }
 
+function Get-UnattendSourcePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$UnattendFolder,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch
+    )
+
+    $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+    return Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+}
+
+function Test-UnattendHasComputerNameElement {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    [xml]$unattendXml = Get-Content -Path $Path
+    foreach ($component in $unattendXml.unattend.settings.component) {
+        if ($component.ComputerName) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Save-StagedUnattendFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Legacy', 'None', 'Template', 'Prefixes')]
+        [string]$DeviceNamingMode,
+        [string]$DeviceNameTemplate
+    )
+
+    if ($DeviceNamingMode -in @('Legacy', 'Prefixes')) {
+        Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+        return
+    }
+
+    [xml]$unattendXml = Get-Content -Path $SourcePath
+    $computerNameComponent = $null
+    foreach ($component in $unattendXml.unattend.settings.component) {
+        if ($component.ComputerName) {
+            $computerNameComponent = $component
+            break
+        }
+    }
+
+    if ($null -eq $computerNameComponent) {
+        if ($DeviceNamingMode -eq 'None') {
+            Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+            return
+        }
+
+        throw "ComputerName element not found in unattend source file: $SourcePath"
+    }
+
+    if ($DeviceNamingMode -eq 'None') {
+        $computerNameComponent.ComputerName = '*'
+    }
+    elseif ($DeviceNamingMode -eq 'Template') {
+        $computerNameComponent.ComputerName = $DeviceNameTemplate
+    }
+
+    $unattendXml.Save($DestinationPath)
+}
+
 $vmSwitchWasExplicitlyBound = $PSBoundParameters.ContainsKey('VMSwitchName')
 $enableVmNetworkingWasExplicitlyBound = $PSBoundParameters.ContainsKey('EnableVMNetworking')
 if (-not $EnableVMNetworking -and $vmSwitchWasExplicitlyBound -and -not $enableVmNetworkingWasExplicitlyBound) {
     $EnableVMNetworking = $true
     WriteLog 'EnableVMNetworking not explicitly set. Enabling VM networking because -VMSwitchName was supplied on the command line.'
+}
+
+$normalizedDeviceNameTemplate = if ($null -ne $DeviceNameTemplate) { $DeviceNameTemplate.Trim() } else { $null }
+$effectiveDeviceNamePrefixes = @($DeviceNamePrefixes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+$resolvedDeviceNamePrefixesPath = if ([string]::IsNullOrWhiteSpace($DeviceNamePrefixesPath)) {
+    Join-Path (Join-Path $FFUDevelopmentPath 'Unattend') 'prefixes.txt'
+}
+else {
+    $DeviceNamePrefixesPath
+}
+
+if (($DeviceNamingMode -eq 'Prefixes') -and ($effectiveDeviceNamePrefixes.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNamePrefixesPath -PathType Leaf)) {
+    $effectiveDeviceNamePrefixes = @(Get-Content -Path $resolvedDeviceNamePrefixesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    WriteLog "Loaded device name prefixes from $resolvedDeviceNamePrefixesPath"
+}
+
+if ($CopyUnattend -and $InjectUnattend) {
+    throw 'CopyUnattend and InjectUnattend cannot both be set to `$true. Select only one unattend delivery method.'
+}
+
+if ($DeviceNamingMode -eq 'Template') {
+    if ([string]::IsNullOrWhiteSpace($normalizedDeviceNameTemplate)) {
+        throw 'DeviceNamingMode Template requires DeviceNameTemplate.'
+    }
+
+    $templateWithoutSupportedVariables = $normalizedDeviceNameTemplate -replace '(?i)%serial%', ''
+    if ($templateWithoutSupportedVariables -match '%') {
+        throw 'Only the %serial% device name variable is supported.'
+    }
+
+    if (-not ($CopyUnattend -or $InjectUnattend)) {
+        throw 'DeviceNamingMode Template requires either CopyUnattend or InjectUnattend.'
+    }
+
+    if ($InjectUnattend -and (-not $CopyUnattend) -and $normalizedDeviceNameTemplate -match '(?i)%serial%') {
+        throw 'The %serial% device name variable is only supported when CopyUnattend is used.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'Prefixes') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode Prefixes requires CopyUnattend. Prefix-based naming is not supported with InjectUnattend.'
+    }
+
+    if ($effectiveDeviceNamePrefixes.Count -eq 0) {
+        throw 'DeviceNamingMode Prefixes requires at least one DeviceNamePrefixes entry or a valid DeviceNamePrefixesPath.'
+    }
 }
 
 # Validate that the selected Windows SKU is compatible with the chosen Windows release and ensure an ISO is provided for unsupported releases
@@ -4184,6 +4320,57 @@ Function New-DeploymentUSB {
         Import-Module "$($using:PSScriptRoot)\FFU.Common" -Force
         Set-CommonCoreLogPath -Path $using:LogFile
 
+        function Get-LocalUnattendSourcePath {
+            param(
+                [string]$UnattendFolder,
+                [string]$WindowsArch
+            )
+
+            $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+            return Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+        }
+
+        function Save-LocalStagedUnattendFile {
+            param(
+                [string]$SourcePath,
+                [string]$DestinationPath,
+                [string]$DeviceNamingMode,
+                [string]$DeviceNameTemplate
+            )
+
+            if ($DeviceNamingMode -in @('Legacy', 'Prefixes')) {
+                Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+                return
+            }
+
+            [xml]$unattendXml = Get-Content -Path $SourcePath
+            $computerNameComponent = $null
+            foreach ($component in $unattendXml.unattend.settings.component) {
+                if ($component.ComputerName) {
+                    $computerNameComponent = $component
+                    break
+                }
+            }
+
+            if ($null -eq $computerNameComponent) {
+                if ($DeviceNamingMode -eq 'None') {
+                    Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+                    return
+                }
+
+                throw "ComputerName element not found in unattend source file: $SourcePath"
+            }
+
+            if ($DeviceNamingMode -eq 'None') {
+                $computerNameComponent.ComputerName = '*'
+            }
+            elseif ($DeviceNamingMode -eq 'Template') {
+                $computerNameComponent.ComputerName = $DeviceNameTemplate
+            }
+
+            $unattendXml.Save($DestinationPath)
+        }
+
         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
         WriteLog "Thread $([System.Threading.Thread]::CurrentThread.ManagedThreadId) processing DiskNumber $DiskNumber ($($USBDrive.Model))"
 
@@ -4244,15 +4431,15 @@ Function New-DeploymentUSB {
             $UnattendPathOnUSB = Join-Path $DeployPartitionDriveLetter "Unattend"
             WriteLog "Copying unattend file to $UnattendPathOnUSB"
             New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
-            if ($using:WindowsArch -eq 'x64') {
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_x64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            $unattendSource = Get-LocalUnattendSourcePath -UnattendFolder $using:UnattendFolder -WindowsArch $using:WindowsArch
+            Save-LocalStagedUnattendFile -SourcePath $unattendSource -DestinationPath (Join-Path $UnattendPathOnUSB 'Unattend.xml') -DeviceNamingMode $using:DeviceNamingMode -DeviceNameTemplate $using:normalizedDeviceNameTemplate
+            if ($using:DeviceNamingMode -eq 'Prefixes') {
+                WriteLog "Writing prefixes.txt file to $UnattendPathOnUSB"
+                $using:effectiveDeviceNamePrefixes | Set-Content -Path (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Encoding UTF8
             }
-            elseif ($using:WindowsArch -eq 'arm64') {
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_arm64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
-            }
-            if (Test-Path (Join-Path $using:UnattendFolder 'prefixes.txt')) {
+            elseif (($using:DeviceNamingMode -eq 'Legacy') -and (Test-Path -Path $using:resolvedDeviceNamePrefixesPath -PathType Leaf)) {
                 WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'prefixes.txt') -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
+                Copy-Item -Path $using:resolvedDeviceNamePrefixesPath -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
             }
             WriteLog 'Copy completed'
         }
@@ -5518,7 +5705,24 @@ if ($CopyUnattend) {
         WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
         throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
     }
+
+    if ($DeviceNamingMode -eq 'Prefixes') {
+        $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
+        if (-not (Test-UnattendHasComputerNameElement -Path $unattendSourcePath)) {
+            throw "DeviceNamingMode Prefixes requires a ComputerName element in $unattendSourcePath"
+        }
+    }
+
     WriteLog 'Unattend validation complete'
+}
+
+if ($InjectUnattend -and $DeviceNamingMode -eq 'Template') {
+    $injectUnattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
+    if (Test-Path -Path $injectUnattendSourcePath -PathType Leaf) {
+        if (-not (Test-UnattendHasComputerNameElement -Path $injectUnattendSourcePath)) {
+            throw "DeviceNamingMode Template requires a ComputerName element in $injectUnattendSourcePath"
+        }
+    }
 }
 
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
@@ -6418,9 +6622,7 @@ if ($InstallApps) {
             #Create Apps ISO
             # Inject Unattend.xml into Apps if requested and applicable
             if ($InstallApps -and $InjectUnattend) {
-                # Determine source unattend.xml based on architecture
-                $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
-                $unattendSource = Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+                $unattendSource = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
 
                 # Ensure target folder exists under Apps
                 $targetFolder = Join-Path $AppsPath 'Unattend'
@@ -6431,7 +6633,7 @@ if ($InstallApps) {
                 # Copy if source exists; otherwise log and skip
                 if (Test-Path -Path $unattendSource -PathType Leaf) {
                     $destination = Join-Path $targetFolder 'Unattend.xml'
-                    Copy-Item -Path $unattendSource -Destination $destination -Force | Out-Null
+                    Save-StagedUnattendFile -SourcePath $unattendSource -DestinationPath $destination -DeviceNamingMode $DeviceNamingMode -DeviceNameTemplate $normalizedDeviceNameTemplate
                     WriteLog "Injected unattend file into Apps: $unattendSource -> $destination"
                 }
                 else {
