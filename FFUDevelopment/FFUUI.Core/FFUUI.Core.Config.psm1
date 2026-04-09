@@ -43,6 +43,8 @@ function Get-UIConfig {
         CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
+        UnattendX64FilePath            = $State.Controls.txtUnattendX64FilePath.Text
+        UnattendArm64FilePath          = $State.Controls.txtUnattendArm64FilePath.Text
         CustomFFUNameTemplate          = $State.Controls.txtCustomFFUNameTemplate.Text
         Disksize                       = [int64]$State.Controls.txtDiskSize.Text * 1GB
         DownloadDrivers                = $State.Controls.chkDownloadDrivers.IsChecked
@@ -454,7 +456,17 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyAdditionalFFUFiles' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAdditionalFFUFiles' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
     Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
+    Set-UIValue -ControlName 'txtUnattendX64FilePath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UnattendX64FilePath' -State $State
+    Set-UIValue -ControlName 'txtUnattendArm64FilePath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UnattendArm64FilePath' -State $State
     Set-UIValue -ControlName 'chkVerbose' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'Verbose' -State $State
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtUnattendX64FilePath.Text)) {
+        $State.Controls.txtUnattendX64FilePath.Text = Get-DefaultUnattendFilePath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtUnattendArm64FilePath.Text)) {
+        $State.Controls.txtUnattendArm64FilePath.Text = Get-DefaultUnattendFilePath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
+    }
 
     # USB Drive Modification group (Build Tab)
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State

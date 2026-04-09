@@ -70,7 +70,7 @@ When set to $true, enables adding WinPE drivers. By default copies drivers from 
 When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
 
 .PARAMETER CopyUnattend
-When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
+When set to $true, stages the selected architecture-specific unattend XML file as Unattend.xml on the deployment partition of the USB drive. Default is $false.
 
 .PARAMETER DeviceNamingMode
 Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Prompt, Template, and Prefixes.
@@ -83,6 +83,12 @@ Sets the prefixes used when DeviceNamingMode is Prefixes. Each entry becomes a l
 
 .PARAMETER DeviceNamePrefixesPath
 Path to the source prefixes file used for legacy copy or when DeviceNamePrefixes is not supplied. Default is $FFUDevelopmentPath\Unattend\prefixes.txt.
+
+.PARAMETER UnattendX64FilePath
+Path to the x64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_x64.xml.
+
+.PARAMETER UnattendArm64FilePath
+Path to the arm64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_arm64.xml.
 
 .PARAMETER CreateDeploymentMedia
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
@@ -118,7 +124,7 @@ Prefix for the generated FFU file. Default is _FFU.
 Headers to use when downloading files. Not recommended to modify.
 
 .PARAMETER InjectUnattend
-When set to $true and InstallApps is also $true, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
+When set to $true and InstallApps is also $true, stages the selected architecture-specific unattend XML file to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
 
 .PARAMETER InstallApps
 When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created.
@@ -424,6 +430,8 @@ param(
     [string]$DeviceNameTemplate,
     [string[]]$DeviceNamePrefixes,
     [string]$DeviceNamePrefixesPath,
+    [string]$UnattendX64FilePath,
+    [string]$UnattendArm64FilePath,
     [bool]$CopyAutopilot,
     [bool]$CompactOS = $true,
     [bool]$CleanupDeployISO = $true,
@@ -527,11 +535,31 @@ function Get-UnattendSourcePath {
         [Parameter(Mandatory = $true)]
         [string]$UnattendFolder,
         [Parameter(Mandatory = $true)]
-        [string]$WindowsArch
+        [string]$WindowsArch,
+        [string]$UnattendX64FilePath,
+        [string]$UnattendArm64FilePath
     )
 
-    $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
-    return Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+    $resolvedArch = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+    $resolvedSourcePath = if ($resolvedArch -eq 'arm64') {
+        if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) {
+            Join-Path $UnattendFolder 'unattend_arm64.xml'
+        }
+        else {
+            $UnattendArm64FilePath
+        }
+    }
+    else {
+        if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) {
+            Join-Path $UnattendFolder 'unattend_x64.xml'
+        }
+        else {
+            $UnattendX64FilePath
+        }
+    }
+
+    WriteLog "Resolved unattend source path for ${resolvedArch}: $resolvedSourcePath"
+    return $resolvedSourcePath
 }
 
 function Initialize-UnattendComputerNamePath {
@@ -915,6 +943,8 @@ if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
 if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
+if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) { $UnattendX64FilePath = Join-Path $UnattendFolder 'unattend_x64.xml' }
+if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) { $UnattendArm64FilePath = Join-Path $UnattendFolder 'unattend_arm64.xml' }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
 if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
@@ -4397,11 +4427,31 @@ Function New-DeploymentUSB {
         function Get-LocalUnattendSourcePath {
             param(
                 [string]$UnattendFolder,
-                [string]$WindowsArch
+                [string]$WindowsArch,
+                [string]$UnattendX64FilePath,
+                [string]$UnattendArm64FilePath
             )
 
-            $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
-            return Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+            $resolvedArch = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+            $resolvedSourcePath = if ($resolvedArch -eq 'arm64') {
+                if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) {
+                    Join-Path $UnattendFolder 'unattend_arm64.xml'
+                }
+                else {
+                    $UnattendArm64FilePath
+                }
+            }
+            else {
+                if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) {
+                    Join-Path $UnattendFolder 'unattend_x64.xml'
+                }
+                else {
+                    $UnattendX64FilePath
+                }
+            }
+
+            WriteLog "Resolved unattend source path for ${resolvedArch}: $resolvedSourcePath"
+            return $resolvedSourcePath
         }
 
         function Initialize-UnattendComputerNamePath {
@@ -4587,7 +4637,7 @@ Function New-DeploymentUSB {
             $UnattendPathOnUSB = Join-Path $DeployPartitionDriveLetter "Unattend"
             WriteLog "Copying unattend file to $UnattendPathOnUSB"
             New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
-            $unattendSource = Get-LocalUnattendSourcePath -UnattendFolder $using:UnattendFolder -WindowsArch $using:WindowsArch
+            $unattendSource = Get-LocalUnattendSourcePath -UnattendFolder $using:UnattendFolder -WindowsArch $using:WindowsArch -UnattendX64FilePath $using:UnattendX64FilePath -UnattendArm64FilePath $using:UnattendArm64FilePath
             $legacyPrefixesWillBeStaged = ($using:DeviceNamingMode -eq 'Legacy') -and (Test-Path -Path $using:resolvedDeviceNamePrefixesPath -PathType Leaf)
             Save-LocalStagedUnattendFile -SourcePath $unattendSource -DestinationPath (Join-Path $UnattendPathOnUSB 'Unattend.xml') -DeviceNamingMode $using:DeviceNamingMode -DeviceNameTemplate $using:normalizedDeviceNameTemplate -WindowsArch $using:WindowsArch -LegacyPrefixesWillBeStaged $legacyPrefixesWillBeStaged
             if ($using:DeviceNamingMode -eq 'Prefixes') {
@@ -5850,21 +5900,23 @@ if ($CopyAutopilot) {
     WriteLog 'Autopilot validation complete'
 }
 
-#Validate Unattend folder
-if ($CopyUnattend) {
+# Validate unattend source file
+if ($CopyUnattend -or $InjectUnattend) {
     WriteLog 'Doing Unattend validation'
-    if (!(Test-Path -Path $UnattendFolder)) {
-        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
-        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
+    $selectedUnattendMode = if ($CopyUnattend) { 'CopyUnattend' } else { 'InjectUnattend' }
+    $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch -UnattendX64FilePath $UnattendX64FilePath -UnattendArm64FilePath $UnattendArm64FilePath
+    if (!(Test-Path -Path $unattendSourcePath -PathType Leaf)) {
+        WriteLog "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is missing: $unattendSourcePath"
+        throw "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is missing: $unattendSourcePath"
     }
-    #Check for .XML file
-    if (!(Get-ChildItem -Path $UnattendFolder -Filter unattend_*.xml)) {
-        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
-        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
+
+    $selectedUnattendFile = Get-Item -Path $unattendSourcePath -ErrorAction SilentlyContinue
+    if (($null -eq $selectedUnattendFile) -or ($selectedUnattendFile.Length -le 0)) {
+        WriteLog "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is empty: $unattendSourcePath"
+        throw "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is empty: $unattendSourcePath"
     }
 
     if ($DeviceNamingMode -ne 'None') {
-        $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
         try {
             [xml]$validationUnattendXml = Get-Content -Path $unattendSourcePath
             $null = Initialize-UnattendComputerNamePath -UnattendXml $validationUnattendXml -WindowsArch $WindowsArch
@@ -5875,19 +5927,6 @@ if ($CopyUnattend) {
     }
 
     WriteLog 'Unattend validation complete'
-}
-
-if ($InjectUnattend -and ($DeviceNamingMode -ne 'None')) {
-    $injectUnattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
-    if (Test-Path -Path $injectUnattendSourcePath -PathType Leaf) {
-        try {
-            [xml]$validationUnattendXml = Get-Content -Path $injectUnattendSourcePath
-            $null = Initialize-UnattendComputerNamePath -UnattendXml $validationUnattendXml -WindowsArch $WindowsArch
-        }
-        catch {
-            throw "DeviceNamingMode $DeviceNamingMode requires a valid specialize/Microsoft-Windows-Shell-Setup/ComputerName path in $injectUnattendSourcePath. $($_.Exception.Message)"
-        }
-    }
 }
 
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
@@ -6787,7 +6826,7 @@ if ($InstallApps) {
             #Create Apps ISO
             # Inject Unattend.xml into Apps if requested and applicable
             if ($InstallApps -and $InjectUnattend) {
-                $unattendSource = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
+                $unattendSource = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch -UnattendX64FilePath $UnattendX64FilePath -UnattendArm64FilePath $UnattendArm64FilePath
 
                 # Ensure target folder exists under Apps
                 $targetFolder = Join-Path $AppsPath 'Unattend'

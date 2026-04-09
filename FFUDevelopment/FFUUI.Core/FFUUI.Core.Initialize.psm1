@@ -220,6 +220,10 @@ function Initialize-UIControls {
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
     $State.Controls.chkInjectUnattend = $window.FindName('chkInjectUnattend')
+    $State.Controls.txtUnattendX64FilePath = $window.FindName('txtUnattendX64FilePath')
+    $State.Controls.btnBrowseUnattendX64FilePath = $window.FindName('btnBrowseUnattendX64FilePath')
+    $State.Controls.txtUnattendArm64FilePath = $window.FindName('txtUnattendArm64FilePath')
+    $State.Controls.btnBrowseUnattendArm64FilePath = $window.FindName('btnBrowseUnattendArm64FilePath')
     $State.Controls.rbDeviceNamingNone = $window.FindName('rbDeviceNamingNone')
     $State.Controls.rbDeviceNamingPrompt = $window.FindName('rbDeviceNamingPrompt')
     $State.Controls.rbDeviceNamingTemplate = $window.FindName('rbDeviceNamingTemplate')
@@ -387,6 +391,8 @@ function Initialize-UIDefaults {
     $State.Controls.chkOptimize.IsChecked = $State.Defaults.generalDefaults.Optimize
     $State.Controls.chkAllowVHDXCaching.IsChecked = $State.Defaults.generalDefaults.AllowVHDXCaching
     $State.Controls.chkInjectUnattend.IsChecked = $State.Defaults.generalDefaults.InjectUnattend
+    $State.Controls.txtUnattendX64FilePath.Text = $State.Defaults.generalDefaults.UnattendX64FilePath
+    $State.Controls.txtUnattendArm64FilePath.Text = $State.Defaults.generalDefaults.UnattendArm64FilePath
     $State.Controls.chkCreateDeploymentMedia.IsChecked = $State.Defaults.generalDefaults.CreateDeploymentMedia
     $State.Controls.chkAllowExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.AllowExternalHardDiskMedia
     $State.Controls.chkPromptExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.PromptExternalHardDiskMedia

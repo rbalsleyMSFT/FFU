@@ -836,11 +836,13 @@
                                         <RowDefinition Height="Auto"/>
                                         <!-- Row 9: General Build Options Checkboxes -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 10: Device Naming -->
+                                        <!-- Row 10: Unattend.xml Options -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 11: Build USB Drive Section -->
+                                        <!-- Row 11: Device Naming -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Row 12: Post-Build Cleanup -->
+                                        <!-- Row 12: Build USB Drive Section -->
+                                        <RowDefinition Height="Auto"/>
+                                        <!-- Row 13: Post-Build Cleanup -->
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
@@ -900,13 +902,39 @@
                                             <CheckBox x:Name="chkOptimize" Content="Optimize" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will optimize the OS when building the FFU."/>
                                             <CheckBox x:Name="chkAllowVHDXCaching" Content="Allow VHDX Caching" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will cache the VHDX file to cache folder and create a config json file to track Windows build information."/>
                                             <CheckBox x:Name="chkCreateDeploymentMedia" Content="Create Deployment Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, this will create WinPE deployment media for use when deploying to a physical device."/>
-                                            <CheckBox x:Name="chkInjectUnattend" Content="Inject Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true and Install Apps is enabled, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend into Apps\Unattend\Unattend.xml to be used by sysprep."/>
                                             <CheckBox x:Name="chkVerbose" Content="Verbose" Margin="0" VerticalAlignment="Center" Tag="When set to $true, will enable write-verbose output to the console for the build script."/>
                                         </StackPanel>
                                     </Expander>
 
-                                    <!-- Row 10: Device Naming -->
-                                    <Expander Grid.Row="10" x:Name="deviceNamingSection" Header="Device Naming" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <!-- Row 10: Unattend.xml Options -->
+                                    <Expander Grid.Row="10" Header="Unattend.xml Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <StackPanel Margin="0,8,0,0">
+                                            <TextBlock Text="Choose how unattend content is staged and which architecture-specific source files are used." Margin="0,0,0,12" TextWrapping="Wrap"/>
+                                            <TextBlock Text="x64 Unattend File Path" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                            <Grid Margin="0,0,0,16">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="txtUnattendX64FilePath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the x64 unattend XML source file. You can use any file name."/>
+                                                <Button x:Name="btnBrowseUnattendX64FilePath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Browse to the x64 unattend XML source file."/>
+                                            </Grid>
+                                            <TextBlock Text="arm64 Unattend File Path" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                            <Grid Margin="0,0,0,16">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="txtUnattendArm64FilePath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the arm64 unattend XML source file. You can use any file name."/>
+                                                <Button x:Name="btnBrowseUnattendArm64FilePath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Browse to the arm64 unattend XML source file."/>
+                                            </Grid>
+                                            <CheckBox x:Name="chkInjectUnattend" Content="Inject Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true and Install Apps is enabled, uses the selected architecture-specific unattend XML file and copies it into Apps\Unattend\Unattend.xml to be used by sysprep."/>
+                                            <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, uses the selected architecture-specific unattend XML file and copies it to the USB drive as Unattend.xml."/>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- Row 11: Device Naming -->
+                                    <Expander Grid.Row="11" x:Name="deviceNamingSection" Header="Device Naming" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                         <StackPanel Margin="0,8,0,0">
                                             <TextBlock Text="Choose how the device should be named when unattend is applied." Margin="0,0,0,12" TextWrapping="Wrap"/>
                                             <RadioButton x:Name="rbDeviceNamingNone" Content="No Device Name" GroupName="DeviceNamingMode" IsChecked="True" Margin="0,0,0,8" ToolTip="Apply unattend without setting a specific computer name."/>
@@ -938,8 +966,8 @@
                                         </StackPanel>
                                     </Expander>
 
-                                    <!-- Row 11: Build USB Drive Section -->
-                                    <Expander Grid.Row="11" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <!-- Row 12: Build USB Drive Section -->
+                                    <Expander Grid.Row="12" x:Name="usbDriveSection" Header="Build USB Drive Options" IsExpanded="False" Margin="0,0,0,20" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                         <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkBuildUSBDriveEnable" Content="Build USB Drive" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will partition and format a USB drive and copy the captured FFU to the drive."/>
                                             <CheckBox x:Name="chkAllowExternalHardDiskMedia" Content="Allow External Hard Disk Media" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will allow the use of external hard disk media."/>
@@ -947,7 +975,6 @@
                                             <CheckBox x:Name="chkSelectSpecificUSBDrives" Content="Select Specific USB Drives" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Enable to select specific USB drives for building"/>
                                             <!-- Added Missing Checkboxes -->
                                             <CheckBox x:Name="chkCopyAutopilot" Content="Copy Autopilot Profile" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will copy the Autopilot profile to the USB drive."/>
-                                            <CheckBox x:Name="chkCopyUnattend" Content="Copy Unattend.xml" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will copy the Unattend.xml file to the USB drive."/>
                                             <CheckBox x:Name="chkCopyPPKG" Content="Copy Provisioning Package" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, will copy the provisioning package to the USB drive."/>
                                             <CheckBox x:Name="chkCopyAdditionalFFUFiles" Content="Copy Additional FFU Files" Margin="0,0,0,8" VerticalAlignment="Center" Tag="When set to $true, allows selecting existing FFU files in the capture folder to also copy to the USB drive."/>
 
@@ -1004,8 +1031,8 @@
                                         </StackPanel>
                                     </Expander>
 
-                                    <!-- Row 12: Post-Build Cleanup -->
-                                    <Expander Grid.Row="12" Header="Post-Build Cleanup" IsExpanded="False" Margin="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                    <!-- Row 13: Post-Build Cleanup -->
+                                    <Expander Grid.Row="13" Header="Post-Build Cleanup" IsExpanded="False" Margin="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                                         <StackPanel Margin="0,8,0,0">
                                             <CheckBox x:Name="chkCleanupAppsISO" Content="Cleanup Apps ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove Apps ISO after FFU capture."/>
                                             <CheckBox x:Name="chkCleanupDeployISO" Content="Cleanup Deploy ISO" Margin="0,0,0,8" VerticalAlignment="Center" Tag="Remove WinPE deployment ISO after FFU capture."/>

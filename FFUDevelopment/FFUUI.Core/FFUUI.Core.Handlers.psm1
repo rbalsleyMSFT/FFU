@@ -101,6 +101,21 @@ function Get-DefaultDeviceNamePrefixesPath {
     return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') 'prefixes.txt'
 }
 
+function Get-DefaultUnattendFilePath {
+    param(
+        [string]$FFUDevelopmentPath,
+        [ValidateSet('x64', 'arm64')]
+        [string]$WindowsArch
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    $fileName = if ($WindowsArch -ieq 'arm64') { 'unattend_arm64.xml' } else { 'unattend_x64.xml' }
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') $fileName
+}
+
 function Import-DeviceNamePrefixesFromConfiguredPath {
     param(
         [PSCustomObject]$State,
@@ -416,11 +431,23 @@ function Register-EventHandlers {
             $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select FFU Development Path"
             if ($selectedPath) {
                 $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+                $currentUnattendX64FilePath = $localState.Controls.txtUnattendX64FilePath.Text
+                $currentUnattendArm64FilePath = $localState.Controls.txtUnattendArm64FilePath.Text
                 $previousDefaultPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                $previousDefaultUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+                $previousDefaultUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
                 $localState.Controls.txtFFUDevPath.Text = $selectedPath
                 $newDefaultPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $selectedPath
+                $newDefaultUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $selectedPath -WindowsArch 'x64'
+                $newDefaultUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $selectedPath -WindowsArch 'arm64'
                 if ([string]::IsNullOrWhiteSpace($currentPrefixesPath) -or $currentPrefixesPath -ieq $previousDefaultPrefixesPath) {
                     $localState.Controls.txtDeviceNamePrefixesPath.Text = $newDefaultPrefixesPath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath) -or $currentUnattendX64FilePath -ieq $previousDefaultUnattendX64FilePath) {
+                    $localState.Controls.txtUnattendX64FilePath.Text = $newDefaultUnattendX64FilePath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath) -or $currentUnattendArm64FilePath -ieq $previousDefaultUnattendArm64FilePath) {
+                    $localState.Controls.txtUnattendArm64FilePath.Text = $newDefaultUnattendArm64FilePath
                 }
                 Import-DeviceNamePrefixesFromConfiguredPath -State $localState
                 Update-DeviceNamingControls -State $localState
@@ -482,6 +509,46 @@ function Register-EventHandlers {
             $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select prefixes file path' -Filter 'Text files (*.txt)|*.txt|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
             if (Import-DeviceNamePrefixesFile -State $localState -FilePath $selectedPath) {
                 Update-DeviceNamingControls -State $localState
+            }
+        })
+    $State.Controls.btnBrowseUnattendX64FilePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentUnattendX64FilePath = $localState.Controls.txtUnattendX64FilePath.Text
+            if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) {
+                $currentUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) {
+                $null
+            }
+            else {
+                Split-Path $currentUnattendX64FilePath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) { 'unattend_x64.xml' } else { Split-Path $currentUnattendX64FilePath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select x64 unattend XML file' -Filter 'XML files (*.xml)|*.xml|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (-not [string]::IsNullOrWhiteSpace($selectedPath)) {
+                $localState.Controls.txtUnattendX64FilePath.Text = $selectedPath
+            }
+        })
+    $State.Controls.btnBrowseUnattendArm64FilePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentUnattendArm64FilePath = $localState.Controls.txtUnattendArm64FilePath.Text
+            if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) {
+                $currentUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) {
+                $null
+            }
+            else {
+                Split-Path $currentUnattendArm64FilePath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) { 'unattend_arm64.xml' } else { Split-Path $currentUnattendArm64FilePath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select arm64 unattend XML file' -Filter 'XML files (*.xml)|*.xml|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (-not [string]::IsNullOrWhiteSpace($selectedPath)) {
+                $localState.Controls.txtUnattendArm64FilePath.Text = $selectedPath
             }
         })
     $State.Controls.btnSaveDeviceNamePrefixes.Add_Click({

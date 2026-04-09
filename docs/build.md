@@ -283,11 +283,23 @@ The deployment media is saved as an ISO file at `$FFUDevelopmentPath\WinPE_FFU_D
 >
 > If you just need to re-create deployment media, you can use the `Create-PEMedia.ps1` script to regenerate the deploy ISO without running a full build.
 
+## Unattend.xml Options Expander
+
+Use the **Unattend.xml Options** expander to choose how unattend content is staged and which source XML file FFU Builder should use for x64 and arm64 builds.
+
+### x64 Unattend File Path
+
+Use **x64 Unattend File Path** to browse to the source XML file for x64 builds. The default path is `.\FFUDevelopment\unattend\unattend_x64.xml`.
+
+### arm64 Unattend File Path
+
+Use **arm64 Unattend File Path** to browse to the source XML file for arm64 builds. The default path is `.\FFUDevelopment\unattend\unattend_arm64.xml`.
+
 ### Inject Unattend.xml
 
-Controls the `-InjectUnattend` parameter. When checked, copies the architecture-specific unattend XML file from `.\FFUDevelopment\unattend` into the Apps ISO so it's baked into the FFU during the VM build process. The default is **unchecked**.
+Controls the `-InjectUnattend` parameter. When checked, stages the XML file selected for the current architecture in **Unattend.xml Options** into the Apps ISO so it's baked into the FFU during the VM build process. The default is **unchecked**.
 
-This option is only available when **Install Apps** is checked.
+This option is used only when **Install Apps** is checked.
 
 `Copy Unattend.xml` and `Inject Unattend.xml` are mutually exclusive. Select only one.
 
@@ -295,18 +307,16 @@ This option is only available when **Install Apps** is checked.
 
 When enabled, the build process:
 
-1. Determines the correct unattend file based on the target architecture:
-   * **unattend_x64.xml** for x64 builds
-   * **unattend_arm64.xml** for arm64 builds
+1. Uses the x64 or arm64 source file selected in **Unattend.xml Options** for the current build architecture
 2. Creates an `Unattend` folder inside `.\FFUDevelopment\Apps` if it doesn't exist
-3. Copies the architecture-specific unattend file to `.\FFUDevelopment\Apps\Unattend\Unattend.xml`
+3. Copies that file to `.\FFUDevelopment\Apps\Unattend\Unattend.xml`
 4. Includes the unattend file in the Apps ISO, making it available to sysprep during the VM build
 
 The unattend file is then used by sysprep during the specialize phase and/or other OOBE phases when the FFU is deployed.
 
 #### Creating Your Unattend Files
 
-Modify the architecture-specific unattend file in the `.\FFUDevelopment\unattend` folder:
+You can keep the default architecture-specific files in the `.\FFUDevelopment\unattend` folder or browse to another XML file in the UI:
 
 | File                         | Description                         |
 | ---------------------------- | ----------------------------------- |
@@ -317,7 +327,7 @@ Modify the architecture-specific unattend file in the `.\FFUDevelopment\unattend
 
 > Important
 >
-> Keep the file names with the architecture suffix (e.g., unattend_x64.xml). The script handles renaming the file to `Unattend.xml` when copying it to the Apps folder.
+> The default paths use the architecture suffix file names shown above. FFU Builder still renames the selected file to `Unattend.xml` when it stages it into the Apps folder.
 
 #### When to Use This Option
 
@@ -516,14 +526,16 @@ This leverages the Autopilot for existing devices json file. It's not recommende
 
 ### Copy Unattend.xml
 
-Controls the `-CopyUnattend` parameter. When checked, copies the architecture-appropriate unattend XML file from `.\FFUDevelopment\Unattend` to an `Unattend` folder on the Deployment partition of the USB drive. The default is **unchecked**.
+Controls the `-CopyUnattend` parameter. When checked, stages the XML file selected for the current architecture in **Unattend.xml Options** to an `Unattend` folder on the Deployment partition of the USB drive. The default is **unchecked**.
 
-This option is only available when **Build USB Drive** is checked.
+Use this option when you plan to build deployment USB media.
 
 When enabled, the build process copies:
 
-- **unattend_x64.xml** (for x64 builds) or **unattend_arm64.xml** (for arm64 builds) → renamed to **Unattend.xml** on the USB drive
+- The selected x64 or arm64 unattend XML file → renamed to **Unattend.xml** on the USB drive
 - **prefixes.txt** → created from the **Device Naming** prefixes list when that mode is selected
+
+If you keep the default file paths in place, FFU Builder uses `unattend_x64.xml` for x64 builds and `unattend_arm64.xml` for arm64 builds.
 
 During deployment, `ApplyFFU.ps1` applies `Unattend.xml` whenever it is present. Device naming only happens when the **Device Naming** setting requires it, or when older media still uses the legacy prompt-based workflow.
 

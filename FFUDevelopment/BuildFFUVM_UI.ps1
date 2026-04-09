@@ -439,6 +439,38 @@ $script:uiState.Controls.btnRun.Add_Click({
                 return
             }
 
+            if ($config.CopyUnattend -or $config.InjectUnattend) {
+                $selectedUnattendArch = if ($config.WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+                $selectedUnattendSourcePath = if ($selectedUnattendArch -eq 'arm64') {
+                    [string]$config.UnattendArm64FilePath
+                }
+                else {
+                    [string]$config.UnattendX64FilePath
+                }
+
+                if ([string]::IsNullOrWhiteSpace($selectedUnattendSourcePath)) {
+                    [System.Windows.MessageBox]::Show("Select a valid $selectedUnattendArch unattend XML file before using Copy Unattend.xml or Inject Unattend.xml.", "Unattend File Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file path required."
+                    return
+                }
+
+                if (-not (Test-Path -Path $selectedUnattendSourcePath -PathType Leaf)) {
+                    [System.Windows.MessageBox]::Show("The selected $selectedUnattendArch unattend XML file was not found:`n$selectedUnattendSourcePath", "Unattend File Missing", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file missing."
+                    return
+                }
+
+                $selectedUnattendFileInfo = Get-Item -Path $selectedUnattendSourcePath -ErrorAction SilentlyContinue
+                if (($null -eq $selectedUnattendFileInfo) -or ($selectedUnattendFileInfo.Length -le 0)) {
+                    [System.Windows.MessageBox]::Show("The selected $selectedUnattendArch unattend XML file is empty:`n$selectedUnattendSourcePath", "Unattend File Empty", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file empty."
+                    return
+                }
+            }
+
             if ($config.DeviceNamingMode -eq 'Prompt') {
                 if (-not $config.CopyUnattend) {
                     [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Prompt for Device Name'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
