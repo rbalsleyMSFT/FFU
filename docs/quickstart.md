@@ -286,18 +286,22 @@ And the Unattend folder should have an unattend.xml file with the following cont
   <settings pass="specialize">
   <!--<ComputerName> must be in the first Component Element  "Microsoft-Windows-Shell-Setup" . Do not change the order or remove it -->
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <ComputerName>MyComputer</ComputerName>
+      <ComputerName>*</ComputerName>
     </component>
   <!--Place addtional Components Elements and settings below here. -->
   </settings>
 </unattend>
 ```
 
+Keep `*` if you want Windows to generate a random device name by default.
+
+If you want the technician to be prompted for the device name during deployment, select **Prompt for Device Name** in the Build tab and enable **Copy Unattend.xml**. FFU Builder will rewrite only the staged deployment copy of `Unattend.xml` for that workflow.
+
 Now you're ready to deploy the FFU to your device. 
 
 ## Deployment
 
-Deployment should be fairly straight forward: boot off the USB device, get prompted for a device name, and the deployment of the FFU and drivers should happen automatically. 
+Deployment should be fairly straight forward: boot off the USB device and the deployment of the FFU and drivers should happen automatically. If you selected **Prompt for Device Name** or another supported device naming option, that naming step will happen during deployment.
 
 If you have any questions or run into any issues, [open a discussion in the Github repo](https://github.com/rbalsleyMSFT/FFU/discussions).
 

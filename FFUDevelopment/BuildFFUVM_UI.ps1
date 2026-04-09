@@ -439,7 +439,15 @@ $script:uiState.Controls.btnRun.Add_Click({
                 return
             }
 
-            if ($config.DeviceNamingMode -eq 'Template') {
+            if ($config.DeviceNamingMode -eq 'Prompt') {
+                if (-not $config.CopyUnattend) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Prompt for Device Name'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: prompt naming requires Copy Unattend.xml."
+                    return
+                }
+            }
+            elseif ($config.DeviceNamingMode -eq 'Template') {
                 if ([string]::IsNullOrWhiteSpace([string]$config.DeviceNameTemplate)) {
                     [System.Windows.MessageBox]::Show("Specify a device name before using 'Specify Device Name'.", "Device Name Required", "OK", "Warning") | Out-Null
                     $btnRun.IsEnabled = $true

@@ -221,6 +221,7 @@ function Initialize-UIControls {
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
     $State.Controls.chkInjectUnattend = $window.FindName('chkInjectUnattend')
     $State.Controls.rbDeviceNamingNone = $window.FindName('rbDeviceNamingNone')
+    $State.Controls.rbDeviceNamingPrompt = $window.FindName('rbDeviceNamingPrompt')
     $State.Controls.rbDeviceNamingTemplate = $window.FindName('rbDeviceNamingTemplate')
     $State.Controls.rbDeviceNamingPrefixes = $window.FindName('rbDeviceNamingPrefixes')
     $State.Controls.deviceNameTemplatePanel = $window.FindName('deviceNameTemplatePanel')

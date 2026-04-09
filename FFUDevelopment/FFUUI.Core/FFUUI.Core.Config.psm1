@@ -472,7 +472,10 @@ function Update-UIFromConfig {
     if ($ConfigContent.PSObject.Properties.Name -contains 'DeviceNamingMode') {
         $deviceNamingMode = [string]$ConfigContent.DeviceNamingMode
     }
-    if ($deviceNamingMode -notin @('None', 'Template', 'Prefixes')) {
+    if ($deviceNamingMode -eq 'Legacy') {
+        $deviceNamingMode = 'Prompt'
+    }
+    if ($deviceNamingMode -notin @('None', 'Prompt', 'Template', 'Prefixes')) {
         $deviceNamingMode = 'None'
     }
     Set-DeviceNamingMode -State $State -Mode $deviceNamingMode

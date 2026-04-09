@@ -363,6 +363,17 @@ Use the **Device Naming** expander to decide whether `ComputerName` should be se
 
 This is the default option. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
 
+The active `unattend_*.xml` files in `FFUDevelopment\Unattend` use `<ComputerName>*</ComputerName>` for this default behavior.
+
+### Prompt for Device Name
+
+Use this option when you want the technician to enter the computer name during deployment.
+
+- This option requires **Copy Unattend.xml**.
+- The source `unattend_*.xml` files can stay at `<ComputerName>*</ComputerName>`.
+- During the build, FFU Builder rewrites only the staged deployment copy of `Unattend.xml` to the legacy prompt placeholder that `ApplyFFU.ps1` already recognizes.
+- **Inject Unattend.xml** is not supported with this option.
+
 ### Specify Device Name
 
 Use this option when you want a static device name or a template such as `Comp-%serial%`.
@@ -399,9 +410,9 @@ Use **Prefixes File Path** to point the UI at the source text file for the prefi
 
 Use **Save Prefixes** to write the current multiline prefixes list back to the file specified in **Prefixes File Path**.
 
-### Legacy Prompt Behavior
+### Deployment Prompt Compatibility
 
-Older deployment media that still has an unattend file with `ComputerName` set to the legacy placeholder value and no `prefixes.txt` file will still prompt for a device name during deployment.
+Older deployment media that already has an unattend file with `ComputerName` set to the legacy placeholder value and no `prefixes.txt` file will still prompt for a device name during deployment.
 
 {: .warning-title}
 

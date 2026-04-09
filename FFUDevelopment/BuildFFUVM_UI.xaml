@@ -910,6 +910,7 @@
                                         <StackPanel Margin="0,8,0,0">
                                             <TextBlock Text="Choose how the device should be named when unattend is applied." Margin="0,0,0,12" TextWrapping="Wrap"/>
                                             <RadioButton x:Name="rbDeviceNamingNone" Content="No Device Name" GroupName="DeviceNamingMode" IsChecked="True" Margin="0,0,0,8" ToolTip="Apply unattend without setting a specific computer name."/>
+                                            <RadioButton x:Name="rbDeviceNamingPrompt" Content="Prompt for Device Name" GroupName="DeviceNamingMode" Margin="0,0,0,8" ToolTip="Prompt the technician to enter a device name during deployment. This option requires Copy Unattend.xml."/>
                                             <RadioButton x:Name="rbDeviceNamingTemplate" Content="Specify Device Name" GroupName="DeviceNamingMode" Margin="0,0,0,8" ToolTip="Use a static device name or the %serial% variable when Copy Unattend.xml is selected."/>
                                             <StackPanel x:Name="deviceNameTemplatePanel" Margin="32,0,0,16" Visibility="Collapsed">
                                                 <TextBlock Text="Use static text, %serial%, or both together, for example Comp-%serial%." Margin="0,0,0,4" TextWrapping="Wrap"/>

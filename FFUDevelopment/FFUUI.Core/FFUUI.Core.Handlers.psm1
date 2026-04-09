@@ -30,6 +30,10 @@ function Update-VMNetworkingControls {
 function Get-SelectedDeviceNamingMode {
     param([PSCustomObject]$State)
 
+    if ($true -eq $State.Controls.rbDeviceNamingPrompt.IsChecked) {
+        return 'Prompt'
+    }
+
     if ($true -eq $State.Controls.rbDeviceNamingTemplate.IsChecked) {
         return 'Template'
     }
@@ -44,11 +48,12 @@ function Get-SelectedDeviceNamingMode {
 function Set-DeviceNamingMode {
     param(
         [PSCustomObject]$State,
-        [ValidateSet('None', 'Template', 'Prefixes')]
+        [ValidateSet('None', 'Prompt', 'Template', 'Prefixes')]
         [string]$Mode
     )
 
     $State.Controls.rbDeviceNamingNone.IsChecked = $Mode -eq 'None'
+    $State.Controls.rbDeviceNamingPrompt.IsChecked = $Mode -eq 'Prompt'
     $State.Controls.rbDeviceNamingTemplate.IsChecked = $Mode -eq 'Template'
     $State.Controls.rbDeviceNamingPrefixes.IsChecked = $Mode -eq 'Prefixes'
 }
@@ -132,9 +137,10 @@ function Update-UnattendSelectionControls {
     $isCopyUnattendSelected = $true -eq $State.Controls.chkCopyUnattend.IsChecked
     $isInjectUnattendSelected = $true -eq $State.Controls.chkInjectUnattend.IsChecked
     $deviceNameTemplateUsesSerialToken = Test-DeviceNameTemplateUsesSerialToken -State $State
+    $requiresCopiedUnattend = ($selectedDeviceNamingMode -in @('Prompt', 'Prefixes')) -or $deviceNameTemplateUsesSerialToken
 
     if ($isCopyUnattendSelected -and $isInjectUnattendSelected) {
-        if (($selectedDeviceNamingMode -eq 'Prefixes') -or $deviceNameTemplateUsesSerialToken) {
+        if ($requiresCopiedUnattend) {
             $State.Controls.chkInjectUnattend.IsChecked = $false
             $isInjectUnattendSelected = $false
         }
@@ -144,7 +150,7 @@ function Update-UnattendSelectionControls {
         }
     }
 
-    if (($selectedDeviceNamingMode -eq 'Prefixes') -or $deviceNameTemplateUsesSerialToken) {
+    if ($requiresCopiedUnattend) {
         if (-not $isCopyUnattendSelected) {
             $State.Controls.chkCopyUnattend.IsChecked = $true
             $isCopyUnattendSelected = $true
@@ -177,13 +183,14 @@ function Update-UnattendSelectionControls {
 function Update-DeviceNamingControls {
     param([PSCustomObject]$State)
 
-    if (($true -eq $State.Controls.chkInjectUnattend.IsChecked) -and ($true -eq $State.Controls.rbDeviceNamingPrefixes.IsChecked)) {
+    if (($true -eq $State.Controls.chkInjectUnattend.IsChecked) -and (($true -eq $State.Controls.rbDeviceNamingPrompt.IsChecked) -or ($true -eq $State.Controls.rbDeviceNamingPrefixes.IsChecked))) {
         $State.Controls.rbDeviceNamingNone.IsChecked = $true
     }
 
     $selectedDeviceNamingMode = Get-SelectedDeviceNamingMode -State $State
     $State.Controls.deviceNameTemplatePanel.Visibility = if ($selectedDeviceNamingMode -eq 'Template') { 'Visible' } else { 'Collapsed' }
     $State.Controls.deviceNamePrefixesPanel.Visibility = if ($selectedDeviceNamingMode -eq 'Prefixes') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.rbDeviceNamingPrompt.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
     $State.Controls.rbDeviceNamingPrefixes.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
 
     if ($selectedDeviceNamingMode -eq 'Prefixes') {
@@ -431,6 +438,11 @@ function Register-EventHandlers {
         })
 
     $State.Controls.rbDeviceNamingNone.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            Update-DeviceNamingControls -State $window.Tag
+        })
+    $State.Controls.rbDeviceNamingPrompt.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             Update-DeviceNamingControls -State $window.Tag

@@ -73,7 +73,7 @@ When set to $true, will copy the provisioning package from the $FFUDevelopmentPa
 When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
 
 .PARAMETER DeviceNamingMode
-Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Template, and Prefixes.
+Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Prompt, Template, and Prefixes.
 
 .PARAMETER DeviceNameTemplate
 Sets the device name used when DeviceNamingMode is Template. Supports a static name or the %serial% token when CopyUnattend is used.
@@ -419,7 +419,7 @@ param(
     [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
-    [ValidateSet('Legacy', 'None', 'Template', 'Prefixes')]
+    [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')]
     [string]$DeviceNamingMode = 'Legacy',
     [string]$DeviceNameTemplate,
     [string[]]$DeviceNamePrefixes,
@@ -557,7 +557,7 @@ function Save-StagedUnattendFile {
         [Parameter(Mandatory = $true)]
         [string]$DestinationPath,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Legacy', 'None', 'Template', 'Prefixes')]
+        [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')]
         [string]$DeviceNamingMode,
         [string]$DeviceNameTemplate
     )
@@ -587,6 +587,9 @@ function Save-StagedUnattendFile {
 
     if ($DeviceNamingMode -eq 'None') {
         $computerNameComponent.ComputerName = '*'
+    }
+    elseif ($DeviceNamingMode -eq 'Prompt') {
+        $computerNameComponent.ComputerName = 'MyComputer'
     }
     elseif ($DeviceNamingMode -eq 'Template') {
         $computerNameComponent.ComputerName = $DeviceNameTemplate
@@ -636,6 +639,11 @@ if ($DeviceNamingMode -eq 'Template') {
 
     if ($InjectUnattend -and (-not $CopyUnattend) -and $normalizedDeviceNameTemplate -match '(?i)%serial%') {
         throw 'The %serial% device name variable is only supported when CopyUnattend is used.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'Prompt') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode Prompt requires CopyUnattend. Prompt-based naming is not supported with InjectUnattend.'
     }
 }
 elseif ($DeviceNamingMode -eq 'Prefixes') {
@@ -4364,6 +4372,9 @@ Function New-DeploymentUSB {
             if ($DeviceNamingMode -eq 'None') {
                 $computerNameComponent.ComputerName = '*'
             }
+            elseif ($DeviceNamingMode -eq 'Prompt') {
+                $computerNameComponent.ComputerName = 'MyComputer'
+            }
             elseif ($DeviceNamingMode -eq 'Template') {
                 $computerNameComponent.ComputerName = $DeviceNameTemplate
             }
@@ -5706,10 +5717,10 @@ if ($CopyUnattend) {
         throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
     }
 
-    if ($DeviceNamingMode -eq 'Prefixes') {
+    if ($DeviceNamingMode -in @('Prompt', 'Prefixes')) {
         $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
         if (-not (Test-UnattendHasComputerNameElement -Path $unattendSourcePath)) {
-            throw "DeviceNamingMode Prefixes requires a ComputerName element in $unattendSourcePath"
+            throw "DeviceNamingMode $DeviceNamingMode requires a ComputerName element in $unattendSourcePath"
         }
     }
 
