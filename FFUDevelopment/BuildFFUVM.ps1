@@ -534,20 +534,79 @@ function Get-UnattendSourcePath {
     return Join-Path $UnattendFolder "unattend_$archSuffix.xml"
 }
 
-function Test-UnattendHasComputerNameElement {
+function Initialize-UnattendComputerNamePath {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [xml]$UnattendXml,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch
     )
 
-    [xml]$unattendXml = Get-Content -Path $Path
-    foreach ($component in $unattendXml.unattend.settings.component) {
-        if ($component.ComputerName) {
-            return $true
-        }
+    $unattendRoot = $UnattendXml.DocumentElement
+    if (($null -eq $unattendRoot) -or ($unattendRoot.LocalName -ne 'unattend')) {
+        throw 'Unattend XML is missing the unattend root element.'
     }
 
-    return $false
+    $unattendNamespace = $unattendRoot.NamespaceURI
+    if ([string]::IsNullOrWhiteSpace($unattendNamespace)) {
+        throw 'Unattend XML is missing the default unattend namespace.'
+    }
+
+    $namespaceManager = New-Object System.Xml.XmlNamespaceManager($UnattendXml.NameTable)
+    $namespaceManager.AddNamespace('un', $unattendNamespace)
+
+    $specializeSettings = $unattendRoot.SelectSingleNode("un:settings[@pass='specialize']", $namespaceManager)
+    $createdSpecializeSettings = $false
+    if ($null -eq $specializeSettings) {
+        $specializeSettings = $UnattendXml.CreateElement('settings', $unattendNamespace)
+        $null = $specializeSettings.SetAttribute('pass', 'specialize')
+        $firstSettingsNode = $unattendRoot.SelectSingleNode('un:settings', $namespaceManager)
+        if ($null -ne $firstSettingsNode) {
+            $null = $unattendRoot.InsertBefore($specializeSettings, $firstSettingsNode)
+        }
+        else {
+            $null = $unattendRoot.AppendChild($specializeSettings)
+        }
+        $createdSpecializeSettings = $true
+    }
+
+    $shellSetupComponent = $specializeSettings.SelectSingleNode("un:component[@name='Microsoft-Windows-Shell-Setup']", $namespaceManager)
+    $createdShellSetupComponent = $false
+    if ($null -eq $shellSetupComponent) {
+        $processorArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+        $shellSetupComponent = $UnattendXml.CreateElement('component', $unattendNamespace)
+        $null = $shellSetupComponent.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+        $null = $shellSetupComponent.SetAttribute('processorArchitecture', $processorArchitecture)
+        $null = $shellSetupComponent.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+        $null = $shellSetupComponent.SetAttribute('language', 'neutral')
+        $null = $shellSetupComponent.SetAttribute('versionScope', 'nonSxS')
+        $null = $shellSetupComponent.SetAttribute('xmlns:wcm', 'http://www.w3.org/2000/xmlns/', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+        $null = $shellSetupComponent.SetAttribute('xmlns:xsi', 'http://www.w3.org/2000/xmlns/', 'http://www.w3.org/2001/XMLSchema-instance')
+
+        $firstComponentNode = $specializeSettings.SelectSingleNode('un:component', $namespaceManager)
+        if ($null -ne $firstComponentNode) {
+            $null = $specializeSettings.InsertBefore($shellSetupComponent, $firstComponentNode)
+        }
+        else {
+            $null = $specializeSettings.AppendChild($shellSetupComponent)
+        }
+        $createdShellSetupComponent = $true
+    }
+
+    $computerNameElement = $shellSetupComponent.SelectSingleNode('un:ComputerName', $namespaceManager)
+    $createdComputerNameElement = $false
+    if ($null -eq $computerNameElement) {
+        $computerNameElement = $UnattendXml.CreateElement('ComputerName', $unattendNamespace)
+        $null = $shellSetupComponent.AppendChild($computerNameElement)
+        $createdComputerNameElement = $true
+    }
+
+    return [PSCustomObject]@{
+        ComputerNameElement        = $computerNameElement
+        CreatedSpecializeSettings  = $createdSpecializeSettings
+        CreatedShellSetupComponent = $createdShellSetupComponent
+        CreatedComputerNameElement = $createdComputerNameElement
+    }
 }
 
 function Save-StagedUnattendFile {
@@ -559,40 +618,47 @@ function Save-StagedUnattendFile {
         [Parameter(Mandatory = $true)]
         [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')]
         [string]$DeviceNamingMode,
-        [string]$DeviceNameTemplate
+        [string]$DeviceNameTemplate,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [bool]$LegacyPrefixesWillBeStaged = $false
     )
 
-    if ($DeviceNamingMode -in @('Legacy', 'Prefixes')) {
+    if ($DeviceNamingMode -eq 'None') {
         Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
         return
     }
 
     [xml]$unattendXml = Get-Content -Path $SourcePath
-    $computerNameComponent = $null
-    foreach ($component in $unattendXml.unattend.settings.component) {
-        if ($component.ComputerName) {
-            $computerNameComponent = $component
-            break
+    $computerNamePath = Initialize-UnattendComputerNamePath -UnattendXml $unattendXml -WindowsArch $WindowsArch
+
+    if ($computerNamePath.CreatedSpecializeSettings -or $computerNamePath.CreatedShellSetupComponent -or $computerNamePath.CreatedComputerNameElement) {
+        $createdParts = @()
+        if ($computerNamePath.CreatedSpecializeSettings) {
+            $createdParts += 'specialize settings'
         }
-    }
-
-    if ($null -eq $computerNameComponent) {
-        if ($DeviceNamingMode -eq 'None') {
-            Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
-            return
+        if ($computerNamePath.CreatedShellSetupComponent) {
+            $createdParts += 'Microsoft-Windows-Shell-Setup component'
         }
-
-        throw "ComputerName element not found in unattend source file: $SourcePath"
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $createdParts += 'ComputerName element'
+        }
+        WriteLog "Created $($createdParts -join ', ') while staging unattend file $DestinationPath"
     }
 
-    if ($DeviceNamingMode -eq 'None') {
-        $computerNameComponent.ComputerName = '*'
-    }
-    elseif ($DeviceNamingMode -eq 'Prompt') {
-        $computerNameComponent.ComputerName = 'MyComputer'
+    if ($DeviceNamingMode -eq 'Prompt') {
+        $computerNamePath.ComputerNameElement.InnerText = 'MyComputer'
     }
     elseif ($DeviceNamingMode -eq 'Template') {
-        $computerNameComponent.ComputerName = $DeviceNameTemplate
+        $computerNamePath.ComputerNameElement.InnerText = $DeviceNameTemplate
+    }
+    elseif ($DeviceNamingMode -eq 'Prefixes') {
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $computerNamePath.ComputerNameElement.InnerText = '*'
+        }
+    }
+    elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
+        $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
     }
 
     $unattendXml.Save($DestinationPath)
@@ -4338,45 +4404,124 @@ Function New-DeploymentUSB {
             return Join-Path $UnattendFolder "unattend_$archSuffix.xml"
         }
 
+        function Initialize-UnattendComputerNamePath {
+            param(
+                [xml]$UnattendXml,
+                [string]$WindowsArch
+            )
+
+            $unattendRoot = $UnattendXml.DocumentElement
+            if (($null -eq $unattendRoot) -or ($unattendRoot.LocalName -ne 'unattend')) {
+                throw 'Unattend XML is missing the unattend root element.'
+            }
+
+            $unattendNamespace = $unattendRoot.NamespaceURI
+            if ([string]::IsNullOrWhiteSpace($unattendNamespace)) {
+                throw 'Unattend XML is missing the default unattend namespace.'
+            }
+
+            $namespaceManager = New-Object System.Xml.XmlNamespaceManager($UnattendXml.NameTable)
+            $namespaceManager.AddNamespace('un', $unattendNamespace)
+
+            $specializeSettings = $unattendRoot.SelectSingleNode("un:settings[@pass='specialize']", $namespaceManager)
+            $createdSpecializeSettings = $false
+            if ($null -eq $specializeSettings) {
+                $specializeSettings = $UnattendXml.CreateElement('settings', $unattendNamespace)
+                $null = $specializeSettings.SetAttribute('pass', 'specialize')
+                $firstSettingsNode = $unattendRoot.SelectSingleNode('un:settings', $namespaceManager)
+                if ($null -ne $firstSettingsNode) {
+                    $null = $unattendRoot.InsertBefore($specializeSettings, $firstSettingsNode)
+                }
+                else {
+                    $null = $unattendRoot.AppendChild($specializeSettings)
+                }
+                $createdSpecializeSettings = $true
+            }
+
+            $shellSetupComponent = $specializeSettings.SelectSingleNode("un:component[@name='Microsoft-Windows-Shell-Setup']", $namespaceManager)
+            $createdShellSetupComponent = $false
+            if ($null -eq $shellSetupComponent) {
+                $processorArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+                $shellSetupComponent = $UnattendXml.CreateElement('component', $unattendNamespace)
+                $null = $shellSetupComponent.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+                $null = $shellSetupComponent.SetAttribute('processorArchitecture', $processorArchitecture)
+                $null = $shellSetupComponent.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                $null = $shellSetupComponent.SetAttribute('language', 'neutral')
+                $null = $shellSetupComponent.SetAttribute('versionScope', 'nonSxS')
+                $null = $shellSetupComponent.SetAttribute('xmlns:wcm', 'http://www.w3.org/2000/xmlns/', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+                $null = $shellSetupComponent.SetAttribute('xmlns:xsi', 'http://www.w3.org/2000/xmlns/', 'http://www.w3.org/2001/XMLSchema-instance')
+
+                $firstComponentNode = $specializeSettings.SelectSingleNode('un:component', $namespaceManager)
+                if ($null -ne $firstComponentNode) {
+                    $null = $specializeSettings.InsertBefore($shellSetupComponent, $firstComponentNode)
+                }
+                else {
+                    $null = $specializeSettings.AppendChild($shellSetupComponent)
+                }
+                $createdShellSetupComponent = $true
+            }
+
+            $computerNameElement = $shellSetupComponent.SelectSingleNode('un:ComputerName', $namespaceManager)
+            $createdComputerNameElement = $false
+            if ($null -eq $computerNameElement) {
+                $computerNameElement = $UnattendXml.CreateElement('ComputerName', $unattendNamespace)
+                $null = $shellSetupComponent.AppendChild($computerNameElement)
+                $createdComputerNameElement = $true
+            }
+
+            return [PSCustomObject]@{
+                ComputerNameElement        = $computerNameElement
+                CreatedSpecializeSettings  = $createdSpecializeSettings
+                CreatedShellSetupComponent = $createdShellSetupComponent
+                CreatedComputerNameElement = $createdComputerNameElement
+            }
+        }
+
         function Save-LocalStagedUnattendFile {
             param(
                 [string]$SourcePath,
                 [string]$DestinationPath,
                 [string]$DeviceNamingMode,
-                [string]$DeviceNameTemplate
+                [string]$DeviceNameTemplate,
+                [string]$WindowsArch,
+                [bool]$LegacyPrefixesWillBeStaged = $false
             )
 
-            if ($DeviceNamingMode -in @('Legacy', 'Prefixes')) {
+            if ($DeviceNamingMode -eq 'None') {
                 Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
                 return
             }
 
             [xml]$unattendXml = Get-Content -Path $SourcePath
-            $computerNameComponent = $null
-            foreach ($component in $unattendXml.unattend.settings.component) {
-                if ($component.ComputerName) {
-                    $computerNameComponent = $component
-                    break
+            $computerNamePath = Initialize-UnattendComputerNamePath -UnattendXml $unattendXml -WindowsArch $WindowsArch
+
+            if ($computerNamePath.CreatedSpecializeSettings -or $computerNamePath.CreatedShellSetupComponent -or $computerNamePath.CreatedComputerNameElement) {
+                $createdParts = @()
+                if ($computerNamePath.CreatedSpecializeSettings) {
+                    $createdParts += 'specialize settings'
                 }
-            }
-
-            if ($null -eq $computerNameComponent) {
-                if ($DeviceNamingMode -eq 'None') {
-                    Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
-                    return
+                if ($computerNamePath.CreatedShellSetupComponent) {
+                    $createdParts += 'Microsoft-Windows-Shell-Setup component'
                 }
-
-                throw "ComputerName element not found in unattend source file: $SourcePath"
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $createdParts += 'ComputerName element'
+                }
+                WriteLog "Created $($createdParts -join ', ') while staging unattend file $DestinationPath"
             }
 
-            if ($DeviceNamingMode -eq 'None') {
-                $computerNameComponent.ComputerName = '*'
-            }
-            elseif ($DeviceNamingMode -eq 'Prompt') {
-                $computerNameComponent.ComputerName = 'MyComputer'
+            if ($DeviceNamingMode -eq 'Prompt') {
+                $computerNamePath.ComputerNameElement.InnerText = 'MyComputer'
             }
             elseif ($DeviceNamingMode -eq 'Template') {
-                $computerNameComponent.ComputerName = $DeviceNameTemplate
+                $computerNamePath.ComputerNameElement.InnerText = $DeviceNameTemplate
+            }
+            elseif ($DeviceNamingMode -eq 'Prefixes') {
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $computerNamePath.ComputerNameElement.InnerText = '*'
+                }
+            }
+            elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
+                $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
             }
 
             $unattendXml.Save($DestinationPath)
@@ -4443,12 +4588,13 @@ Function New-DeploymentUSB {
             WriteLog "Copying unattend file to $UnattendPathOnUSB"
             New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
             $unattendSource = Get-LocalUnattendSourcePath -UnattendFolder $using:UnattendFolder -WindowsArch $using:WindowsArch
-            Save-LocalStagedUnattendFile -SourcePath $unattendSource -DestinationPath (Join-Path $UnattendPathOnUSB 'Unattend.xml') -DeviceNamingMode $using:DeviceNamingMode -DeviceNameTemplate $using:normalizedDeviceNameTemplate
+            $legacyPrefixesWillBeStaged = ($using:DeviceNamingMode -eq 'Legacy') -and (Test-Path -Path $using:resolvedDeviceNamePrefixesPath -PathType Leaf)
+            Save-LocalStagedUnattendFile -SourcePath $unattendSource -DestinationPath (Join-Path $UnattendPathOnUSB 'Unattend.xml') -DeviceNamingMode $using:DeviceNamingMode -DeviceNameTemplate $using:normalizedDeviceNameTemplate -WindowsArch $using:WindowsArch -LegacyPrefixesWillBeStaged $legacyPrefixesWillBeStaged
             if ($using:DeviceNamingMode -eq 'Prefixes') {
                 WriteLog "Writing prefixes.txt file to $UnattendPathOnUSB"
                 $using:effectiveDeviceNamePrefixes | Set-Content -Path (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Encoding UTF8
             }
-            elseif (($using:DeviceNamingMode -eq 'Legacy') -and (Test-Path -Path $using:resolvedDeviceNamePrefixesPath -PathType Leaf)) {
+            elseif ($legacyPrefixesWillBeStaged) {
                 WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
                 Copy-Item -Path $using:resolvedDeviceNamePrefixesPath -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
             }
@@ -5717,21 +5863,29 @@ if ($CopyUnattend) {
         throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
     }
 
-    if ($DeviceNamingMode -in @('Prompt', 'Prefixes')) {
+    if ($DeviceNamingMode -ne 'None') {
         $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
-        if (-not (Test-UnattendHasComputerNameElement -Path $unattendSourcePath)) {
-            throw "DeviceNamingMode $DeviceNamingMode requires a ComputerName element in $unattendSourcePath"
+        try {
+            [xml]$validationUnattendXml = Get-Content -Path $unattendSourcePath
+            $null = Initialize-UnattendComputerNamePath -UnattendXml $validationUnattendXml -WindowsArch $WindowsArch
+        }
+        catch {
+            throw "DeviceNamingMode $DeviceNamingMode requires a valid specialize/Microsoft-Windows-Shell-Setup/ComputerName path in $unattendSourcePath. $($_.Exception.Message)"
         }
     }
 
     WriteLog 'Unattend validation complete'
 }
 
-if ($InjectUnattend -and $DeviceNamingMode -eq 'Template') {
+if ($InjectUnattend -and ($DeviceNamingMode -ne 'None')) {
     $injectUnattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch
     if (Test-Path -Path $injectUnattendSourcePath -PathType Leaf) {
-        if (-not (Test-UnattendHasComputerNameElement -Path $injectUnattendSourcePath)) {
-            throw "DeviceNamingMode Template requires a ComputerName element in $injectUnattendSourcePath"
+        try {
+            [xml]$validationUnattendXml = Get-Content -Path $injectUnattendSourcePath
+            $null = Initialize-UnattendComputerNamePath -UnattendXml $validationUnattendXml -WindowsArch $WindowsArch
+        }
+        catch {
+            throw "DeviceNamingMode $DeviceNamingMode requires a valid specialize/Microsoft-Windows-Shell-Setup/ComputerName path in $injectUnattendSourcePath. $($_.Exception.Message)"
         }
     }
 }
@@ -6644,7 +6798,7 @@ if ($InstallApps) {
                 # Copy if source exists; otherwise log and skip
                 if (Test-Path -Path $unattendSource -PathType Leaf) {
                     $destination = Join-Path $targetFolder 'Unattend.xml'
-                    Save-StagedUnattendFile -SourcePath $unattendSource -DestinationPath $destination -DeviceNamingMode $DeviceNamingMode -DeviceNameTemplate $normalizedDeviceNameTemplate
+                    Save-StagedUnattendFile -SourcePath $unattendSource -DestinationPath $destination -DeviceNamingMode $DeviceNamingMode -DeviceNameTemplate $normalizedDeviceNameTemplate -WindowsArch $WindowsArch
                     WriteLog "Injected unattend file into Apps: $unattendSource -> $destination"
                 }
                 else {
