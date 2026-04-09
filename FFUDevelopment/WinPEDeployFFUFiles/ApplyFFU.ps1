@@ -41,6 +41,59 @@ function WriteLog($LogText) {
     Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText"
 }
 
+function Read-MenuSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InvalidInputMessage,
+
+        [Parameter()]
+        [int[]]$ValidSelections,
+
+        [Parameter()]
+        [int]$Minimum = [int]::MinValue,
+
+        [Parameter()]
+        [int]$Maximum = [int]::MaxValue,
+
+        [Parameter()]
+        [switch]$AllowSkip
+    )
+
+    do {
+        $userInput = Read-Host $Prompt
+        if ([string]::IsNullOrWhiteSpace($userInput)) {
+            Write-Host $InvalidInputMessage
+            continue
+        }
+
+        $selection = 0
+        if (-not [int]::TryParse($userInput, [ref]$selection)) {
+            Write-Host $InvalidInputMessage
+            continue
+        }
+
+        if ($AllowSkip -and $selection -eq 0) {
+            return 0
+        }
+
+        if ($PSBoundParameters.ContainsKey('ValidSelections')) {
+            if ($ValidSelections -notcontains $selection) {
+                Write-Host $InvalidInputMessage
+                continue
+            }
+        }
+        elseif ($selection -lt $Minimum -or $selection -gt $Maximum) {
+            Write-Host $InvalidInputMessage
+            continue
+        }
+
+        return $selection
+    } until ($false)
+}
+
 function Set-DiskpartAnswerFiles($DiskpartFile, $DiskID) {
     (Get-Content $DiskpartFile).Replace('disk 0', "disk $DiskID") | Set-Content -Path $DiskpartFile
 }
@@ -953,21 +1006,7 @@ else {
     }
     $displayList | Format-Table -AutoSize -Property Disk, 'Size (GB)', Sector, 'Bus Type', Model
 
-    do {
-        try {
-            $var = $true
-            [int]$diskSelection = Read-Host 'Enter the disk number to apply the FFU to'
-        }
-        catch {
-            Write-Host 'Input was not in correct format. Please enter a valid disk number'
-            $var = $false
-        }
-        # Validate selected disk is in the list of available disks
-        if ($var -and $validDiskIndexes -notcontains $diskSelection) {
-            Write-Host "Invalid disk number. Please select from the available disks."
-            $var = $false
-        }
-    } until ($var)
+    $diskSelection = Read-MenuSelection -Prompt 'Enter the disk number to apply the FFU to' -InvalidInputMessage 'Invalid disk number. Please select from the available disks.' -ValidSelections $validDiskIndexes
 
     $selectedDisk = $diskDriveCandidates | Where-Object { $_.Index -eq $diskSelection }
     WriteLog "Disk selection: DiskNumber=$($selectedDisk.Index), Model=$($selectedDisk.Model), SizeGB=$([math]::Round(($selectedDisk.Size / 1GB), 2)), BusType=$($selectedDisk.InterfaceType)"
@@ -1011,18 +1050,8 @@ If ($FFUCount -gt 1) {
         $array += New-Object PSObject -Property $Properties
     }
     $array | Format-Table -AutoSize -Property Number, FFUFile | Out-Host
-    do {
-        try {
-            $var = $true
-            [int]$FFUSelected = Read-Host 'Enter the FFU number to install'
-            $FFUSelected = $FFUSelected - 1
-        }
-
-        catch {
-            Write-Host 'Input was not in correct format. Please enter a valid FFU number'
-            $var = $false
-        }
-    } until (($FFUSelected -le $FFUCount - 1) -and $var) 
+    $FFUSelected = Read-MenuSelection -Prompt 'Enter the FFU number to install' -InvalidInputMessage 'Input was not in correct format. Please enter a valid FFU number.' -Minimum 1 -Maximum $FFUCount
+    $FFUSelected = $FFUSelected - 1
 
     $FFUFileToInstall = $array[$FFUSelected].FFUFile
     WriteLog "$FFUFileToInstall was selected"
@@ -1103,6 +1132,8 @@ If ($UnattendPrefix -or $UnattendComputerName -or $RequiresTemplateDeviceName -o
         Writelog 'Unattend file found with prefixes.txt. Getting prefixes.'
         $UnattendPrefixes = @(Get-content $UnattendPrefixFile)
         $UnattendPrefixCount = $UnattendPrefixes.Count
+        $skipPrefixSelection = $false
+        $PrefixToUse = $null
         If ($UnattendPrefixCount -gt 1) {
             WriteLog "Found $UnattendPrefixCount Prefixes"
             $array = @()
@@ -1111,20 +1142,18 @@ If ($UnattendPrefix -or $UnattendComputerName -or $RequiresTemplateDeviceName -o
                 $array += New-Object PSObject -Property $Properties
             }
             $array | Format-Table -AutoSize -Property Number, DeviceNamePrefix
-            do {
-                try {
-                    $var = $true
-                    [int]$PrefixSelected = Read-Host 'Enter the prefix number to use for the device name'
-                    $PrefixSelected = $PrefixSelected - 1
-                }
-                catch {
-                    Write-Host 'Input was not in correct format. Please enter a valid prefix number'
-                    $var = $false
-                }
-            } until (($PrefixSelected -le $UnattendPrefixCount - 1) -and $var) 
-            $PrefixToUse = $array[$PrefixSelected].DeviceNamePrefix
-            WriteLog "$PrefixToUse was selected"
-            Write-Host "`n$PrefixToUse was selected as device name prefix"
+            $prefixSelection = Read-MenuSelection -Prompt 'Enter the prefix number to use for the device name (0 to skip)' -InvalidInputMessage 'Input was not in correct format. Please enter 0 to skip or a valid prefix number.' -Minimum 1 -Maximum $UnattendPrefixCount -AllowSkip
+            if ($prefixSelection -eq 0) {
+                $skipPrefixSelection = $true
+                WriteLog 'User chose to skip device name prefix selection. Existing unattend computer name will remain unchanged.'
+                Write-Host "`nDevice name prefix selection was skipped. The existing unattend computer name will remain unchanged."
+            }
+            else {
+                $PrefixSelected = $prefixSelection - 1
+                $PrefixToUse = $array[$PrefixSelected].DeviceNamePrefix
+                WriteLog "$PrefixToUse was selected"
+                Write-Host "`n$PrefixToUse was selected as device name prefix"
+            }
         }
         elseif ($UnattendPrefixCount -eq 1) {
             WriteLog "Found $UnattendPrefixCount Prefix"
@@ -1133,8 +1162,10 @@ If ($UnattendPrefix -or $UnattendComputerName -or $RequiresTemplateDeviceName -o
             WriteLog "Will use $PrefixToUse as device name prefix"
             Write-Host "Will use $PrefixToUse as device name prefix"
         }
-        $serial = (Get-CimInstance -ClassName win32_bios).SerialNumber.Trim()
-        $computername = Set-ConfiguredComputerName($PrefixToUse + $serial)
+        if (-not $skipPrefixSelection) {
+            $serial = (Get-CimInstance -ClassName win32_bios).SerialNumber.Trim()
+            $computername = Set-ConfiguredComputerName($PrefixToUse + $serial)
+        }
     }
     elseif ($Unattend -and $UnattendComputerName) {
         Writelog 'Unattend file found with SerialComputerNames.csv. Getting name for current computer.'
@@ -1177,17 +1208,7 @@ else {
 If ($autopilot -eq $true -and $PPKG -eq $true) {
     WriteLog 'Both PPKG and Autopilot json files found'
     Write-Host 'Both Autopilot JSON files and Provisioning packages were found.'
-    do {
-        try {
-            $var = $true
-            [int]$APorPPKG = Read-Host 'Enter 1 for Autopilot or 2 for Provisioning Package'
-        }
-
-        catch {
-            Write-Host 'Incorrect value. Please enter 1 for Autopilot or 2 for Provisioning Package'
-            $var = $false
-        }
-    } until (($APorPPKG -gt 0 -and $APorPPKG -lt 3) -and $var)
+    $APorPPKG = Read-MenuSelection -Prompt 'Enter 1 for Autopilot or 2 for Provisioning Package' -InvalidInputMessage 'Incorrect value. Please enter 1 for Autopilot or 2 for Provisioning Package.' -Minimum 1 -Maximum 2
     If ($APorPPKG -eq 1) {
         $PPKG = $false
     }
@@ -1206,22 +1227,20 @@ If ($APFilesCount -gt 1 -and $autopilot -eq $true) {
         $array += New-Object PSObject -Property $Properties
     }
     $array | Format-Table -AutoSize -Property Number, APFileName
-    do {
-        try {
-            $var = $true
-            [int]$APFileSelected = Read-Host 'Enter the AP json file number to install'
-            $APFileSelected = $APFileSelected - 1
-        }
+    $APFileSelection = Read-MenuSelection -Prompt 'Enter the AP json file number to install (0 to skip)' -InvalidInputMessage 'Input was not in correct format. Please enter 0 to skip or a valid AP json file number.' -Minimum 1 -Maximum $APFilesCount -AllowSkip
 
-        catch {
-            Write-Host 'Input was not in correct format. Please enter a valid AP json file number'
-            $var = $false
-        }
-    } until (($APFileSelected -le $APFilesCount - 1) -and $var) 
-
-    $APFileToInstall = $array[$APFileSelected].APFile
-    $APFileName = $array[$APFileSelected].APFileName
-    WriteLog "$APFileToInstall was selected"
+    if ($APFileSelection -eq 0) {
+        $APFileToInstall = $null
+        $APFileName = $null
+        WriteLog 'User chose to skip Autopilot JSON selection.'
+        Write-Host "`nAutopilot JSON selection was skipped."
+    }
+    else {
+        $APFileSelected = $APFileSelection - 1
+        $APFileToInstall = $array[$APFileSelected].APFile
+        $APFileName = $array[$APFileSelected].APFileName
+        WriteLog "$APFileToInstall was selected"
+    }
 }
 elseif ($APFilesCount -eq 1 -and $autopilot -eq $true) {
     WriteLog "Found $APFilesCount AP File"
@@ -1244,22 +1263,19 @@ If ($PPKGFilesCount -gt 1 -and $PPKG -eq $true) {
         $array += New-Object PSObject -Property $Properties
     }
     $array | Format-Table -AutoSize -Property Number, PPKGFileName
-    do {
-        try {
-            $var = $true
-            [int]$PPKGFileSelected = Read-Host 'Enter the PPKG file number to install'
-            $PPKGFileSelected = $PPKGFileSelected - 1
-        }
+    $PPKGFileSelection = Read-MenuSelection -Prompt 'Enter the PPKG file number to install (0 to skip)' -InvalidInputMessage 'Input was not in correct format. Please enter 0 to skip or a valid PPKG file number.' -Minimum 1 -Maximum $PPKGFilesCount -AllowSkip
 
-        catch {
-            Write-Host 'Input was not in correct format. Please enter a valid PPKG file number'
-            $var = $false
-        }
-    } until (($PPKGFileSelected -le $PPKGFilesCount - 1) -and $var) 
-
-    $PPKGFileToInstall = $array[$PPKGFileSelected].PPKGFile
-    WriteLog "$PPKGFileToInstall was selected"
-    Write-Host "`n$PPKGFileToInstall will be used"
+    if ($PPKGFileSelection -eq 0) {
+        $PPKGFileToInstall = $null
+        WriteLog 'User chose to skip Provisioning Package selection.'
+        Write-Host "`nProvisioning Package selection was skipped."
+    }
+    else {
+        $PPKGFileSelected = $PPKGFileSelection - 1
+        $PPKGFileToInstall = $array[$PPKGFileSelected].PPKGFile
+        WriteLog "$PPKGFileToInstall was selected"
+        Write-Host "`n$PPKGFileToInstall will be used"
+    }
 }
 elseif ($PPKGFilesCount -eq 1 -and $PPKG -eq $true) {
     Write-SectionHeader -Title 'Provisioning Package Selection'
@@ -1375,7 +1391,7 @@ if ($null -eq $DriverSourcePath) {
                     if ([string]::IsNullOrWhiteSpace($relativeSegment)) {
                         return Split-Path -Path $normalizedPath -Leaf
                     }
-                    return $relativePath = $relativeSegment
+                    return $relativeSegment
                 }
                 return $normalizedPath
             }
@@ -1451,25 +1467,17 @@ if ($null -eq $DriverSourcePath) {
                     }
                 }
                 $displayArray | Format-Table -Property Number, Type, RelativePath -AutoSize
-                
+
                 $DriverSelected = -1
                 $skipDriverInstall = $false
-                do {
-                    try {
-                        $var = $true
-                        [int]$userSelection = Read-Host 'Enter the number of the driver source to install (0 to skip)'
-                        if ($userSelection -eq 0) {
-                            $skipDriverInstall = $true
-                            break
-                        }
-                        $DriverSelected = $userSelection - 1
-                    }
-                    catch {
-                        Write-Host 'Input was not in correct format. Please enter a valid number.'
-                        $var = $false
-                    }
-                } until ((($DriverSelected -ge 0 -and $DriverSelected -lt $DriverSourcesCount) -or $skipDriverInstall) -and $var)
-                
+                $userSelection = Read-MenuSelection -Prompt 'Enter the number of the driver source to install (0 to skip)' -InvalidInputMessage 'Input was not in correct format. Please enter 0 to skip or a valid number.' -Minimum 1 -Maximum $DriverSourcesCount -AllowSkip
+                if ($userSelection -eq 0) {
+                    $skipDriverInstall = $true
+                }
+                else {
+                    $DriverSelected = $userSelection - 1
+                }
+
                 if ($skipDriverInstall) {
                     $DriverSourcePath = $null
                     $DriverSourceType = $null

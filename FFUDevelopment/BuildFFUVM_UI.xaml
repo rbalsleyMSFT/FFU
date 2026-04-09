@@ -913,7 +913,7 @@
                                             <RadioButton x:Name="rbDeviceNamingTemplate" Content="Specify Device Name" GroupName="DeviceNamingMode" Margin="0,0,0,8" ToolTip="Use a static device name or the %serial% variable when Copy Unattend.xml is selected."/>
                                             <StackPanel x:Name="deviceNameTemplatePanel" Margin="32,0,0,16" Visibility="Collapsed">
                                                 <TextBlock Text="Use static text, %serial%, or both together, for example Comp-%serial%." Margin="0,0,0,4" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Choose Copy Unattend.xml or Inject Unattend.xml below for static names. %serial% requires Copy Unattend.xml." Margin="0,0,0,8" TextWrapping="Wrap" Opacity="0.75"/>
+                                                <TextBlock Text="Choose Copy Unattend.xml or Inject Unattend.xml for static names. %serial% requires Copy Unattend.xml." Margin="0,0,0,8" TextWrapping="Wrap" Opacity="0.75"/>
                                                 <TextBox x:Name="txtDeviceNameTemplate" VerticalAlignment="Center" ToolTip="Examples: KIOSK-01 or Comp-%serial%"/>
                                             </StackPanel>
                                             <RadioButton x:Name="rbDeviceNamingPrefixes" Content="Specify a list of Prefixes" GroupName="DeviceNamingMode" Margin="0,0,0,8" ToolTip="Enter one prefix per line or import an existing prefixes file. This option requires Copy Unattend.xml."/>

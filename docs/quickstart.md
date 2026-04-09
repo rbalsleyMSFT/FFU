@@ -207,6 +207,12 @@ Use this option when you want a static device name or a template such as `Comp-%
 
 This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line or import an existing prefixes file. The source file can use any name because the UI tracks the prefixes path separately. If there is one prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one and the serial number is appended to that prefix.
 
+{: .note-title}
+
+> Note
+>
+> If the technician skips prefix selection when multiple prefixes are available, `ApplyFFU.ps1` leaves the existing unattend `ComputerName` value unchanged. With the current unattend samples set to `<ComputerName>*</ComputerName>`, Windows falls back to its default random computer-name behavior, typically resulting in a name such as `WIN-*`.
+
 {: .warning-title}
 
 > Warning
