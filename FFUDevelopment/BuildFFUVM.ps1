@@ -3708,7 +3708,8 @@ function New-PEMedia {
     foreach ($Package in $Packages) {
         $PackagePath = Join-Path $PackagePathBase $Package
         WriteLog "Adding Package $Package"
-        Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
+        # Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WinPEFFUPath\mount /Add-Package /PackagePath:$PackagePath" | Out-Null
         WriteLog "Adding package complete"
     }
     WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
@@ -7404,10 +7405,8 @@ try {
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
                     WriteLog 'WindowsRelease is 2016, adding SSU first'
                     WriteLog "Adding SSU to $WindowsPartition"
-                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
-                    # Commenting out -preventpending as it causes an issue with the SSU being applied
-                    # Seems to be because of the registry being mounted per dism.log
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$SSUFilePath" | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
                     # WriteLog "Removing $SSUFilePath"
                     # Remove-Item -Path $SSUFilePath -Force | Out-Null
@@ -7416,7 +7415,8 @@ try {
                 if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                     WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
                     WriteLog "Adding SSU to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$SSUFilePath" | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
                     # WriteLog "Removing $SSUFilePath"
                     # Remove-Item -Path $SSUFilePath -Force | Out-Null
@@ -7429,23 +7429,27 @@ try {
                     }
                     else {
                         WriteLog "Adding $CUPath to $WindowsPartition"
-                        Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        # Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$CUPath" | Out-Null
                         WriteLog "$CUPath added to $WindowsPartition"
                     }
                 }
                 if ($UpdatePreviewCU) {
                     WriteLog "Adding $CUPPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$CUPPath" | Out-Null
                     WriteLog "$CUPPath added to $WindowsPartition"
                 }
                 if ($UpdateLatestNet) {
                     WriteLog "Adding $NETPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$NETPath" | Out-Null
                     WriteLog "$NETPath added to $WindowsPartition"
                 }
                 if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
                     WriteLog "Adding $MicrocodePath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$MicrocodePath" | Out-Null
                     WriteLog "$MicrocodePath added to $WindowsPartition"
                 }
                 WriteLog "KBs added to $WindowsPartition"
