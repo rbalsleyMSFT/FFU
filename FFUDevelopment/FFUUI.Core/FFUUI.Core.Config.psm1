@@ -36,7 +36,7 @@ function Get-UIConfig {
         UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
-        DeviceNamingMode               = Get-SelectedDeviceNamingMode -State $State
+        DeviceNamingMode               = Get-ConfiguredDeviceNamingMode -State $State
         DeviceNameTemplate             = $State.Controls.txtDeviceNameTemplate.Text
         DeviceNamePrefixesPath         = $State.Controls.txtDeviceNamePrefixesPath.Text
         DeviceNamePrefixes             = @(Get-DeviceNamePrefixes -State $State)
@@ -480,17 +480,20 @@ function Update-UIFromConfig {
         $State.Controls.txtDeviceNamePrefixesPath.Text = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
     }
 
-    $deviceNamingMode = 'None'
+    $loadedDeviceNamingMode = $null
     if ($ConfigContent.PSObject.Properties.Name -contains 'DeviceNamingMode') {
-        $deviceNamingMode = [string]$ConfigContent.DeviceNamingMode
+        $candidateDeviceNamingMode = [string]$ConfigContent.DeviceNamingMode
+        if ($candidateDeviceNamingMode -in @('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')) {
+            $loadedDeviceNamingMode = $candidateDeviceNamingMode
+        }
     }
-    if ($deviceNamingMode -eq 'Legacy') {
-        $deviceNamingMode = 'Prompt'
+    $displayDeviceNamingMode = if ($loadedDeviceNamingMode -in @('Prompt', 'Template', 'Prefixes')) {
+        $loadedDeviceNamingMode
     }
-    if ($deviceNamingMode -notin @('None', 'Prompt', 'Template', 'Prefixes')) {
-        $deviceNamingMode = 'None'
+    else {
+        'None'
     }
-    Set-DeviceNamingMode -State $State -Mode $deviceNamingMode
+    Set-DeviceNamingModeState -State $State -DisplayMode $displayDeviceNamingMode -LoadedMode $loadedDeviceNamingMode
     Import-DeviceNamePrefixesFromConfiguredPath -State $State
     Update-DeviceNamingControls -State $State
     

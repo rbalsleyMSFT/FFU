@@ -58,6 +58,55 @@ function Set-DeviceNamingMode {
     $State.Controls.rbDeviceNamingPrefixes.IsChecked = $Mode -eq 'Prefixes'
 }
 
+function Set-DeviceNamingModeState {
+    param(
+        [PSCustomObject]$State,
+        [ValidateSet('None', 'Prompt', 'Template', 'Prefixes')]
+        [string]$DisplayMode,
+        [AllowNull()]
+        [string]$LoadedMode
+    )
+
+    if ($null -eq $State.Flags) {
+        $State.Flags = @{}
+    }
+
+    if ($null -eq $State.Data) {
+        $State.Data = @{}
+    }
+
+    $previousSuppressionState = $true -eq $State.Flags.suppressDeviceNamingChangeTracking
+    $State.Flags.suppressDeviceNamingChangeTracking = $true
+    try {
+        Set-DeviceNamingMode -State $State -Mode $DisplayMode
+    }
+    finally {
+        $State.Flags.suppressDeviceNamingChangeTracking = $previousSuppressionState
+    }
+
+    $State.Data.loadedDeviceNamingMode = if ([string]::IsNullOrWhiteSpace($LoadedMode)) {
+        $null
+    }
+    else {
+        $LoadedMode.Trim()
+    }
+    $State.Flags.deviceNamingModeWasExplicitlyChanged = $false
+}
+
+function Get-ConfiguredDeviceNamingMode {
+    param([PSCustomObject]$State)
+
+    if (($null -ne $State.Flags) -and ($true -eq $State.Flags.deviceNamingModeWasExplicitlyChanged)) {
+        return Get-SelectedDeviceNamingMode -State $State
+    }
+
+    if (($null -ne $State.Data) -and -not [string]::IsNullOrWhiteSpace([string]$State.Data.loadedDeviceNamingMode)) {
+        return [string]$State.Data.loadedDeviceNamingMode
+    }
+
+    return $null
+}
+
 function Get-DeviceNamePrefixes {
     param([PSCustomObject]$State)
 
@@ -467,17 +516,32 @@ function Register-EventHandlers {
     $State.Controls.rbDeviceNamingNone.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
-            Update-DeviceNamingControls -State $window.Tag
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
         })
     $State.Controls.rbDeviceNamingPrompt.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
-            Update-DeviceNamingControls -State $window.Tag
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
         })
     $State.Controls.rbDeviceNamingTemplate.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
-            Update-DeviceNamingControls -State $window.Tag
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
         })
     $State.Controls.txtDeviceNameTemplate.Add_TextChanged({
             param($eventSource, $textChangedEventArgs)
@@ -489,7 +553,12 @@ function Register-EventHandlers {
     $State.Controls.rbDeviceNamingPrefixes.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
-            Update-DeviceNamingControls -State $window.Tag
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
         })
     $State.Controls.btnBrowseDeviceNamePrefixesPath.Add_Click({
             param($eventSource, $routedEventArgs)

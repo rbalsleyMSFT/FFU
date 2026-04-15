@@ -371,9 +371,12 @@ Use the **Device Naming** expander to decide whether `ComputerName` should be se
 
 ### No Device Name
 
-This is the default option. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
+This is the default radio selection in the UI.
 
-The active `unattend_*.xml` files in `FFUDevelopment\Unattend` use `<ComputerName>*</ComputerName>` for this default behavior.
+- If you leave device naming untouched, FFU Builder does not write `DeviceNamingMode` to the generated config. This preserves the script's `Legacy` default, so an existing `FFUDevelopment\Unattend\prefixes.txt` file is still copied to deployment media when present.
+- If you explicitly select this option, FFU Builder writes `DeviceNamingMode = None`. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
+
+The active `unattend_*.xml` files in `FFUDevelopment\Unattend` use `<ComputerName>*</ComputerName>` in the current sample files.
 
 ### Prompt for Device Name
 

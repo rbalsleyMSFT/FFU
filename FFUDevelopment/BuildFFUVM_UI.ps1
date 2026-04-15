@@ -46,7 +46,8 @@ $script:uiState = [PSCustomObject]@{
         logStreamReader             = $null;
         pollTimer                   = $null;
         currentBuildProcess         = $null;
-        lastConfigFilePath          = $null
+        lastConfigFilePath          = $null;
+        loadedDeviceNamingMode      = $null
     };
     Flags              = @{
         installAppsForcedByUpdates        = $false;
@@ -56,7 +57,9 @@ $script:uiState = [PSCustomObject]@{
         lastSortAscending                 = $true;
         isBuilding                        = $false;
         isCleanupRunning                  = $false;
-        isFluentSupported                 = $false
+        isFluentSupported                 = $false;
+        deviceNamingModeWasExplicitlyChanged = $false;
+        suppressDeviceNamingChangeTracking   = $false
     };
     Defaults           = @{};
     LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log"

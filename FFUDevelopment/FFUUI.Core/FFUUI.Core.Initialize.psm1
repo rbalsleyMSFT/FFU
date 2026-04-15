@@ -400,7 +400,13 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyAutopilot.IsChecked = $State.Defaults.generalDefaults.CopyAutopilot
     $State.Controls.chkCopyUnattend.IsChecked = $State.Defaults.generalDefaults.CopyUnattend
     $State.Controls.chkCopyPPKG.IsChecked = $State.Defaults.generalDefaults.CopyPPKG
-    Set-DeviceNamingMode -State $State -Mode $State.Defaults.generalDefaults.DeviceNamingMode
+    $defaultDeviceNamingMode = if ($State.Defaults.generalDefaults.DeviceNamingMode -in @('None', 'Prompt', 'Template', 'Prefixes')) {
+        $State.Defaults.generalDefaults.DeviceNamingMode
+    }
+    else {
+        'None'
+    }
+    Set-DeviceNamingModeState -State $State -DisplayMode $defaultDeviceNamingMode -LoadedMode $null
     $State.Controls.txtDeviceNameTemplate.Text = $State.Defaults.generalDefaults.DeviceNameTemplate
     $State.Controls.txtDeviceNamePrefixesPath.Text = $State.Defaults.generalDefaults.DeviceNamePrefixesPath
     $State.Controls.txtDeviceNamePrefixes.Text = ($State.Defaults.generalDefaults.DeviceNamePrefixes -join [System.Environment]::NewLine)
