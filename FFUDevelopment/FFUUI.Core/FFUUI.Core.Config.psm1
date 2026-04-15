@@ -40,6 +40,8 @@ function Get-UIConfig {
         DeviceNameTemplate             = $State.Controls.txtDeviceNameTemplate.Text
         DeviceNamePrefixesPath         = $State.Controls.txtDeviceNamePrefixesPath.Text
         DeviceNamePrefixes             = @(Get-DeviceNamePrefixes -State $State)
+        DeviceNameSerialComputerNamesPath = $State.Controls.txtDeviceNameSerialComputerNamesPath.Text
+        DeviceNameSerialComputerNames  = @(Get-SerialComputerNamesLines -State $State)
         CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
@@ -473,21 +475,27 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyUnattend' -State $State
     Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPPKG' -State $State
     Set-UIValue -ControlName 'txtDeviceNamePrefixesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixesPath' -State $State
+    Set-UIValue -ControlName 'txtDeviceNameSerialComputerNamesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameSerialComputerNamesPath' -State $State
     Set-UIValue -ControlName 'txtDeviceNameTemplate' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameTemplate' -State $State
     Set-UIValue -ControlName 'txtDeviceNamePrefixes' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixes' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
+    Set-UIValue -ControlName 'txtDeviceNameSerialComputerNames' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameSerialComputerNames' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
 
     if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNamePrefixesPath.Text)) {
         $State.Controls.txtDeviceNamePrefixesPath.Text = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
     }
 
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNameSerialComputerNamesPath.Text)) {
+        $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+    }
+
     $loadedDeviceNamingMode = $null
     if ($ConfigContent.PSObject.Properties.Name -contains 'DeviceNamingMode') {
         $candidateDeviceNamingMode = [string]$ConfigContent.DeviceNamingMode
-        if ($candidateDeviceNamingMode -in @('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')) {
+        if ($candidateDeviceNamingMode -in @('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
             $loadedDeviceNamingMode = $candidateDeviceNamingMode
         }
     }
-    $displayDeviceNamingMode = if ($loadedDeviceNamingMode -in @('Prompt', 'Template', 'Prefixes')) {
+    $displayDeviceNamingMode = if ($loadedDeviceNamingMode -in @('Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
         $loadedDeviceNamingMode
     }
     else {
@@ -495,6 +503,7 @@ function Update-UIFromConfig {
     }
     Set-DeviceNamingModeState -State $State -DisplayMode $displayDeviceNamingMode -LoadedMode $loadedDeviceNamingMode
     Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Import-SerialComputerNamesFromConfiguredPath -State $State
     Update-DeviceNamingControls -State $State
     
     # Post Build Cleanup group (Build Tab)

@@ -213,6 +213,20 @@ This option writes `prefixes.txt` from the list in the UI. Enter one prefix per 
 >
 > If the technician skips prefix selection when multiple prefixes are available, `ApplyFFU.ps1` leaves the existing unattend `ComputerName` value unchanged. With the current unattend samples set to `<ComputerName>*</ComputerName>`, Windows falls back to its default random computer-name behavior, typically resulting in a name such as `WIN-*`.
 
+**Specify Serial to Device Name Mapping**
+
+This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use `SerialNumber,ComputerName` as the header row, then add one row per device. During deployment, `ApplyFFU.ps1` compares the current BIOS serial number to the CSV and applies the matching computer name.
+
+- This option requires **Copy Unattend.xml**.
+- **Inject Unattend.xml** is not supported with this option.
+- If no matching serial number is found during deployment, `ApplyFFU.ps1` falls back to a random `FFU-*` computer name.
+
+{: .note-title}
+
+> Note
+>
+> If `prefixes.txt` and `SerialComputerNames.csv` are both present on the same deployment media, `ApplyFFU.ps1` checks `prefixes.txt` first. FFU Builder stages only the naming file for the selected device-naming mode.
+
 {: .warning-title}
 
 > Warning

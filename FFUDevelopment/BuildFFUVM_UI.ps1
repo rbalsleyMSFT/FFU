@@ -528,6 +528,22 @@ $script:uiState.Controls.btnRun.Add_Click({
                     return
                 }
             }
+            elseif ($config.DeviceNamingMode -eq 'SerialComputerNames') {
+                if (-not $config.CopyUnattend) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Specify Serial to Device Name Mapping'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: serial computer-name mapping requires Copy Unattend.xml."
+                    return
+                }
+
+                $hasSavedSerialComputerNamesPath = -not [string]::IsNullOrWhiteSpace([string]$config.DeviceNameSerialComputerNamesPath) -and (Test-Path -Path $config.DeviceNameSerialComputerNamesPath -PathType Leaf)
+                if ((($null -eq $config.DeviceNameSerialComputerNames) -or ($config.DeviceNameSerialComputerNames.Count -eq 0)) -and -not $hasSavedSerialComputerNamesPath) {
+                    [System.Windows.MessageBox]::Show("Enter CSV content or choose a valid SerialComputerNames.csv file before using 'Specify Serial to Device Name Mapping'.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: serial computer-name mapping required."
+                    return
+                }
+            }
 
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"
             # Sort top-level keys alphabetically for consistent output

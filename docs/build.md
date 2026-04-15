@@ -340,7 +340,7 @@ This option is primarily intended for scenarios where:
 
 | Limitation                        | Description                                                                                                                                              |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No prefixes.txt or %serial% support** | Unlike **Copy Unattend.xml**, this method does not support `prefixes.txt` or the `%serial%` variable for deployment-time device naming |
+| **No prefixes.txt, SerialComputerNames.csv, or %serial% support** | Unlike **Copy Unattend.xml**, this method does not support `prefixes.txt`, `SerialComputerNames.csv`, or the `%serial%` variable for deployment-time device naming |
 | **Fixed configuration**     | The unattend settings are baked into the FFU at build time and cannot be changed at deployment time                                                      |
 | **Requires VM to be built** | This option only works when**Install Apps** is `$true` because the unattend file is included in the Apps ISO                                     |
 
@@ -348,7 +348,7 @@ This option is primarily intended for scenarios where:
 
 > Note
 >
-> Most users should continue using the **Copy Unattend** option via the USB drive, which provides more flexibility including support for `prefixes.txt` device naming. Use **Inject Unattend.xml** only when you won't be using the USB drive for deployment.
+> Most users should continue using the **Copy Unattend** option via the USB drive, which provides more flexibility including support for `prefixes.txt`, `SerialComputerNames.csv`, and `%serial%` device naming. Use **Inject Unattend.xml** only when you won't be using the USB drive for deployment.
 
 {: .tip-title}
 
@@ -423,6 +423,37 @@ Use **Prefixes File Path** to point the UI at the source text file for the prefi
 
 Use **Save Prefixes** to write the current multiline prefixes list back to the file specified in **Prefixes File Path**.
 
+### Specify Serial to Device Name Mapping
+
+This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use `SerialNumber,ComputerName` as the header row, then add one row per device. During deployment, `ApplyFFU.ps1` compares the current BIOS serial number to the `SerialNumber` column and uses the matching `ComputerName` value.
+
+Sample `SerialComputerNames.csv` content:
+
+```plaintext
+SerialNumber,ComputerName
+ABC12345,CORP-001
+DEF67890,KIOSK-010
+XYZ24680,STORE-015
+```
+
+- This option requires **Copy Unattend.xml**.
+- **Inject Unattend.xml** is not supported with this option.
+- If no matching serial number is found during deployment, `ApplyFFU.ps1` falls back to a random `FFU-*` computer name so setup can finish.
+
+{: .note-title}
+
+> Note
+>
+> If `prefixes.txt` and `SerialComputerNames.csv` are both staged manually on the same deployment media, `ApplyFFU.ps1` checks `prefixes.txt` first. FFU Builder avoids this conflict by only staging the naming file for the selected device-naming mode.
+
+### SerialComputerNames.csv File Path
+
+Use **SerialComputerNames.csv File Path** to point the UI at the source CSV file for the serial-to-device-name mapping. The file can use any name. When you browse to a mapping file in the UI, or when a saved configuration references a valid CSV path, the UI loads that file and populates the multiline CSV box from its contents.
+
+### Save Serial Mapping
+
+Use **Save Serial Mapping** to write the current CSV content back to the file specified in **SerialComputerNames.csv File Path**.
+
 ### Deployment Prompt Compatibility
 
 Older deployment media that already has an unattend file with `ComputerName` set to the legacy placeholder value and no `prefixes.txt` file will still prompt for a device name during deployment.
@@ -443,8 +474,9 @@ The `.\FFUDevelopment\Unattend` folder includes sample files you can customize:
 | **unattend_x64.xml**       | Active unattend file used for x64 builds   |
 | **unattend_arm64.xml**     | Active unattend file used for arm64 builds |
 | **SamplePrefixes.txt**     | Example prefixes file for device naming    |
+| **SampleSerialComputerNames.csv** | Example serial-to-device-name CSV file |
 
-Copy and customize the sample files to create your own `unattend_x64.xml`, `unattend_arm64.xml`, and `prefixes.txt` files.
+Copy and customize the sample files to create your own `unattend_x64.xml`, `unattend_arm64.xml`, `prefixes.txt`, and `SerialComputerNames.csv` files.
 
 {: .note-title}
 
@@ -537,12 +569,13 @@ When enabled, the build process copies:
 
 - The selected x64 or arm64 unattend XML file → renamed to **Unattend.xml** on the USB drive
 - **prefixes.txt** → created from the **Device Naming** prefixes list when that mode is selected
+- **SerialComputerNames.csv** → created from the **Device Naming** serial mapping list when that mode is selected
 
 If you keep the default file paths in place, FFU Builder uses `unattend_x64.xml` for x64 builds and `unattend_arm64.xml` for arm64 builds.
 
 During deployment, `ApplyFFU.ps1` applies `Unattend.xml` whenever it is present. Device naming only happens when the **Device Naming** setting requires it, or when older media still uses the legacy prompt-based workflow.
 
-See **Device Naming Expander** above for the available computer-name modes and prefixes-file behavior.
+See **Device Naming Expander** above for the available computer-name modes and naming-file behavior.
 
 ### Copy Provisioning Package
 

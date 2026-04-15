@@ -228,13 +228,19 @@ function Initialize-UIControls {
     $State.Controls.rbDeviceNamingPrompt = $window.FindName('rbDeviceNamingPrompt')
     $State.Controls.rbDeviceNamingTemplate = $window.FindName('rbDeviceNamingTemplate')
     $State.Controls.rbDeviceNamingPrefixes = $window.FindName('rbDeviceNamingPrefixes')
+    $State.Controls.rbDeviceNamingSerialComputerNames = $window.FindName('rbDeviceNamingSerialComputerNames')
     $State.Controls.deviceNameTemplatePanel = $window.FindName('deviceNameTemplatePanel')
     $State.Controls.deviceNamePrefixesPanel = $window.FindName('deviceNamePrefixesPanel')
+    $State.Controls.deviceNameSerialComputerNamesPanel = $window.FindName('deviceNameSerialComputerNamesPanel')
     $State.Controls.txtDeviceNameTemplate = $window.FindName('txtDeviceNameTemplate')
     $State.Controls.txtDeviceNamePrefixesPath = $window.FindName('txtDeviceNamePrefixesPath')
     $State.Controls.btnBrowseDeviceNamePrefixesPath = $window.FindName('btnBrowseDeviceNamePrefixesPath')
     $State.Controls.txtDeviceNamePrefixes = $window.FindName('txtDeviceNamePrefixes')
     $State.Controls.btnSaveDeviceNamePrefixes = $window.FindName('btnSaveDeviceNamePrefixes')
+    $State.Controls.txtDeviceNameSerialComputerNamesPath = $window.FindName('txtDeviceNameSerialComputerNamesPath')
+    $State.Controls.btnBrowseDeviceNameSerialComputerNamesPath = $window.FindName('btnBrowseDeviceNameSerialComputerNamesPath')
+    $State.Controls.txtDeviceNameSerialComputerNames = $window.FindName('txtDeviceNameSerialComputerNames')
+    $State.Controls.btnSaveDeviceNameSerialComputerNames = $window.FindName('btnSaveDeviceNameSerialComputerNames')
     $State.Controls.chkVerbose = $window.FindName('chkVerbose')
     $State.Controls.chkCopyAutopilot = $window.FindName('chkCopyAutopilot')
     $State.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
@@ -400,7 +406,7 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyAutopilot.IsChecked = $State.Defaults.generalDefaults.CopyAutopilot
     $State.Controls.chkCopyUnattend.IsChecked = $State.Defaults.generalDefaults.CopyUnattend
     $State.Controls.chkCopyPPKG.IsChecked = $State.Defaults.generalDefaults.CopyPPKG
-    $defaultDeviceNamingMode = if ($State.Defaults.generalDefaults.DeviceNamingMode -in @('None', 'Prompt', 'Template', 'Prefixes')) {
+    $defaultDeviceNamingMode = if ($State.Defaults.generalDefaults.DeviceNamingMode -in @('None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
         $State.Defaults.generalDefaults.DeviceNamingMode
     }
     else {
@@ -410,7 +416,10 @@ function Initialize-UIDefaults {
     $State.Controls.txtDeviceNameTemplate.Text = $State.Defaults.generalDefaults.DeviceNameTemplate
     $State.Controls.txtDeviceNamePrefixesPath.Text = $State.Defaults.generalDefaults.DeviceNamePrefixesPath
     $State.Controls.txtDeviceNamePrefixes.Text = ($State.Defaults.generalDefaults.DeviceNamePrefixes -join [System.Environment]::NewLine)
+    $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = $State.Defaults.generalDefaults.DeviceNameSerialComputerNamesPath
+    $State.Controls.txtDeviceNameSerialComputerNames.Text = ($State.Defaults.generalDefaults.DeviceNameSerialComputerNames -join [System.Environment]::NewLine)
     Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Import-SerialComputerNamesFromConfiguredPath -State $State
     Update-DeviceNamingControls -State $State
     $State.Controls.chkCleanupAppsISO.IsChecked = $State.Defaults.generalDefaults.CleanupAppsISO
     $State.Controls.chkCleanupDeployISO.IsChecked = $State.Defaults.generalDefaults.CleanupDeployISO

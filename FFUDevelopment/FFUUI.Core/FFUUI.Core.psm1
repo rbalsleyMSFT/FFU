@@ -112,6 +112,7 @@ function Get-GeneralDefaults {
     $userAppListPath = Join-Path -Path $appsPath -ChildPath "UserAppList.json"
     $driversJsonPath = Join-Path -Path $driversPath -ChildPath "Drivers.json"
     $deviceNamePrefixesPath = Join-Path -Path $unattendPath -ChildPath "prefixes.txt"
+    $deviceNameSerialComputerNamesPath = Join-Path -Path $unattendPath -ChildPath "SerialComputerNames.csv"
     $unattendX64FilePath = Join-Path -Path $unattendPath -ChildPath "unattend_x64.xml"
     $unattendArm64FilePath = Join-Path -Path $unattendPath -ChildPath "unattend_arm64.xml"
 
@@ -142,6 +143,8 @@ function Get-GeneralDefaults {
         DeviceNameTemplate             = ''
         DeviceNamePrefixesPath         = $deviceNamePrefixesPath
         DeviceNamePrefixes             = @()
+        DeviceNameSerialComputerNamesPath = $deviceNameSerialComputerNamesPath
+        DeviceNameSerialComputerNames  = @()
         CleanupAppsISO                 = $true
         CleanupDeployISO               = $true
         CleanupDrivers                 = $false

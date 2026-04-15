@@ -73,7 +73,7 @@ When set to $true, will copy the provisioning package from the $FFUDevelopmentPa
 When set to $true, stages the selected architecture-specific unattend XML file as Unattend.xml on the deployment partition of the USB drive. Default is $false.
 
 .PARAMETER DeviceNamingMode
-Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Prompt, Template, and Prefixes.
+Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Prompt, Template, Prefixes, and SerialComputerNames.
 
 .PARAMETER DeviceNameTemplate
 Sets the device name used when DeviceNamingMode is Template. Supports a static name or the %serial% token when CopyUnattend is used.
@@ -83,6 +83,12 @@ Sets the prefixes used when DeviceNamingMode is Prefixes. Each entry becomes a l
 
 .PARAMETER DeviceNamePrefixesPath
 Path to the source prefixes file used for legacy copy or when DeviceNamePrefixes is not supplied. Default is $FFUDevelopmentPath\Unattend\prefixes.txt.
+
+.PARAMETER DeviceNameSerialComputerNames
+Sets the CSV content used when DeviceNamingMode is SerialComputerNames. The CSV must include SerialNumber and ComputerName headers.
+
+.PARAMETER DeviceNameSerialComputerNamesPath
+Path to the source CSV file used when DeviceNamingMode is SerialComputerNames and DeviceNameSerialComputerNames is not supplied. Default is $FFUDevelopmentPath\Unattend\SerialComputerNames.csv.
 
 .PARAMETER UnattendX64FilePath
 Path to the x64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_x64.xml.
@@ -425,11 +431,13 @@ param(
     [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
-    [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')]
+    [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
     [string]$DeviceNamingMode = 'Legacy',
     [string]$DeviceNameTemplate,
     [string[]]$DeviceNamePrefixes,
     [string]$DeviceNamePrefixesPath,
+    [string[]]$DeviceNameSerialComputerNames,
+    [string]$DeviceNameSerialComputerNamesPath,
     [string]$UnattendX64FilePath,
     [string]$UnattendArm64FilePath,
     [bool]$CopyAutopilot,
@@ -644,7 +652,7 @@ function Save-StagedUnattendFile {
         [Parameter(Mandatory = $true)]
         [string]$DestinationPath,
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes')]
+        [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
         [string]$DeviceNamingMode,
         [string]$DeviceNameTemplate,
         [Parameter(Mandatory = $true)]
@@ -685,6 +693,11 @@ function Save-StagedUnattendFile {
             $computerNamePath.ComputerNameElement.InnerText = '*'
         }
     }
+    elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $computerNamePath.ComputerNameElement.InnerText = '*'
+        }
+    }
     elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
         $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
     }
@@ -707,10 +720,22 @@ $resolvedDeviceNamePrefixesPath = if ([string]::IsNullOrWhiteSpace($DeviceNamePr
 else {
     $DeviceNamePrefixesPath
 }
+$effectiveDeviceNameSerialComputerNames = @($DeviceNameSerialComputerNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+$resolvedDeviceNameSerialComputerNamesPath = if ([string]::IsNullOrWhiteSpace($DeviceNameSerialComputerNamesPath)) {
+    Join-Path (Join-Path $FFUDevelopmentPath 'Unattend') 'SerialComputerNames.csv'
+}
+else {
+    $DeviceNameSerialComputerNamesPath
+}
 
 if (($DeviceNamingMode -eq 'Prefixes') -and ($effectiveDeviceNamePrefixes.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNamePrefixesPath -PathType Leaf)) {
     $effectiveDeviceNamePrefixes = @(Get-Content -Path $resolvedDeviceNamePrefixesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
     WriteLog "Loaded device name prefixes from $resolvedDeviceNamePrefixesPath"
+}
+
+if (($DeviceNamingMode -eq 'SerialComputerNames') -and ($effectiveDeviceNameSerialComputerNames.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNameSerialComputerNamesPath -PathType Leaf)) {
+    $effectiveDeviceNameSerialComputerNames = @(Get-Content -Path $resolvedDeviceNameSerialComputerNamesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    WriteLog "Loaded serial computer-name mappings from $resolvedDeviceNameSerialComputerNamesPath"
 }
 
 if ($CopyUnattend -and $InjectUnattend) {
@@ -747,6 +772,38 @@ elseif ($DeviceNamingMode -eq 'Prefixes') {
 
     if ($effectiveDeviceNamePrefixes.Count -eq 0) {
         throw 'DeviceNamingMode Prefixes requires at least one DeviceNamePrefixes entry or a valid DeviceNamePrefixesPath.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode SerialComputerNames requires CopyUnattend. Serial-to-computer-name mapping is not supported with InjectUnattend.'
+    }
+
+    if ($effectiveDeviceNameSerialComputerNames.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires DeviceNameSerialComputerNames content or a valid DeviceNameSerialComputerNamesPath.'
+    }
+
+    try {
+        $serialComputerNameMappings = @($effectiveDeviceNameSerialComputerNames | ConvertFrom-Csv -ErrorAction Stop)
+    }
+    catch {
+        throw "DeviceNamingMode SerialComputerNames requires valid CSV content with SerialNumber and ComputerName headers. $($_.Exception.Message)"
+    }
+
+    if ($serialComputerNameMappings.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires at least one CSV data row.'
+    }
+
+    $serialComputerNameHeaders = @($serialComputerNameMappings[0].PSObject.Properties.Name)
+    if ((-not ($serialComputerNameHeaders -contains 'SerialNumber')) -or (-not ($serialComputerNameHeaders -contains 'ComputerName'))) {
+        throw 'DeviceNamingMode SerialComputerNames requires SerialNumber and ComputerName headers.'
+    }
+
+    $validSerialComputerNameMappings = @($serialComputerNameMappings | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_.SerialNumber) -and -not [string]::IsNullOrWhiteSpace([string]$_.ComputerName)
+        })
+    if ($validSerialComputerNameMappings.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires at least one row with both SerialNumber and ComputerName values.'
     }
 }
 
@@ -4570,6 +4627,11 @@ Function New-DeploymentUSB {
                     $computerNamePath.ComputerNameElement.InnerText = '*'
                 }
             }
+            elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $computerNamePath.ComputerNameElement.InnerText = '*'
+                }
+            }
             elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
                 $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
             }
@@ -4643,6 +4705,10 @@ Function New-DeploymentUSB {
             if ($using:DeviceNamingMode -eq 'Prefixes') {
                 WriteLog "Writing prefixes.txt file to $UnattendPathOnUSB"
                 $using:effectiveDeviceNamePrefixes | Set-Content -Path (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Encoding UTF8
+            }
+            elseif ($using:DeviceNamingMode -eq 'SerialComputerNames') {
+                WriteLog "Writing SerialComputerNames.csv file to $UnattendPathOnUSB"
+                $using:effectiveDeviceNameSerialComputerNames | Set-Content -Path (Join-Path $UnattendPathOnUSB 'SerialComputerNames.csv') -Encoding UTF8
             }
             elseif ($legacyPrefixesWillBeStaged) {
                 WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
