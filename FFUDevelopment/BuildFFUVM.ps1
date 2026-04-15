@@ -3708,8 +3708,7 @@ function New-PEMedia {
     foreach ($Package in $Packages) {
         $PackagePath = Join-Path $PackagePathBase $Package
         WriteLog "Adding Package $Package"
-        # Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WinPEFFUPath\mount /Add-Package /PackagePath:$PackagePath" | Out-Null
+        Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
         WriteLog "Adding package complete"
     }
     WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
