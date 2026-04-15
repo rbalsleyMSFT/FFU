@@ -70,7 +70,31 @@ When set to $true, enables adding WinPE drivers. By default copies drivers from 
 When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
 
 .PARAMETER CopyUnattend
-When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
+When set to $true, stages the selected architecture-specific unattend XML file as Unattend.xml on the deployment partition of the USB drive. Default is $false.
+
+.PARAMETER DeviceNamingMode
+Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Prompt, Template, Prefixes, and SerialComputerNames.
+
+.PARAMETER DeviceNameTemplate
+Sets the device name used when DeviceNamingMode is Template. Supports a static name or the %serial% token when CopyUnattend is used.
+
+.PARAMETER DeviceNamePrefixes
+Sets the prefixes used when DeviceNamingMode is Prefixes. Each entry becomes a line in prefixes.txt on the deployment media.
+
+.PARAMETER DeviceNamePrefixesPath
+Path to the source prefixes file used for legacy copy or when DeviceNamePrefixes is not supplied. Default is $FFUDevelopmentPath\Unattend\prefixes.txt.
+
+.PARAMETER DeviceNameSerialComputerNames
+Sets the CSV content used when DeviceNamingMode is SerialComputerNames. The CSV must include SerialNumber and ComputerName headers.
+
+.PARAMETER DeviceNameSerialComputerNamesPath
+Path to the source CSV file used when DeviceNamingMode is SerialComputerNames and DeviceNameSerialComputerNames is not supplied. Default is $FFUDevelopmentPath\Unattend\SerialComputerNames.csv.
+
+.PARAMETER UnattendX64FilePath
+Path to the x64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_x64.xml.
+
+.PARAMETER UnattendArm64FilePath
+Path to the arm64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_arm64.xml.
 
 .PARAMETER CreateDeploymentMedia
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
@@ -106,7 +130,7 @@ Prefix for the generated FFU file. Default is _FFU.
 Headers to use when downloading files. Not recommended to modify.
 
 .PARAMETER InjectUnattend
-When set to $true and InstallApps is also $true, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
+When set to $true and InstallApps is also $true, stages the selected architecture-specific unattend XML file to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
 
 .PARAMETER InstallApps
 When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created.
@@ -407,6 +431,15 @@ param(
     [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
+    [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+    [string]$DeviceNamingMode = 'Legacy',
+    [string]$DeviceNameTemplate,
+    [string[]]$DeviceNamePrefixes,
+    [string]$DeviceNamePrefixesPath,
+    [string[]]$DeviceNameSerialComputerNames,
+    [string]$DeviceNameSerialComputerNamesPath,
+    [string]$UnattendX64FilePath,
+    [string]$UnattendArm64FilePath,
     [bool]$CopyAutopilot,
     [bool]$CompactOS = $true,
     [bool]$CleanupDeployISO = $true,
@@ -447,7 +480,7 @@ param(
     [switch]$Cleanup
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2603.2'
+$version = '2604.1'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
@@ -505,11 +538,273 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     }
 }
 
+function Get-UnattendSourcePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$UnattendFolder,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [string]$UnattendX64FilePath,
+        [string]$UnattendArm64FilePath
+    )
+
+    $resolvedArch = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+    $resolvedSourcePath = if ($resolvedArch -eq 'arm64') {
+        if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) {
+            Join-Path $UnattendFolder 'unattend_arm64.xml'
+        }
+        else {
+            $UnattendArm64FilePath
+        }
+    }
+    else {
+        if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) {
+            Join-Path $UnattendFolder 'unattend_x64.xml'
+        }
+        else {
+            $UnattendX64FilePath
+        }
+    }
+
+    WriteLog "Resolved unattend source path for ${resolvedArch}: $resolvedSourcePath"
+    return $resolvedSourcePath
+}
+
+function Initialize-UnattendComputerNamePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [xml]$UnattendXml,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch
+    )
+
+    $unattendRoot = $UnattendXml.DocumentElement
+    if (($null -eq $unattendRoot) -or ($unattendRoot.LocalName -ne 'unattend')) {
+        throw 'Unattend XML is missing the unattend root element.'
+    }
+
+    $unattendNamespace = $unattendRoot.NamespaceURI
+    if ([string]::IsNullOrWhiteSpace($unattendNamespace)) {
+        throw 'Unattend XML is missing the default unattend namespace.'
+    }
+
+    $namespaceManager = New-Object System.Xml.XmlNamespaceManager($UnattendXml.NameTable)
+    $namespaceManager.AddNamespace('un', $unattendNamespace)
+
+    $specializeSettings = $unattendRoot.SelectSingleNode("un:settings[@pass='specialize']", $namespaceManager)
+    $createdSpecializeSettings = $false
+    if ($null -eq $specializeSettings) {
+        $specializeSettings = $UnattendXml.CreateElement('settings', $unattendNamespace)
+        $null = $specializeSettings.SetAttribute('pass', 'specialize')
+        $firstSettingsNode = $unattendRoot.SelectSingleNode('un:settings', $namespaceManager)
+        if ($null -ne $firstSettingsNode) {
+            $null = $unattendRoot.InsertBefore($specializeSettings, $firstSettingsNode)
+        }
+        else {
+            $null = $unattendRoot.AppendChild($specializeSettings)
+        }
+        $createdSpecializeSettings = $true
+    }
+
+    $shellSetupComponent = $specializeSettings.SelectSingleNode("un:component[@name='Microsoft-Windows-Shell-Setup']", $namespaceManager)
+    $createdShellSetupComponent = $false
+    if ($null -eq $shellSetupComponent) {
+        $processorArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+        $shellSetupComponent = $UnattendXml.CreateElement('component', $unattendNamespace)
+        $null = $shellSetupComponent.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+        $null = $shellSetupComponent.SetAttribute('processorArchitecture', $processorArchitecture)
+        $null = $shellSetupComponent.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+        $null = $shellSetupComponent.SetAttribute('language', 'neutral')
+        $null = $shellSetupComponent.SetAttribute('versionScope', 'nonSxS')
+        $null = $shellSetupComponent.SetAttribute('xmlns:wcm', 'http://www.w3.org/2000/xmlns/', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+        $null = $shellSetupComponent.SetAttribute('xmlns:xsi', 'http://www.w3.org/2000/xmlns/', 'http://www.w3.org/2001/XMLSchema-instance')
+
+        $firstComponentNode = $specializeSettings.SelectSingleNode('un:component', $namespaceManager)
+        if ($null -ne $firstComponentNode) {
+            $null = $specializeSettings.InsertBefore($shellSetupComponent, $firstComponentNode)
+        }
+        else {
+            $null = $specializeSettings.AppendChild($shellSetupComponent)
+        }
+        $createdShellSetupComponent = $true
+    }
+
+    $computerNameElement = $shellSetupComponent.SelectSingleNode('un:ComputerName', $namespaceManager)
+    $createdComputerNameElement = $false
+    if ($null -eq $computerNameElement) {
+        $computerNameElement = $UnattendXml.CreateElement('ComputerName', $unattendNamespace)
+        $null = $shellSetupComponent.AppendChild($computerNameElement)
+        $createdComputerNameElement = $true
+    }
+
+    return [PSCustomObject]@{
+        ComputerNameElement        = $computerNameElement
+        CreatedSpecializeSettings  = $createdSpecializeSettings
+        CreatedShellSetupComponent = $createdShellSetupComponent
+        CreatedComputerNameElement = $createdComputerNameElement
+    }
+}
+
+function Save-StagedUnattendFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+        [string]$DeviceNamingMode,
+        [string]$DeviceNameTemplate,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [bool]$LegacyPrefixesWillBeStaged = $false
+    )
+
+    if ($DeviceNamingMode -eq 'None') {
+        Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+        return
+    }
+
+    [xml]$unattendXml = Get-Content -Path $SourcePath
+    $computerNamePath = Initialize-UnattendComputerNamePath -UnattendXml $unattendXml -WindowsArch $WindowsArch
+
+    if ($computerNamePath.CreatedSpecializeSettings -or $computerNamePath.CreatedShellSetupComponent -or $computerNamePath.CreatedComputerNameElement) {
+        $createdParts = @()
+        if ($computerNamePath.CreatedSpecializeSettings) {
+            $createdParts += 'specialize settings'
+        }
+        if ($computerNamePath.CreatedShellSetupComponent) {
+            $createdParts += 'Microsoft-Windows-Shell-Setup component'
+        }
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $createdParts += 'ComputerName element'
+        }
+        WriteLog "Created $($createdParts -join ', ') while staging unattend file $DestinationPath"
+    }
+
+    if ($DeviceNamingMode -eq 'Prompt') {
+        $computerNamePath.ComputerNameElement.InnerText = 'MyComputer'
+    }
+    elseif ($DeviceNamingMode -eq 'Template') {
+        $computerNamePath.ComputerNameElement.InnerText = $DeviceNameTemplate
+    }
+    elseif ($DeviceNamingMode -eq 'Prefixes') {
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $computerNamePath.ComputerNameElement.InnerText = '*'
+        }
+    }
+    elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $computerNamePath.ComputerNameElement.InnerText = '*'
+        }
+    }
+    elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
+        $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
+    }
+
+    $unattendXml.Save($DestinationPath)
+}
+
 $vmSwitchWasExplicitlyBound = $PSBoundParameters.ContainsKey('VMSwitchName')
 $enableVmNetworkingWasExplicitlyBound = $PSBoundParameters.ContainsKey('EnableVMNetworking')
 if (-not $EnableVMNetworking -and $vmSwitchWasExplicitlyBound -and -not $enableVmNetworkingWasExplicitlyBound) {
     $EnableVMNetworking = $true
     WriteLog 'EnableVMNetworking not explicitly set. Enabling VM networking because -VMSwitchName was supplied on the command line.'
+}
+
+$normalizedDeviceNameTemplate = if ($null -ne $DeviceNameTemplate) { $DeviceNameTemplate.Trim() } else { $null }
+$effectiveDeviceNamePrefixes = @($DeviceNamePrefixes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+$resolvedDeviceNamePrefixesPath = if ([string]::IsNullOrWhiteSpace($DeviceNamePrefixesPath)) {
+    Join-Path (Join-Path $FFUDevelopmentPath 'Unattend') 'prefixes.txt'
+}
+else {
+    $DeviceNamePrefixesPath
+}
+$effectiveDeviceNameSerialComputerNames = @($DeviceNameSerialComputerNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+$resolvedDeviceNameSerialComputerNamesPath = if ([string]::IsNullOrWhiteSpace($DeviceNameSerialComputerNamesPath)) {
+    Join-Path (Join-Path $FFUDevelopmentPath 'Unattend') 'SerialComputerNames.csv'
+}
+else {
+    $DeviceNameSerialComputerNamesPath
+}
+
+if (($DeviceNamingMode -eq 'Prefixes') -and ($effectiveDeviceNamePrefixes.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNamePrefixesPath -PathType Leaf)) {
+    $effectiveDeviceNamePrefixes = @(Get-Content -Path $resolvedDeviceNamePrefixesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    WriteLog "Loaded device name prefixes from $resolvedDeviceNamePrefixesPath"
+}
+
+if (($DeviceNamingMode -eq 'SerialComputerNames') -and ($effectiveDeviceNameSerialComputerNames.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNameSerialComputerNamesPath -PathType Leaf)) {
+    $effectiveDeviceNameSerialComputerNames = @(Get-Content -Path $resolvedDeviceNameSerialComputerNamesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    WriteLog "Loaded serial computer-name mappings from $resolvedDeviceNameSerialComputerNamesPath"
+}
+
+if ($CopyUnattend -and $InjectUnattend) {
+    throw 'CopyUnattend and InjectUnattend cannot both be set to `$true. Select only one unattend delivery method.'
+}
+
+if ($DeviceNamingMode -eq 'Template') {
+    if ([string]::IsNullOrWhiteSpace($normalizedDeviceNameTemplate)) {
+        throw 'DeviceNamingMode Template requires DeviceNameTemplate.'
+    }
+
+    $templateWithoutSupportedVariables = $normalizedDeviceNameTemplate -replace '(?i)%serial%', ''
+    if ($templateWithoutSupportedVariables -match '%') {
+        throw 'Only the %serial% device name variable is supported.'
+    }
+
+    if (-not ($CopyUnattend -or $InjectUnattend)) {
+        throw 'DeviceNamingMode Template requires either CopyUnattend or InjectUnattend.'
+    }
+
+    if ($InjectUnattend -and (-not $CopyUnattend) -and $normalizedDeviceNameTemplate -match '(?i)%serial%') {
+        throw 'The %serial% device name variable is only supported when CopyUnattend is used.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'Prompt') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode Prompt requires CopyUnattend. Prompt-based naming is not supported with InjectUnattend.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'Prefixes') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode Prefixes requires CopyUnattend. Prefix-based naming is not supported with InjectUnattend.'
+    }
+
+    if ($effectiveDeviceNamePrefixes.Count -eq 0) {
+        throw 'DeviceNamingMode Prefixes requires at least one DeviceNamePrefixes entry or a valid DeviceNamePrefixesPath.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode SerialComputerNames requires CopyUnattend. Serial-to-computer-name mapping is not supported with InjectUnattend.'
+    }
+
+    if ($effectiveDeviceNameSerialComputerNames.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires DeviceNameSerialComputerNames content or a valid DeviceNameSerialComputerNamesPath.'
+    }
+
+    try {
+        $serialComputerNameMappings = @($effectiveDeviceNameSerialComputerNames | ConvertFrom-Csv -ErrorAction Stop)
+    }
+    catch {
+        throw "DeviceNamingMode SerialComputerNames requires valid CSV content with SerialNumber and ComputerName headers. $($_.Exception.Message)"
+    }
+
+    if ($serialComputerNameMappings.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires at least one CSV data row.'
+    }
+
+    $serialComputerNameHeaders = @($serialComputerNameMappings[0].PSObject.Properties.Name)
+    if ((-not ($serialComputerNameHeaders -contains 'SerialNumber')) -or (-not ($serialComputerNameHeaders -contains 'ComputerName'))) {
+        throw 'DeviceNamingMode SerialComputerNames requires SerialNumber and ComputerName headers.'
+    }
+
+    $validSerialComputerNameMappings = @($serialComputerNameMappings | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_.SerialNumber) -and -not [string]::IsNullOrWhiteSpace([string]$_.ComputerName)
+        })
+    if ($validSerialComputerNameMappings.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires at least one row with both SerialNumber and ComputerName values.'
+    }
 }
 
 # Validate that the selected Windows SKU is compatible with the chosen Windows release and ensure an ISO is provided for unsupported releases
@@ -705,6 +1000,8 @@ if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
 if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
+if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) { $UnattendX64FilePath = Join-Path $UnattendFolder 'unattend_x64.xml' }
+if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) { $UnattendArm64FilePath = Join-Path $UnattendFolder 'unattend_arm64.xml' }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
 if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
@@ -4184,6 +4481,164 @@ Function New-DeploymentUSB {
         Import-Module "$($using:PSScriptRoot)\FFU.Common" -Force
         Set-CommonCoreLogPath -Path $using:LogFile
 
+        function Get-LocalUnattendSourcePath {
+            param(
+                [string]$UnattendFolder,
+                [string]$WindowsArch,
+                [string]$UnattendX64FilePath,
+                [string]$UnattendArm64FilePath
+            )
+
+            $resolvedArch = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+            $resolvedSourcePath = if ($resolvedArch -eq 'arm64') {
+                if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) {
+                    Join-Path $UnattendFolder 'unattend_arm64.xml'
+                }
+                else {
+                    $UnattendArm64FilePath
+                }
+            }
+            else {
+                if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) {
+                    Join-Path $UnattendFolder 'unattend_x64.xml'
+                }
+                else {
+                    $UnattendX64FilePath
+                }
+            }
+
+            WriteLog "Resolved unattend source path for ${resolvedArch}: $resolvedSourcePath"
+            return $resolvedSourcePath
+        }
+
+        function Initialize-UnattendComputerNamePath {
+            param(
+                [xml]$UnattendXml,
+                [string]$WindowsArch
+            )
+
+            $unattendRoot = $UnattendXml.DocumentElement
+            if (($null -eq $unattendRoot) -or ($unattendRoot.LocalName -ne 'unattend')) {
+                throw 'Unattend XML is missing the unattend root element.'
+            }
+
+            $unattendNamespace = $unattendRoot.NamespaceURI
+            if ([string]::IsNullOrWhiteSpace($unattendNamespace)) {
+                throw 'Unattend XML is missing the default unattend namespace.'
+            }
+
+            $namespaceManager = New-Object System.Xml.XmlNamespaceManager($UnattendXml.NameTable)
+            $namespaceManager.AddNamespace('un', $unattendNamespace)
+
+            $specializeSettings = $unattendRoot.SelectSingleNode("un:settings[@pass='specialize']", $namespaceManager)
+            $createdSpecializeSettings = $false
+            if ($null -eq $specializeSettings) {
+                $specializeSettings = $UnattendXml.CreateElement('settings', $unattendNamespace)
+                $null = $specializeSettings.SetAttribute('pass', 'specialize')
+                $firstSettingsNode = $unattendRoot.SelectSingleNode('un:settings', $namespaceManager)
+                if ($null -ne $firstSettingsNode) {
+                    $null = $unattendRoot.InsertBefore($specializeSettings, $firstSettingsNode)
+                }
+                else {
+                    $null = $unattendRoot.AppendChild($specializeSettings)
+                }
+                $createdSpecializeSettings = $true
+            }
+
+            $shellSetupComponent = $specializeSettings.SelectSingleNode("un:component[@name='Microsoft-Windows-Shell-Setup']", $namespaceManager)
+            $createdShellSetupComponent = $false
+            if ($null -eq $shellSetupComponent) {
+                $processorArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+                $shellSetupComponent = $UnattendXml.CreateElement('component', $unattendNamespace)
+                $null = $shellSetupComponent.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+                $null = $shellSetupComponent.SetAttribute('processorArchitecture', $processorArchitecture)
+                $null = $shellSetupComponent.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                $null = $shellSetupComponent.SetAttribute('language', 'neutral')
+                $null = $shellSetupComponent.SetAttribute('versionScope', 'nonSxS')
+                $null = $shellSetupComponent.SetAttribute('xmlns:wcm', 'http://www.w3.org/2000/xmlns/', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+                $null = $shellSetupComponent.SetAttribute('xmlns:xsi', 'http://www.w3.org/2000/xmlns/', 'http://www.w3.org/2001/XMLSchema-instance')
+
+                $firstComponentNode = $specializeSettings.SelectSingleNode('un:component', $namespaceManager)
+                if ($null -ne $firstComponentNode) {
+                    $null = $specializeSettings.InsertBefore($shellSetupComponent, $firstComponentNode)
+                }
+                else {
+                    $null = $specializeSettings.AppendChild($shellSetupComponent)
+                }
+                $createdShellSetupComponent = $true
+            }
+
+            $computerNameElement = $shellSetupComponent.SelectSingleNode('un:ComputerName', $namespaceManager)
+            $createdComputerNameElement = $false
+            if ($null -eq $computerNameElement) {
+                $computerNameElement = $UnattendXml.CreateElement('ComputerName', $unattendNamespace)
+                $null = $shellSetupComponent.AppendChild($computerNameElement)
+                $createdComputerNameElement = $true
+            }
+
+            return [PSCustomObject]@{
+                ComputerNameElement        = $computerNameElement
+                CreatedSpecializeSettings  = $createdSpecializeSettings
+                CreatedShellSetupComponent = $createdShellSetupComponent
+                CreatedComputerNameElement = $createdComputerNameElement
+            }
+        }
+
+        function Save-LocalStagedUnattendFile {
+            param(
+                [string]$SourcePath,
+                [string]$DestinationPath,
+                [string]$DeviceNamingMode,
+                [string]$DeviceNameTemplate,
+                [string]$WindowsArch,
+                [bool]$LegacyPrefixesWillBeStaged = $false
+            )
+
+            if ($DeviceNamingMode -eq 'None') {
+                Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+                return
+            }
+
+            [xml]$unattendXml = Get-Content -Path $SourcePath
+            $computerNamePath = Initialize-UnattendComputerNamePath -UnattendXml $unattendXml -WindowsArch $WindowsArch
+
+            if ($computerNamePath.CreatedSpecializeSettings -or $computerNamePath.CreatedShellSetupComponent -or $computerNamePath.CreatedComputerNameElement) {
+                $createdParts = @()
+                if ($computerNamePath.CreatedSpecializeSettings) {
+                    $createdParts += 'specialize settings'
+                }
+                if ($computerNamePath.CreatedShellSetupComponent) {
+                    $createdParts += 'Microsoft-Windows-Shell-Setup component'
+                }
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $createdParts += 'ComputerName element'
+                }
+                WriteLog "Created $($createdParts -join ', ') while staging unattend file $DestinationPath"
+            }
+
+            if ($DeviceNamingMode -eq 'Prompt') {
+                $computerNamePath.ComputerNameElement.InnerText = 'MyComputer'
+            }
+            elseif ($DeviceNamingMode -eq 'Template') {
+                $computerNamePath.ComputerNameElement.InnerText = $DeviceNameTemplate
+            }
+            elseif ($DeviceNamingMode -eq 'Prefixes') {
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $computerNamePath.ComputerNameElement.InnerText = '*'
+                }
+            }
+            elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $computerNamePath.ComputerNameElement.InnerText = '*'
+                }
+            }
+            elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
+                $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
+            }
+
+            $unattendXml.Save($DestinationPath)
+        }
+
         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
         WriteLog "Thread $([System.Threading.Thread]::CurrentThread.ManagedThreadId) processing DiskNumber $DiskNumber ($($USBDrive.Model))"
 
@@ -4244,15 +4699,20 @@ Function New-DeploymentUSB {
             $UnattendPathOnUSB = Join-Path $DeployPartitionDriveLetter "Unattend"
             WriteLog "Copying unattend file to $UnattendPathOnUSB"
             New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
-            if ($using:WindowsArch -eq 'x64') {
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_x64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            $unattendSource = Get-LocalUnattendSourcePath -UnattendFolder $using:UnattendFolder -WindowsArch $using:WindowsArch -UnattendX64FilePath $using:UnattendX64FilePath -UnattendArm64FilePath $using:UnattendArm64FilePath
+            $legacyPrefixesWillBeStaged = ($using:DeviceNamingMode -eq 'Legacy') -and (Test-Path -Path $using:resolvedDeviceNamePrefixesPath -PathType Leaf)
+            Save-LocalStagedUnattendFile -SourcePath $unattendSource -DestinationPath (Join-Path $UnattendPathOnUSB 'Unattend.xml') -DeviceNamingMode $using:DeviceNamingMode -DeviceNameTemplate $using:normalizedDeviceNameTemplate -WindowsArch $using:WindowsArch -LegacyPrefixesWillBeStaged $legacyPrefixesWillBeStaged
+            if ($using:DeviceNamingMode -eq 'Prefixes') {
+                WriteLog "Writing prefixes.txt file to $UnattendPathOnUSB"
+                $using:effectiveDeviceNamePrefixes | Set-Content -Path (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Encoding UTF8
             }
-            elseif ($using:WindowsArch -eq 'arm64') {
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_arm64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            elseif ($using:DeviceNamingMode -eq 'SerialComputerNames') {
+                WriteLog "Writing SerialComputerNames.csv file to $UnattendPathOnUSB"
+                $using:effectiveDeviceNameSerialComputerNames | Set-Content -Path (Join-Path $UnattendPathOnUSB 'SerialComputerNames.csv') -Encoding UTF8
             }
-            if (Test-Path (Join-Path $using:UnattendFolder 'prefixes.txt')) {
+            elseif ($legacyPrefixesWillBeStaged) {
                 WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'prefixes.txt') -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
+                Copy-Item -Path $using:resolvedDeviceNamePrefixesPath -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
             }
             WriteLog 'Copy completed'
         }
@@ -5506,18 +5966,32 @@ if ($CopyAutopilot) {
     WriteLog 'Autopilot validation complete'
 }
 
-#Validate Unattend folder
-if ($CopyUnattend) {
+# Validate unattend source file
+if ($CopyUnattend -or $InjectUnattend) {
     WriteLog 'Doing Unattend validation'
-    if (!(Test-Path -Path $UnattendFolder)) {
-        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
-        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
+    $selectedUnattendMode = if ($CopyUnattend) { 'CopyUnattend' } else { 'InjectUnattend' }
+    $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch -UnattendX64FilePath $UnattendX64FilePath -UnattendArm64FilePath $UnattendArm64FilePath
+    if (!(Test-Path -Path $unattendSourcePath -PathType Leaf)) {
+        WriteLog "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is missing: $unattendSourcePath"
+        throw "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is missing: $unattendSourcePath"
     }
-    #Check for .XML file
-    if (!(Get-ChildItem -Path $UnattendFolder -Filter unattend_*.xml)) {
-        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
-        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
+
+    $selectedUnattendFile = Get-Item -Path $unattendSourcePath -ErrorAction SilentlyContinue
+    if (($null -eq $selectedUnattendFile) -or ($selectedUnattendFile.Length -le 0)) {
+        WriteLog "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is empty: $unattendSourcePath"
+        throw "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is empty: $unattendSourcePath"
     }
+
+    if ($DeviceNamingMode -ne 'None') {
+        try {
+            [xml]$validationUnattendXml = Get-Content -Path $unattendSourcePath
+            $null = Initialize-UnattendComputerNamePath -UnattendXml $validationUnattendXml -WindowsArch $WindowsArch
+        }
+        catch {
+            throw "DeviceNamingMode $DeviceNamingMode requires a valid specialize/Microsoft-Windows-Shell-Setup/ComputerName path in $unattendSourcePath. $($_.Exception.Message)"
+        }
+    }
+
     WriteLog 'Unattend validation complete'
 }
 
@@ -6418,9 +6892,7 @@ if ($InstallApps) {
             #Create Apps ISO
             # Inject Unattend.xml into Apps if requested and applicable
             if ($InstallApps -and $InjectUnattend) {
-                # Determine source unattend.xml based on architecture
-                $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
-                $unattendSource = Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+                $unattendSource = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch -UnattendX64FilePath $UnattendX64FilePath -UnattendArm64FilePath $UnattendArm64FilePath
 
                 # Ensure target folder exists under Apps
                 $targetFolder = Join-Path $AppsPath 'Unattend'
@@ -6431,7 +6903,7 @@ if ($InstallApps) {
                 # Copy if source exists; otherwise log and skip
                 if (Test-Path -Path $unattendSource -PathType Leaf) {
                     $destination = Join-Path $targetFolder 'Unattend.xml'
-                    Copy-Item -Path $unattendSource -Destination $destination -Force | Out-Null
+                    Save-StagedUnattendFile -SourcePath $unattendSource -DestinationPath $destination -DeviceNamingMode $DeviceNamingMode -DeviceNameTemplate $normalizedDeviceNameTemplate -WindowsArch $WindowsArch
                     WriteLog "Injected unattend file into Apps: $unattendSource -> $destination"
                 }
                 else {
@@ -6998,10 +7470,8 @@ try {
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
                     WriteLog 'WindowsRelease is 2016, adding SSU first'
                     WriteLog "Adding SSU to $WindowsPartition"
-                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
-                    # Commenting out -preventpending as it causes an issue with the SSU being applied
-                    # Seems to be because of the registry being mounted per dism.log
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$SSUFilePath" | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
                     # WriteLog "Removing $SSUFilePath"
                     # Remove-Item -Path $SSUFilePath -Force | Out-Null
@@ -7010,7 +7480,8 @@ try {
                 if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                     WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
                     WriteLog "Adding SSU to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$SSUFilePath" | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
                     # WriteLog "Removing $SSUFilePath"
                     # Remove-Item -Path $SSUFilePath -Force | Out-Null
@@ -7023,23 +7494,27 @@ try {
                     }
                     else {
                         WriteLog "Adding $CUPath to $WindowsPartition"
-                        Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        # Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$CUPath" | Out-Null
                         WriteLog "$CUPath added to $WindowsPartition"
                     }
                 }
                 if ($UpdatePreviewCU) {
                     WriteLog "Adding $CUPPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$CUPPath" | Out-Null
                     WriteLog "$CUPPath added to $WindowsPartition"
                 }
                 if ($UpdateLatestNet) {
                     WriteLog "Adding $NETPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$NETPath" | Out-Null
                     WriteLog "$NETPath added to $WindowsPartition"
                 }
                 if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
                     WriteLog "Adding $MicrocodePath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$MicrocodePath" | Out-Null
                     WriteLog "$MicrocodePath added to $WindowsPartition"
                 }
                 WriteLog "KBs added to $WindowsPartition"

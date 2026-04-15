@@ -27,6 +27,319 @@ function Update-VMNetworkingControls {
     }
 }
 
+function Get-SelectedDeviceNamingMode {
+    param([PSCustomObject]$State)
+
+    if ($true -eq $State.Controls.rbDeviceNamingPrompt.IsChecked) {
+        return 'Prompt'
+    }
+
+    if ($true -eq $State.Controls.rbDeviceNamingTemplate.IsChecked) {
+        return 'Template'
+    }
+
+    if ($true -eq $State.Controls.rbDeviceNamingPrefixes.IsChecked) {
+        return 'Prefixes'
+    }
+
+    if ($true -eq $State.Controls.rbDeviceNamingSerialComputerNames.IsChecked) {
+        return 'SerialComputerNames'
+    }
+
+    return 'None'
+}
+
+function Set-DeviceNamingMode {
+    param(
+        [PSCustomObject]$State,
+        [ValidateSet('None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+        [string]$Mode
+    )
+
+    $State.Controls.rbDeviceNamingNone.IsChecked = $Mode -eq 'None'
+    $State.Controls.rbDeviceNamingPrompt.IsChecked = $Mode -eq 'Prompt'
+    $State.Controls.rbDeviceNamingTemplate.IsChecked = $Mode -eq 'Template'
+    $State.Controls.rbDeviceNamingPrefixes.IsChecked = $Mode -eq 'Prefixes'
+    $State.Controls.rbDeviceNamingSerialComputerNames.IsChecked = $Mode -eq 'SerialComputerNames'
+}
+
+function Set-DeviceNamingModeState {
+    param(
+        [PSCustomObject]$State,
+        [ValidateSet('None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+        [string]$DisplayMode,
+        [AllowNull()]
+        [string]$LoadedMode
+    )
+
+    if ($null -eq $State.Flags) {
+        $State.Flags = @{}
+    }
+
+    if ($null -eq $State.Data) {
+        $State.Data = @{}
+    }
+
+    $previousSuppressionState = $true -eq $State.Flags.suppressDeviceNamingChangeTracking
+    $State.Flags.suppressDeviceNamingChangeTracking = $true
+    try {
+        Set-DeviceNamingMode -State $State -Mode $DisplayMode
+    }
+    finally {
+        $State.Flags.suppressDeviceNamingChangeTracking = $previousSuppressionState
+    }
+
+    $State.Data.loadedDeviceNamingMode = if ([string]::IsNullOrWhiteSpace($LoadedMode)) {
+        $null
+    }
+    else {
+        $LoadedMode.Trim()
+    }
+    $State.Flags.deviceNamingModeWasExplicitlyChanged = $false
+}
+
+function Get-ConfiguredDeviceNamingMode {
+    param([PSCustomObject]$State)
+
+    if (($null -ne $State.Flags) -and ($true -eq $State.Flags.deviceNamingModeWasExplicitlyChanged)) {
+        return Get-SelectedDeviceNamingMode -State $State
+    }
+
+    if (($null -ne $State.Data) -and -not [string]::IsNullOrWhiteSpace([string]$State.Data.loadedDeviceNamingMode)) {
+        return [string]$State.Data.loadedDeviceNamingMode
+    }
+
+    return $null
+}
+
+function Get-DeviceNamePrefixes {
+    param([PSCustomObject]$State)
+
+    if ($null -eq $State.Controls.txtDeviceNamePrefixes) {
+        return @()
+    }
+
+    return @(
+        $State.Controls.txtDeviceNamePrefixes.Text -split "\r?\n" |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim() }
+    )
+}
+
+function Get-SerialComputerNamesLines {
+    param([PSCustomObject]$State)
+
+    if ($null -eq $State.Controls.txtDeviceNameSerialComputerNames) {
+        return @()
+    }
+
+    return @(
+        $State.Controls.txtDeviceNameSerialComputerNames.Text -split "\r?\n" |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim() }
+    )
+}
+
+function Import-DeviceNamePrefixesFile {
+    param(
+        [PSCustomObject]$State,
+        [string]$FilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path -Path $FilePath -PathType Leaf)) {
+        return $false
+    }
+
+    $prefixLines = @(Get-Content -Path $FilePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    if ($null -ne $State.Controls.txtDeviceNamePrefixesPath) {
+        $State.Controls.txtDeviceNamePrefixesPath.Text = $FilePath
+    }
+    $State.Controls.txtDeviceNamePrefixes.Text = $prefixLines -join [System.Environment]::NewLine
+    WriteLog "Imported device name prefixes from $FilePath"
+    return $true
+}
+
+function Import-SerialComputerNamesFile {
+    param(
+        [PSCustomObject]$State,
+        [string]$FilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path -Path $FilePath -PathType Leaf)) {
+        return $false
+    }
+
+    $serialMappingLines = @(Get-Content -Path $FilePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    if ($null -ne $State.Controls.txtDeviceNameSerialComputerNamesPath) {
+        $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = $FilePath
+    }
+    $State.Controls.txtDeviceNameSerialComputerNames.Text = $serialMappingLines -join [System.Environment]::NewLine
+    WriteLog "Imported serial computer-name mappings from $FilePath"
+    return $true
+}
+
+function Get-DefaultDeviceNamePrefixesPath {
+    param([string]$FFUDevelopmentPath)
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') 'prefixes.txt'
+}
+
+function Get-DefaultSerialComputerNamesPath {
+    param([string]$FFUDevelopmentPath)
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') 'SerialComputerNames.csv'
+}
+
+function Get-DefaultUnattendFilePath {
+    param(
+        [string]$FFUDevelopmentPath,
+        [ValidateSet('x64', 'arm64')]
+        [string]$WindowsArch
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    $fileName = if ($WindowsArch -ieq 'arm64') { 'unattend_arm64.xml' } else { 'unattend_x64.xml' }
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') $fileName
+}
+
+function Import-DeviceNamePrefixesFromConfiguredPath {
+    param(
+        [PSCustomObject]$State,
+        [switch]$SkipIfTextPresent
+    )
+
+    if ($SkipIfTextPresent -and -not [string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNamePrefixes.Text)) {
+        return
+    }
+
+    $prefixFilePath = $State.Controls.txtDeviceNamePrefixesPath.Text
+    if ([string]::IsNullOrWhiteSpace($prefixFilePath)) {
+        $prefixFilePath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+        if (-not [string]::IsNullOrWhiteSpace($prefixFilePath) -and $null -ne $State.Controls.txtDeviceNamePrefixesPath) {
+            $State.Controls.txtDeviceNamePrefixesPath.Text = $prefixFilePath
+        }
+    }
+
+    if (Test-Path -Path $prefixFilePath -PathType Leaf) {
+        Import-DeviceNamePrefixesFile -State $State -FilePath $prefixFilePath | Out-Null
+    }
+}
+
+function Import-SerialComputerNamesFromConfiguredPath {
+    param(
+        [PSCustomObject]$State,
+        [switch]$SkipIfTextPresent
+    )
+
+    if ($SkipIfTextPresent -and -not [string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNameSerialComputerNames.Text)) {
+        return
+    }
+
+    $serialComputerNamesPath = $State.Controls.txtDeviceNameSerialComputerNamesPath.Text
+    if ([string]::IsNullOrWhiteSpace($serialComputerNamesPath)) {
+        $serialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+        if (-not [string]::IsNullOrWhiteSpace($serialComputerNamesPath) -and $null -ne $State.Controls.txtDeviceNameSerialComputerNamesPath) {
+            $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = $serialComputerNamesPath
+        }
+    }
+
+    if (Test-Path -Path $serialComputerNamesPath -PathType Leaf) {
+        Import-SerialComputerNamesFile -State $State -FilePath $serialComputerNamesPath | Out-Null
+    }
+}
+
+function Test-DeviceNameTemplateUsesSerialToken {
+    param([PSCustomObject]$State)
+
+    return ((Get-SelectedDeviceNamingMode -State $State) -eq 'Template') -and ($State.Controls.txtDeviceNameTemplate.Text -match '(?i)%serial%')
+}
+
+function Update-UnattendSelectionControls {
+    param([PSCustomObject]$State)
+
+    $selectedDeviceNamingMode = Get-SelectedDeviceNamingMode -State $State
+    $isCopyUnattendSelected = $true -eq $State.Controls.chkCopyUnattend.IsChecked
+    $isInjectUnattendSelected = $true -eq $State.Controls.chkInjectUnattend.IsChecked
+    $deviceNameTemplateUsesSerialToken = Test-DeviceNameTemplateUsesSerialToken -State $State
+    $requiresCopiedUnattend = ($selectedDeviceNamingMode -in @('Prompt', 'Prefixes', 'SerialComputerNames')) -or $deviceNameTemplateUsesSerialToken
+
+    if ($isCopyUnattendSelected -and $isInjectUnattendSelected) {
+        if ($requiresCopiedUnattend) {
+            $State.Controls.chkInjectUnattend.IsChecked = $false
+            $isInjectUnattendSelected = $false
+        }
+        else {
+            $State.Controls.chkCopyUnattend.IsChecked = $false
+            $isCopyUnattendSelected = $false
+        }
+    }
+
+    if ($requiresCopiedUnattend) {
+        if (-not $isCopyUnattendSelected) {
+            $State.Controls.chkCopyUnattend.IsChecked = $true
+            $isCopyUnattendSelected = $true
+        }
+
+        if ($isInjectUnattendSelected) {
+            $State.Controls.chkInjectUnattend.IsChecked = $false
+            $isInjectUnattendSelected = $false
+        }
+
+        $State.Controls.chkCopyUnattend.IsEnabled = $false
+        $State.Controls.chkInjectUnattend.IsEnabled = $false
+        return
+    }
+
+    if ($isCopyUnattendSelected) {
+        $State.Controls.chkCopyUnattend.IsEnabled = $true
+        $State.Controls.chkInjectUnattend.IsEnabled = $false
+    }
+    elseif ($isInjectUnattendSelected) {
+        $State.Controls.chkCopyUnattend.IsEnabled = $false
+        $State.Controls.chkInjectUnattend.IsEnabled = $true
+    }
+    else {
+        $State.Controls.chkCopyUnattend.IsEnabled = $true
+        $State.Controls.chkInjectUnattend.IsEnabled = $true
+    }
+}
+
+function Update-DeviceNamingControls {
+    param([PSCustomObject]$State)
+
+    if (($true -eq $State.Controls.chkInjectUnattend.IsChecked) -and (($true -eq $State.Controls.rbDeviceNamingPrompt.IsChecked) -or ($true -eq $State.Controls.rbDeviceNamingPrefixes.IsChecked) -or ($true -eq $State.Controls.rbDeviceNamingSerialComputerNames.IsChecked))) {
+        $State.Controls.rbDeviceNamingNone.IsChecked = $true
+    }
+
+    $selectedDeviceNamingMode = Get-SelectedDeviceNamingMode -State $State
+    $State.Controls.deviceNameTemplatePanel.Visibility = if ($selectedDeviceNamingMode -eq 'Template') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.deviceNamePrefixesPanel.Visibility = if ($selectedDeviceNamingMode -eq 'Prefixes') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.deviceNameSerialComputerNamesPanel.Visibility = if ($selectedDeviceNamingMode -eq 'SerialComputerNames') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.rbDeviceNamingPrompt.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
+    $State.Controls.rbDeviceNamingPrefixes.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
+    $State.Controls.rbDeviceNamingSerialComputerNames.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
+
+    if ($selectedDeviceNamingMode -eq 'Prefixes') {
+        Import-DeviceNamePrefixesFromConfiguredPath -State $State -SkipIfTextPresent
+    }
+    elseif ($selectedDeviceNamingMode -eq 'SerialComputerNames') {
+        Import-SerialComputerNamesFromConfiguredPath -State $State -SkipIfTextPresent
+    }
+
+    Update-UnattendSelectionControls -State $State
+}
+
 function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
@@ -242,7 +555,34 @@ function Register-EventHandlers {
             $localState = $window.Tag
             $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select FFU Development Path"
             if ($selectedPath) {
+                $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+                $currentSerialComputerNamesPath = $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text
+                $currentUnattendX64FilePath = $localState.Controls.txtUnattendX64FilePath.Text
+                $currentUnattendArm64FilePath = $localState.Controls.txtUnattendArm64FilePath.Text
+                $previousDefaultPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                $previousDefaultSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                $previousDefaultUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+                $previousDefaultUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
                 $localState.Controls.txtFFUDevPath.Text = $selectedPath
+                $newDefaultPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $selectedPath
+                $newDefaultSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $selectedPath
+                $newDefaultUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $selectedPath -WindowsArch 'x64'
+                $newDefaultUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $selectedPath -WindowsArch 'arm64'
+                if ([string]::IsNullOrWhiteSpace($currentPrefixesPath) -or $currentPrefixesPath -ieq $previousDefaultPrefixesPath) {
+                    $localState.Controls.txtDeviceNamePrefixesPath.Text = $newDefaultPrefixesPath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath) -or $currentSerialComputerNamesPath -ieq $previousDefaultSerialComputerNamesPath) {
+                    $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text = $newDefaultSerialComputerNamesPath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath) -or $currentUnattendX64FilePath -ieq $previousDefaultUnattendX64FilePath) {
+                    $localState.Controls.txtUnattendX64FilePath.Text = $newDefaultUnattendX64FilePath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath) -or $currentUnattendArm64FilePath -ieq $previousDefaultUnattendArm64FilePath) {
+                    $localState.Controls.txtUnattendArm64FilePath.Text = $newDefaultUnattendArm64FilePath
+                }
+                Import-DeviceNamePrefixesFromConfiguredPath -State $localState
+                Import-SerialComputerNamesFromConfiguredPath -State $localState
+                Update-DeviceNamingControls -State $localState
             }
         })
 
@@ -254,6 +594,234 @@ function Register-EventHandlers {
             if ($selectedPath) {
                 $localState.Controls.txtFFUCaptureLocation.Text = $selectedPath
             }
+        })
+
+    $State.Controls.rbDeviceNamingNone.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.rbDeviceNamingPrompt.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.rbDeviceNamingTemplate.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.txtDeviceNameTemplate.Add_TextChanged({
+            param($eventSource, $textChangedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            if ($null -ne $window -and $null -ne $window.Tag) {
+                Update-DeviceNamingControls -State $window.Tag
+            }
+        })
+    $State.Controls.rbDeviceNamingPrefixes.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.rbDeviceNamingSerialComputerNames.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.btnBrowseDeviceNamePrefixesPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                $currentPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                $null
+            }
+            else {
+                Split-Path $currentPrefixesPath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) { 'prefixes.txt' } else { Split-Path $currentPrefixesPath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select prefixes file path' -Filter 'Text files (*.txt)|*.txt|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (Import-DeviceNamePrefixesFile -State $localState -FilePath $selectedPath) {
+                Update-DeviceNamingControls -State $localState
+            }
+        })
+    $State.Controls.btnBrowseDeviceNameSerialComputerNamesPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentSerialComputerNamesPath = $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                $currentSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                $null
+            }
+            else {
+                Split-Path $currentSerialComputerNamesPath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) { 'SerialComputerNames.csv' } else { Split-Path $currentSerialComputerNamesPath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select SerialComputerNames.csv file path' -Filter 'CSV files (*.csv)|*.csv|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (Import-SerialComputerNamesFile -State $localState -FilePath $selectedPath) {
+                Update-DeviceNamingControls -State $localState
+            }
+        })
+    $State.Controls.btnBrowseUnattendX64FilePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentUnattendX64FilePath = $localState.Controls.txtUnattendX64FilePath.Text
+            if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) {
+                $currentUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) {
+                $null
+            }
+            else {
+                Split-Path $currentUnattendX64FilePath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) { 'unattend_x64.xml' } else { Split-Path $currentUnattendX64FilePath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select x64 unattend XML file' -Filter 'XML files (*.xml)|*.xml|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (-not [string]::IsNullOrWhiteSpace($selectedPath)) {
+                $localState.Controls.txtUnattendX64FilePath.Text = $selectedPath
+            }
+        })
+    $State.Controls.btnBrowseUnattendArm64FilePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentUnattendArm64FilePath = $localState.Controls.txtUnattendArm64FilePath.Text
+            if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) {
+                $currentUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) {
+                $null
+            }
+            else {
+                Split-Path $currentUnattendArm64FilePath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) { 'unattend_arm64.xml' } else { Split-Path $currentUnattendArm64FilePath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select arm64 unattend XML file' -Filter 'XML files (*.xml)|*.xml|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (-not [string]::IsNullOrWhiteSpace($selectedPath)) {
+                $localState.Controls.txtUnattendArm64FilePath.Text = $selectedPath
+            }
+        })
+    $State.Controls.btnSaveDeviceNamePrefixes.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $prefixLines = @(Get-DeviceNamePrefixes -State $localState)
+
+            if ($prefixLines.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("Enter at least one prefix before saving the prefixes file.", "Prefixes Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                $currentPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                if (-not [string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                    $localState.Controls.txtDeviceNamePrefixesPath.Text = $currentPrefixesPath
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                [System.Windows.MessageBox]::Show("Select a valid Prefixes File Path before saving prefixes.", "Prefixes File Path Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            try {
+                $prefixLines | Set-Content -Path $currentPrefixesPath -Encoding UTF8
+                $localState.Controls.txtDeviceNamePrefixesPath.Text = $currentPrefixesPath
+                WriteLog "Saved device name prefixes to $currentPrefixesPath"
+            }
+            catch {
+                [System.Windows.MessageBox]::Show("Saving prefixes failed for '$currentPrefixesPath'. $($_.Exception.Message)", "Save Prefixes Failed", "OK", "Error") | Out-Null
+            }
+        })
+    $State.Controls.btnSaveDeviceNameSerialComputerNames.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $serialComputerNameLines = @(Get-SerialComputerNamesLines -State $localState)
+
+            if ($serialComputerNameLines.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("Enter CSV content before saving the serial mapping file.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            $currentSerialComputerNamesPath = $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                $currentSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                if (-not [string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                    $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text = $currentSerialComputerNamesPath
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                [System.Windows.MessageBox]::Show("Select a valid SerialComputerNames.csv file path before saving the serial mapping.", "Serial Mapping File Path Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            try {
+                $serialComputerNameLines | Set-Content -Path $currentSerialComputerNamesPath -Encoding UTF8
+                $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text = $currentSerialComputerNamesPath
+                WriteLog "Saved serial computer-name mappings to $currentSerialComputerNamesPath"
+            }
+            catch {
+                [System.Windows.MessageBox]::Show("Saving serial mapping failed for '$currentSerialComputerNamesPath'. $($_.Exception.Message)", "Save Serial Mapping Failed", "OK", "Error") | Out-Null
+            }
+        })
+    $State.Controls.chkCopyUnattend.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkInjectUnattend.IsChecked = $false
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.chkCopyUnattend.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            Update-DeviceNamingControls -State $window.Tag
+        })
+    $State.Controls.chkInjectUnattend.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkCopyUnattend.IsChecked = $false
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.chkInjectUnattend.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            Update-DeviceNamingControls -State $window.Tag
         })
 
     # Build USB Drive Settings Event Handlers

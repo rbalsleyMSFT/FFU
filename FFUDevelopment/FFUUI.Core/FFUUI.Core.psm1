@@ -106,10 +106,15 @@ function Get-GeneralDefaults {
     $peDriversPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "PEDrivers"
     $vmLocationPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "VM"
     $ffuCapturePath = Join-Path -Path $FFUDevelopmentPath -ChildPath "FFU"
+    $unattendPath = Join-Path -Path $FFUDevelopmentPath -ChildPath "unattend"
     $officePath = Join-Path -Path $appsPath -ChildPath "Office"
     $appListJsonPath = Join-Path -Path $appsPath -ChildPath "AppList.json"
     $userAppListPath = Join-Path -Path $appsPath -ChildPath "UserAppList.json"
     $driversJsonPath = Join-Path -Path $driversPath -ChildPath "Drivers.json"
+    $deviceNamePrefixesPath = Join-Path -Path $unattendPath -ChildPath "prefixes.txt"
+    $deviceNameSerialComputerNamesPath = Join-Path -Path $unattendPath -ChildPath "SerialComputerNames.csv"
+    $unattendX64FilePath = Join-Path -Path $unattendPath -ChildPath "unattend_x64.xml"
+    $unattendArm64FilePath = Join-Path -Path $unattendPath -ChildPath "unattend_arm64.xml"
 
     return [PSCustomObject]@{
         # Build Tab Defaults
@@ -132,6 +137,14 @@ function Get-GeneralDefaults {
         CopyUnattend                   = $false
         CopyPPKG                       = $false
         InjectUnattend                 = $false
+        UnattendX64FilePath            = $unattendX64FilePath
+        UnattendArm64FilePath          = $unattendArm64FilePath
+        DeviceNamingMode               = 'None'
+        DeviceNameTemplate             = ''
+        DeviceNamePrefixesPath         = $deviceNamePrefixesPath
+        DeviceNamePrefixes             = @()
+        DeviceNameSerialComputerNamesPath = $deviceNameSerialComputerNamesPath
+        DeviceNameSerialComputerNames  = @()
         CleanupAppsISO                 = $true
         CleanupDeployISO               = $true
         CleanupDrivers                 = $false

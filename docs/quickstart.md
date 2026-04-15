@@ -186,18 +186,46 @@ Another safety measure is **Select Specific USB Drives**. When you check **Selec
 
 **Device Naming**
 
-Device naming can be done from PE. The way this works is by leveraging an unattend.xml file to either take input from the user at imaging time or read a list of prefix values and append the serial number of the device. There are some major benefits to doing this:
+Use the **Device Naming** expander on the Build page to decide whether `ComputerName` should be set during deployment. There are some major benefits to doing this:
 
 1. Total deployment time is reduced if naming is set at FFU deployment time since there is no additional reboot done during OOBE.
 2. Reduces the need for multiple provisioning packages or autopilot profiles. This means you can use a single PPKG or autopilot profile.
 
-**Prompt for Device Name**
+**No Device Name**
 
-If you want to be prompted for the device name, simply check **Copy Unattend.xml.** This tells the build script to copy the appropriate architecture unattend_arch.xml file from the `C:\FFUDevelopment\Unattend` folder to the `.\unattend` folder on the deploy partition of the USB drive.
+This is the default option. The unattend file is still applied, but Windows generates a random computer name.
 
-**Specifying Multiple Name Prefixes**
+**Specify Device Name**
 
-If you have multiple device name prefixes for different locations or device use cases, or even a single prefix, you can specify a prefixes.txt file in the `C:\FFUDevelopment\unattend` folder. If the prefixes.txt file is detected and a single prefix is listed, the device will just use that prefix and append the serial number of the device. If there are multiple prefixes listed in the prefixes.txt file, you will be prompted to select which prefix you want to name the device and the serial number will be appended to that prefix. If you want a dash in the name, include the dash in the prefix (e.g. if ABCD- is in the prefixes.txt file, the device name will be ABCD-SerialNumber).
+Use this option when you want a static device name or a template such as `Comp-%serial%`.
+
+- With **Copy Unattend.xml**, `%serial%` is resolved during deployment in PE.
+- With **Inject Unattend.xml**, only static names are supported.
+- **Copy Unattend.xml** and **Inject Unattend.xml** are mutually exclusive. Select only one.
+
+**Specify a list of Prefixes**
+
+This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line or import an existing prefixes file. The source file can use any name because the UI tracks the prefixes path separately. If there is one prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one and the serial number is appended to that prefix.
+
+{: .note-title}
+
+> Note
+>
+> If the technician skips prefix selection when multiple prefixes are available, `ApplyFFU.ps1` leaves the existing unattend `ComputerName` value unchanged. With the current unattend samples set to `<ComputerName>*</ComputerName>`, Windows falls back to its default random computer-name behavior, typically resulting in a name such as `WIN-*`.
+
+**Specify Serial to Device Name Mapping**
+
+This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use `SerialNumber,ComputerName` as the header row, then add one row per device. During deployment, `ApplyFFU.ps1` compares the current BIOS serial number to the CSV and applies the matching computer name.
+
+- This option requires **Copy Unattend.xml**.
+- **Inject Unattend.xml** is not supported with this option.
+- If no matching serial number is found during deployment, `ApplyFFU.ps1` falls back to a random `FFU-*` computer name.
+
+{: .note-title}
+
+> Note
+>
+> If `prefixes.txt` and `SerialComputerNames.csv` are both present on the same deployment media, `ApplyFFU.ps1` checks `prefixes.txt` first. FFU Builder stages only the naming file for the selected device-naming mode.
 
 {: .warning-title}
 
@@ -272,18 +300,22 @@ And the Unattend folder should have an unattend.xml file with the following cont
   <settings pass="specialize">
   <!--<ComputerName> must be in the first Component Element  "Microsoft-Windows-Shell-Setup" . Do not change the order or remove it -->
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <ComputerName>MyComputer</ComputerName>
+      <ComputerName>*</ComputerName>
     </component>
   <!--Place addtional Components Elements and settings below here. -->
   </settings>
 </unattend>
 ```
 
+Keep `*` if you want Windows to generate a random device name by default.
+
+If you want the technician to be prompted for the device name during deployment, select **Prompt for Device Name** in the Build tab and enable **Copy Unattend.xml**. FFU Builder will rewrite only the staged deployment copy of `Unattend.xml` for that workflow.
+
 Now you're ready to deploy the FFU to your device. 
 
 ## Deployment
 
-Deployment should be fairly straight forward: boot off the USB device, get prompted for a device name, and the deployment of the FFU and drivers should happen automatically. 
+Deployment should be fairly straight forward: boot off the USB device and the deployment of the FFU and drivers should happen automatically. If you selected **Prompt for Device Name** or another supported device naming option, that naming step will happen during deployment.
 
 If you have any questions or run into any issues, [open a discussion in the Github repo](https://github.com/rbalsleyMSFT/FFU/discussions).
 

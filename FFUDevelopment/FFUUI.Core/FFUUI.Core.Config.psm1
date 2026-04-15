@@ -36,9 +36,17 @@ function Get-UIConfig {
         UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
+        DeviceNamingMode               = Get-ConfiguredDeviceNamingMode -State $State
+        DeviceNameTemplate             = $State.Controls.txtDeviceNameTemplate.Text
+        DeviceNamePrefixesPath         = $State.Controls.txtDeviceNamePrefixesPath.Text
+        DeviceNamePrefixes             = @(Get-DeviceNamePrefixes -State $State)
+        DeviceNameSerialComputerNamesPath = $State.Controls.txtDeviceNameSerialComputerNamesPath.Text
+        DeviceNameSerialComputerNames  = @(Get-SerialComputerNamesLines -State $State)
         CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
+        UnattendX64FilePath            = $State.Controls.txtUnattendX64FilePath.Text
+        UnattendArm64FilePath          = $State.Controls.txtUnattendArm64FilePath.Text
         CustomFFUNameTemplate          = $State.Controls.txtCustomFFUNameTemplate.Text
         Disksize                       = [int64]$State.Controls.txtDiskSize.Text * 1GB
         DownloadDrivers                = $State.Controls.chkDownloadDrivers.IsChecked
@@ -450,12 +458,53 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyAdditionalFFUFiles' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAdditionalFFUFiles' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
     Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
+    Set-UIValue -ControlName 'txtUnattendX64FilePath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UnattendX64FilePath' -State $State
+    Set-UIValue -ControlName 'txtUnattendArm64FilePath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UnattendArm64FilePath' -State $State
     Set-UIValue -ControlName 'chkVerbose' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'Verbose' -State $State
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtUnattendX64FilePath.Text)) {
+        $State.Controls.txtUnattendX64FilePath.Text = Get-DefaultUnattendFilePath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtUnattendArm64FilePath.Text)) {
+        $State.Controls.txtUnattendArm64FilePath.Text = Get-DefaultUnattendFilePath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
+    }
 
     # USB Drive Modification group (Build Tab)
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State
     Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyUnattend' -State $State
     Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPPKG' -State $State
+    Set-UIValue -ControlName 'txtDeviceNamePrefixesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixesPath' -State $State
+    Set-UIValue -ControlName 'txtDeviceNameSerialComputerNamesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameSerialComputerNamesPath' -State $State
+    Set-UIValue -ControlName 'txtDeviceNameTemplate' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameTemplate' -State $State
+    Set-UIValue -ControlName 'txtDeviceNamePrefixes' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixes' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
+    Set-UIValue -ControlName 'txtDeviceNameSerialComputerNames' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameSerialComputerNames' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNamePrefixesPath.Text)) {
+        $State.Controls.txtDeviceNamePrefixesPath.Text = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+    }
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNameSerialComputerNamesPath.Text)) {
+        $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+    }
+
+    $loadedDeviceNamingMode = $null
+    if ($ConfigContent.PSObject.Properties.Name -contains 'DeviceNamingMode') {
+        $candidateDeviceNamingMode = [string]$ConfigContent.DeviceNamingMode
+        if ($candidateDeviceNamingMode -in @('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
+            $loadedDeviceNamingMode = $candidateDeviceNamingMode
+        }
+    }
+    $displayDeviceNamingMode = if ($loadedDeviceNamingMode -in @('Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
+        $loadedDeviceNamingMode
+    }
+    else {
+        'None'
+    }
+    Set-DeviceNamingModeState -State $State -DisplayMode $displayDeviceNamingMode -LoadedMode $loadedDeviceNamingMode
+    Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Import-SerialComputerNamesFromConfiguredPath -State $State
+    Update-DeviceNamingControls -State $State
     
     # Post Build Cleanup group (Build Tab)
     Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupAppsISO' -State $State
