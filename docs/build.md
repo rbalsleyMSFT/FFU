@@ -446,13 +446,13 @@ XYZ24680,STORE-015
 >
 > If `prefixes.txt` and `SerialComputerNames.csv` are both staged manually on the same deployment media, `ApplyFFU.ps1` checks `prefixes.txt` first. FFU Builder avoids this conflict by only staging the naming file for the selected device-naming mode.
 
-### SerialComputerNames.csv File Path
+### Serial Computer Names CSV Mapping File Path
 
-Use **SerialComputerNames.csv File Path** to point the UI at the source CSV file for the serial-to-device-name mapping. The file can use any name. When you browse to a mapping file in the UI, or when a saved configuration references a valid CSV path, the UI loads that file and populates the multiline CSV box from its contents.
+Use **Serial Computer Names CSV Mapping File Path** to point the UI at the source CSV file for the serial-to-device-name mapping. The file can use any name. When you browse to a mapping file in the UI, or when a saved configuration references a valid CSV path, the UI loads that file and populates the multiline CSV box from its contents.
 
 ### Save Serial Mapping
 
-Use **Save Serial Mapping** to write the current CSV content back to the file specified in **SerialComputerNames.csv File Path**.
+Use **Save Serial Mapping** to write the current CSV content back to the file specified in **Serial Computer Names CSV Mapping File Path**.
 
 ### Deployment Prompt Compatibility
 

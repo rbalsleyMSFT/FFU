@@ -965,14 +965,14 @@
                                             </StackPanel>
                                             <RadioButton x:Name="rbDeviceNamingSerialComputerNames" Content="Specify Serial to Device Name Mapping" GroupName="DeviceNamingMode" Margin="0,8,0,8" ToolTip="Create or import a SerialComputerNames.csv file. This option requires Copy Unattend.xml."/>
                                             <StackPanel x:Name="deviceNameSerialComputerNamesPanel" Margin="32,0,0,0" Visibility="Collapsed">
-                                                <TextBlock Text="SerialComputerNames.csv File Path" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Serial Computer Names CSV Mapping File Path" Margin="0,0,0,8" TextWrapping="Wrap"/>
                                                 <Grid Margin="0,0,0,8">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                     </Grid.ColumnDefinitions>
                                                     <TextBox x:Name="txtDeviceNameSerialComputerNamesPath" Grid.Column="0" VerticalAlignment="Center" ToolTip="Path to the serial-to-device-name mapping CSV file. You can use any file name."/>
-                                                    <Button x:Name="btnBrowseDeviceNameSerialComputerNamesPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Browse to a SerialComputerNames.csv source file path."/>
+                                                    <Button x:Name="btnBrowseDeviceNameSerialComputerNamesPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="Browse to the serial-to-device-name mapping CSV source file path."/>
                                                 </Grid>
                                                 <TextBlock Text="Enter CSV content with SerialNumber and ComputerName headers. Each row maps one BIOS serial number to one computer name during deployment." Margin="0,0,0,4" TextWrapping="Wrap"/>
                                                 <TextBlock Text="Example: SerialNumber,ComputerName" Margin="0,0,0,8" TextWrapping="Wrap" Opacity="0.75"/>

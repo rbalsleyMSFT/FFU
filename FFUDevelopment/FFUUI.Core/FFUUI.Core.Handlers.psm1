@@ -688,7 +688,7 @@ function Register-EventHandlers {
                 Split-Path $currentSerialComputerNamesPath -Parent
             }
             $fileName = if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) { 'SerialComputerNames.csv' } else { Split-Path $currentSerialComputerNamesPath -Leaf }
-            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select SerialComputerNames.csv file path' -Filter 'CSV files (*.csv)|*.csv|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select Serial Computer Names CSV Mapping File Path' -Filter 'CSV files (*.csv)|*.csv|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
             if (Import-SerialComputerNamesFile -State $localState -FilePath $selectedPath) {
                 Update-DeviceNamingControls -State $localState
             }
@@ -786,7 +786,7 @@ function Register-EventHandlers {
             }
 
             if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
-                [System.Windows.MessageBox]::Show("Select a valid SerialComputerNames.csv file path before saving the serial mapping.", "Serial Mapping File Path Required", "OK", "Warning") | Out-Null
+                [System.Windows.MessageBox]::Show("Select a valid Serial Computer Names CSV Mapping File Path before saving the serial mapping.", "Serial Mapping File Path Required", "OK", "Warning") | Out-Null
                 return
             }
 
