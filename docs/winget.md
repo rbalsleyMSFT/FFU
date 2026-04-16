@@ -10,7 +10,7 @@ grand_parent: UI Overview
 ---
 # Install Winget Applications
 
-![FFU Builder UI - Applications tab with Install Winget Applications checked searching for windows app](image/applicationscopy/1759882085098.png "FFU Builder UI - Applications tab with Install Winget Applications checked searching for windows app")
+![1776378791094](image/winget/1776378791094.png)
 
 ## Check Winget Status
 
@@ -18,19 +18,19 @@ Installing Winget applications requires that both the winget CLI and Microsoft.W
 
 Click **Check Winget Status** to validate the versions of both the CLI and PowerShell module. If older than the minimum required version, will be updated to the latest version.
 
-![Check Winget Status button](image/winget/1759883187930.png "Check Winget Status button")
+![1776378813453](image/winget/1776378813453.png)
 
 After validating Winget status, you'll be able to search winget for applications. The larger the result set, the longer it will take for the list view to be populated. For example, if searching for **win**, the UI might appear to hang while it searches for apps with a name or id of **win** due to 669 results being returned and processed. Instead, if you search for **windows app**, 13 results are returned within a few seconds.
 
 The UI allows for multi-selection of applications
 
-![Winget search list view with Windows App, VLC media player, and Snagit 2025 selected](image/winget/1759884200465.png "Winget search list view with Windows App, VLC media player, and Snagit 2025 selected")
+![1776378860799](image/winget/1776378860799.png)
 
 You can also change the architecture, add additional exit codes, or ignore exit codes completely.
 
 ## Architecture
 
-![Architecture options that can be selected for winget applications](image/winget/1759884446099.png "Architecture options that can be selected for winget applications")
+![1776378878837](image/winget/1776378878837.png)
 
 FFU Builder supports x86, x64, arm64, and x86/x64 (both) for applications in the winget source repository. For apps in the msstore source repository, the architecture cannot be changed. In most cases, x64 will be what you want, however in some cases the combo of x86 and x64 will be necessary. This might be due to runtimes (.NET, Visual C++) where an application is expecting both x86 and x64 runtimes.
 

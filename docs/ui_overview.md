@@ -9,6 +9,6 @@ has_toc: false
 ---
 # UI Overview
 
-![1759527337644](image/Prerequisites/1759527337644.png)
+![1776378210391](image/ui_overview/1776378210391.png)
 
-The user interface has 9 distinct tabs for easy navigation.
+The user interface has 9 distinct pages for easy navigation.

@@ -9,7 +9,7 @@ parent: UI Overview
 ---
 # Hyper-V Settings
 
-![1759533067934](image/ui_overview/1759533067934.png)
+![1776378277110](image/hyperv_settings/1776378277110.png)
 
 ## Enable VM Networking (Experimental)
 

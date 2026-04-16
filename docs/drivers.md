@@ -9,7 +9,7 @@ parent: UI Overview
 ---
 # Drivers
 
-![1760488183854](image/drivers/1760488183854.png)
+![1776379108391](image/drivers/1776379108391.png)
 
 FFU Builder supports adding drivers directly to the FFU file at build time, or adding them as folders on your USB drive which can be serviced offline after the FFU has been applied to your device.
 
@@ -72,7 +72,7 @@ To find the Machine Type for Lenovo devices, check the bottom/back of the device
 
 You can multi-select different models within the same make, or mix and match different makes. The screenshot below shows different Dell, HP, Lenovo, and Microsoft models selected
 
-![FFU Builder UI showing multiple driver models selected for Dell, HP, Microsoft, and Lenovo](image/drivers/1763794307504.png "FFU Builder UI showing multiple driver models selected for Dell, HP, Microsoft, and Lenovo")
+![1776379241359](image/drivers/1776379241359.png)
 
 ## Save Drivers.json
 

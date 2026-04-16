@@ -27,6 +27,12 @@ After following this guide, you will have a USB drive with an FFU that contains 
 
 ## Video Walkthrough
 
+{: .note-title}
+
+> Note
+>
+> The below video was recorded prior to the Fluent UI refresh. Some things will look a bit different until a new quick start video is recorded.
+
 <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">
   <iframe
     src="https://www.youtube-nocookie.com/embed/kOIK5OmDugc"
@@ -55,7 +61,7 @@ One setting you might need to set is the Logical Sector Size. 512 is the default
 
 Click the Windows Settings tab
 
-If you keep ISO Path blank, FFU Builder will download the ESD file that the Windows Media Creation Tool uses. Most people should leave this blank since the Media Creation Tool media ESD file is now kept up to date as of Windows 11 25H2 (it's usually updated 2-3 days after patch Tuesday). This reduces the need to service the media and saves time and disk space.
+Keep Download Windows ESD selected. FFU Builder will download the ESD file that the Windows Media Creation Tool uses. This is the recommended approach since the Media Creation Tool media ESD file is now kept up to date as of Windows 11 25H2 (it's usually updated 2-3 days after patch Tuesday). This reduces the need to service the media and saves time and disk space.
 
 Change the Windows language to the one of your choosing.
 
@@ -168,7 +174,7 @@ Check **Copy Drivers to USB drive** (even though we're doing a single model in t
 
 Your view should look like this:
 
-![Drivers tab UI with HP 850 G8 selected and Copy Drivers to USB drive selected](image/quickstart/1769212208722.png "Drivers tab UI")
+![1776377145296](image/quickstart/1776377145296.png)
 
 At this point, you can either Save the Drivers.json file or click Download Selected. Clicking Save Drivers.json will save the Driver model information to the Drivers.json file which will be used at build time to download the drivers. Clicking Download Selected will download the drivers right now. This can be useful for testing without having to go through an entire build, or good for airgapped environments where you can download what you need from the internet on one network, and bring that over to the airgapped network.
 
@@ -233,21 +239,29 @@ This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use
 >
 > If using a provisioning package or autopilot json file, DO NOT specify a name in either of these. They will overwrite the name you have specified in the unattend.xml.
 
+For the purposes of this quickstart, we'll use **Prompt for Device Name**
+
 **Post Build Cleanup**
 
 Leave the Post Build Cleanup section at the defaults
 
 Your Build tab should look something like this:
 
-![1769218100003](image/quickstart/1769218100003.png)
+![1776377420583](image/quickstart/1776377420583.png)
+
+![1776377442979](image/quickstart/1776377442979.png)
+
+![1776377516879](image/quickstart/1776377516879.png)
+
+![1776377592432](image/quickstart/1776377592432.png)
+
+![1776377622826](image/quickstart/1776377622826.png)
 
 Click **Build FFU**
 
 Depending on your internet speed, speed of your build machine, etc. this will take some time (probably at least 20 minutes). After clicking Build FFU, you'll be automatically moved to the Monitor tab.
 
 ## Monitor
-
-![1769218278316](image/quickstart/1769218278316.png)
 
 The monitor tab parses the `C:\FFUDevelopment\FFUDevelopment.log` file. If you'd like to use CMTrace or another tool to monitor the log, feel free. The monitor tab has some similar functionality to CMTrace. If you click off the last line of the log in the monitor tab it will stay on that line, allowing you to read what you have selected instead of the log autoscrolling. You can also copy one or multiple lines by selecting a line and shift+clicking the last line you want to select and hitting ctrl+c to copy the lines.
 
@@ -257,7 +271,7 @@ Now sit back, relax, and watch FFU Builder do its magic. You should see a VM pop
 
 > Note
 >
-> Don't interact with the VM (e.g. don't click into the PowerShell window that's orchestrating the install of the updates, apps, etc). The whole process should be completly automated with no user interaction necessary. If you click into the PowerShell window while it's working, you may get PowerShell into "select" mode. If this happens, the PowerShell window will look like it's "stuck." That's because clicking into a cmd/PowerShell window while something is in process and you're in select mode waits for you to exit select by hitting Enter. 
+> Don't interact with the VM (e.g. don't click into the PowerShell window that's orchestrating the install of the updates, apps, etc). The whole process should be completly automated with no user interaction necessary. If you click into the PowerShell window while it's working, you may get PowerShell into "select" mode. If this happens, the PowerShell window will look like it's "stuck." That's because clicking into a cmd/PowerShell window while something is in process and you're in select mode waits for you to exit select by hitting Enter.
 
 ## Post Build
 
@@ -311,7 +325,7 @@ Keep `*` if you want Windows to generate a random device name by default.
 
 If you want the technician to be prompted for the device name during deployment, select **Prompt for Device Name** in the Build tab and enable **Copy Unattend.xml**. FFU Builder will rewrite only the staged deployment copy of `Unattend.xml` for that workflow.
 
-Now you're ready to deploy the FFU to your device. 
+Now you're ready to deploy the FFU to your device.
 
 ## Deployment
 

@@ -10,7 +10,7 @@ grand_parent: UI Overview
 ---
 # Bring Your Own Applications
 
-![1760117497413](image/byoapps/1760117497413.png)
+![1776378975827](image/byoapps/1776378975827.png)
 
 Bring Your Own Applications allows you to run any command line you want in the virtual machine to include in your FFU to install an application, run a script, etc. As the name implies, you'll provide the content, command line, arguments, and additional exit codes.
 

@@ -9,7 +9,7 @@ parent: UI Overview
 ---
 # Build
 
-![FFU Builder Build tab](image/build/1764362222174.png "FFU Builder Build tab")
+![1776379303045](image/build/1776379303045.png)
 
 The Build tab is where the magic happens
 
@@ -283,6 +283,12 @@ The deployment media is saved as an ISO file at `$FFUDevelopmentPath\WinPE_FFU_D
 >
 > If you just need to re-create deployment media, you can use the `Create-PEMedia.ps1` script to regenerate the deploy ISO without running a full build.
 
+### Verbose
+
+Controls the `-Verbose` common parameter. When checked, enables detailed verbose output during the build process. The default is **unchecked**.
+
+In prior builds it was necessary to enable `-verbose` output to track in real-time the build process if you didn't have `cmtrace.exe` or some other log-monitoring tool. With the UI, you can now watch the build in real-time using the monitor tab. Enabling verbose shouldn't be necessary but is available for those who wish to use it.
+
 ## Unattend.xml Options Expander
 
 Use the **Unattend.xml Options** expander to choose how unattend content is staged and which source XML file FFU Builder should use for x64 and arm64 builds.
@@ -338,11 +344,11 @@ This option is primarily intended for scenarios where:
 
 #### Limitations
 
-| Limitation                        | Description                                                                                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No prefixes.txt, SerialComputerNames.csv, or %serial% support** | Unlike **Copy Unattend.xml**, this method does not support `prefixes.txt`, `SerialComputerNames.csv`, or the `%serial%` variable for deployment-time device naming |
-| **Fixed configuration**     | The unattend settings are baked into the FFU at build time and cannot be changed at deployment time                                                      |
-| **Requires VM to be built** | This option only works when**Install Apps** is `$true` because the unattend file is included in the Apps ISO                                     |
+| Limitation                                                              | Description                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No prefixes.txt, SerialComputerNames.csv, or %serial% support** | Unlike**Copy Unattend.xml**, this method does not support `prefixes.txt`, `SerialComputerNames.csv`, or the `%serial%` variable for deployment-time device naming |
+| **Fixed configuration**                                           | The unattend settings are baked into the FFU at build time and cannot be changed at deployment time                                                                           |
+| **Requires VM to be built**                                       | This option only works when**Install Apps** is `$true` because the unattend file is included in the Apps ISO                                                          |
 
 {: .note-title}
 
@@ -356,11 +362,23 @@ This option is primarily intended for scenarios where:
 >
 > If you're using this option, you can disable **Build Deploy ISO** to save time during the build process since the deployment ISO is not needed when you're not using the USB drive method.
 
-### Verbose
+### Copy Unattend.xml
 
-Controls the `-Verbose` common parameter. When checked, enables detailed verbose output during the build process. The default is **unchecked**.
+Controls the `-CopyUnattend` parameter. When checked, stages the XML file selected for the current architecture in **Unattend.xml Options** to an `Unattend` folder on the Deployment partition of the USB drive. The default is **unchecked**.
 
-In prior builds it was necessary to enable `-verbose` output to track in real-time the build process if you didn't have `cmtrace.exe` or some other log-monitoring tool. With the UI, you can now watch the build in real-time using the monitor tab. Enabling verbose shouldn't be necessary but is available for those who wish to use it.
+Use this option when you plan to build deployment USB media.
+
+When enabled, the build process copies:
+
+- The selected x64 or arm64 unattend XML file -> renamed to **Unattend.xml** on the USB drive
+- **prefixes.txt** -> created from the **Device Naming** prefixes list when that mode is selected
+- **SerialComputerNames.csv** -> created from the **Device Naming** serial mapping list when that mode is selected
+
+If you keep the default file paths in place, FFU Builder uses `unattend_x64.xml` for x64 builds and `unattend_arm64.xml` for arm64 builds.
+
+During deployment, `ApplyFFU.ps1` applies `Unattend.xml` whenever it is present. Device naming only happens when the **Device Naming** setting requires it, or when older media still uses the legacy prompt-based workflow.
+
+See **Device Naming Expander** below for the available computer-name modes and naming-file behavior.
 
 ## Device Naming Expander
 
@@ -374,7 +392,7 @@ Use the **Device Naming** expander to decide whether `ComputerName` should be se
 This is the default radio selection in the UI.
 
 - If you leave device naming untouched, FFU Builder does not write `DeviceNamingMode` to the generated config. This preserves the script's `Legacy` default, so an existing `FFUDevelopment\Unattend\prefixes.txt` file is still copied to deployment media when present.
-- If you explicitly select this option, FFU Builder writes `DeviceNamingMode = None`. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
+- If you explicitly select this option, FFU Builder sets `DeviceNamingMode = None`. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
 
 The active `unattend_*.xml` files in `FFUDevelopment\Unattend` use `<ComputerName>*</ComputerName>` in the current sample files.
 
@@ -382,6 +400,7 @@ The active `unattend_*.xml` files in `FFUDevelopment\Unattend` use `<ComputerNam
 
 Use this option when you want the technician to enter the computer name during deployment.
 
+- FFU Builder sets `DeviceNamingMode = Prompt`.
 - This option requires **Copy Unattend.xml**.
 - The source `unattend_*.xml` files can stay at `<ComputerName>*</ComputerName>`.
 - During the build, FFU Builder rewrites only the staged deployment copy of `Unattend.xml` to the legacy prompt placeholder that `ApplyFFU.ps1` already recognizes.
@@ -391,6 +410,7 @@ Use this option when you want the technician to enter the computer name during d
 
 Use this option when you want a static device name or a template such as `Comp-%serial%`.
 
+- FFU Builder sets `DeviceNamingMode = Template`.
 - With **Copy Unattend.xml**, `%serial%` is resolved during deployment in PE.
 - With **Inject Unattend.xml**, only static names are supported.
 - **Copy Unattend.xml** and **Inject Unattend.xml** are mutually exclusive. Select only one.
@@ -398,6 +418,8 @@ Use this option when you want a static device name or a template such as `Comp-%
 ### Specify a list of Prefixes
 
 This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line in the multiline prefixes box. If there is a single prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one. The selected prefix is combined with the device serial number to create the computer name.
+
+- FFU Builder sets `DeviceNamingMode = Prefixes`.
 
 For example, with a prefix of `CORP-` and a serial number of `ABC123`, the resulting computer name would be `CORP-ABC123` (truncated to 15 characters if necessary).
 
@@ -426,6 +448,8 @@ Use **Save Prefixes** to write the current multiline prefixes list back to the f
 ### Specify Serial to Device Name Mapping
 
 This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use `SerialNumber,ComputerName` as the header row, then add one row per device. During deployment, `ApplyFFU.ps1` compares the current BIOS serial number to the `SerialNumber` column and uses the matching `ComputerName` value.
+
+- FFU Builder sets `DeviceNamingMode = SerialComputerNames`.
 
 Sample `SerialComputerNames.csv` content:
 
@@ -468,13 +492,13 @@ Older deployment media that already has an unattend file with `ComputerName` set
 
 The `.\FFUDevelopment\Unattend` folder includes sample files you can customize:
 
-| File                             | Description                                |
-| -------------------------------- | ------------------------------------------ |
-| **SampleUnattend_x64.xml** | Example unattend file for x64 systems      |
-| **unattend_x64.xml**       | Active unattend file used for x64 builds   |
-| **unattend_arm64.xml**     | Active unattend file used for arm64 builds |
-| **SamplePrefixes.txt**     | Example prefixes file for device naming    |
-| **SampleSerialComputerNames.csv** | Example serial-to-device-name CSV file |
+| File                                    | Description                                |
+| --------------------------------------- | ------------------------------------------ |
+| **SampleUnattend_x64.xml**        | Example unattend file for x64 systems      |
+| **unattend_x64.xml**              | Active unattend file used for x64 builds   |
+| **unattend_arm64.xml**            | Active unattend file used for arm64 builds |
+| **SamplePrefixes.txt**            | Example prefixes file for device naming    |
+| **SampleSerialComputerNames.csv** | Example serial-to-device-name CSV file     |
 
 Copy and customize the sample files to create your own `unattend_x64.xml`, `unattend_arm64.xml`, `prefixes.txt`, and `SerialComputerNames.csv` files.
 
@@ -558,24 +582,6 @@ Controls the `-CopyAutopilot` parameter. When checked, copies the contents of `.
 This option is only available when **Build USB Drive** is checked.
 
 This leverages the Autopilot for existing devices json file. It's not recommended to use this method any longer as devices enrolled via this method are enrolled as personal instead of corporate.
-
-### Copy Unattend.xml
-
-Controls the `-CopyUnattend` parameter. When checked, stages the XML file selected for the current architecture in **Unattend.xml Options** to an `Unattend` folder on the Deployment partition of the USB drive. The default is **unchecked**.
-
-Use this option when you plan to build deployment USB media.
-
-When enabled, the build process copies:
-
-- The selected x64 or arm64 unattend XML file → renamed to **Unattend.xml** on the USB drive
-- **prefixes.txt** → created from the **Device Naming** prefixes list when that mode is selected
-- **SerialComputerNames.csv** → created from the **Device Naming** serial mapping list when that mode is selected
-
-If you keep the default file paths in place, FFU Builder uses `unattend_x64.xml` for x64 builds and `unattend_arm64.xml` for arm64 builds.
-
-During deployment, `ApplyFFU.ps1` applies `Unattend.xml` whenever it is present. Device naming only happens when the **Device Naming** setting requires it, or when older media still uses the legacy prompt-based workflow.
-
-See **Device Naming Expander** above for the available computer-name modes and naming-file behavior.
 
 ### Copy Provisioning Package
 
@@ -745,7 +751,7 @@ During the build process, application content accumulates in several subfolders 
 
 | Folder      | Contents                                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `Win32`   | Winget source applications and Bring Your Own Apps content copied using the **Copy Apps** button or manually copied |
+| `Win32`   | Winget source applications and Bring Your Own Apps content copied using the**Copy Apps** button or manually copied |
 | `MSStore` | Microsoft Store applications downloaded via Winget                                                                       |
 | `Office`  | Microsoft 365 Apps installer files downloaded by the Office Deployment Tool                                              |
 
