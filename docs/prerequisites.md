@@ -26,7 +26,7 @@ Follow the guide linked below to install Hyper-V on Windows client or Server
 
 ## Install PowerShell 7
 
-PowerShell 7 is required as of releases 2507+ onward.
+PowerShell 7.6+ is required as of releases 2507+ onward.
 
 [Installing PowerShell on Windows - PowerShell \| Microsoft Learn
 ](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows)
@@ -57,10 +57,10 @@ Replace `C:\FFUDevelopment` with the path you extracted the files to.
 
 ## Running BuildFFUVM_UI.ps1
 
-Either run Terminal as Admin, making sure to select PowerShell, not Windows PowerShell, or PowerShell 7.5+ as Admin and run `C:\FFUDevelopment\BuildFFUVM_UI.ps1`
+Either run Terminal as Admin, making sure to select PowerShell, not Windows PowerShell, or PowerShell 7.6+ as Admin and run `C:\FFUDevelopment\BuildFFUVM_UI.ps1`
 
 If all went well, you should see the FFU Builder UI
 
-![1759527337644](image/Prerequisites/1759527337644.png)
+![1776376971272](image/prerequisites/1776376971272.png)
 
 {% include page_nav.html %}

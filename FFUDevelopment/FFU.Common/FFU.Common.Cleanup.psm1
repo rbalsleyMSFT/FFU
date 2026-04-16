@@ -6,11 +6,9 @@ function Invoke-FFUPostBuildCleanup {
         [string]$AppsPath,
         [string]$DriversPath,
         [string]$FFUCapturePath,
-        [string]$CaptureISOPath,
         [string]$DeployISOPath,
         [string]$AppsISOPath,
         [string]$KBPath,
-        [bool]$RemoveCaptureISO = $false,
         [bool]$RemoveDeployISO = $false,
         [bool]$RemoveAppsISO = $false,
         [bool]$RemoveDrivers = $false,
@@ -22,13 +20,9 @@ function Invoke-FFUPostBuildCleanup {
     $originalProgressPreference = $ProgressPreference
     $ProgressPreference = 'SilentlyContinue'
     try {
-        WriteLog "CommonCleanup: Starting cleanup (CaptureISO=$RemoveCaptureISO DeployISO=$RemoveDeployISO AppsISO=$RemoveAppsISO Drivers=$RemoveDrivers FFU=$RemoveFFU Apps=$RemoveApps Updates=$RemoveUpdates RemoveDownloadedESD=$RemoveDownloadedESD KBPath=$KBPath)."
+        WriteLog "CommonCleanup: Starting cleanup (DeployISO=$RemoveDeployISO AppsISO=$RemoveAppsISO Drivers=$RemoveDrivers FFU=$RemoveFFU Apps=$RemoveApps Updates=$RemoveUpdates RemoveDownloadedESD=$RemoveDownloadedESD KBPath=$KBPath)."
 
         # Primary ISO paths (new naming/location)
-        if ($RemoveCaptureISO -and -not [string]::IsNullOrWhiteSpace($CaptureISOPath) -and (Test-Path -LiteralPath $CaptureISOPath)) {
-            WriteLog "CommonCleanup: Removing $CaptureISOPath"
-            try { Remove-Item -LiteralPath $CaptureISOPath -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $CaptureISOPath : $($_.Exception.Message)" }
-        }
         if ($RemoveDeployISO -and -not [string]::IsNullOrWhiteSpace($DeployISOPath) -and (Test-Path -LiteralPath $DeployISOPath)) {
             WriteLog "CommonCleanup: Removing $DeployISOPath"
             try { Remove-Item -LiteralPath $DeployISOPath -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing $DeployISOPath : $($_.Exception.Message)" }
@@ -39,11 +33,6 @@ function Invoke-FFUPostBuildCleanup {
         }
 
         # Legacy / root-level WinPE ISOs (pattern-based)
-        if ($RemoveCaptureISO) {
-            Get-ChildItem -LiteralPath $RootPath -Filter 'WinPE_FFU_Capture*.iso' -ErrorAction SilentlyContinue | ForEach-Object {
-                try { WriteLog "CommonCleanup: Removing legacy capture ISO $($_.FullName)"; Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing legacy capture ISO $($_.FullName) : $($_.Exception.Message)" }
-            }
-        }
         if ($RemoveDeployISO) {
             Get-ChildItem -LiteralPath $RootPath -Filter 'WinPE_FFU_Deploy*.iso' -ErrorAction SilentlyContinue | ForEach-Object {
                 try { WriteLog "CommonCleanup: Removing legacy deploy ISO $($_.FullName)"; Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { WriteLog "CommonCleanup: Failed removing legacy deploy ISO $($_.FullName) : $($_.Exception.Message)" }

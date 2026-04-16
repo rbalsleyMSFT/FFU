@@ -46,7 +46,8 @@ $script:uiState = [PSCustomObject]@{
         logStreamReader             = $null;
         pollTimer                   = $null;
         currentBuildProcess         = $null;
-        lastConfigFilePath          = $null
+        lastConfigFilePath          = $null;
+        loadedDeviceNamingMode      = $null
     };
     Flags              = @{
         installAppsForcedByUpdates        = $false;
@@ -55,7 +56,10 @@ $script:uiState = [PSCustomObject]@{
         lastSortProperty                  = $null;
         lastSortAscending                 = $true;
         isBuilding                        = $false;
-        isCleanupRunning                  = $false
+        isCleanupRunning                  = $false;
+        isFluentSupported                 = $false;
+        deviceNamingModeWasExplicitlyChanged = $false;
+        suppressDeviceNamingChangeTracking   = $false
     };
     Defaults           = @{};
     LogFilePath        = "$FFUDevelopmentPath\FFUDevelopment_UI.log"
@@ -120,6 +124,9 @@ $reader = New-Object System.IO.StringReader($xamlString)
 $xmlReader = [System.Xml.XmlReader]::Create($reader)
 $window = [Windows.Markup.XamlReader]::Load($xmlReader)
 
+# Apply Fluent theme before the window renders (requires PowerShell 7.5+ / .NET 9+)
+Initialize-FluentTheme -Window $window -ThemeMode "System" -State $script:uiState
+
 $window.Add_Loaded({
         # Pass the state object to all initialization functions
         $script:uiState.Window = $window
@@ -128,6 +135,9 @@ $window.Add_Loaded({
         Initialize-UIDefaults -State $script:uiState
         Initialize-DynamicUIElements -State $script:uiState
         Register-EventHandlers -State $script:uiState
+
+        # Populate the Home page build and release status after the window initializes
+        Start-HomeStatusRefresh -State $script:uiState
 
         # Attempt automatic load of previous environment (silent)
         try {
@@ -390,8 +400,11 @@ $script:uiState.Controls.btnRun.Add_Click({
             # Not currently building: start a new build
             $btnRun.IsEnabled = $false
 
-            # Switch to Monitor Tab
-            $script:uiState.Controls.MainTabControl.SelectedItem = $script:uiState.Controls.MonitorTab
+            # Switch to Monitor page via navigation
+            $monitorIndex = 8 # Monitor is the 9th item (index 8) in the navigation list
+            if ($null -ne $script:uiState.Controls.lstNavigation) {
+                $script:uiState.Controls.lstNavigation.SelectedIndex = $monitorIndex
+            }
             
             # Clear previous log data and reset autoscroll
             if ($null -ne $script:uiState.Data.logData) {
@@ -413,6 +426,123 @@ $script:uiState.Controls.btnRun.Add_Click({
                 $btnRun.IsEnabled = $true
                 $script:uiState.Controls.txtStatus.Text = "Build canceled: Additional FFU selection required."
                 return
+            }
+
+            if ($config.EnableVMNetworking -and $config.InstallApps -and [string]::IsNullOrWhiteSpace([string]$config.VMSwitchName)) {
+                [System.Windows.MessageBox]::Show("Select or enter a VM Switch Name before enabling VM networking.", "VM Switch Required", "OK", "Warning") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: VM switch required for experimental networking."
+                return
+            }
+
+            if ($config.CopyUnattend -and $config.InjectUnattend) {
+                [System.Windows.MessageBox]::Show("Copy Unattend.xml and Inject Unattend.xml cannot both be selected. Choose only one unattend delivery method.", "Unattend Selection Required", "OK", "Warning") | Out-Null
+                $btnRun.IsEnabled = $true
+                $script:uiState.Controls.txtStatus.Text = "Build canceled: choose only one unattend delivery method."
+                return
+            }
+
+            if ($config.CopyUnattend -or $config.InjectUnattend) {
+                $selectedUnattendArch = if ($config.WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+                $selectedUnattendSourcePath = if ($selectedUnattendArch -eq 'arm64') {
+                    [string]$config.UnattendArm64FilePath
+                }
+                else {
+                    [string]$config.UnattendX64FilePath
+                }
+
+                if ([string]::IsNullOrWhiteSpace($selectedUnattendSourcePath)) {
+                    [System.Windows.MessageBox]::Show("Select a valid $selectedUnattendArch unattend XML file before using Copy Unattend.xml or Inject Unattend.xml.", "Unattend File Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file path required."
+                    return
+                }
+
+                if (-not (Test-Path -Path $selectedUnattendSourcePath -PathType Leaf)) {
+                    [System.Windows.MessageBox]::Show("The selected $selectedUnattendArch unattend XML file was not found:`n$selectedUnattendSourcePath", "Unattend File Missing", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file missing."
+                    return
+                }
+
+                $selectedUnattendFileInfo = Get-Item -Path $selectedUnattendSourcePath -ErrorAction SilentlyContinue
+                if (($null -eq $selectedUnattendFileInfo) -or ($selectedUnattendFileInfo.Length -le 0)) {
+                    [System.Windows.MessageBox]::Show("The selected $selectedUnattendArch unattend XML file is empty:`n$selectedUnattendSourcePath", "Unattend File Empty", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file empty."
+                    return
+                }
+            }
+
+            if ($config.DeviceNamingMode -eq 'Prompt') {
+                if (-not $config.CopyUnattend) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Prompt for Device Name'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: prompt naming requires Copy Unattend.xml."
+                    return
+                }
+            }
+            elseif ($config.DeviceNamingMode -eq 'Template') {
+                if ([string]::IsNullOrWhiteSpace([string]$config.DeviceNameTemplate)) {
+                    [System.Windows.MessageBox]::Show("Specify a device name before using 'Specify Device Name'.", "Device Name Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: device name required."
+                    return
+                }
+
+                if (-not ($config.CopyUnattend -or $config.InjectUnattend)) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml or Inject Unattend.xml before using 'Specify Device Name'.", "Unattend Selection Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend delivery method required for device naming."
+                    return
+                }
+
+                $templateWithoutSupportedVariables = ([string]$config.DeviceNameTemplate) -replace '(?i)%serial%', ''
+                if ($templateWithoutSupportedVariables -match '%') {
+                    [System.Windows.MessageBox]::Show("Only the %serial% device name variable is supported.", "Unsupported Device Name Variable", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: unsupported device name variable."
+                    return
+                }
+
+                if ($config.InjectUnattend -and (-not $config.CopyUnattend) -and ([string]$config.DeviceNameTemplate -match '(?i)%serial%')) {
+                    [System.Windows.MessageBox]::Show("The %serial% device name variable is only supported when Copy Unattend.xml is selected.", "Unsupported Inject Unattend Setting", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: %serial% requires Copy Unattend.xml."
+                    return
+                }
+            }
+            elseif ($config.DeviceNamingMode -eq 'Prefixes') {
+                if (-not $config.CopyUnattend) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Specify a list of Prefixes'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: prefixes require Copy Unattend.xml."
+                    return
+                }
+
+                $hasSavedPrefixesPath = -not [string]::IsNullOrWhiteSpace([string]$config.DeviceNamePrefixesPath) -and (Test-Path -Path $config.DeviceNamePrefixesPath -PathType Leaf)
+                if ((($null -eq $config.DeviceNamePrefixes) -or ($config.DeviceNamePrefixes.Count -eq 0)) -and -not $hasSavedPrefixesPath) {
+                    [System.Windows.MessageBox]::Show("Enter at least one prefix or choose a valid prefixes file before using 'Specify a list of Prefixes'.", "Prefixes Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: prefixes required."
+                    return
+                }
+            }
+            elseif ($config.DeviceNamingMode -eq 'SerialComputerNames') {
+                if (-not $config.CopyUnattend) {
+                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Specify Serial to Device Name Mapping'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: serial computer-name mapping requires Copy Unattend.xml."
+                    return
+                }
+
+                $hasSavedSerialComputerNamesPath = -not [string]::IsNullOrWhiteSpace([string]$config.DeviceNameSerialComputerNamesPath) -and (Test-Path -Path $config.DeviceNameSerialComputerNamesPath -PathType Leaf)
+                if ((($null -eq $config.DeviceNameSerialComputerNames) -or ($config.DeviceNameSerialComputerNames.Count -eq 0)) -and -not $hasSavedSerialComputerNamesPath) {
+                    [System.Windows.MessageBox]::Show("Enter CSV content or choose a valid Serial Computer Names CSV Mapping File Path before using 'Specify Serial to Device Name Mapping'.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                    $btnRun.IsEnabled = $true
+                    $script:uiState.Controls.txtStatus.Text = "Build canceled: serial computer-name mapping required."
+                    return
+                }
             }
 
             $configFilePath = Join-Path $config.FFUDevelopmentPath "\config\FFUConfig.json"

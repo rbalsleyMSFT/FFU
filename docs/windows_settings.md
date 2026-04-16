@@ -9,11 +9,21 @@ parent: UI Overview
 ---
 # Windows Settings
 
-![1759535556990](image/ui_overview/1759535556990.png)
+![1776378316739](image/windows_settings/1776378316739.png)
 
-## Windows ISO Path
+## Windows Media Source
 
-Path to Windows 10/11 ISO file. If left blank, FFU Builder will download the latest version of Windows 10 or 11 from the Media Creation Tool.
+### Download Windows ESD
+
+Download Windows ESD will download the ESD file provided from the Windows Media Creation Tool
+
+### Provide Windows ISO
+
+You can provide your own Windows ISO (Client or Server). Good for scenarios where you want to deploy Enterprise or Education SKUs and have a product key you want to use (MAK or KMS).
+
+#### Windows ISO Path
+
+Path to Windows ISO file.
 
 {: .tip-title}
 
@@ -21,11 +31,11 @@ Path to Windows 10/11 ISO file. If left blank, FFU Builder will download the lat
 >
 > Should I provide my own ISO, or let FFU Builder download the media
 >
-> It's recommended to use the latest updated ISO from Visual Studio Downloads, or the Media Creation tool. See the Media Type section below for a better understanding of business and consumer media and how it impacts Subscription Activation.
+> It's recommended to use the latest ESD in most scenarios. It gets updated a couple of days after Patch Tuesday (so roughly the 2nd Thursday or Friday). See the Media Type section below for a better understanding of business and consumer media and how it impacts Subscription Activation.
 
 ## Windows Release
 
-Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.
+Can be 10, 11, different Server values, or LTSB/LTSC.
 
 ## Windows Version
 
@@ -142,6 +152,6 @@ Product key for the Windows edition specified in WindowsSKU. This will overwrite
 
 ## Optional Features
 
-A list of optional features that you can enable for the version of Windows you're installing (e.g. netfx3; TFTP). 
+A list of optional features that you can enable for the version of Windows you're installing (e.g. netfx3; TFTP).
 
 {% include page_nav.html %}

@@ -25,7 +25,6 @@ function Get-UIConfig {
         else { $null }
         BuildUSBDrive                  = $State.Controls.chkBuildUSBDriveEnable.IsChecked
         CleanupAppsISO                 = $State.Controls.chkCleanupAppsISO.IsChecked
-        CleanupCaptureISO              = $State.Controls.chkCleanupCaptureISO.IsChecked
         CleanupDeployISO               = $State.Controls.chkCleanupDeployISO.IsChecked
         CleanupDrivers                 = $State.Controls.chkCleanupDrivers.IsChecked
         CompactOS                      = $State.Controls.chkCompactOS.IsChecked
@@ -37,15 +36,23 @@ function Get-UIConfig {
         UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
+        DeviceNamingMode               = Get-ConfiguredDeviceNamingMode -State $State
+        DeviceNameTemplate             = $State.Controls.txtDeviceNameTemplate.Text
+        DeviceNamePrefixesPath         = $State.Controls.txtDeviceNamePrefixesPath.Text
+        DeviceNamePrefixes             = @(Get-DeviceNamePrefixes -State $State)
+        DeviceNameSerialComputerNamesPath = $State.Controls.txtDeviceNameSerialComputerNamesPath.Text
+        DeviceNameSerialComputerNames  = @(Get-SerialComputerNamesLines -State $State)
         CopyAdditionalFFUFiles         = $State.Controls.chkCopyAdditionalFFUFiles.IsChecked
-        CreateCaptureMedia             = $State.Controls.chkCreateCaptureMedia.IsChecked
         CreateDeploymentMedia          = $State.Controls.chkCreateDeploymentMedia.IsChecked
         InjectUnattend                 = $State.Controls.chkInjectUnattend.IsChecked
+        UnattendX64FilePath            = $State.Controls.txtUnattendX64FilePath.Text
+        UnattendArm64FilePath          = $State.Controls.txtUnattendArm64FilePath.Text
         CustomFFUNameTemplate          = $State.Controls.txtCustomFFUNameTemplate.Text
         Disksize                       = [int64]$State.Controls.txtDiskSize.Text * 1GB
         DownloadDrivers                = $State.Controls.chkDownloadDrivers.IsChecked
         DriversFolder                  = $State.Controls.txtDriversFolder.Text
         DriversJsonPath                = $State.Controls.txtDriversJsonPath.Text
+        EnableVMNetworking             = $State.Controls.chkEnableVMNetworking.IsChecked
         FFUCaptureLocation             = $State.Controls.txtFFUCaptureLocation.Text
         FFUDevelopmentPath             = $State.Controls.txtFFUDevPath.Text
         FFUPrefix                      = $State.Controls.txtVMNamePrefix.Text
@@ -54,6 +61,7 @@ function Get-UIConfig {
         InstallOffice                  = $State.Controls.chkInstallOffice.IsChecked
         InstallWingetApps              = $State.Controls.chkInstallWingetApps.IsChecked
         ISOPath                        = $State.Controls.txtISOPath.Text
+        WindowsMediaSource             = if ($null -ne $State.Controls.rbProvideISO -and $State.Controls.rbProvideISO.IsChecked) { "Provide Windows ISO" } else { "Download Windows ESD" }
         LogicalSectorSizeBytes         = [int]$State.Controls.cmbLogicalSectorSize.SelectedItem.Content
         # Make                           = $null
         MediaType                      = $State.Controls.cmbMediaType.SelectedItem
@@ -83,7 +91,6 @@ function Get-UIConfig {
         RemoveFFU                      = $State.Controls.chkRemoveFFU.IsChecked
         RemoveUpdates                  = $State.Controls.chkRemoveUpdates.IsChecked
         RemoveDownloadedESD            = $State.Controls.chkRemoveDownloadedESD.IsChecked
-        ShareName                      = $State.Controls.txtShareName.Text
         UpdateADK                      = $State.Controls.chkUpdateADK.IsChecked
         UpdateEdge                     = $State.Controls.chkUpdateEdge.IsChecked
         UpdateLatestCU                 = $State.Controls.chkUpdateLatestCU.IsChecked
@@ -95,12 +102,11 @@ function Get-UIConfig {
         UpdatePreviewCU                = $State.Controls.chkUpdatePreviewCU.IsChecked
         UserAppListPath                = $State.Controls.txtUserAppListPath.Text
         USBDriveList                   = @{}
-        Username                       = $State.Controls.txtUsername.Text
         Threads                        = [int]$State.Controls.txtThreads.Text
         BitsPriority                    = $State.Controls.cmbBitsPriority.SelectedItem
         MaxUSBDrives                   = [int]$State.Controls.txtMaxUSBDrives.Text
+        ThemeMode                      = if ($null -ne $State.Controls.cmbThemeMode -and $null -ne $State.Controls.cmbThemeMode.SelectedItem) { $State.Controls.cmbThemeMode.SelectedItem } else { "System" }
         Verbose                        = $State.Controls.chkVerbose.IsChecked
-        VMHostIPAddress                = $State.Controls.txtVMHostIPAddress.Text
         VMLocation                     = $State.Controls.txtVMLocation.Text
         VMSwitchName                   = if ($State.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
             $State.Controls.txtCustomVMSwitchName.Text
@@ -412,7 +418,6 @@ function Select-VMSwitchFromConfig {
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
         $State.Controls.txtCustomVMSwitchName.Text = $configSwitch
         $State.Data.customVMSwitchName = $configSwitch
-        $State.Data.customVMHostIP = $ConfigContent.VMHostIPAddress
         WriteLog "LoadConfig: VMSwitchName '$configSwitch' not found. Selected 'Other' and populated custom VM Switch Name textbox."
     }
 }
@@ -427,12 +432,19 @@ function Update-UIFromConfig {
 
     WriteLog "Applying loaded configuration to the UI."
 
+    # Apply theme mode from config (must be done before other controls load for proper styling)
+    if ($null -ne $ConfigContent.PSObject.Properties.Item('ThemeMode') -and $State.Flags.isFluentSupported) {
+        $configTheme = $ConfigContent.ThemeMode
+        if ($configTheme -in @("Light", "Dark", "System")) {
+            Initialize-FluentTheme -Window $State.Window -ThemeMode $configTheme -State $State
+            Set-UIValue -ControlName 'cmbThemeMode' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'ThemeMode' -State $State
+        }
+    }
+
     # Update Build tab values
     Set-UIValue -ControlName 'txtFFUDevPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUDevelopmentPath' -State $State
     Set-UIValue -ControlName 'txtCustomFFUNameTemplate' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'CustomFFUNameTemplate' -State $State
     Set-UIValue -ControlName 'txtFFUCaptureLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUCaptureLocation' -State $State
-    Set-UIValue -ControlName 'txtShareName' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ShareName' -State $State
-    Set-UIValue -ControlName 'txtUsername' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Username' -State $State
     Set-UIValue -ControlName 'txtThreads' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Threads' -State $State
     Set-UIValue -ControlName 'cmbBitsPriority' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'BitsPriority' -State $State
     Set-UIValue -ControlName 'txtMaxUSBDrives' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'MaxUSBDrives' -State $State
@@ -444,19 +456,58 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkAllowExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AllowExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkPromptExternalHardDiskMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'PromptExternalHardDiskMedia' -State $State
     Set-UIValue -ControlName 'chkCopyAdditionalFFUFiles' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAdditionalFFUFiles' -State $State
-    Set-UIValue -ControlName 'chkCreateCaptureMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateCaptureMedia' -State $State
     Set-UIValue -ControlName 'chkCreateDeploymentMedia' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CreateDeploymentMedia' -State $State
     Set-UIValue -ControlName 'chkInjectUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'InjectUnattend' -State $State
+    Set-UIValue -ControlName 'txtUnattendX64FilePath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UnattendX64FilePath' -State $State
+    Set-UIValue -ControlName 'txtUnattendArm64FilePath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'UnattendArm64FilePath' -State $State
     Set-UIValue -ControlName 'chkVerbose' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'Verbose' -State $State
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtUnattendX64FilePath.Text)) {
+        $State.Controls.txtUnattendX64FilePath.Text = Get-DefaultUnattendFilePath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtUnattendArm64FilePath.Text)) {
+        $State.Controls.txtUnattendArm64FilePath.Text = Get-DefaultUnattendFilePath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
+    }
 
     # USB Drive Modification group (Build Tab)
     Set-UIValue -ControlName 'chkCopyAutopilot' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyAutopilot' -State $State
     Set-UIValue -ControlName 'chkCopyUnattend' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyUnattend' -State $State
     Set-UIValue -ControlName 'chkCopyPPKG' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPPKG' -State $State
+    Set-UIValue -ControlName 'txtDeviceNamePrefixesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixesPath' -State $State
+    Set-UIValue -ControlName 'txtDeviceNameSerialComputerNamesPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameSerialComputerNamesPath' -State $State
+    Set-UIValue -ControlName 'txtDeviceNameTemplate' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameTemplate' -State $State
+    Set-UIValue -ControlName 'txtDeviceNamePrefixes' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNamePrefixes' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
+    Set-UIValue -ControlName 'txtDeviceNameSerialComputerNames' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DeviceNameSerialComputerNames' -TransformValue { param($val) if ($val -is [System.Array]) { $val -join [System.Environment]::NewLine } else { [string]$val } } -State $State
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNamePrefixesPath.Text)) {
+        $State.Controls.txtDeviceNamePrefixesPath.Text = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+    }
+
+    if ([string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNameSerialComputerNamesPath.Text)) {
+        $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+    }
+
+    $loadedDeviceNamingMode = $null
+    if ($ConfigContent.PSObject.Properties.Name -contains 'DeviceNamingMode') {
+        $candidateDeviceNamingMode = [string]$ConfigContent.DeviceNamingMode
+        if ($candidateDeviceNamingMode -in @('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
+            $loadedDeviceNamingMode = $candidateDeviceNamingMode
+        }
+    }
+    $displayDeviceNamingMode = if ($loadedDeviceNamingMode -in @('Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
+        $loadedDeviceNamingMode
+    }
+    else {
+        'None'
+    }
+    Set-DeviceNamingModeState -State $State -DisplayMode $displayDeviceNamingMode -LoadedMode $loadedDeviceNamingMode
+    Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Import-SerialComputerNamesFromConfiguredPath -State $State
+    Update-DeviceNamingControls -State $State
     
     # Post Build Cleanup group (Build Tab)
     Set-UIValue -ControlName 'chkCleanupAppsISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupAppsISO' -State $State
-    Set-UIValue -ControlName 'chkCleanupCaptureISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupCaptureISO' -State $State
     Set-UIValue -ControlName 'chkCleanupDeployISO' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupDeployISO' -State $State
     Set-UIValue -ControlName 'chkCleanupDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CleanupDrivers' -State $State
     Set-UIValue -ControlName 'chkRemoveFFU' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveFFU' -State $State
@@ -465,17 +516,30 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkRemoveDownloadedESD' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'RemoveDownloadedESD' -State $State
 
     # Hyper-V Settings
+    Set-UIValue -ControlName 'chkEnableVMNetworking' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'EnableVMNetworking' -State $State
     Select-VMSwitchFromConfig -State $State -ConfigContent $ConfigContent
-    Set-UIValue -ControlName 'txtVMHostIPAddress' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMHostIPAddress' -State $State
     Set-UIValue -ControlName 'txtDiskSize' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Disksize' -TransformValue { param($val) $val / 1GB } -State $State
     Set-UIValue -ControlName 'txtMemory' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Memory' -TransformValue { param($val) $val / 1GB } -State $State
     Set-UIValue -ControlName 'txtProcessors' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Processors' -State $State
     Set-UIValue -ControlName 'txtVMLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMLocation' -State $State
     Set-UIValue -ControlName 'txtVMNamePrefix' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUPrefix' -State $State
     Set-UIValue -ControlName 'cmbLogicalSectorSize' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'LogicalSectorSizeBytes' -TransformValue { param($val) $val.ToString() } -State $State
+    $State.Controls.spVMNetworkingSettings.IsEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
+    if (-not ($true -eq $State.Controls.chkEnableVMNetworking.IsChecked)) {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+    }
 
     # Windows Settings
     Set-UIValue -ControlName 'txtISOPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'ISOPath' -State $State
+    # Load Windows Media Source setting
+    if ($null -ne $ConfigContent.PSObject.Properties.Item('WindowsMediaSource')) {
+        if ($ConfigContent.WindowsMediaSource -eq 'Provide Windows ISO') {
+            $State.Controls.rbProvideISO.IsChecked = $true
+        }
+        else {
+            $State.Controls.rbDownloadESD.IsChecked = $true
+        }
+    }
     
     # Special handling for Windows Release and SKU due to value collision (e.g., 2019 for Server and LTSC)
     if (($null -ne $ConfigContent.PSObject.Properties.Item('WindowsRelease')) -and ($null -ne $ConfigContent.PSObject.Properties.Item('WindowsSKU'))) {
@@ -649,6 +713,7 @@ function Update-UIFromConfig {
     }
     # Update the ListView's ItemsSource after populating the data list
     $lstAppsScriptVars.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    Request-ListViewColumnAutoResize -ListView $lstAppsScriptVars
     # Update the header checkbox state
     if ($null -ne $State.Controls.chkSelectAllAppsScriptVariables) {
         Update-SelectAllHeaderCheckBoxState -ListView $lstAppsScriptVars -HeaderCheckBox $State.Controls.chkSelectAllAppsScriptVariables
@@ -717,6 +782,7 @@ function Update-UIFromConfig {
             }
         }
         $State.Controls.lstUSBDrives.Items.Refresh()
+        Request-ListViewColumnAutoResize -ListView $State.Controls.lstUSBDrives
 
         # Update the Select All header checkbox state
         $headerChk = $State.Controls.chkSelectAllUSBDrivesHeader
@@ -777,6 +843,7 @@ function Update-UIFromConfig {
                         }
                     }
                     $State.Controls.lstAdditionalFFUs.Items.Refresh()
+                    Request-ListViewColumnAutoResize -ListView $State.Controls.lstAdditionalFFUs
                     $headerChk = $State.Controls.chkSelectAllAdditionalFFUs
                     if ($null -ne $headerChk) {
                         Update-SelectAllHeaderCheckBoxState -ListView $State.Controls.lstAdditionalFFUs -HeaderCheckBox $headerChk
@@ -836,7 +903,7 @@ function Invoke-RestoreDefaults {
         $rootPath = $State.FFUDevelopmentPath
 
         # Normalize potential array values to single strings
-        function Normalize-PathScalar {
+        function Get-PathScalar {
             param([object]$value)
             if ($null -eq $value) { return $null }
             if ($value -is [System.Array]) {
@@ -851,21 +918,20 @@ function Invoke-RestoreDefaults {
         }
 
         $appsPath = Join-Path $rootPath 'Apps'
-        $driversRaw = Normalize-PathScalar -value $State.Controls.txtDriversFolder.Text
+        $driversRaw = Get-PathScalar -value $State.Controls.txtDriversFolder.Text
         if ([string]::IsNullOrWhiteSpace($driversRaw)) {
             $driversPath = Join-Path $rootPath 'Drivers'
         }
         else {
             $driversPath = $driversRaw
         }
-        $ffuCaptureRaw = Normalize-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
+        $ffuCaptureRaw = Get-PathScalar -value $State.Controls.txtFFUCaptureLocation.Text
         $ffuCapturePath = if ([string]::IsNullOrWhiteSpace($ffuCaptureRaw)) { Join-Path $rootPath 'FFU' } else { $ffuCaptureRaw }
 
-        $captureISOPath = Join-Path $rootPath 'WinPECaptureFFUFiles\WinPE-Capture.iso'
         $deployISOPath = Join-Path $rootPath 'WinPEDeployFFUFiles\WinPE-Deploy.iso'
         $appsISOPath = Join-Path $rootPath 'Apps.iso'
         
-        $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Capture, Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
+        $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
         $result = [System.Windows.MessageBox]::Show($msg, "Confirm Restore Defaults", "YesNo", "Warning")
         if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
             WriteLog "RestoreDefaults: User cancelled."
@@ -901,11 +967,9 @@ function Invoke-RestoreDefaults {
             -AppsPath $appsPath `
             -DriversPath $driversPath `
             -FFUCapturePath $ffuCapturePath `
-            -CaptureISOPath $captureISOPath `
             -DeployISOPath $deployISOPath `
             -AppsISOPath $appsISOPath `
             -KBPath (Join-Path $rootPath 'KB') `
-            -RemoveCaptureISO:$true `
             -RemoveDeployISO:$true `
             -RemoveAppsISO:$true `
             -RemoveDrivers:$true `
@@ -1040,6 +1104,7 @@ function Import-ConfigSupplementalAssets {
                             })
                     }
                     $State.Controls.lstWingetResults.ItemsSource = $appsBuffer.ToArray()
+                    Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
                     $loadedWinget = $true
                     if ($null -ne $State.Controls.wingetSearchPanel) {
                         $State.Controls.wingetSearchPanel.Visibility = 'Visible'
@@ -1174,6 +1239,7 @@ function Import-ConfigSupplementalAssets {
                         }
                     }
                     $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+                    Request-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels
                     if (Get-Command -Name Update-SelectAllHeaderCheckBoxState -ErrorAction SilentlyContinue) {
                         $headerChk = $State.Controls.chkSelectAllDriverModels
                         if ($null -ne $headerChk) {

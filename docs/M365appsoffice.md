@@ -9,7 +9,7 @@ parent: UI Overview
 ---
 # M365 Apps/Office
 
-![1760378889283](image/appsscriptvariablescopy/1760378889283.png)
+![1776379074990](image/M365appsoffice/1776379074990.png)
 
 FFU Builder uses the Office Deployment Toolkit (ODT) to install Office. In the `.\FFUDevelopment\Apps\Office` folder you'll find two files:
 
@@ -64,6 +64,6 @@ For more information about deploying languages see: [Overview of deploying langu
 
 ## Copy Office Configuration XML
 
-If you want to include your own custom XML file for office, check **Copy Office Configuration XML** and browse to the location of your custom XML file. The path to your custom Office configuration XML file is stored in the `OfficeConfigXMLFile` parameter. This file gets added to the `.\FFUDevelopment\Apps\Office` folder and is referenced in the `.\FFUDevelopment\Apps\Orchestration\Install-Office.ps1` file. 
+If you want to include your own custom XML file for office, check **Copy Office Configuration XML** and browse to the location of your custom XML file. The path to your custom Office configuration XML file is stored in the `OfficeConfigXMLFile` parameter. This file gets added to the `.\FFUDevelopment\Apps\Office` folder and is referenced in the `.\FFUDevelopment\Apps\Orchestration\Install-Office.ps1` file.
 
 {% include page_nav.html %}

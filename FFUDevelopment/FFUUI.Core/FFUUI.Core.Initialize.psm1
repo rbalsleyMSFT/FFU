@@ -13,6 +13,97 @@
     This module is critical for setting up the initial state of the application window when it first loads.
 #>
 
+function Initialize-FluentTheme {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Window]$Window,
+        [Parameter(Mandatory = $false)]
+        [string]$ThemeMode = "System",
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$State
+    )
+
+    # Check if the current .NET runtime supports Window.ThemeMode (requires .NET 9+ / PowerShell 7.5+)
+    $themeModeProperty = [System.Windows.Window].GetProperty("ThemeMode")
+    if ($null -eq $themeModeProperty) {
+        WriteLog "Fluent theme not available. Window.ThemeMode requires PowerShell 7.5+ (.NET 9+). Using default Aero2 theme."
+        if ($null -ne $State) {
+            $State.Flags.isFluentSupported = $false
+        }
+        # Still create tooltip styles for non-Fluent mode so Tag-to-ToolTip binding works
+        $controlTypes = @(
+            [System.Windows.Controls.TextBox],
+            [System.Windows.Controls.TextBlock],
+            [System.Windows.Controls.CheckBox]
+        )
+        foreach ($controlType in $controlTypes) {
+            $newStyle = New-Object System.Windows.Style($controlType)
+            $toolTipBinding = New-Object System.Windows.Data.Binding("Tag")
+            $toolTipBinding.RelativeSource = [System.Windows.Data.RelativeSource]::new([System.Windows.Data.RelativeSourceMode]::Self)
+            $toolTipSetter = New-Object System.Windows.Setter([System.Windows.FrameworkElement]::ToolTipProperty, $toolTipBinding)
+            $newStyle.Setters.Add($toolTipSetter)
+            if ($Window.Resources.Contains($controlType)) {
+                $Window.Resources.Remove($controlType)
+            }
+            $Window.Resources.Add($controlType, $newStyle)
+        }
+        WriteLog "Tooltip styles created for non-Fluent mode."
+        return
+    }
+
+    # Mark Fluent as supported in state
+    if ($null -ne $State) {
+        $State.Flags.isFluentSupported = $true
+    }
+
+    # Resolve the ThemeMode enum value using reflection to avoid compile-time experimental attribute issues
+    $themeModeType = [System.Windows.Window].GetProperty("ThemeMode").PropertyType
+    $themeModeValue = $null
+    switch ($ThemeMode) {
+        "Light" { $themeModeValue = $themeModeType::Light }
+        "Dark" { $themeModeValue = $themeModeType::Dark }
+        "System" { $themeModeValue = $themeModeType::System }
+        default { $themeModeValue = $themeModeType::System }
+    }
+
+    # Apply the Fluent theme mode to the window
+    $themeModeProperty.SetValue($Window, $themeModeValue)
+    WriteLog "Applied Fluent theme: $ThemeMode"
+
+    # Re-create implicit tooltip styles with BasedOn pointing to the Fluent base style
+    # This preserves the Tag-to-ToolTip binding while inheriting Fluent visual styling
+    $controlTypes = @(
+        [System.Windows.Controls.TextBox],
+        [System.Windows.Controls.TextBlock],
+        [System.Windows.Controls.CheckBox]
+    )
+
+    foreach ($controlType in $controlTypes) {
+        # Get the Fluent base style that was loaded by ThemeMode
+        $fluentBaseStyle = $Window.TryFindResource($controlType)
+
+        # Create a new implicit style with ToolTip binding
+        $newStyle = New-Object System.Windows.Style($controlType)
+        if ($null -ne $fluentBaseStyle) {
+            $newStyle.BasedOn = $fluentBaseStyle
+        }
+
+        # Add the ToolTip setter that binds to the Tag property
+        $toolTipBinding = New-Object System.Windows.Data.Binding("Tag")
+        $toolTipBinding.RelativeSource = [System.Windows.Data.RelativeSource]::new([System.Windows.Data.RelativeSourceMode]::Self)
+        $toolTipSetter = New-Object System.Windows.Setter([System.Windows.FrameworkElement]::ToolTipProperty, $toolTipBinding)
+        $newStyle.Setters.Add($toolTipSetter)
+
+        # Remove any existing implicit style for this type before adding the new one
+        if ($Window.Resources.Contains($controlType)) {
+            $Window.Resources.Remove($controlType)
+        }
+        $Window.Resources.Add($controlType, $newStyle)
+    }
+
+        WriteLog "Tooltip styles updated with Fluent base styles."
+    }
+
 function Initialize-UIControls {
     param([PSCustomObject]$State)
     WriteLog "Initializing UI control references..."
@@ -21,6 +112,9 @@ function Initialize-UIControls {
     $State.Controls.cmbWindowsRelease = $window.FindName('cmbWindowsRelease')
     $State.Controls.cmbWindowsVersion = $window.FindName('cmbWindowsVersion')
     $State.Controls.txtISOPath = $window.FindName('txtISOPath')
+    $State.Controls.rbDownloadESD = $window.FindName('rbDownloadESD')
+    $State.Controls.rbProvideISO = $window.FindName('rbProvideISO')
+    $State.Controls.isoPathPanel = $window.FindName('isoPathPanel')
     $State.Controls.btnBrowseISO = $window.FindName('btnBrowseISO')
     $State.Controls.cmbWindowsArch = $window.FindName('cmbWindowsArch')
     $State.Controls.cmbWindowsLang = $window.FindName('cmbWindowsLang')
@@ -111,29 +205,47 @@ function Initialize-UIControls {
     $State.Controls.txtStatus = $window.FindName('txtStatus')
     $State.Controls.pbOverallProgress = $window.FindName('progressBar')
     $State.Controls.txtOverallStatus = $window.FindName('txtStatus')
+    $State.Controls.chkEnableVMNetworking = $window.FindName('chkEnableVMNetworking')
+    $State.Controls.spVMNetworkingSettings = $window.FindName('spVMNetworkingSettings')
     $State.Controls.cmbVMSwitchName = $window.FindName('cmbVMSwitchName')
-    $State.Controls.txtVMHostIPAddress = $window.FindName('txtVMHostIPAddress')
     $State.Controls.txtCustomVMSwitchName = $window.FindName('txtCustomVMSwitchName')
     $State.Controls.txtFFUDevPath = $window.FindName('txtFFUDevPath')
     $State.Controls.txtCustomFFUNameTemplate = $window.FindName('txtCustomFFUNameTemplate')
     $State.Controls.txtFFUCaptureLocation = $window.FindName('txtFFUCaptureLocation')
-    $State.Controls.txtShareName = $window.FindName('txtShareName')
-    $State.Controls.txtUsername = $window.FindName('txtUsername')
     $State.Controls.txtThreads = $window.FindName('txtThreads')
     $State.Controls.cmbBitsPriority = $window.FindName('cmbBitsPriority')
     $State.Controls.txtMaxUSBDrives = $window.FindName('txtMaxUSBDrives')
     $State.Controls.chkCompactOS = $window.FindName('chkCompactOS')
     $State.Controls.chkOptimize = $window.FindName('chkOptimize')
     $State.Controls.chkAllowVHDXCaching = $window.FindName('chkAllowVHDXCaching')
-    $State.Controls.chkCreateCaptureMedia = $window.FindName('chkCreateCaptureMedia')
     $State.Controls.chkCreateDeploymentMedia = $window.FindName('chkCreateDeploymentMedia')
     $State.Controls.chkInjectUnattend = $window.FindName('chkInjectUnattend')
+    $State.Controls.txtUnattendX64FilePath = $window.FindName('txtUnattendX64FilePath')
+    $State.Controls.btnBrowseUnattendX64FilePath = $window.FindName('btnBrowseUnattendX64FilePath')
+    $State.Controls.txtUnattendArm64FilePath = $window.FindName('txtUnattendArm64FilePath')
+    $State.Controls.btnBrowseUnattendArm64FilePath = $window.FindName('btnBrowseUnattendArm64FilePath')
+    $State.Controls.rbDeviceNamingNone = $window.FindName('rbDeviceNamingNone')
+    $State.Controls.rbDeviceNamingPrompt = $window.FindName('rbDeviceNamingPrompt')
+    $State.Controls.rbDeviceNamingTemplate = $window.FindName('rbDeviceNamingTemplate')
+    $State.Controls.rbDeviceNamingPrefixes = $window.FindName('rbDeviceNamingPrefixes')
+    $State.Controls.rbDeviceNamingSerialComputerNames = $window.FindName('rbDeviceNamingSerialComputerNames')
+    $State.Controls.deviceNameTemplatePanel = $window.FindName('deviceNameTemplatePanel')
+    $State.Controls.deviceNamePrefixesPanel = $window.FindName('deviceNamePrefixesPanel')
+    $State.Controls.deviceNameSerialComputerNamesPanel = $window.FindName('deviceNameSerialComputerNamesPanel')
+    $State.Controls.txtDeviceNameTemplate = $window.FindName('txtDeviceNameTemplate')
+    $State.Controls.txtDeviceNamePrefixesPath = $window.FindName('txtDeviceNamePrefixesPath')
+    $State.Controls.btnBrowseDeviceNamePrefixesPath = $window.FindName('btnBrowseDeviceNamePrefixesPath')
+    $State.Controls.txtDeviceNamePrefixes = $window.FindName('txtDeviceNamePrefixes')
+    $State.Controls.btnSaveDeviceNamePrefixes = $window.FindName('btnSaveDeviceNamePrefixes')
+    $State.Controls.txtDeviceNameSerialComputerNamesPath = $window.FindName('txtDeviceNameSerialComputerNamesPath')
+    $State.Controls.btnBrowseDeviceNameSerialComputerNamesPath = $window.FindName('btnBrowseDeviceNameSerialComputerNamesPath')
+    $State.Controls.txtDeviceNameSerialComputerNames = $window.FindName('txtDeviceNameSerialComputerNames')
+    $State.Controls.btnSaveDeviceNameSerialComputerNames = $window.FindName('btnSaveDeviceNameSerialComputerNames')
     $State.Controls.chkVerbose = $window.FindName('chkVerbose')
     $State.Controls.chkCopyAutopilot = $window.FindName('chkCopyAutopilot')
     $State.Controls.chkCopyUnattend = $window.FindName('chkCopyUnattend')
     $State.Controls.chkCopyPPKG = $window.FindName('chkCopyPPKG')
     $State.Controls.chkCleanupAppsISO = $window.FindName('chkCleanupAppsISO')
-    $State.Controls.chkCleanupCaptureISO = $window.FindName('chkCleanupCaptureISO')
     $State.Controls.chkCleanupDeployISO = $window.FindName('chkCleanupDeployISO')
     $State.Controls.chkCleanupDrivers = $window.FindName('chkCleanupDrivers')
     $State.Controls.chkRemoveFFU = $window.FindName('chkRemoveFFU')
@@ -183,10 +295,58 @@ function Initialize-UIControls {
     $State.Controls.btnRestoreDefaults = $window.FindName('btnRestoreDefaults')
     $State.Controls.btnBuildConfig = $window.FindName('btnBuildConfig')
 
-    # Monitor Tab
-    $State.Controls.MainTabControl = $window.FindName('MainTabControl')
-    $State.Controls.MonitorTab = $window.FindName('MonitorTab')
+    # Home page
+    $State.Controls.txtHomeCurrentBuildValue = $window.FindName('txtHomeCurrentBuildValue')
+    $State.Controls.txtHomeLatestReleaseValue = $window.FindName('txtHomeLatestReleaseValue')
+    $State.Controls.txtHomeReleaseStatusValue = $window.FindName('txtHomeReleaseStatusValue')
+    $State.Controls.spHomeReleaseNotesSections = $window.FindName('spHomeReleaseNotesSections')
+    $State.Controls.ellipseHomeDiskSpaceStatus = $window.FindName('ellipseHomeDiskSpaceStatus')
+    $State.Controls.txtHomeDiskSpaceStatusValue = $window.FindName('txtHomeDiskSpaceStatusValue')
+    $State.Controls.ellipseHomeHyperVStatus = $window.FindName('ellipseHomeHyperVStatus')
+    $State.Controls.txtHomeHyperVStatusValue = $window.FindName('txtHomeHyperVStatusValue')
+    $State.Controls.txtHomeDiscussionsStatusValue = $window.FindName('txtHomeDiscussionsStatusValue')
+    $State.Controls.tbDiscussion1 = $window.FindName('tbDiscussion1')
+    $State.Controls.linkDiscussion1 = $window.FindName('linkDiscussion1')
+    $State.Controls.runDiscussion1 = $window.FindName('runDiscussion1')
+    $State.Controls.tbDiscussion2 = $window.FindName('tbDiscussion2')
+    $State.Controls.linkDiscussion2 = $window.FindName('linkDiscussion2')
+    $State.Controls.runDiscussion2 = $window.FindName('runDiscussion2')
+    $State.Controls.tbDiscussion3 = $window.FindName('tbDiscussion3')
+    $State.Controls.linkDiscussion3 = $window.FindName('linkDiscussion3')
+    $State.Controls.runDiscussion3 = $window.FindName('runDiscussion3')
+    $State.Controls.tbDiscussion4 = $window.FindName('tbDiscussion4')
+    $State.Controls.linkDiscussion4 = $window.FindName('linkDiscussion4')
+    $State.Controls.runDiscussion4 = $window.FindName('runDiscussion4')
+    $State.Controls.tbDiscussion5 = $window.FindName('tbDiscussion5')
+    $State.Controls.linkDiscussion5 = $window.FindName('linkDiscussion5')
+    $State.Controls.runDiscussion5 = $window.FindName('runDiscussion5')
+    $State.Controls.tbDiscussionsLink = $window.FindName('tbDiscussionsLink')
+    $State.Controls.linkDiscussions = $window.FindName('linkDiscussions')
+
+    # Settings page
+    $State.Controls.cmbThemeMode = $window.FindName('cmbThemeMode')
+
+    # Shared page shell
+    $State.Controls.txtPageTitle = $window.FindName('txtPageTitle')
+
+    # Navigation controls
+    $State.Controls.lstNavigation = $window.FindName('lstNavigation')
+    $State.Controls.lstNavSettings = $window.FindName('lstNavSettings')
     $State.Controls.lstLogOutput = $window.FindName('lstLogOutput')
+
+    # Content pages (for navigation visibility toggling)
+    $State.Controls.navigationPages = @(
+        $window.FindName('pageHome'),
+        $window.FindName('pageHyperV'),
+        $window.FindName('pageWindows'),
+        $window.FindName('pageUpdates'),
+        $window.FindName('pageApplications'),
+        $window.FindName('pageOffice'),
+        $window.FindName('pageDrivers'),
+        $window.FindName('pageBuild'),
+        $window.FindName('pageMonitor')
+    )
+    $State.Controls.pageSettings = $window.FindName('pageSettings')
 
     # Initialize and bind the log data collection
     $State.Data.logData = New-Object System.Collections.ObjectModel.ObservableCollection[string]
@@ -208,19 +368,11 @@ function Initialize-VMSwitchData {
     $State.Controls.cmbVMSwitchName.Items.Add('Other') | Out-Null
     if ($State.Controls.cmbVMSwitchName.Items.Count -gt 1) {
         $State.Controls.cmbVMSwitchName.SelectedIndex = 0
-        $firstSwitch = $State.Controls.cmbVMSwitchName.SelectedItem
-        if ($null -ne $firstSwitch -and $State.Data.vmSwitchMap.ContainsKey($firstSwitch)) {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Data.vmSwitchMap[$firstSwitch]
-        }
-        else {
-            $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default if IP not found or key null
-        }
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
     }
     else {
         $State.Controls.cmbVMSwitchName.SelectedItem = 'Other'
         $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-        $State.Controls.txtVMHostIPAddress.Text = $State.Defaults.generalDefaults.VMHostIPAddress # Use default
     }
 }
 
@@ -236,8 +388,6 @@ function Initialize-UIDefaults {
     $State.Controls.txtFFUDevPath.Text = $State.FFUDevelopmentPath 
     $State.Controls.txtCustomFFUNameTemplate.Text = $State.Defaults.generalDefaults.CustomFFUNameTemplate
     $State.Controls.txtFFUCaptureLocation.Text = $State.Defaults.generalDefaults.FFUCaptureLocation
-    $State.Controls.txtShareName.Text = $State.Defaults.generalDefaults.ShareName
-    $State.Controls.txtUsername.Text = $State.Defaults.generalDefaults.Username
     $State.Controls.txtThreads.Text = $State.Defaults.generalDefaults.Threads
     $State.Controls.cmbBitsPriority.SelectedItem = $State.Defaults.generalDefaults.BitsPriority
     $State.Controls.txtMaxUSBDrives.Text = $State.Defaults.generalDefaults.MaxUSBDrives
@@ -247,7 +397,8 @@ function Initialize-UIDefaults {
     $State.Controls.chkOptimize.IsChecked = $State.Defaults.generalDefaults.Optimize
     $State.Controls.chkAllowVHDXCaching.IsChecked = $State.Defaults.generalDefaults.AllowVHDXCaching
     $State.Controls.chkInjectUnattend.IsChecked = $State.Defaults.generalDefaults.InjectUnattend
-    $State.Controls.chkCreateCaptureMedia.IsChecked = $State.Defaults.generalDefaults.CreateCaptureMedia
+    $State.Controls.txtUnattendX64FilePath.Text = $State.Defaults.generalDefaults.UnattendX64FilePath
+    $State.Controls.txtUnattendArm64FilePath.Text = $State.Defaults.generalDefaults.UnattendArm64FilePath
     $State.Controls.chkCreateDeploymentMedia.IsChecked = $State.Defaults.generalDefaults.CreateDeploymentMedia
     $State.Controls.chkAllowExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.AllowExternalHardDiskMedia
     $State.Controls.chkPromptExternalHardDiskMedia.IsChecked = $State.Defaults.generalDefaults.PromptExternalHardDiskMedia
@@ -255,8 +406,22 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyAutopilot.IsChecked = $State.Defaults.generalDefaults.CopyAutopilot
     $State.Controls.chkCopyUnattend.IsChecked = $State.Defaults.generalDefaults.CopyUnattend
     $State.Controls.chkCopyPPKG.IsChecked = $State.Defaults.generalDefaults.CopyPPKG
+    $defaultDeviceNamingMode = if ($State.Defaults.generalDefaults.DeviceNamingMode -in @('None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')) {
+        $State.Defaults.generalDefaults.DeviceNamingMode
+    }
+    else {
+        'None'
+    }
+    Set-DeviceNamingModeState -State $State -DisplayMode $defaultDeviceNamingMode -LoadedMode $null
+    $State.Controls.txtDeviceNameTemplate.Text = $State.Defaults.generalDefaults.DeviceNameTemplate
+    $State.Controls.txtDeviceNamePrefixesPath.Text = $State.Defaults.generalDefaults.DeviceNamePrefixesPath
+    $State.Controls.txtDeviceNamePrefixes.Text = ($State.Defaults.generalDefaults.DeviceNamePrefixes -join [System.Environment]::NewLine)
+    $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = $State.Defaults.generalDefaults.DeviceNameSerialComputerNamesPath
+    $State.Controls.txtDeviceNameSerialComputerNames.Text = ($State.Defaults.generalDefaults.DeviceNameSerialComputerNames -join [System.Environment]::NewLine)
+    Import-DeviceNamePrefixesFromConfiguredPath -State $State
+    Import-SerialComputerNamesFromConfiguredPath -State $State
+    Update-DeviceNamingControls -State $State
     $State.Controls.chkCleanupAppsISO.IsChecked = $State.Defaults.generalDefaults.CleanupAppsISO
-    $State.Controls.chkCleanupCaptureISO.IsChecked = $State.Defaults.generalDefaults.CleanupCaptureISO
     $State.Controls.chkCleanupDeployISO.IsChecked = $State.Defaults.generalDefaults.CleanupDeployISO
     $State.Controls.chkCleanupDrivers.IsChecked = $State.Defaults.generalDefaults.CleanupDrivers
     $State.Controls.chkRemoveFFU.IsChecked = $State.Defaults.generalDefaults.RemoveFFU
@@ -264,7 +429,6 @@ function Initialize-UIDefaults {
     $State.Controls.chkRemoveUpdates.IsChecked = $State.Defaults.generalDefaults.RemoveUpdates
     $State.Controls.chkRemoveDownloadedESD.IsChecked = $State.Defaults.generalDefaults.RemoveDownloadedESD
     $State.Controls.chkVerbose.IsChecked = $State.Defaults.generalDefaults.Verbose
-    $State.Controls.usbSection.Visibility = if ($State.Controls.chkBuildUSBDriveEnable.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.usbSelectionPanel.Visibility = if ($State.Controls.chkSelectSpecificUSBDrives.IsChecked) { 'Visible' } else { 'Collapsed' }
     $State.Controls.chkSelectSpecificUSBDrives.IsEnabled = $State.Controls.chkBuildUSBDriveEnable.IsChecked
     $State.Controls.chkPromptExternalHardDiskMedia.IsEnabled = $State.Controls.chkAllowExternalHardDiskMedia.IsChecked
@@ -273,7 +437,9 @@ function Initialize-UIDefaults {
     Update-BitsPrioritySetting -State $State
 
     # Hyper-V Settings defaults from General Defaults
+    $State.Controls.chkEnableVMNetworking.IsChecked = $State.Defaults.generalDefaults.EnableVMNetworking
     Initialize-VMSwitchData -State $State
+    $State.Controls.spVMNetworkingSettings.IsEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
     $State.Controls.txtDiskSize.Text = $State.Defaults.generalDefaults.DiskSizeGB
     $State.Controls.txtMemory.Text = $State.Defaults.generalDefaults.MemoryGB
     $State.Controls.txtProcessors.Text = $State.Defaults.generalDefaults.Processors
@@ -282,7 +448,12 @@ function Initialize-UIDefaults {
     $State.Controls.cmbLogicalSectorSize.SelectedItem = ($State.Controls.cmbLogicalSectorSize.Items | Where-Object { $_.Content -eq $State.Defaults.generalDefaults.LogicalSectorSize.ToString() })
    
     # Populate Windows Release, Version, and SKU comboboxes
-    Get-WindowsSettingsCombos -isoPath $State.Defaults.windowsSettingsDefaults.DefaultISOPath -State $State
+    # Initialize Windows settings combos based on media source mode
+    $initIsoPath = $State.Defaults.windowsSettingsDefaults.DefaultISOPath
+    if ($null -ne $State.Controls.rbProvideISO -and -not $State.Controls.rbProvideISO.IsChecked) {
+        $initIsoPath = ''
+    }
+    Get-WindowsSettingsCombos -isoPath $initIsoPath -State $State
     
     # Windows Settings tab defaults
     $State.Controls.cmbWindowsLang.ItemsSource = $State.Defaults.windowsSettingsDefaults.AllowedLanguages
@@ -349,23 +520,73 @@ function Initialize-UIDefaults {
     # Set initial state for InstallApps checkbox based on updates
     Update-InstallAppsState -State $State
 
+    # Set default theme mode and disable if Fluent is not supported
+    if ($null -ne $State.Controls.cmbThemeMode) {
+        $State.Controls.cmbThemeMode.SelectedItem = "System"
+        if (-not $State.Flags.isFluentSupported) {
+            $State.Controls.cmbThemeMode.IsEnabled = $false
+            $State.Controls.cmbThemeMode.Tag = "Fluent theme requires PowerShell 7.5+ (.NET 9+). Best experience on PowerShell 7.6+ (.NET 10)."
+        }
+    }
+
+    # Set default navigation selection to Home and initialize the shared page title
+    if ($null -ne $State.Controls.lstNavigation) {
+        $State.Controls.lstNavigation.SelectedIndex = 0
+
+        # Keep the shell header aligned with the selected navigation item on first render
+        if ($null -ne $State.Controls.txtPageTitle) {
+            $selectedNavigationItem = $State.Controls.lstNavigation.SelectedItem
+            if ($null -ne $selectedNavigationItem -and -not [string]::IsNullOrWhiteSpace([string]$selectedNavigationItem.Tag)) {
+                $State.Controls.txtPageTitle.Text = [string]$selectedNavigationItem.Tag
+            }
+            else {
+                $State.Controls.txtPageTitle.Text = 'Home'
+            }
+        }
+    }
+
     # Set initial state for Office panel visibility
     Update-OfficePanelVisibility -State $State
     
     # Set initial state for Application panel visibility
     Update-ApplicationPanelVisibility -State $State
     
-    # Set initial state for BYO Apps copy button
-    Update-CopyButtonState -State $State
-}
+        # Set initial state for BYO Apps copy button
+        Update-CopyButtonState -State $State
+    
+        # Apply accent color to primary action button only (per Windows design guidance)
+        if ($State.Flags.isFluentSupported) {
+            try {
+                $State.Controls.btnRun = $State.Window.FindName('btnRun')
+                if ($null -ne $State.Controls.btnRun) {
+                    # Use SetResourceReference for live accent color updates when user changes Windows theme
+                    $State.Controls.btnRun.SetResourceReference(
+                        [System.Windows.Controls.Control]::BackgroundProperty,
+                        [System.Windows.SystemColors]::AccentColorBrushKey
+                    )
+                    $State.Controls.btnRun.Foreground = [System.Windows.Media.Brushes]::White
+                }
+            }
+            catch {
+                WriteLog "Could not apply accent color to Build FFU button: $($_.Exception.Message)"
+            }
+        }
+    }
 
 function Initialize-DynamicUIElements {
     param([PSCustomObject]$State)
     WriteLog "Initializing dynamic UI elements (Grids, Columns)..."
 
+    # Get the Fluent base style for ListViewItem in GridView mode
+    # Must use GridViewItemContainerStyleKey (not the generic ListViewItem type key) because the
+    # generic Fluent ListViewItem style has a template without GridViewRowPresenter, which breaks
+    # column-based rendering and causes items to display their ToString() representation.
+    $listViewItemBaseStyle = $State.Window.TryFindResource([System.Windows.Controls.GridView]::GridViewItemContainerStyleKey)
+
     # Driver Models ListView setup
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleDriverModels = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleDriverModels.BasedOn = $listViewItemBaseStyle }
     $itemStyleDriverModels.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstDriverModels.ItemContainerStyle = $itemStyleDriverModels
 
@@ -395,12 +616,16 @@ function Initialize-DynamicUIElements {
         }
     )
 
+    # Keep driver model columns sized to the current visible content.
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels -FixedColumnIndexes @(0)
+
     # Winget Search ListView setup
     $wingetGridView = New-Object System.Windows.Controls.GridView
     $State.Controls.lstWingetResults.View = $wingetGridView # Assign GridView to ListView first
 
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleWingetResults = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleWingetResults.BasedOn = $listViewItemBaseStyle }
     $itemStyleWingetResults.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstWingetResults.ItemContainerStyle = $itemStyleWingetResults
 
@@ -448,9 +673,11 @@ function Initialize-DynamicUIElements {
     $binding.Mode = [System.Windows.Data.BindingMode]::TwoWay
     $comboBoxFactory.SetBinding([System.Windows.Controls.ComboBox]::TextProperty, $binding)
 
-    # Create a style to disable the ComboBox for 'msstore' source
+    # Create a style to disable the ComboBox for 'msstore' source, inheriting the Fluent base style
     $comboBoxStyle = New-Object System.Windows.Style
     $comboBoxStyle.TargetType = [System.Windows.Controls.ComboBox]
+    $comboBoxBaseStyle = $State.Window.TryFindResource([System.Windows.Controls.ComboBox])
+    if ($null -ne $comboBoxBaseStyle) { $comboBoxStyle.BasedOn = $comboBoxBaseStyle }
     
     $dataTrigger = New-Object System.Windows.DataTrigger
     $dataTrigger.Binding = New-Object System.Windows.Data.Binding("Source")
@@ -551,12 +778,16 @@ function Initialize-DynamicUIElements {
         }
     )
 
+    # Keep Winget result columns sized to the current visible content.
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults -FixedColumnIndexes @(0)
+
     # BYO Applications ListView setup
     $byoAppsGridView = New-Object System.Windows.Controls.GridView
     $State.Controls.lstApplications.View = $byoAppsGridView
 
     # Set ListViewItem style to stretch content horizontally
     $itemStyleBYOApps = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleBYOApps.BasedOn = $listViewItemBaseStyle }
     $itemStyleBYOApps.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstApplications.ItemContainerStyle = $itemStyleBYOApps
 
@@ -573,12 +804,16 @@ function Initialize-DynamicUIElements {
     Add-SortableColumn -gridView $byoAppsGridView -header "Ignore Exit Codes" -binding "IgnoreExitCodes" -width 120 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $byoAppsGridView -header "Copy Status" -binding "CopyStatus" -width 150 -headerHorizontalAlignment Left
 
+    # Keep BYO application columns sized to the current visible content.
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstApplications -FixedColumnIndexes @(0)
+
     # Apps Script Variables ListView setup
     # Bind ItemsSource to the data list
     $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
 
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleAppsScriptVars = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleAppsScriptVars.BasedOn = $listViewItemBaseStyle }
     $itemStyleAppsScriptVars.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstAppsScriptVariables.ItemContainerStyle = $itemStyleAppsScriptVars
 
@@ -625,6 +860,9 @@ function Initialize-DynamicUIElements {
                 }
             }
         )
+
+        # Keep apps script variable columns sized to the current visible content.
+        Enable-ListViewColumnAutoResize -ListView $State.Controls.lstAppsScriptVariables -FixedColumnIndexes @(0)
     }
     else {
         WriteLog "Warning: lstAppsScriptVariables.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
@@ -641,6 +879,7 @@ function Initialize-DynamicUIElements {
     # USB Drives ListView setup
     # Set ListViewItem style to stretch content horizontally so cell templates fill the cell
     $itemStyleUSBDrives = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleUSBDrives.BasedOn = $listViewItemBaseStyle }
     $itemStyleUSBDrives.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstUSBDrives.ItemContainerStyle = $itemStyleUSBDrives
     
@@ -697,6 +936,9 @@ function Initialize-DynamicUIElements {
                 }
             }
         )
+
+        # Keep USB drive columns sized to the current visible content.
+        Enable-ListViewColumnAutoResize -ListView $State.Controls.lstUSBDrives -FixedColumnIndexes @(0)
     }
     else {
         WriteLog "Warning: lstUSBDrives.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
@@ -704,6 +946,7 @@ function Initialize-DynamicUIElements {
     
     # Additional FFUs ListView setup
     $itemStyleAdditionalFFUs = New-Object System.Windows.Style([System.Windows.Controls.ListViewItem])
+    if ($null -ne $listViewItemBaseStyle) { $itemStyleAdditionalFFUs.BasedOn = $listViewItemBaseStyle }
     $itemStyleAdditionalFFUs.Setters.Add((New-Object System.Windows.Setter([System.Windows.Controls.ListViewItem]::HorizontalContentAlignmentProperty, [System.Windows.HorizontalAlignment]::Stretch)))
     $State.Controls.lstAdditionalFFUs.ItemContainerStyle = $itemStyleAdditionalFFUs
     
@@ -742,6 +985,9 @@ function Initialize-DynamicUIElements {
                 }
             }
         )
+
+        # Keep additional FFU columns sized to the current visible content.
+        Enable-ListViewColumnAutoResize -ListView $State.Controls.lstAdditionalFFUs -FixedColumnIndexes @(0)
     }
     else {
         WriteLog "Warning: lstAdditionalFFUs.View is not a GridView. Selectable column not added, and sorting cannot be enabled."
