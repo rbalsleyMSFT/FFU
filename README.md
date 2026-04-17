@@ -1,9 +1,3 @@
-# Updates
-
-## 2026-03-16 - [2603.2 Released](https://github.com/rbalsleyMSFT/FFU/releases)
-
-Fixes an issue with devices not booting after applying an FFU. Highly recommended you update today. 
-
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
 What if you could have a Windows image (Windows 10/11/Server/LTSC) that has:
