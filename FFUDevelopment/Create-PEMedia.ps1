@@ -3,11 +3,8 @@ param (
     [string]$adkPath = 'C:\Program Files (x86)\Windows Kits\10\',
     [string]$WindowsArch = 'x64',
     [bool]$CopyPEDrivers = $false,
-    [string]$CaptureISO = "$PSScriptRoot\WinPE_FFU_Capture_x64.iso",
     [string]$DeployISO = "$PSScriptRoot\WinPE_FFU_Deploy_x64.iso",
-    [string]$LogFile = "$PSScriptRoot\Create-PEMedia.log",
-    [bool]$Capture,
-    [bool]$Deploy = $true
+    [string]$LogFile = "$PSScriptRoot\Create-PEMedia.log"
 )
 
 function WriteLog($LogText) { 
@@ -77,12 +74,7 @@ function Invoke-Process {
 }
 
 function New-PEMedia {
-    param (
-        [Parameter()]
-        [bool]$Capture,
-        [Parameter()]
-        [bool]$Deploy
-    )
+    param ()
     #Need to use the Demployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
@@ -135,36 +127,21 @@ function New-PEMedia {
         Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
         WriteLog "Adding package complete"
     }
-    If ($Capture) {
-        WriteLog "Copying $FFUDevelopmentPath\WinPECaptureFFUFiles\* to WinPE capture media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
-        WriteLog "Copy complete"
-        #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
-        #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
-        # $WinPEISOName = 'WinPE_FFU_Capture.iso'
-        $WinPEISOFile = $CaptureISO
-        # $Capture = $false
-    }
-    If ($Deploy) {
-        WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
-        WriteLog 'Copy complete'
-        #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
-        if ($CopyPEDrivers) {
-            WriteLog "Adding drivers to WinPE media"
-            try {
-                Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\PEDrivers" -Recurse -ErrorAction SilentlyContinue | Out-null
-            }
-            catch {
-                WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
-            }
-            WriteLog "Adding drivers complete"
+    WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
+    Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
+    WriteLog 'Copy complete'
+    #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
+    if ($CopyPEDrivers) {
+        WriteLog "Adding drivers to WinPE media"
+        try {
+            Add-WindowsDriver -Path "$WinPEFFUPath\Mount" -Driver "$FFUDevelopmentPath\PEDrivers" -Recurse -ErrorAction SilentlyContinue | Out-null
         }
-        # $WinPEISOName = 'WinPE_FFU_Deploy.iso'
-        $WinPEISOFile = $DeployISO
-
-        # $Deploy = $false
+        catch {
+            WriteLog 'Some drivers failed to be added to the FFU. This can be expected. Continuing.'
+        }
+        WriteLog "Adding drivers complete"
     }
+    $WinPEISOFile = $DeployISO
     WriteLog 'Dismounting WinPE media' 
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
     WriteLog 'Dismount complete'
@@ -179,21 +156,10 @@ function New-PEMedia {
     WriteLog "Creating WinPE ISO at $WinPEISOFile"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
     if($WindowsArch -eq 'x64'){
-        if($Capture){
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        if($Deploy){
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
     }
     elseif($WindowsArch -eq 'arm64'){
-        if($Capture){
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        if($Deploy){
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
     }
     Invoke-Process $OSCDIMG $OSCDIMGArgs
     WriteLog "ISO created successfully"
@@ -201,9 +167,4 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
 }
-if($Capture){
-    New-PEMedia -Capture $Capture
-}
-if($Deploy){
-    New-PEMedia -Deploy $Deploy
-}
+New-PEMedia

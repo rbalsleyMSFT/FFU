@@ -10,7 +10,7 @@ has_toc: false
 ---
 # Applications
 
-![1759881364454](image/updatescopy/1759881364454.png)
+![1776378755854](image/applications/1776378755854.png)
 
 Applications can be installed in three different ways:
 

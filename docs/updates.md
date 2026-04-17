@@ -9,7 +9,7 @@ parent: UI Overview
 ---
 # Updates
 
-![1759878277807](image/updates/1759878277807.png)
+![1776378727768](image/updates/1776378727768.png)
 
 ## Update Latest Cumulative Update
 
@@ -47,6 +47,6 @@ Controls the `-UpdatePreviewCU` parameter. When set to `$true`, will download an
 
 > Note
 >
-> The UI will only allow one of **Update Latest CU** or **Update Preview CU** to be checked to prevent both being applied. 
+> The UI will only allow one of **Update Latest CU** or **Update Preview CU** to be checked to prevent both being applied.
 
 {% include page_nav.html %}

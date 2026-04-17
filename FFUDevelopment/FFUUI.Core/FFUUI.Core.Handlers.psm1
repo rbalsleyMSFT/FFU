@@ -5,6 +5,341 @@
     This module is dedicated to managing user interactions within the FFU Builder UI. It contains the Register-EventHandlers function, which connects UI controls defined in the XAML to their corresponding actions in the PowerShell backend. This includes handling button clicks, text input validation, checkbox state changes, and list view interactions across all tabs, effectively wiring up the application's front-end to its core logic.
 #>
 
+function Update-VMNetworkingControls {
+    param([PSCustomObject]$State)
+
+    $isVmNetworkingEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
+    $State.Controls.spVMNetworkingSettings.IsEnabled = $isVmNetworkingEnabled
+
+    if (-not $isVmNetworkingEnabled) {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+        return
+    }
+
+    if ($State.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
+        if ([string]::IsNullOrWhiteSpace($State.Controls.txtCustomVMSwitchName.Text) -and $null -ne $State.Data.customVMSwitchName) {
+            $State.Controls.txtCustomVMSwitchName.Text = $State.Data.customVMSwitchName
+        }
+    }
+    else {
+        $State.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
+    }
+}
+
+function Get-SelectedDeviceNamingMode {
+    param([PSCustomObject]$State)
+
+    if ($true -eq $State.Controls.rbDeviceNamingPrompt.IsChecked) {
+        return 'Prompt'
+    }
+
+    if ($true -eq $State.Controls.rbDeviceNamingTemplate.IsChecked) {
+        return 'Template'
+    }
+
+    if ($true -eq $State.Controls.rbDeviceNamingPrefixes.IsChecked) {
+        return 'Prefixes'
+    }
+
+    if ($true -eq $State.Controls.rbDeviceNamingSerialComputerNames.IsChecked) {
+        return 'SerialComputerNames'
+    }
+
+    return 'None'
+}
+
+function Set-DeviceNamingMode {
+    param(
+        [PSCustomObject]$State,
+        [ValidateSet('None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+        [string]$Mode
+    )
+
+    $State.Controls.rbDeviceNamingNone.IsChecked = $Mode -eq 'None'
+    $State.Controls.rbDeviceNamingPrompt.IsChecked = $Mode -eq 'Prompt'
+    $State.Controls.rbDeviceNamingTemplate.IsChecked = $Mode -eq 'Template'
+    $State.Controls.rbDeviceNamingPrefixes.IsChecked = $Mode -eq 'Prefixes'
+    $State.Controls.rbDeviceNamingSerialComputerNames.IsChecked = $Mode -eq 'SerialComputerNames'
+}
+
+function Set-DeviceNamingModeState {
+    param(
+        [PSCustomObject]$State,
+        [ValidateSet('None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+        [string]$DisplayMode,
+        [AllowNull()]
+        [string]$LoadedMode
+    )
+
+    if ($null -eq $State.Flags) {
+        $State.Flags = @{}
+    }
+
+    if ($null -eq $State.Data) {
+        $State.Data = @{}
+    }
+
+    $previousSuppressionState = $true -eq $State.Flags.suppressDeviceNamingChangeTracking
+    $State.Flags.suppressDeviceNamingChangeTracking = $true
+    try {
+        Set-DeviceNamingMode -State $State -Mode $DisplayMode
+    }
+    finally {
+        $State.Flags.suppressDeviceNamingChangeTracking = $previousSuppressionState
+    }
+
+    $State.Data.loadedDeviceNamingMode = if ([string]::IsNullOrWhiteSpace($LoadedMode)) {
+        $null
+    }
+    else {
+        $LoadedMode.Trim()
+    }
+    $State.Flags.deviceNamingModeWasExplicitlyChanged = $false
+}
+
+function Get-ConfiguredDeviceNamingMode {
+    param([PSCustomObject]$State)
+
+    if (($null -ne $State.Flags) -and ($true -eq $State.Flags.deviceNamingModeWasExplicitlyChanged)) {
+        return Get-SelectedDeviceNamingMode -State $State
+    }
+
+    if (($null -ne $State.Data) -and -not [string]::IsNullOrWhiteSpace([string]$State.Data.loadedDeviceNamingMode)) {
+        return [string]$State.Data.loadedDeviceNamingMode
+    }
+
+    return $null
+}
+
+function Get-DeviceNamePrefixes {
+    param([PSCustomObject]$State)
+
+    if ($null -eq $State.Controls.txtDeviceNamePrefixes) {
+        return @()
+    }
+
+    return @(
+        $State.Controls.txtDeviceNamePrefixes.Text -split "\r?\n" |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim() }
+    )
+}
+
+function Get-SerialComputerNamesLines {
+    param([PSCustomObject]$State)
+
+    if ($null -eq $State.Controls.txtDeviceNameSerialComputerNames) {
+        return @()
+    }
+
+    return @(
+        $State.Controls.txtDeviceNameSerialComputerNames.Text -split "\r?\n" |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim() }
+    )
+}
+
+function Import-DeviceNamePrefixesFile {
+    param(
+        [PSCustomObject]$State,
+        [string]$FilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path -Path $FilePath -PathType Leaf)) {
+        return $false
+    }
+
+    $prefixLines = @(Get-Content -Path $FilePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    if ($null -ne $State.Controls.txtDeviceNamePrefixesPath) {
+        $State.Controls.txtDeviceNamePrefixesPath.Text = $FilePath
+    }
+    $State.Controls.txtDeviceNamePrefixes.Text = $prefixLines -join [System.Environment]::NewLine
+    WriteLog "Imported device name prefixes from $FilePath"
+    return $true
+}
+
+function Import-SerialComputerNamesFile {
+    param(
+        [PSCustomObject]$State,
+        [string]$FilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path -Path $FilePath -PathType Leaf)) {
+        return $false
+    }
+
+    $serialMappingLines = @(Get-Content -Path $FilePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    if ($null -ne $State.Controls.txtDeviceNameSerialComputerNamesPath) {
+        $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = $FilePath
+    }
+    $State.Controls.txtDeviceNameSerialComputerNames.Text = $serialMappingLines -join [System.Environment]::NewLine
+    WriteLog "Imported serial computer-name mappings from $FilePath"
+    return $true
+}
+
+function Get-DefaultDeviceNamePrefixesPath {
+    param([string]$FFUDevelopmentPath)
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') 'prefixes.txt'
+}
+
+function Get-DefaultSerialComputerNamesPath {
+    param([string]$FFUDevelopmentPath)
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') 'SerialComputerNames.csv'
+}
+
+function Get-DefaultUnattendFilePath {
+    param(
+        [string]$FFUDevelopmentPath,
+        [ValidateSet('x64', 'arm64')]
+        [string]$WindowsArch
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FFUDevelopmentPath)) {
+        return $null
+    }
+
+    $fileName = if ($WindowsArch -ieq 'arm64') { 'unattend_arm64.xml' } else { 'unattend_x64.xml' }
+    return Join-Path (Join-Path $FFUDevelopmentPath 'unattend') $fileName
+}
+
+function Import-DeviceNamePrefixesFromConfiguredPath {
+    param(
+        [PSCustomObject]$State,
+        [switch]$SkipIfTextPresent
+    )
+
+    if ($SkipIfTextPresent -and -not [string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNamePrefixes.Text)) {
+        return
+    }
+
+    $prefixFilePath = $State.Controls.txtDeviceNamePrefixesPath.Text
+    if ([string]::IsNullOrWhiteSpace($prefixFilePath)) {
+        $prefixFilePath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+        if (-not [string]::IsNullOrWhiteSpace($prefixFilePath) -and $null -ne $State.Controls.txtDeviceNamePrefixesPath) {
+            $State.Controls.txtDeviceNamePrefixesPath.Text = $prefixFilePath
+        }
+    }
+
+    if (Test-Path -Path $prefixFilePath -PathType Leaf) {
+        Import-DeviceNamePrefixesFile -State $State -FilePath $prefixFilePath | Out-Null
+    }
+}
+
+function Import-SerialComputerNamesFromConfiguredPath {
+    param(
+        [PSCustomObject]$State,
+        [switch]$SkipIfTextPresent
+    )
+
+    if ($SkipIfTextPresent -and -not [string]::IsNullOrWhiteSpace($State.Controls.txtDeviceNameSerialComputerNames.Text)) {
+        return
+    }
+
+    $serialComputerNamesPath = $State.Controls.txtDeviceNameSerialComputerNamesPath.Text
+    if ([string]::IsNullOrWhiteSpace($serialComputerNamesPath)) {
+        $serialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $State.Controls.txtFFUDevPath.Text
+        if (-not [string]::IsNullOrWhiteSpace($serialComputerNamesPath) -and $null -ne $State.Controls.txtDeviceNameSerialComputerNamesPath) {
+            $State.Controls.txtDeviceNameSerialComputerNamesPath.Text = $serialComputerNamesPath
+        }
+    }
+
+    if (Test-Path -Path $serialComputerNamesPath -PathType Leaf) {
+        Import-SerialComputerNamesFile -State $State -FilePath $serialComputerNamesPath | Out-Null
+    }
+}
+
+function Test-DeviceNameTemplateUsesSerialToken {
+    param([PSCustomObject]$State)
+
+    return ((Get-SelectedDeviceNamingMode -State $State) -eq 'Template') -and ($State.Controls.txtDeviceNameTemplate.Text -match '(?i)%serial%')
+}
+
+function Update-UnattendSelectionControls {
+    param([PSCustomObject]$State)
+
+    $selectedDeviceNamingMode = Get-SelectedDeviceNamingMode -State $State
+    $isCopyUnattendSelected = $true -eq $State.Controls.chkCopyUnattend.IsChecked
+    $isInjectUnattendSelected = $true -eq $State.Controls.chkInjectUnattend.IsChecked
+    $deviceNameTemplateUsesSerialToken = Test-DeviceNameTemplateUsesSerialToken -State $State
+    $requiresCopiedUnattend = ($selectedDeviceNamingMode -in @('Prompt', 'Prefixes', 'SerialComputerNames')) -or $deviceNameTemplateUsesSerialToken
+
+    if ($isCopyUnattendSelected -and $isInjectUnattendSelected) {
+        if ($requiresCopiedUnattend) {
+            $State.Controls.chkInjectUnattend.IsChecked = $false
+            $isInjectUnattendSelected = $false
+        }
+        else {
+            $State.Controls.chkCopyUnattend.IsChecked = $false
+            $isCopyUnattendSelected = $false
+        }
+    }
+
+    if ($requiresCopiedUnattend) {
+        if (-not $isCopyUnattendSelected) {
+            $State.Controls.chkCopyUnattend.IsChecked = $true
+            $isCopyUnattendSelected = $true
+        }
+
+        if ($isInjectUnattendSelected) {
+            $State.Controls.chkInjectUnattend.IsChecked = $false
+            $isInjectUnattendSelected = $false
+        }
+
+        $State.Controls.chkCopyUnattend.IsEnabled = $false
+        $State.Controls.chkInjectUnattend.IsEnabled = $false
+        return
+    }
+
+    if ($isCopyUnattendSelected) {
+        $State.Controls.chkCopyUnattend.IsEnabled = $true
+        $State.Controls.chkInjectUnattend.IsEnabled = $false
+    }
+    elseif ($isInjectUnattendSelected) {
+        $State.Controls.chkCopyUnattend.IsEnabled = $false
+        $State.Controls.chkInjectUnattend.IsEnabled = $true
+    }
+    else {
+        $State.Controls.chkCopyUnattend.IsEnabled = $true
+        $State.Controls.chkInjectUnattend.IsEnabled = $true
+    }
+}
+
+function Update-DeviceNamingControls {
+    param([PSCustomObject]$State)
+
+    if (($true -eq $State.Controls.chkInjectUnattend.IsChecked) -and (($true -eq $State.Controls.rbDeviceNamingPrompt.IsChecked) -or ($true -eq $State.Controls.rbDeviceNamingPrefixes.IsChecked) -or ($true -eq $State.Controls.rbDeviceNamingSerialComputerNames.IsChecked))) {
+        $State.Controls.rbDeviceNamingNone.IsChecked = $true
+    }
+
+    $selectedDeviceNamingMode = Get-SelectedDeviceNamingMode -State $State
+    $State.Controls.deviceNameTemplatePanel.Visibility = if ($selectedDeviceNamingMode -eq 'Template') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.deviceNamePrefixesPanel.Visibility = if ($selectedDeviceNamingMode -eq 'Prefixes') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.deviceNameSerialComputerNamesPanel.Visibility = if ($selectedDeviceNamingMode -eq 'SerialComputerNames') { 'Visible' } else { 'Collapsed' }
+    $State.Controls.rbDeviceNamingPrompt.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
+    $State.Controls.rbDeviceNamingPrefixes.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
+    $State.Controls.rbDeviceNamingSerialComputerNames.IsEnabled = -not ($true -eq $State.Controls.chkInjectUnattend.IsChecked)
+
+    if ($selectedDeviceNamingMode -eq 'Prefixes') {
+        Import-DeviceNamePrefixesFromConfiguredPath -State $State -SkipIfTextPresent
+    }
+    elseif ($selectedDeviceNamingMode -eq 'SerialComputerNames') {
+        Import-SerialComputerNamesFromConfiguredPath -State $State -SkipIfTextPresent
+    }
+
+    Update-UnattendSelectionControls -State $State
+}
+
 function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
@@ -24,7 +359,7 @@ function Register-EventHandlers {
 
     # Define a handler to validate pasted text, ensuring it's only integers
     $integerPastingHandler = {
-        param($sender, $pastingEventArgs)
+        param($eventSource, $pastingEventArgs)
         if ($pastingEventArgs.DataObject.GetDataPresent([string])) {
             $pastedText = $pastingEventArgs.DataObject.GetData([string])
             # Check if the pasted text consists ONLY of one or more digits.
@@ -87,6 +422,132 @@ function Register-EventHandlers {
             })
     }
 
+    # Navigation Sidebar Event Handlers
+    # Main navigation list - switches content pages based on selected nav item
+    if ($null -ne $State.Controls.lstNavigation) {
+        $State.Controls.lstNavigation.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                $localState = $window.Tag
+                $selectedIndex = $eventSource.SelectedIndex
+                if ($selectedIndex -lt 0) { return }
+
+                # Clear Settings selection when main nav is used
+                if ($null -ne $localState.Controls.lstNavSettings) {
+                    $localState.Controls.lstNavSettings.SelectedIndex = -1
+                }
+
+                # Hide all content pages
+                foreach ($page in $localState.Controls.navigationPages) {
+                    if ($null -ne $page) { $page.Visibility = 'Collapsed' }
+                }
+                if ($null -ne $localState.Controls.pageSettings) {
+                    $localState.Controls.pageSettings.Visibility = 'Collapsed'
+                }
+
+                # Show the selected page
+                if ($selectedIndex -lt $localState.Controls.navigationPages.Count) {
+                    $localState.Controls.navigationPages[$selectedIndex].Visibility = 'Visible'
+                }
+            
+                # Update the shared page title to match the selected navigation item
+                if ($null -ne $localState.Controls.txtPageTitle) {
+                    $selectedNavigationItem = $eventSource.SelectedItem
+                    if ($null -ne $selectedNavigationItem -and -not [string]::IsNullOrWhiteSpace([string]$selectedNavigationItem.Tag)) {
+                        $localState.Controls.txtPageTitle.Text = [string]$selectedNavigationItem.Tag
+                    }
+                }
+            })
+    }
+
+    # Settings navigation item
+    if ($null -ne $State.Controls.lstNavSettings) {
+        $State.Controls.lstNavSettings.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                $localState = $window.Tag
+                if ($eventSource.SelectedIndex -lt 0) { return }
+
+                # Clear main navigation selection
+                if ($null -ne $localState.Controls.lstNavigation) {
+                    $localState.Controls.lstNavigation.SelectedIndex = -1
+                }
+
+                # Hide all content pages
+                foreach ($page in $localState.Controls.navigationPages) {
+                    if ($null -ne $page) { $page.Visibility = 'Collapsed' }
+                }
+
+                # Show Settings page
+                if ($null -ne $localState.Controls.pageSettings) {
+                    $localState.Controls.pageSettings.Visibility = 'Visible'
+                }
+            
+                # Update the shared page title to match the selected navigation item
+                if ($null -ne $localState.Controls.txtPageTitle) {
+                    $selectedNavigationItem = $eventSource.SelectedItem
+                    if ($null -ne $selectedNavigationItem -and -not [string]::IsNullOrWhiteSpace([string]$selectedNavigationItem.Tag)) {
+                        $localState.Controls.txtPageTitle.Text = [string]$selectedNavigationItem.Tag
+                    }
+                    else {
+                        $localState.Controls.txtPageTitle.Text = 'Settings'
+                    }
+                }
+            })
+    }
+
+    # Hyperlink navigation handlers for Home page links
+    $hyperlinkNames = @(
+        'linkQuickStart',
+        'linkDocs',
+        'linkGitHub',
+        'linkReleases',
+        'linkChangelog',
+        'linkVideo1',
+        'linkDiscussion1',
+        'linkDiscussion2',
+        'linkDiscussion3',
+        'linkDiscussion4',
+        'linkDiscussion5',
+        'linkDiscussions'
+    )
+    foreach ($linkName in $hyperlinkNames) {
+        $link = $State.Window.FindName($linkName)
+        if ($null -ne $link) {
+            $link.Add_RequestNavigate({
+                    param($eventSource, $requestNavigateEventArgs)
+                    Start-Process $requestNavigateEventArgs.Uri.AbsoluteUri
+                    $requestNavigateEventArgs.Handled = $true
+                })
+        }
+    }
+
+    # Settings Page Event Handlers
+    # Theme mode selector - switches between Light, Dark, and System Fluent themes
+    if ($null -ne $State.Controls.cmbThemeMode) {
+        $State.Controls.cmbThemeMode.Add_SelectionChanged({
+                param($eventSource, $selectionChangedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) {
+                    return
+                }
+                $localState = $window.Tag
+                if (-not $localState.Flags.isFluentSupported) {
+                    return
+                }
+                $selectedTheme = $eventSource.SelectedItem
+                if (-not [string]::IsNullOrWhiteSpace($selectedTheme)) {
+                    Initialize-FluentTheme -Window $window -ThemeMode $selectedTheme -State $localState
+                }
+            })
+    }
+
     # Build Tab Event Handlers
     $State.Controls.btnBrowseFFUDevPath.Add_Click({
             param($eventSource, $routedEventArgs)
@@ -94,7 +555,34 @@ function Register-EventHandlers {
             $localState = $window.Tag
             $selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select FFU Development Path"
             if ($selectedPath) {
+                $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+                $currentSerialComputerNamesPath = $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text
+                $currentUnattendX64FilePath = $localState.Controls.txtUnattendX64FilePath.Text
+                $currentUnattendArm64FilePath = $localState.Controls.txtUnattendArm64FilePath.Text
+                $previousDefaultPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                $previousDefaultSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                $previousDefaultUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+                $previousDefaultUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
                 $localState.Controls.txtFFUDevPath.Text = $selectedPath
+                $newDefaultPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $selectedPath
+                $newDefaultSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $selectedPath
+                $newDefaultUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $selectedPath -WindowsArch 'x64'
+                $newDefaultUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $selectedPath -WindowsArch 'arm64'
+                if ([string]::IsNullOrWhiteSpace($currentPrefixesPath) -or $currentPrefixesPath -ieq $previousDefaultPrefixesPath) {
+                    $localState.Controls.txtDeviceNamePrefixesPath.Text = $newDefaultPrefixesPath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath) -or $currentSerialComputerNamesPath -ieq $previousDefaultSerialComputerNamesPath) {
+                    $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text = $newDefaultSerialComputerNamesPath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath) -or $currentUnattendX64FilePath -ieq $previousDefaultUnattendX64FilePath) {
+                    $localState.Controls.txtUnattendX64FilePath.Text = $newDefaultUnattendX64FilePath
+                }
+                if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath) -or $currentUnattendArm64FilePath -ieq $previousDefaultUnattendArm64FilePath) {
+                    $localState.Controls.txtUnattendArm64FilePath.Text = $newDefaultUnattendArm64FilePath
+                }
+                Import-DeviceNamePrefixesFromConfiguredPath -State $localState
+                Import-SerialComputerNamesFromConfiguredPath -State $localState
+                Update-DeviceNamingControls -State $localState
             }
         })
 
@@ -108,19 +596,246 @@ function Register-EventHandlers {
             }
         })
 
+    $State.Controls.rbDeviceNamingNone.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.rbDeviceNamingPrompt.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.rbDeviceNamingTemplate.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.txtDeviceNameTemplate.Add_TextChanged({
+            param($eventSource, $textChangedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            if ($null -ne $window -and $null -ne $window.Tag) {
+                Update-DeviceNamingControls -State $window.Tag
+            }
+        })
+    $State.Controls.rbDeviceNamingPrefixes.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.rbDeviceNamingSerialComputerNames.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            if (-not ($true -eq $localState.Flags.suppressDeviceNamingChangeTracking)) {
+                $localState.Flags.deviceNamingModeWasExplicitlyChanged = $true
+                $localState.Data.loadedDeviceNamingMode = $null
+            }
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.btnBrowseDeviceNamePrefixesPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                $currentPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                $null
+            }
+            else {
+                Split-Path $currentPrefixesPath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) { 'prefixes.txt' } else { Split-Path $currentPrefixesPath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select prefixes file path' -Filter 'Text files (*.txt)|*.txt|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (Import-DeviceNamePrefixesFile -State $localState -FilePath $selectedPath) {
+                Update-DeviceNamingControls -State $localState
+            }
+        })
+    $State.Controls.btnBrowseDeviceNameSerialComputerNamesPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentSerialComputerNamesPath = $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                $currentSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                $null
+            }
+            else {
+                Split-Path $currentSerialComputerNamesPath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) { 'SerialComputerNames.csv' } else { Split-Path $currentSerialComputerNamesPath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select Serial Computer Names CSV Mapping File Path' -Filter 'CSV files (*.csv)|*.csv|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (Import-SerialComputerNamesFile -State $localState -FilePath $selectedPath) {
+                Update-DeviceNamingControls -State $localState
+            }
+        })
+    $State.Controls.btnBrowseUnattendX64FilePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentUnattendX64FilePath = $localState.Controls.txtUnattendX64FilePath.Text
+            if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) {
+                $currentUnattendX64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'x64'
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) {
+                $null
+            }
+            else {
+                Split-Path $currentUnattendX64FilePath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentUnattendX64FilePath)) { 'unattend_x64.xml' } else { Split-Path $currentUnattendX64FilePath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select x64 unattend XML file' -Filter 'XML files (*.xml)|*.xml|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (-not [string]::IsNullOrWhiteSpace($selectedPath)) {
+                $localState.Controls.txtUnattendX64FilePath.Text = $selectedPath
+            }
+        })
+    $State.Controls.btnBrowseUnattendArm64FilePath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $currentUnattendArm64FilePath = $localState.Controls.txtUnattendArm64FilePath.Text
+            if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) {
+                $currentUnattendArm64FilePath = Get-DefaultUnattendFilePath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text -WindowsArch 'arm64'
+            }
+            $initialDirectory = if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) {
+                $null
+            }
+            else {
+                Split-Path $currentUnattendArm64FilePath -Parent
+            }
+            $fileName = if ([string]::IsNullOrWhiteSpace($currentUnattendArm64FilePath)) { 'unattend_arm64.xml' } else { Split-Path $currentUnattendArm64FilePath -Leaf }
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title 'Select arm64 unattend XML file' -Filter 'XML files (*.xml)|*.xml|All files (*.*)|*.*' -InitialDirectory $initialDirectory -FileName $fileName
+            if (-not [string]::IsNullOrWhiteSpace($selectedPath)) {
+                $localState.Controls.txtUnattendArm64FilePath.Text = $selectedPath
+            }
+        })
+    $State.Controls.btnSaveDeviceNamePrefixes.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $prefixLines = @(Get-DeviceNamePrefixes -State $localState)
+
+            if ($prefixLines.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("Enter at least one prefix before saving the prefixes file.", "Prefixes Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            $currentPrefixesPath = $localState.Controls.txtDeviceNamePrefixesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                $currentPrefixesPath = Get-DefaultDeviceNamePrefixesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                if (-not [string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                    $localState.Controls.txtDeviceNamePrefixesPath.Text = $currentPrefixesPath
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
+                [System.Windows.MessageBox]::Show("Select a valid Prefixes File Path before saving prefixes.", "Prefixes File Path Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            try {
+                $prefixLines | Set-Content -Path $currentPrefixesPath -Encoding UTF8
+                $localState.Controls.txtDeviceNamePrefixesPath.Text = $currentPrefixesPath
+                WriteLog "Saved device name prefixes to $currentPrefixesPath"
+            }
+            catch {
+                [System.Windows.MessageBox]::Show("Saving prefixes failed for '$currentPrefixesPath'. $($_.Exception.Message)", "Save Prefixes Failed", "OK", "Error") | Out-Null
+            }
+        })
+    $State.Controls.btnSaveDeviceNameSerialComputerNames.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $serialComputerNameLines = @(Get-SerialComputerNamesLines -State $localState)
+
+            if ($serialComputerNameLines.Count -eq 0) {
+                [System.Windows.MessageBox]::Show("Enter CSV content before saving the serial mapping file.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            $currentSerialComputerNamesPath = $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text
+            if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                $currentSerialComputerNamesPath = Get-DefaultSerialComputerNamesPath -FFUDevelopmentPath $localState.Controls.txtFFUDevPath.Text
+                if (-not [string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                    $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text = $currentSerialComputerNamesPath
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
+                [System.Windows.MessageBox]::Show("Select a valid Serial Computer Names CSV Mapping File Path before saving the serial mapping.", "Serial Mapping File Path Required", "OK", "Warning") | Out-Null
+                return
+            }
+
+            try {
+                $serialComputerNameLines | Set-Content -Path $currentSerialComputerNamesPath -Encoding UTF8
+                $localState.Controls.txtDeviceNameSerialComputerNamesPath.Text = $currentSerialComputerNamesPath
+                WriteLog "Saved serial computer-name mappings to $currentSerialComputerNamesPath"
+            }
+            catch {
+                [System.Windows.MessageBox]::Show("Saving serial mapping failed for '$currentSerialComputerNamesPath'. $($_.Exception.Message)", "Save Serial Mapping Failed", "OK", "Error") | Out-Null
+            }
+        })
+    $State.Controls.chkCopyUnattend.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkInjectUnattend.IsChecked = $false
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.chkCopyUnattend.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            Update-DeviceNamingControls -State $window.Tag
+        })
+    $State.Controls.chkInjectUnattend.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $localState.Controls.chkCopyUnattend.IsChecked = $false
+            Update-DeviceNamingControls -State $localState
+        })
+    $State.Controls.chkInjectUnattend.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            Update-DeviceNamingControls -State $window.Tag
+        })
+
     # Build USB Drive Settings Event Handlers
+    # The USB Expander is always visible; the checkbox controls child settings only
     $State.Controls.chkBuildUSBDriveEnable.Add_Checked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $localState.Controls.usbSection.Visibility = 'Visible'
             $localState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $true
         })
     $State.Controls.chkBuildUSBDriveEnable.Add_Unchecked({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $localState.Controls.usbSection.Visibility = 'Collapsed'
             $localState.Controls.chkSelectSpecificUSBDrives.IsEnabled = $false
             $localState.Controls.chkSelectSpecificUSBDrives.IsChecked = $false
             $localState.Controls.lstUSBDrives.Items.Clear()
@@ -220,6 +935,7 @@ function Register-EventHandlers {
                 $driveObject | Add-Member -MemberType NoteProperty -Name 'IsSelected' -Value $false -Force
                 $localState.Controls.lstUSBDrives.Items.Add($driveObject)
             }
+            Request-ListViewColumnAutoResize -ListView $localState.Controls.lstUSBDrives
             if ($localState.Controls.lstUSBDrives.Items.Count -gt 0) {
                 $localState.Controls.lstUSBDrives.SelectedIndex = 0
             }
@@ -253,42 +969,30 @@ function Register-EventHandlers {
         })
 
     # Hyper-V tab event handlers
+    $State.Controls.chkEnableVMNetworking.Add_Checked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Update-VMNetworkingControls -State $localState
+        })
+
+    $State.Controls.chkEnableVMNetworking.Add_Unchecked({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            Update-VMNetworkingControls -State $localState
+        })
+
     $State.Controls.cmbVMSwitchName.Add_SelectionChanged({
             param($eventSource, $selectionChangedEventArgs)
             # The state object is available via the parent window's Tag property
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $selectedItem = $eventSource.SelectedItem
-            if ($selectedItem -eq 'Other') {
-                $localState.Controls.txtCustomVMSwitchName.Visibility = 'Visible'
-                if ([string]::IsNullOrWhiteSpace($localState.Controls.txtCustomVMSwitchName.Text) -and $null -ne $localState.Data.customVMSwitchName) {
-                    $localState.Controls.txtCustomVMSwitchName.Text = $localState.Data.customVMSwitchName
-                }
-                if ($null -ne $localState.Data.customVMHostIP -and -not [string]::IsNullOrWhiteSpace($localState.Data.customVMHostIP)) {
-                    $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.customVMHostIP
-                }
-            }
-            else {
-                $localState.Controls.txtCustomVMSwitchName.Visibility = 'Collapsed'
-                if ($null -ne $selectedItem -and $localState.Data.vmSwitchMap.ContainsKey($selectedItem)) {
-                    $localState.Controls.txtVMHostIPAddress.Text = $localState.Data.vmSwitchMap[$selectedItem]
-                }
-                else {
-                    $localState.Controls.txtVMHostIPAddress.Text = '' # Clear IP if not found or key null
-                }
-            }
+            Update-VMNetworkingControls -State $localState
         })
 
-    # Persist custom VM switch name/IP when user edits them while 'Other' is selected
-    $State.Controls.txtVMHostIPAddress.Add_LostFocus({
-            param($eventSource, $routedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            if ($localState.Controls.cmbVMSwitchName.SelectedItem -eq 'Other') {
-                $localState.Data.customVMHostIP = $localState.Controls.txtVMHostIPAddress.Text
-            }
-        })
+    # Persist custom VM switch name when user edits it while 'Other' is selected
     $State.Controls.txtCustomVMSwitchName.Add_LostFocus({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
@@ -299,12 +1003,31 @@ function Register-EventHandlers {
         })
 
     # Windows Settings tab Event Handlers
-    $State.Controls.txtISOPath.Add_TextChanged({
-            param($eventSource, $textChangedEventArgs)
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            Get-WindowsSettingsCombos -isoPath $localState.Controls.txtISOPath.Text -State $localState
-        })
+    # Windows Media Source radio buttons
+    if ($null -ne $State.Controls.rbProvideISO) {
+        $State.Controls.rbProvideISO.Add_Checked({
+                param($eventSource, $routedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) { return }
+                $localState = $window.Tag
+                $localState.Controls.isoPathPanel.Visibility = 'Visible'
+                # Use a placeholder .iso path to trigger ISO mode even before a real path is provided
+                $isoPath = $localState.Controls.txtISOPath.Text
+                if ([string]::IsNullOrWhiteSpace($isoPath)) {
+                    $isoPath = 'placeholder.iso'
+                }
+                Get-WindowsSettingsCombos -isoPath $isoPath -State $localState
+            })
+        $State.Controls.rbProvideISO.Add_Unchecked({
+                param($eventSource, $routedEventArgs)
+                $window = [System.Windows.Window]::GetWindow($eventSource)
+                if ($null -eq $window -or $null -eq $window.Tag) { return }
+                $localState = $window.Tag
+                $localState.Controls.isoPathPanel.Visibility = 'Collapsed'
+                $localState.Controls.txtISOPath.Text = ''
+                Get-WindowsSettingsCombos -isoPath '' -State $localState
+            })
+    }
 
     $State.Controls.cmbWindowsRelease.Add_SelectionChanged({
             param($eventSource, $selectionChangedEventArgs)
@@ -314,7 +1037,13 @@ function Register-EventHandlers {
             if ($null -ne $localState.Controls.cmbWindowsRelease.SelectedItem) {
                 $selectedReleaseValue = $localState.Controls.cmbWindowsRelease.SelectedItem.Value
             }
-            Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $localState.Controls.txtISOPath.Text -State $localState
+            # Determine ISO path based on radio button state
+            $isoPath = ''
+            if ($null -ne $localState.Controls.rbProvideISO -and $localState.Controls.rbProvideISO.IsChecked) {
+                $isoPath = $localState.Controls.txtISOPath.Text
+                if ([string]::IsNullOrWhiteSpace($isoPath)) { $isoPath = 'placeholder.iso' }
+            }
+            Update-WindowsVersionCombo -selectedRelease $selectedReleaseValue -isoPath $isoPath -State $localState
             Update-WindowsSkuCombo -State $localState
             Update-WindowsArchCombo -State $localState
 
@@ -435,8 +1164,16 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select AppList.json File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select Winget AppList File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
             if ($selectedPath) { $localState.Controls.txtAppListJsonPath.Text = $selectedPath }
+        })
+
+    $State.Controls.btnBrowseUserAppListPath.Add_Click({
+            param($eventSource, $routedEventArgs)
+            $window = [System.Windows.Window]::GetWindow($eventSource)
+            $localState = $window.Tag
+            $selectedPath = Invoke-BrowseAction -Type 'OpenFile' -Title "Select BYO AppList File" -Filter "JSON files (*.json)|*.json" -AllowNewFile
+            if ($selectedPath) { $localState.Controls.txtUserAppListPath.Text = $selectedPath }
         })
 
     $State.Controls.btnBrowseAppSource.Add_Click({
@@ -466,17 +1203,23 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $initialDir = $localState.Controls.txtApplicationPath.Text
+            # Default the save dialog to the configured BYO app list path.
+            $currentPath = $localState.Controls.txtUserAppListPath.Text
+            $initialDir = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Parent } else { $localState.Controls.txtApplicationPath.Text }
             if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
+            $fileName = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Leaf } else { "UserAppList.json" }
             
             $savePath = Invoke-BrowseAction -Type 'SaveFile' `
-                -Title "Save Application List" `
+                -Title "Save BYO App List" `
                 -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
                 -InitialDirectory $initialDir `
-                -FileName "UserAppList.json" `
+                -FileName $fileName `
                 -DefaultExt ".json"
 
-            if ($savePath) { Save-BYOApplicationList -Path $savePath -State $localState }
+            if ($savePath) {
+                $localState.Controls.txtUserAppListPath.Text = $savePath
+                Save-BYOApplicationList -Path $savePath -State $localState
+            }
         })
 
     $State.Controls.btnLoadBYOApplications.Add_Click({
@@ -484,15 +1227,18 @@ function Register-EventHandlers {
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
 
-            $initialDir = $localState.Controls.txtApplicationPath.Text
+            # Default the import dialog to the configured BYO app list path.
+            $currentPath = $localState.Controls.txtUserAppListPath.Text
+            $initialDir = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Parent } else { $localState.Controls.txtApplicationPath.Text }
             if ([string]::IsNullOrWhiteSpace($initialDir) -or -not (Test-Path $initialDir)) { $initialDir = $localState.FFUDevelopmentPath }
             
             $loadPath = Invoke-BrowseAction -Type 'OpenFile' `
-                -Title "Import Application List" `
+                -Title "Import BYO App List" `
                 -Filter "JSON files (*.json)|*.json|All files (*.*)|*.*" `
                 -InitialDirectory $initialDir
 
-            if ($loadPath) { 
+            if ($loadPath) {
+                $localState.Controls.txtUserAppListPath.Text = $loadPath
                 Import-BYOApplicationList -Path $loadPath -State $localState
                 Update-CopyButtonState -State $localState
             }

@@ -9,7 +9,7 @@ parent: UI Overview
 ---
 # Build
 
-![FFU Builder Build tab](image/build/1764362222174.png "FFU Builder Build tab")
+![1776379303045](image/build/1776379303045.png)
 
 The Build tab is where the magic happens
 
@@ -79,25 +79,9 @@ Result: `Win11_24h2_Pro_Nov2025.ffu`
 
 The FFU Capture Location sets the `-FFUCaptureLocation` parameter that determines where completed `.ffu` images are written. By default it points to `$FFUDevelopmentPath\FFU`, and the build script creates the folder automatically if it does not already exist.
 
-When apps are installed in a VM, the host converts this folder into a temporary SMB share using the **Share Name** and **Username** fields. The capture WinPE environment maps that share as drive `W:` and streams the captured image directly into this folder. When the build finishes, the share and local account are removed, but the FFU files remain unless a cleanup option deletes them.
+When apps are installed in a VM, the build still uses the VM for application installs and sysprep, but the actual FFU capture now happens on the host after the VHDX is optimized and remounted. That means completed images are written directly to this folder without creating a temporary SMB share, temporary local account, or capture ISO.
 
 Choose a path on fast storage with plenty of free space—the directory must be local to the host running `BuildFFUVM.ps1`, and large captures can easily exceed 25–30 GB. This location also feeds other options such as **Copy Additional FFU Files**, **Build USB Drive**, and **Remove FFU**, so keeping all finished images here keeps those workflows simple.
-
-## Share Name
-
-The Share Name sets the `-ShareName` parameter that defines the name of the temporary SMB share created during the FFU capture process. The default is `FFUCaptureShare`.
-
-During the build, the host creates an SMB share that points to the **FFU Capture Location** and grants access to the temporary local user account defined in **Username**. The capture WinPE environment maps this share as drive `W:` using `net use` and streams the captured FFU image directly to it.
-
-When the build completes, the share is automatically removed along with the temporary user account, leaving only the captured FFU files behind in the FFU Capture Location.
-
-## Username
-
-The Username field sets the `-Username` parameter that `BuildFFUVM.ps1` uses when creating the temporary SMB share user. The value becomes a local standard user account that is granted Full Control on the **FFU Capture Location** share (default C:\FFUDevelopment\FFU) so the capture WinPE session can copy the FFU over `net use `. The default `ffu_user` account name works for most scenarios, but you can supply any other local account name that meets your organization's policies.
-
-When the build starts, the script ensures the account exists, rotates its password to a randomly generated GUID, and grants it access to the share. The Capture WinPE environment maps drive `W:` with those credentials, then writes the captured image directly into the FFU Capture Location.
-
-After the build finishes, the share is removed and the temporary account is deleted, leaving only the FFU files stored in the capture folder.
 
 ## Threads
 
@@ -137,9 +121,402 @@ Controls the `-BitsPriority` parameter, which determines the priority level for 
 
 If you want faster downloads, change the priority to Foreground. Normal priority will significantly slow down downloads since BITS treats non-Foreground downloads as synchronous and queues each download. This means multiple driver or winget application downloads will go much slower than using Foreground. Normal is default as per Microsoft best practice guidance for using BITS.
 
-## Build USB Drive
+## General Build Options Expander
 
-The following sub-options control how the USB drive is created
+This expander groups the core build behaviors that affect how the FFU is created, optimized, cached, and prepared for deployment.
+
+### Compact OS
+
+Controls the `-CompactOS` parameter. When checked, the Windows image is applied using compressed files. The default is **checked**.
+
+#### How It Works
+
+When enabled, the build script uses the `-Compact` switch with `Expand-WindowsImage` when applying the Windows image to the OS partition. This compresses Windows system files using Compact OS compression, which reduces the disk footprint of the operating system. On an x64 image, space savings is ~3.5-4GB.
+
+#### Benefits
+
+| Benefit                         | Description                                                                                          |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Reduced Disk Space**    | Windows files are stored in a compressed state, saving several gigabytes of storage                  |
+| **Smaller FFU Size**      | The captured FFU file is smaller because the OS partition contains compressed files                  |
+| **Faster Deployment**     | Smaller FFU files transfer more quickly to USB drives and deploy faster to target devices            |
+| **No Performance Impact** | Modern CPUs decompress files faster than they can be read from storage, so performance is maintained |
+
+#### When to Disable
+
+You may want to disable Compact OS in the following scenarios:
+
+- **Windows Server builds**: The script automatically disables Compact OS for Windows Server operating systems because the Windows Overlay Filter (wof.sys) is not included in Server SKUs
+- **Troubleshooting**: If you experience issues with specific applications that are incompatible with compressed files
+- **Maximum performance requirements**: In rare cases where every CPU cycle matters
+
+{: .note-title}
+
+> Note
+>
+> Compact OS is automatically disabled when building Windows Server images, regardless of this setting. The script detects Server operating systems and applies the Windows image without compression.
+
+### Update ADK
+
+Controls the `-UpdateADK` parameter. When checked, the script checks for and installs or updates to the latest Windows ADK and WinPE add-on before starting the build. The default is **checked**.
+
+#### How It Works
+
+When enabled, the build process performs the following checks before starting:
+
+1. **Version Check**: Queries the [Microsoft ADK installation page](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install) to determine the latest available ADK version
+2. **Compare Versions**: Compares the installed ADK and WinPE add-on versions (if present) against the latest available version
+3. **Update if Needed**: If an older version is detected:
+   - Uninstalls the existing Windows ADK
+   - Uninstalls the existing WinPE add-on
+   - Downloads and installs the latest Windows ADK with Deployment Tools feature
+   - Downloads and installs the latest WinPE add-on
+
+#### Features Installed
+
+When installing or updating the ADK, the following features are included:
+
+| Component                          | Feature ID                                     | Description                                                     |
+| ---------------------------------- | ---------------------------------------------- | --------------------------------------------------------------- |
+| **Windows Deployment Tools** | `OptionId.DeploymentTools`                   | Includes DISM, Oscdimg, and other deployment-related tools      |
+| **WinPE Environment**        | `OptionId.WindowsPreinstallationEnvironment` | Windows Preinstallation Environment used for capture and deploy |
+
+#### Installation Location
+
+The ADK is installed to the default location: `C:\Program Files (x86)\Windows Kits\10`
+
+#### When to Disable
+
+You may want to disable Update ADK in the following scenarios:
+
+- **Offline or air-gapped environments**: When internet access is not available to download the latest ADK
+- **Controlled ADK versions**: When you need to maintain a specific ADK version for compatibility or compliance reasons
+- **Faster builds**: When you have already verified you are running the latest ADK version and want to skip the version check
+
+{: .warning-title}
+
+> Warning
+>
+> If Update ADK is disabled and the Windows ADK or WinPE add-on is not installed, the build will fail. Ensure you have manually installed the required components before disabling this option.
+
+#### Manual ADK Installation
+
+If you prefer to manually install the ADK, visit:
+
+[Download and install the Windows ADK](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
+
+You must install both:
+
+- Windows Assessment and Deployment Kit (with Deployment Tools feature)
+- Windows PE add-on for the Windows ADK
+
+### Optimize
+
+Controls the `-Optimize` parameter. When enabled, FFU Builder runs the Windows ADK version of DISM to optimize the captured `.ffu` file:
+
+- `DISM /Optimize-FFU /ImageFile:<path-to-ffu>`
+
+This post-processing step typically takes a few minutes and is intended to make FFU images faster to deploy and easier to deploy to differently-sized disks (by allowing the Windows partition to expand or shrink during apply).
+
+**Default:** Enabled (`-Optimize $true`)
+
+#### When to Disable
+
+You may want to disable Optimize (`-Optimize $false`) if you are troubleshooting, or if you want to skip the extra post-processing time.
+
+{: .warning-title}
+
+> Warning
+>
+> If you plan to deploy the same FFU to devices with different storage sizes (especially smaller disks), keep `-Optimize` enabled. Non-optimized FFUs are more likely to require additional partition management during deployment.
+
+{: .note-title}
+
+> Note
+>
+> FFU Builder also performs a separate “optimize VHDX before capture” step. That VHDX optimization is independent of `-Optimize`, so you may still see “Optimizing VHDX before capture…” even when `-Optimize` is disabled.
+
+### Allow VHDX Caching
+
+Controls the `-AllowVHDXCaching` parameter. When enabled, FFU Builder caches the base VHDX it creates in `$FFUDevelopmentPath\VHDXCache` and writes a matching `*_config.json` file alongside it. On later builds, if a cached VHDX exists that matches your selected Windows settings and update set, the script reuses it to avoid re-applying the base image and integrating updates again.
+
+**Default:** Disabled (`-AllowVHDXCaching $false`)
+
+#### Cache Matching
+
+A cached VHDX is reused only when the cache metadata matches your current build inputs, including:
+
+- Windows release, version, and SKU
+- Logical sector size (512 vs 4096)
+- Optional features selection
+- The exact set of update payload file names downloaded for that run (SSU/CU/.NET/etc.)
+
+#### Disk Usage and Cleanup
+
+VHDX caching trades disk space for speed. The `VHDXCache` folder can grow over time as you build different combinations. Periodically check the folder and remove old cached vhdx and config json files as necessary.
+
+{: .note-title}
+
+> Note
+>
+> To force a full rebuild, delete the contents of `$FFUDevelopmentPath\VHDXCache` (or disable **Allow VHDX Caching**) and run the build again.
+
+### Create Deployment Media
+
+Controls the `-CreateDeploymentMedia` parameter.
+
+When enabled, FFU Builder creates WinPE deployment media that is used to deploy an FFU image to a physical device. This media contains the WinPE environment and deployment scripts needed to boot a target machine and apply the FFU image.
+
+The deployment media is saved as an ISO file at `$FFUDevelopmentPath\WinPE_FFU_Deploy_x64.iso` (or `WinPE_FFU_Deploy_arm64.iso` for ARM64 builds). This ISO can then be used with the **Build USB Drive** option to create bootable USB media for physical deployments.
+
+**Default:** Enabled (`-CreateDeploymentMedia $true`)
+
+{: .note-title}
+
+> Note
+>
+> If you only need to capture FFUs from VMs and do not plan to deploy to physical devices, you can disable this option to save time during the build process. However, most scenarios require deployment media for the final step of applying the FFU to target hardware.
+
+{: .tip-title}
+
+> Tip
+>
+> If you just need to re-create deployment media, you can use the `Create-PEMedia.ps1` script to regenerate the deploy ISO without running a full build.
+
+### Verbose
+
+Controls the `-Verbose` common parameter. When checked, enables detailed verbose output during the build process. The default is **unchecked**.
+
+In prior builds it was necessary to enable `-verbose` output to track in real-time the build process if you didn't have `cmtrace.exe` or some other log-monitoring tool. With the UI, you can now watch the build in real-time using the monitor tab. Enabling verbose shouldn't be necessary but is available for those who wish to use it.
+
+## Unattend.xml Options Expander
+
+Use the **Unattend.xml Options** expander to choose how unattend content is staged and which source XML file FFU Builder should use for x64 and arm64 builds.
+
+### x64 Unattend File Path
+
+Use **x64 Unattend File Path** to browse to the source XML file for x64 builds. The default path is `.\FFUDevelopment\unattend\unattend_x64.xml`.
+
+### arm64 Unattend File Path
+
+Use **arm64 Unattend File Path** to browse to the source XML file for arm64 builds. The default path is `.\FFUDevelopment\unattend\unattend_arm64.xml`.
+
+### Inject Unattend.xml
+
+Controls the `-InjectUnattend` parameter. When checked, stages the XML file selected for the current architecture in **Unattend.xml Options** into the Apps ISO so it's baked into the FFU during the VM build process. The default is **unchecked**.
+
+This option is used only when **Install Apps** is checked.
+
+`Copy Unattend.xml` and `Inject Unattend.xml` are mutually exclusive. Select only one.
+
+#### How It Works
+
+When enabled, the build process:
+
+1. Uses the x64 or arm64 source file selected in **Unattend.xml Options** for the current build architecture
+2. Creates an `Unattend` folder inside `.\FFUDevelopment\Apps` if it doesn't exist
+3. Copies that file to `.\FFUDevelopment\Apps\Unattend\Unattend.xml`
+4. Includes the unattend file in the Apps ISO, making it available to sysprep during the VM build
+
+The unattend file is then used by sysprep during the specialize phase and/or other OOBE phases when the FFU is deployed.
+
+#### Creating Your Unattend Files
+
+You can keep the default architecture-specific files in the `.\FFUDevelopment\unattend` folder or browse to another XML file in the UI:
+
+| File                         | Description                         |
+| ---------------------------- | ----------------------------------- |
+| **unattend_x64.xml**   | Unattend file used for x64 builds   |
+| **unattend_arm64.xml** | Unattend file used for arm64 builds |
+
+{: .warning-title}
+
+> Important
+>
+> The default paths use the architecture suffix file names shown above. FFU Builder still renames the selected file to `Unattend.xml` when it stages it into the Apps folder.
+
+#### When to Use This Option
+
+This option is primarily intended for scenarios where:
+
+* You are **not using the USB drive** to deploy the FFU and use other deployment methods (e.g., network deployment, disk cloning, etc)
+* You want the unattend configuration **baked directly into the FFU** rather than applied at deployment time
+
+#### Limitations
+
+| Limitation                                                              | Description                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No prefixes.txt, SerialComputerNames.csv, or %serial% support** | Unlike**Copy Unattend.xml**, this method does not support `prefixes.txt`, `SerialComputerNames.csv`, or the `%serial%` variable for deployment-time device naming |
+| **Fixed configuration**                                           | The unattend settings are baked into the FFU at build time and cannot be changed at deployment time                                                                           |
+| **Requires VM to be built**                                       | This option only works when**Install Apps** is `$true` because the unattend file is included in the Apps ISO                                                          |
+
+{: .note-title}
+
+> Note
+>
+> Most users should continue using the **Copy Unattend** option via the USB drive, which provides more flexibility including support for `prefixes.txt`, `SerialComputerNames.csv`, and `%serial%` device naming. Use **Inject Unattend.xml** only when you won't be using the USB drive for deployment.
+
+{: .tip-title}
+
+> Tip
+>
+> If you're using this option, you can disable **Build Deploy ISO** to save time during the build process since the deployment ISO is not needed when you're not using the USB drive method.
+
+### Copy Unattend.xml
+
+Controls the `-CopyUnattend` parameter. When checked, stages the XML file selected for the current architecture in **Unattend.xml Options** to an `Unattend` folder on the Deployment partition of the USB drive. The default is **unchecked**.
+
+Use this option when you plan to build deployment USB media.
+
+When enabled, the build process copies:
+
+- The selected x64 or arm64 unattend XML file -> renamed to **Unattend.xml** on the USB drive
+- **prefixes.txt** -> created from the **Device Naming** prefixes list when that mode is selected
+- **SerialComputerNames.csv** -> created from the **Device Naming** serial mapping list when that mode is selected
+
+If you keep the default file paths in place, FFU Builder uses `unattend_x64.xml` for x64 builds and `unattend_arm64.xml` for arm64 builds.
+
+During deployment, `ApplyFFU.ps1` applies `Unattend.xml` whenever it is present. Device naming only happens when the **Device Naming** setting requires it, or when older media still uses the legacy prompt-based workflow.
+
+See **Device Naming Expander** below for the available computer-name modes and naming-file behavior.
+
+## Device Naming Expander
+
+Use the **Device Naming** expander to decide whether `ComputerName` should be set at deployment time when unattend is applied. There are some major benefits to doing this:
+
+1. Total deployment time is reduced if naming is set at FFU deployment time since there is no additional reboot done during OOBE.
+2. Reduces the need for multiple provisioning packages or autopilot profiles. This means you can use a single PPKG or autopilot profile.
+
+### No Device Name
+
+This is the default radio selection in the UI.
+
+- If you leave device naming untouched, FFU Builder does not write `DeviceNamingMode` to the generated config. This preserves the script's `Legacy` default, so an existing `FFUDevelopment\Unattend\prefixes.txt` file is still copied to deployment media when present.
+- If you explicitly select this option, FFU Builder sets `DeviceNamingMode = None`. The unattend file is still applied, but Windows generates a random computer name instead of forcing a prompt or a fixed name.
+
+The active `unattend_*.xml` files in `FFUDevelopment\Unattend` use `<ComputerName>*</ComputerName>` in the current sample files.
+
+### Prompt for Device Name
+
+Use this option when you want the technician to enter the computer name during deployment.
+
+- FFU Builder sets `DeviceNamingMode = Prompt`.
+- This option requires **Copy Unattend.xml**.
+- The source `unattend_*.xml` files can stay at `<ComputerName>*</ComputerName>`.
+- During the build, FFU Builder rewrites only the staged deployment copy of `Unattend.xml` to the legacy prompt placeholder that `ApplyFFU.ps1` already recognizes.
+- **Inject Unattend.xml** is not supported with this option.
+
+### Specify Device Name
+
+Use this option when you want a static device name or a template such as `Comp-%serial%`.
+
+- FFU Builder sets `DeviceNamingMode = Template`.
+- With **Copy Unattend.xml**, `%serial%` is resolved during deployment in PE.
+- With **Inject Unattend.xml**, only static names are supported.
+- **Copy Unattend.xml** and **Inject Unattend.xml** are mutually exclusive. Select only one.
+
+### Specify a list of Prefixes
+
+This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line in the multiline prefixes box. If there is a single prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one. The selected prefix is combined with the device serial number to create the computer name.
+
+- FFU Builder sets `DeviceNamingMode = Prefixes`.
+
+For example, with a prefix of `CORP-` and a serial number of `ABC123`, the resulting computer name would be `CORP-ABC123` (truncated to 15 characters if necessary).
+
+Sample `prefixes.txt` content:
+
+```plaintext
+CORP-
+STORE-
+KIOSK-
+```
+
+{: .note-title}
+
+> Note
+>
+> If the technician skips prefix selection when multiple prefixes are available, `ApplyFFU.ps1` leaves the existing unattend `ComputerName` value unchanged. With the current unattend samples set to `<ComputerName>*</ComputerName>`, Windows falls back to its default random computer-name behavior, typically resulting in a name such as `WIN-*`.
+
+### Prefixes File Path
+
+Use **Prefixes File Path** to point the UI at the source text file for the prefixes list. The file can use any name. When you browse to a prefixes file in the UI, or when a saved configuration references a valid prefixes path, the UI loads that file and populates the multiline prefixes box from its contents.
+
+### Save Prefixes
+
+Use **Save Prefixes** to write the current multiline prefixes list back to the file specified in **Prefixes File Path**.
+
+### Specify Serial to Device Name Mapping
+
+This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use `SerialNumber,ComputerName` as the header row, then add one row per device. During deployment, `ApplyFFU.ps1` compares the current BIOS serial number to the `SerialNumber` column and uses the matching `ComputerName` value.
+
+- FFU Builder sets `DeviceNamingMode = SerialComputerNames`.
+
+Sample `SerialComputerNames.csv` content:
+
+```plaintext
+SerialNumber,ComputerName
+ABC12345,CORP-001
+DEF67890,KIOSK-010
+XYZ24680,STORE-015
+```
+
+- This option requires **Copy Unattend.xml**.
+- **Inject Unattend.xml** is not supported with this option.
+- If no matching serial number is found during deployment, `ApplyFFU.ps1` falls back to a random `FFU-*` computer name so setup can finish.
+
+{: .note-title}
+
+> Note
+>
+> If `prefixes.txt` and `SerialComputerNames.csv` are both staged manually on the same deployment media, `ApplyFFU.ps1` checks `prefixes.txt` first. FFU Builder avoids this conflict by only staging the naming file for the selected device-naming mode.
+
+### Serial Computer Names CSV Mapping File Path
+
+Use **Serial Computer Names CSV Mapping File Path** to point the UI at the source CSV file for the serial-to-device-name mapping. The file can use any name. When you browse to a mapping file in the UI, or when a saved configuration references a valid CSV path, the UI loads that file and populates the multiline CSV box from its contents.
+
+### Save Serial Mapping
+
+Use **Save Serial Mapping** to write the current CSV content back to the file specified in **Serial Computer Names CSV Mapping File Path**.
+
+### Deployment Prompt Compatibility
+
+Older deployment media that already has an unattend file with `ComputerName` set to the legacy placeholder value and no `prefixes.txt` file will still prompt for a device name during deployment.
+
+{: .warning-title}
+
+> Warning
+>
+> If using a provisioning package or autopilot json file, DO NOT specify a name in either of these. They will overwrite the name you have specified in the unattend.xml.
+
+### Creating Your Unattend Files
+
+The `.\FFUDevelopment\Unattend` folder includes sample files you can customize:
+
+| File                                    | Description                                |
+| --------------------------------------- | ------------------------------------------ |
+| **SampleUnattend_x64.xml**        | Example unattend file for x64 systems      |
+| **unattend_x64.xml**              | Active unattend file used for x64 builds   |
+| **unattend_arm64.xml**            | Active unattend file used for arm64 builds |
+| **SamplePrefixes.txt**            | Example prefixes file for device naming    |
+| **SampleSerialComputerNames.csv** | Example serial-to-device-name CSV file     |
+
+Copy and customize the sample files to create your own `unattend_x64.xml`, `unattend_arm64.xml`, `prefixes.txt`, and `SerialComputerNames.csv` files.
+
+{: .note-title}
+
+> Note
+>
+> The unattend file must contain a `<ComputerName>` element in the `Microsoft-Windows-Shell-Setup` component for device naming to work. See the sample files for the correct structure.
+
+## Build USB Drive Options Expander
+
+This expander groups the settings used to create deployment USB drives after the FFU and deployment media are ready.
+
+### Build USB Drive
+
+Controls the `-BuildUSBDrive` parameter. When checked, FFU Builder partitions and formats selected USB drives and copies the captured FFU plus the enabled deployment assets to them. The default is **unchecked**.
+
+The remaining settings in this expander apply only when **Build USB Drive** is enabled.
 
 ### Allow External Hard Disk Media
 
@@ -200,78 +577,15 @@ Use the **Select All** checkbox in the column header to quickly select or desele
 
 ### Copy Autopilot Profile
 
-Controls the `-CopyAutopilot` parameter. When checked, copies the contents of the `.\FFUDevelopment\Autopilot` folder to the `Autopilot` folder on the Deployment partition of the USB drive. The default is **unchecked**.
+Controls the `-CopyAutopilot` parameter. When checked, copies the contents of `.\FFUDevelopment\Autopilot` to the `Autopilot` folder on the Deployment partition of the USB drive. The default is **unchecked**.
 
 This option is only available when **Build USB Drive** is checked.
 
 This leverages the Autopilot for existing devices json file. It's not recommended to use this method any longer as devices enrolled via this method are enrolled as personal instead of corporate.
 
-### Copy Unattend.xml
-
-Controls the `-CopyUnattend` parameter. When checked, copies the architecture-appropriate unattend XML file from `.\FFUDevelopment\Unattend` to an `Unattend` folder on the Deployment partition of the USB drive. The default is **unchecked**.
-
-This option is only available when **Build USB Drive** is checked.
-
-When enabled, the build process copies:
-
-- **unattend_x64.xml** (for x64 builds) or **unattend_arm64.xml** (for arm64 builds) → renamed to **Unattend.xml** on the USB drive
-- **prefixes.txt** (if present) → copied alongside the unattend file
-
-During deployment, `ApplyFFU.ps1` detects the `Unattend` folder and uses these files to customize the device name and apply other Windows settings during OOBE.
-
-#### Device Naming
-
-Device naming can be done from PE. The way this works is by leveraging an unattend.xml file to either take input from the user at imaging time or read a list of prefix values and append the serial number of the device. There are some major benefits to doing this:
-
-1. Total deployment time is reduced if naming is set at FFU deployment time since there is no additional reboot done during OOBE.
-2. Reduces the need for multiple provisioning packages or autopilot profiles. This means you can use a single PPKG or autopilot profile.
-
-#### Prompt for Device Name
-
-If you want to be prompted for the device name, simply check **Copy Unattend.xml.** This tells the build script to copy the appropriate architecture unattend_arch.xml file from the `C:\FFUDevelopment\Unattend` folder to the `.\unattend` folder on the deploy partition of the USB drive.
-
-#### Device Naming with prefixes.txt
-
-If a `prefixes.txt` file exists in the `Unattend` folder and there are multiple prefixes in the file, the deployment script prompts the technician to select a prefix from the file. The prefix is combined with the device's serial number to create the computer name. If there is a single prefix, the technician is not prompted and the script will automatically select that prefix.
-
-For example, with a prefix of `CORP-` and a serial number of `ABC123`, the resulting computer name would be `CORP-ABC123` (truncated to 15 characters if necessary).
-
-Sample `prefixes.txt` content:
-
-```plaintext
-CORP-
-STORE-
-KIOSK-
-```
-
-{: .warning-title}
-
-> Warning
->
-> If using a provisioning package or autopilot json file, DO NOT specify a name in either of these. They will overwrite the name you have specified in the unattend.xml.
-
-#### Creating Your Unattend Files
-
-The `.\FFUDevelopment\Unattend` folder includes sample files you can customize:
-
-| File                             | Description                                |
-| -------------------------------- | ------------------------------------------ |
-| **SampleUnattend_x64.xml** | Example unattend file for x64 systems      |
-| **unattend_x64.xml**       | Active unattend file used for x64 builds   |
-| **unattend_arm64.xml**     | Active unattend file used for arm64 builds |
-| **SamplePrefixes.txt**     | Example prefixes file for device naming    |
-
-Copy and customize the sample files to create your own `unattend_x64.xml`, `unattend_arm64.xml`, and `prefixes.txt` files.
-
-{: .note-title}
-
-> Note
->
-> The unattend file must contain a `<ComputerName>` element in the `Microsoft-Windows-Shell-Setup` component for device naming to work. See the sample files for the correct structure.
-
 ### Copy Provisioning Package
 
-Controls the `-CopyPPKG` parameter. When checked, copies the contents of the `.\FFUDevelopment\PPKG` folder to the `PPKG` folder on the Deployment partition of the USB drive. The default is **unchecked**.
+Controls the `-CopyPPKG` parameter. When checked, copies the contents of `.\FFUDevelopment\PPKG` to the `PPKG` folder on the Deployment partition of the USB drive. The default is **unchecked**.
 
 This option is only available when **Build USB Drive** is checked.
 
@@ -335,268 +649,23 @@ This option is only available when **Build USB Drive** is checked.
 
 When building USB drives, the script processes multiple drives concurrently to speed up imaging. This setting controls how many drives are formatted and copied to simultaneously.
 
-## Compact OS
+## Post-Build Cleanup Expander
 
-Controls the `-CompactOS` parameter. When checked, the Windows image is applied using compressed files. The default is **checked**.
+This expander groups the cleanup settings that run after a successful build completes.
 
-### How It Works
-
-When enabled, the build script uses the `-Compact` switch with `Expand-WindowsImage` when applying the Windows image to the OS partition. This compresses Windows system files using Compact OS compression, which reduces the disk footprint of the operating system. On an x64 image, space savings is ~3.5-4GB.
-
-### Benefits
-
-| Benefit                         | Description                                                                                          |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Reduced Disk Space**    | Windows files are stored in a compressed state, saving several gigabytes of storage                  |
-| **Smaller FFU Size**      | The captured FFU file is smaller because the OS partition contains compressed files                  |
-| **Faster Deployment**     | Smaller FFU files transfer more quickly to USB drives and deploy faster to target devices            |
-| **No Performance Impact** | Modern CPUs decompress files faster than they can be read from storage, so performance is maintained |
-
-### When to Disable
-
-You may want to disable Compact OS in the following scenarios:
-
-- **Windows Server builds**: The script automatically disables Compact OS for Windows Server operating systems because the Windows Overlay Filter (wof.sys) is not included in Server SKUs
-- **Troubleshooting**: If you experience issues with specific applications that are incompatible with compressed files
-- **Maximum performance requirements**: In rare cases where every CPU cycle matters
-
-{: .note-title}
-
-> Note
->
-> Compact OS is automatically disabled when building Windows Server images, regardless of this setting. The script detects Server operating systems and applies the Windows image without compression.
-
-## Update ADK
-
-Controls the `-UpdateADK` parameter. When checked, the script checks for and installs or updates to the latest Windows ADK and WinPE add-on before starting the build. The default is **checked**.
-
-### How It Works
-
-When enabled, the build process performs the following checks before starting:
-
-1. **Version Check**: Queries the [Microsoft ADK installation page](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install) to determine the latest available ADK version
-2. **Compare Versions**: Compares the installed ADK and WinPE add-on versions (if present) against the latest available version
-3. **Update if Needed**: If an older version is detected:
-   - Uninstalls the existing Windows ADK
-   - Uninstalls the existing WinPE add-on
-   - Downloads and installs the latest Windows ADK with Deployment Tools feature
-   - Downloads and installs the latest WinPE add-on
-
-### Features Installed
-
-When installing or updating the ADK, the following features are included:
-
-| Component                          | Feature ID                                     | Description                                                     |
-| ---------------------------------- | ---------------------------------------------- | --------------------------------------------------------------- |
-| **Windows Deployment Tools** | `OptionId.DeploymentTools`                   | Includes DISM, Oscdimg, and other deployment-related tools      |
-| **WinPE Environment**        | `OptionId.WindowsPreinstallationEnvironment` | Windows Preinstallation Environment used for capture and deploy |
-
-### Installation Location
-
-The ADK is installed to the default location: `C:\Program Files (x86)\Windows Kits\10`
-
-### When to Disable
-
-You may want to disable Update ADK in the following scenarios:
-
-- **Offline or air-gapped environments**: When internet access is not available to download the latest ADK
-- **Controlled ADK versions**: When you need to maintain a specific ADK version for compatibility or compliance reasons
-- **Faster builds**: When you have already verified you are running the latest ADK version and want to skip the version check
-
-{: .warning-title}
-
-> Warning
->
-> If Update ADK is disabled and the Windows ADK or WinPE add-on is not installed, the build will fail. Ensure you have manually installed the required components before disabling this option.
-
-### Manual ADK Installation
-
-If you prefer to manually install the ADK, visit:
-
-[Download and install the Windows ADK](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
-
-You must install both:
-
-- Windows Assessment and Deployment Kit (with Deployment Tools feature)
-- Windows PE add-on for the Windows ADK
-
-## Optimize
-
-Controls the `-Optimize` parameter. When enabled, FFU Builder runs the Windows ADK version of DISM to optimize the captured `.ffu` file:
-
-- `DISM /Optimize-FFU /ImageFile:<path-to-ffu>`
-
-This post-processing step typically takes a few minutes and is intended to make FFU images faster to deploy and easier to deploy to differently-sized disks (by allowing the Windows partition to expand or shrink during apply).
-
-**Default:** Enabled (`-Optimize $true`)
-
-### When to Disable
-
-You may want to disable Optimize (`-Optimize $false`) if you are troubleshooting, or if you want to skip the extra post-processing time.
-
-{: .warning-title}
-
-> Warning
->
-> If you plan to deploy the same FFU to devices with different storage sizes (especially smaller disks), keep `-Optimize` enabled. Non-optimized FFUs are more likely to require additional partition management during deployment.
-
-{: .note-title}
-
-> Note
->
-> FFU Builder also performs a separate “optimize VHDX before capture” step. That VHDX optimization is independent of `-Optimize`, so you may still see “Optimizing VHDX before capture…” even when `-Optimize` is disabled.
-
-## Allow VHDX Caching
-
-Controls the `-AllowVHDXCaching` parameter. When enabled, FFU Builder caches the base VHDX it creates in `$FFUDevelopmentPath\VHDXCache` and writes a matching `*_config.json` file alongside it. On later builds, if a cached VHDX exists that matches your selected Windows settings and update set, the script reuses it to avoid re-applying the base image and integrating updates again.
-
-**Default:** Disabled (`-AllowVHDXCaching $false`)
-
-### Cache Matching
-
-A cached VHDX is reused only when the cache metadata matches your current build inputs, including:
-
-- Windows release, version, and SKU
-- Logical sector size (512 vs 4096)
-- Optional features selection
-- The exact set of update payload file names downloaded for that run (SSU/CU/.NET/etc.)
-
-### Disk Usage and Cleanup
-
-VHDX caching trades disk space for speed. The `VHDXCache` folder can grow over time as you build different combinations. Periodically check the folder and remove old cached vhdx and config json files as necessary.
-
-{: .note-title}
-
-> Note
->
-> To force a full rebuild, delete the contents of `$FFUDevelopmentPath\VHDXCache` (or disable **Allow VHDX Caching**) and run the build again.
-
-## Create Capture Media
-
-Controls the `-CreateCaptureMedia` parameter.
-
-When enabled, FFU Builder creates WinPE capture media that is used during VM-based builds (when apps are installed in the VM). FFU Builder attaches this media to the VM and adjusts boot order so the VM can reboot into WinPE and automatically capture the FFU to your **FFU Capture Location**.
-
-The capture media uses the parameter values from `VMHostIPAddress`, `ShareName`, `UserName`, and `CustomFFUNameTemplate` and inserts them into `CaptureFFU.ps1` which is what is responsible for capturing the FFU from the guest VM to the Host.
-
-**Default:** Enabled (`-CreateCaptureMedia $true`)
-
-{: .note-title}
-
-> Note
->
-> This option is only relevant when **Install Apps** is enabled. If **Install Apps** is enabled, the build forces `-CreateCaptureMedia` to `$true` because capture media is required to capture an FFU from the VM.
-
-{: .tip-title}
-
-> Tip
->
-> If you just need to re-create media, you can use the `Create-PEMedia.ps1` script to regenerate the capture or deploy ISO using `Create-PEMedia.ps1 -Capture $true` or `CreatePEMedia.ps1 -Deploy $true`.
-
-## Create Deployment Media
-
-Controls the `-CreateDeploymentMedia` parameter.
-
-When enabled, FFU Builder creates WinPE deployment media that is used to deploy an FFU image to a physical device. This media contains the WinPE environment and deployment scripts needed to boot a target machine and apply the FFU image.
-
-The deployment media is saved as an ISO file at `$FFUDevelopmentPath\WinPE_FFU_Deploy_x64.iso` (or `WinPE_FFU_Deploy_arm64.iso` for ARM64 builds). This ISO can then be used with the **Build USB Drive** option to create bootable USB media for physical deployments.
-
-**Default:** Enabled (`-CreateDeploymentMedia $true`)
-
-{: .note-title}
-
-> Note
->
-> If you only need to capture FFUs from VMs and do not plan to deploy to physical devices, you can disable this option to save time during the build process. However, most scenarios require deployment media for the final step of applying the FFU to target hardware.
-
-{: .tip-title}
-
-> Tip
->
-> If you just need to re-create media, you can use the `Create-PEMedia.ps1` script to regenerate the capture or deploy ISO using `Create-PEMedia.ps1 -Capture $true` or `CreatePEMedia.ps1 -Deploy $true`.
-
-## Inject Unattend.xml
-
-Controls the `-InjectUnattend` parameter. When checked, copies the architecture-specific unattend XML file from `.\FFUDevelopment\unattend` into the Apps ISO so it's baked into the FFU during the VM build process. The default is **unchecked**.
-
-This option is only available when **Install Apps** is checked.
-
-### How It Works
-
-When enabled, the build process:
-
-1. Determines the correct unattend file based on the target architecture:
-   * **unattend_x64.xml** for x64 builds
-   * **unattend_arm64.xml** for arm64 builds
-2. Creates an `Unattend` folder inside `.\FFUDevelopment\Apps` if it doesn't exist
-3. Copies the architecture-specific unattend file to `.\FFUDevelopment\Apps\Unattend\Unattend.xml`
-4. Includes the unattend file in the Apps ISO, making it available to sysprep during the VM build
-
-The unattend file is then used by sysprep during the specialize phase and/or other OOBE phases when the FFU is deployed.
-
-### Creating Your Unattend Files
-
-Modify the architecture-specific unattend file in the `.\FFUDevelopment\unattend` folder:
-
-| File                         | Description                         |
-| ---------------------------- | ----------------------------------- |
-| **unattend_x64.xml**   | Unattend file used for x64 builds   |
-| **unattend_arm64.xml** | Unattend file used for arm64 builds |
-
-{: .warning-title}
-
-> Important
->
-> Keep the file names with the architecture suffix (e.g., unattend_x64.xml). The script handles renaming the file to `Unattend.xml` when copying it to the Apps folder.
-
-### When to Use This Option
-
-This option is primarily intended for scenarios where:
-
-* You are **not using the USB drive** to deploy the FFU and use other deployment methods (e.g., network deployment, disk cloning, etc)
-* You want the unattend configuration **baked directly into the FFU** rather than applied at deployment time
-
-### Limitations
-
-| Limitation                        | Description                                                                                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No prefixes.txt support** | Unlike the**Copy Unattend** option for USB drives, this method does not support `prefixes.txt` for dynamic device naming based on serial numbers |
-| **Fixed configuration**     | The unattend settings are baked into the FFU at build time and cannot be changed at deployment time                                                      |
-| **Requires VM to be built** | This option only works when**Install Apps** is `$true` because the unattend file is included in the Apps ISO                                     |
-
-{: .note-title}
-
-> Note
->
-> Most users should continue using the **Copy Unattend** option via the USB drive, which provides more flexibility including support for `prefixes.txt` device naming. Use **Inject Unattend.xml** only when you won't be using the USB drive for deployment.
-
-{: .tip-title}
-
-> Tip
->
-> If you're using this option, you can disable **Build Deploy ISO** to save time during the build process since the deployment ISO is not needed when you're not using the USB drive method.
-
-## Verbose
-
-Controls the `-Verbose` common parameter. When checked, enables detailed verbose output during the build process. The default is **unchecked**.
-
-In prior builds it was necessary to enable `-verbose` output to track in real-time the build process if you didn't have `cmtrace.exe` or some other log-monitoring tool. With the UI, you can now watch the build in real-time using the monitor tab. Enabling verbose shouldn't be necessary but is available for those who wish to use it.
-
-# Post-Build Cleanup
-
-## Cleanup Apps ISO
+### Cleanup Apps ISO
 
 Controls the `-CleanupAppsISO` parameter. When checked, the Apps ISO file is automatically deleted after the FFU has been successfully captured. The default is **checked**.
 
-During the build process, when apps are being installed, the script creates an `Apps.iso` file in the FFU Development Path (e.g., `.\FFUDevelopment\Apps.iso`). This ISO contains the contents of the `.\FFUDevelopment\Apps` folder—including application installers, Office deployment files, and orchestration scripts—and is mounted to the VM during the build to install applications.
+During the build process, when apps are being installed, the script creates an `Apps.iso` file in the FFU Development Path (for example, `.\FFUDevelopment\Apps.iso`). This ISO contains the contents of the `.\FFUDevelopment\Apps` folder, including application installers, Office deployment files, and orchestration scripts, and is mounted to the VM during the build to install applications.
 
-### When to Disable
+#### When to Disable
 
 You may want to disable Cleanup Apps ISO in the following scenarios:
 
-* **Debugging app installations**: When troubleshooting application installation issues and you want to manually inspect the ISO contents
-* **Multiple builds with same apps**: If you're running consecutive builds with identical app configurations and want to reuse the existing ISO to save time (the script will recreate it if missing)
-* **Archival purposes**: When you need to retain a copy of the exact Apps ISO used for a specific FFU build
+- **Debugging app installations**: When troubleshooting application installation issues and you want to manually inspect the ISO contents
+- **Multiple builds with same apps**: If you're running consecutive builds with identical app configurations and want to reuse the existing ISO to save time (the script will recreate it if missing)
+- **Archival purposes**: When you need to retain a copy of the exact Apps ISO used for a specific FFU build
 
 {: .note-title}
 
@@ -604,75 +673,69 @@ You may want to disable Cleanup Apps ISO in the following scenarios:
 >
 > The Apps ISO is only created when applications are configured for installation. If no apps are being installed in the FFU, this option has no effect. Keeping this option enabled helps conserve disk space by removing temporary build artifacts.
 
-## Cleanup Capture ISO
-
-Controls the `-CleanupCaptureISO` parameter. When checked, the WinPE capture ISO file is automatically deleted after the FFU has been successfully captured. The default is **checked**.
-
-It's recommended to keep this checked as each new build re-creates the local username account (e.g. `ffu_user`) and its password. If you were to retain the capture ISO from a previous build, it'd be using an old password and the capture would fail.
-
-## Cleanup Deploy ISO
+### Cleanup Deploy ISO
 
 Controls the `-CleanupDeployISO` parameter. When checked, the WinPE deployment ISO file is automatically deleted after the FFU has been successfully captured. The default is **checked**.
 
-During the build process, when **Build Deploy ISO** is enabled, the script creates a `WinPE_FFU_Deploy.iso` file (e.g., `.\FFUDevelopment\WinPE_FFU_Deploy.iso`). This ISO contains a customized Windows PE environment used to deploy captured FFU images to target devices. The deployment ISO is typically copied to a bootable USB drive along with the FFU files for field deployment.
+During the build process, when **Build Deploy ISO** is enabled, the script creates a `WinPE_FFU_Deploy.iso` file (for example, `.\FFUDevelopment\WinPE_FFU_Deploy.iso`). This ISO contains a customized Windows PE environment used to deploy captured FFU images to target devices. The deployment ISO is typically copied to a bootable USB drive along with the FFU files for field deployment.
 
-### When to Disable
+#### When to Disable
 
 You may want to disable Cleanup Deploy ISO in the following scenarios:
 
-* **Creating deployment media separately**: When you want to create USB deployment drives at a later time, see [USB Imaging Tool Creator](/FFU/usb_imaging_tool_creator.html) for a staged workflow using `USBImagingToolCreator.ps1` with a deploy ISO, `FFU`, and `Drivers` folder (local path or network share).
-* **Testing in Hyper-V**: When deploying FFU images to Hyper-V VMs for testing, you can attach the deploy ISO directly to a VM as a DVD drive
+- **Creating deployment media separately**: When you want to create USB deployment drives at a later time, see [USB Imaging Tool Creator](/FFU/usb_imaging_tool_creator.html) for a staged workflow using `USBImagingToolCreator.ps1` with a deploy ISO, `FFU`, and `Drivers` folder (local path or network share)
+- **Testing in Hyper-V**: When deploying FFU images to Hyper-V VMs for testing, you can attach the deploy ISO directly to a VM as a DVD drive
 
-## Cleanup Drivers
+### Cleanup Drivers
 
 Controls the `-CleanupDrivers` parameter. When checked, the contents of the Drivers folder are automatically deleted after the FFU has been successfully captured. The default is **unchecked**.
 
-During the build process, when drivers are configured for installation, the script downloads and extracts driver packages into manufacturer-specific subfolders within the Drivers folder (e.g., `.\FFUDevelopment\Drivers\HP`, `.\FFUDevelopment\Drivers\Dell`). These drivers are then injected into the FFU during the build.
+During the build process, when drivers are configured for installation, the script downloads and extracts driver packages into manufacturer-specific subfolders within the Drivers folder (for example, `.\FFUDevelopment\Drivers\HP`, `.\FFUDevelopment\Drivers\Dell`). These drivers are then injected into the FFU during the build.
 
-### When to Enable
+#### When to Enable
 
 You may want to enable Cleanup Drivers in the following scenarios:
 
-* **Conserving disk space**: Driver packages can be large (several gigabytes per manufacturer), and removing them after a successful build frees up storage
-* **Ensuring fresh drivers**: When you want each build to download the latest available drivers rather than reusing previously downloaded versions
-* **Single-use builds**: When building an FFU for a one-time deployment and you don't need to retain the driver files
+- **Conserving disk space**: Driver packages can be large (several gigabytes per manufacturer), and removing them after a successful build frees up storage
+- **Ensuring fresh drivers**: When you want each build to download the latest available drivers rather than reusing previously downloaded versions
+- **Single-use builds**: When building an FFU for a one-time deployment and you don't need to retain the driver files
 
-### When to Disable
+#### When to Disable
 
 You may want to keep Cleanup Drivers disabled in the following scenarios:
 
-* **Multiple builds with same drivers**: If you're running consecutive builds targeting the same hardware models, keeping drivers avoids re-downloading them each time
-* **Debugging driver issues**: When troubleshooting driver injection problems and you want to manually inspect the downloaded driver contents
-* **Offline builds**: When building in an environment with limited or no internet access, retaining drivers allows reuse across builds
-* **Bring Your Own Drivers:** When you download and bring your own set of drivers from another source and don't want FFU Builder to remove them
+- **Multiple builds with same drivers**: If you're running consecutive builds targeting the same hardware models, keeping drivers avoids re-downloading them each time
+- **Debugging driver issues**: When troubleshooting driver injection problems and you want to manually inspect the downloaded driver contents
+- **Offline builds**: When building in an environment with limited or no internet access, retaining drivers allows reuse across builds
+- **Bring Your Own Drivers**: When you download and bring your own set of drivers from another source and don't want FFU Builder to remove them
 
 {: .note-title}
 
 > Note
 >
-> Only the contents within the Drivers folder are removed—the folder itself is preserved. If no drivers were downloaded during the build, this option has no effect.
+> Only the contents within the Drivers folder are removed. The folder itself is preserved. If no drivers were downloaded during the build, this option has no effect.
 
-## Remove FFU
+### Remove FFU
 
 Controls the `-RemoveFFU` parameter. When checked, all FFU files in the FFU Capture Location are automatically deleted after the build completes successfully. The default is **unchecked**.
 
-During the build process, the captured FFU image is written to the FFU Capture Location (e.g., `.\FFUDevelopment\FFU`). This option removes all `.ffu` files from that folder after the build finishes, including any previously captured FFU files that may exist in the folder.
+During the build process, the captured FFU image is written to the FFU Capture Location (for example, `.\FFUDevelopment\FFU`). This option removes all `.ffu` files from that folder after the build finishes, including any previously captured FFU files that may exist in the folder.
 
-### When to Enable
+#### When to Enable
 
 You may want to enable Remove FFU in the following scenarios:
 
-* **USB-only workflow**: When you're using **Build USB Drive** to copy the FFU directly to a USB drive and don't need to retain the FFU file on the host machine
-* **Conserving disk space**: FFU files can be very large depending on what you're installing, and removing them after copying to USB frees up storage
-* **Automated build pipelines**: When running automated builds where the FFU is immediately transferred to another location (such as a network share or deployment server) and no longer needed locally
+- **USB-only workflow**: When you're using **Build USB Drive** to copy the FFU directly to a USB drive and don't need to retain the FFU file on the host machine
+- **Conserving disk space**: FFU files can be very large depending on what you're installing, and removing them after copying to USB frees up storage
+- **Automated build pipelines**: When running automated builds where the FFU is immediately transferred to another location (such as a network share or deployment server) and no longer needed locally
 
-### When to Disable
+#### When to Disable
 
 You may want to keep Remove FFU disabled in the following scenarios:
 
-* **Archival purposes**: When you want to retain captured FFU images for future deployments or as a backup
-* **Multiple USB drives**: When you need to create additional USB deployment drives at a later time
-* **Testing and validation**: When you want to test the FFU in Hyper-V or other environments before deploying to physical hardware
+- **Archival purposes**: When you want to retain captured FFU images for future deployments or as a backup
+- **Multiple USB drives**: When you need to create additional USB deployment drives at a later time
+- **Testing and validation**: When you want to test the FFU in Hyper-V or other environments before deploying to physical hardware
 
 {: .warning-title}
 
@@ -680,11 +743,11 @@ You may want to keep Remove FFU disabled in the following scenarios:
 >
 > This option removes **all** FFU files in the FFU Capture Location folder, not just the FFU from the current build. If you have previously captured FFU files stored in this folder that you want to keep, do not enable this option or move those files to a different location before building.
 
-## Remove Apps Folder Content
+### Remove Apps Folder Content
 
-Controls the `-RemoveApps` parameter. When checked, application content in the Apps folder is automatically deleted after the FFU has been successfully captured. The default is **un****checked**.
+Controls the `-RemoveApps` parameter. When checked, application content in the Apps folder is automatically deleted after the FFU has been successfully captured. The default is **unchecked**.
 
-During the build process, application content accumulates in several subfolders within the Apps folder (e.g., `.\FFUDevelopment\Apps`):
+During the build process, application content accumulates in several subfolders within the Apps folder (for example, `.\FFUDevelopment\Apps`):
 
 | Folder      | Contents                                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -696,34 +759,34 @@ Additionally, the `WinGetWin32Apps.json` orchestration file in `.\FFUDevelopment
 
 When this option is enabled, the cleanup process removes:
 
-* The entire `Win32` folder and its contents
-* The entire `MSStore` folder and its contents
-* The Office download subfolder (`Office\Office`) and the `setup.exe` file within the `Office` folder
+- The entire `Win32` folder and its contents
+- The entire `MSStore` folder and its contents
+- The Office download subfolder (`Office\Office`) and the `setup.exe` file within the `Office` folder
 
-### When to Enable
+#### When to Enable
 
 You may want to keep Remove Apps Folder Content enabled in the following scenarios:
 
-* **Conserving disk space**: Downloaded application installers can consume significant storage, and removing them after a successful build frees up space
-* **Ensuring fresh downloads**: When you want each build to download the latest available application versions rather than reusing previously downloaded content
-* **Single-use builds**: When building an FFU for a one-time deployment and you don't need to retain the application files
+- **Conserving disk space**: Downloaded application installers can consume significant storage, and removing them after a successful build frees up space
+- **Ensuring fresh downloads**: When you want each build to download the latest available application versions rather than reusing previously downloaded content
+- **Single-use builds**: When building an FFU for a one-time deployment and you don't need to retain the application files
 
-### When to Disable
+#### When to Disable
 
 You may want to disable Remove Apps Folder Content in the following scenarios:
 
-* **Multiple builds with same apps**: If you're running consecutive builds with identical application configurations, keeping the downloaded content avoids re-downloading applications each time
-* **Debugging app installations**: When troubleshooting application installation issues and you want to manually inspect the downloaded content
-* **Offline builds**: When building in an environment with limited or no internet access, retaining downloaded applications allows reuse across builds
-* **Preserving Bring Your Own Apps**: When you've manually copied application content into the `Win32` folder and don't want FFU Builder to remove it
+- **Multiple builds with same apps**: If you're running consecutive builds with identical application configurations, keeping the downloaded content avoids re-downloading applications each time
+- **Debugging app installations**: When troubleshooting application installation issues and you want to manually inspect the downloaded content
+- **Offline builds**: When building in an environment with limited or no internet access, retaining downloaded applications allows reuse across builds
+- **Preserving Bring Your Own Apps**: When you've manually copied application content into the `Win32` folder and don't want FFU Builder to remove it
 
 {: .note-title}
 
 > Note
 >
-> Only the application content subfolders are removed—the `Apps` folder itself and configuration files such as `AppList.json` and `UserAppList.json` are preserved. If no applications were configured for the build, this option has no effect.
+> Only the application content subfolders are removed. The `Apps` folder itself and configuration files such as `AppList.json` and `UserAppList.json` are preserved. If no applications were configured for the build, this option has no effect.
 
-## Remove Downloaded Update Files
+### Remove Downloaded Update Files
 
 Controls the `-RemoveUpdates` parameter. When checked, downloaded Windows updates and application update payloads are automatically deleted after the FFU has been successfully captured. The default is **unchecked**.
 
@@ -739,28 +802,60 @@ During the build process, update files are downloaded to specific locations with
 
 When this option is enabled, the cleanup process removes the entire `KB` folder and the specific update subfolders within the `Apps` directory.
 
-### When to Enable
+#### When to Enable
 
 You may want to keep Remove Downloaded Update Files enabled in the following scenarios:
 
-* **Conserving disk space**: Windows Cumulative Updates can be several gigabytes in size, and removing them after a successful build frees up significant storage
-* **Ensuring latest updates**: When you want each build to download the absolute latest available updates rather than potentially reusing older cached versions
+- **Conserving disk space**: Windows Cumulative Updates can be several gigabytes in size, and removing them after a successful build frees up significant storage
+- **Ensuring latest updates**: When you want each build to download the absolute latest available updates rather than potentially reusing older cached versions
 
-### When to Disable
+#### When to Disable
 
 You may want to disable Remove Downloaded Update Files in the following scenarios:
 
-* **Multiple builds**: If you're running consecutive builds, keeping the downloaded updates avoids re-downloading large Cumulative Update files each time
-* **Offline builds**: When building in an environment with limited or no internet access, retaining downloaded updates allows reuse across builds
-* **Testing and validation**: When you want to manually inspect the update files that were included in the build
+- **Multiple builds**: If you're running consecutive builds, keeping the downloaded updates avoids re-downloading large Cumulative Update files each time
+- **Offline builds**: When building in an environment with limited or no internet access, retaining downloaded updates allows reuse across builds
+- **Testing and validation**: When you want to manually inspect the update files that were included in the build
 
 {: .note-title}
 
 > Note
 >
-> Only the update-specific subfolders are removed-the `Apps` folder itself and other application content (unless **Remove Apps Folder Content** is also selected) are preserved.
+> Only the update-specific subfolders are removed. The `Apps` folder itself and other application content, unless **Remove Apps Folder Content** is also selected, are preserved.
 
-## Restore Defaults
+### Remove Downloaded ESD file(s)
+
+Controls the `-RemoveDownloadedESD` parameter. When checked, downloaded Windows ESD files are automatically deleted after they have been applied. The default is **checked**.
+
+This setting applies to builds that use downloaded Windows ESD media instead of a provided ISO. When enabled, the build removes the downloaded `.esd` file after it has been used. When disabled, the downloaded `.esd` is kept for reuse on later builds.
+
+#### When to Enable
+
+You may want to keep Remove Downloaded ESD file(s) enabled in the following scenarios:
+
+- **Conserving disk space**: Downloaded ESD files can be large, and removing them after a successful build frees up storage
+- **Ensuring fresh media**: When you want each build to download the latest available ESD for the selected release and version
+- **Single-use builds**: When you do not expect to reuse the same downloaded source media again
+
+#### When to Disable
+
+You may want to disable Remove Downloaded ESD file(s) in the following scenarios:
+
+- **Multiple builds with the same source media**: Keeping the ESD avoids re-downloading it each time
+- **Offline or bandwidth-constrained environments**: Retaining the ESD allows reuse across builds
+- **Troubleshooting source-media issues**: When you want to preserve the downloaded ESD for inspection or repeat testing
+
+{: .note-title}
+
+> Note
+>
+> This option only applies when the build used a downloaded `.esd` file. If you provide a Windows ISO instead, this setting has no effect.
+
+## Build Page Actions
+
+These buttons sit below the Build tab expanders and operate on the overall page state rather than a single expander.
+
+### Restore Defaults
 
 Use this to restore FFU Builder to its default state. When clicked:
 
@@ -778,7 +873,7 @@ Use this to restore FFU Builder to its default state. When clicked:
 >
 > If you want to keep any content prior to restoring defaults, copy it out first.
 
-## Save Config File
+### Save Config File
 
 Saves all current UI selections to a JSON file so you can reload the same settings later or run `BuildFFUVM.ps1` from the command line with `-configFile` (e.g. `BuildFFUVM.ps1 -configFile C:\FFUDevelopment\config\FFUConfig.json`)
 
@@ -788,7 +883,7 @@ Saves all current UI selections to a JSON file so you can reload the same settin
 - Defaults the save location to `FFUDevelopmentPath\config` and suggests `FFUConfig.json` as the file name. You can browse and pick a different file name or folder.
 - Creates the `config` folder if it does not exist and confirms the save when finished.
 
-## Load Config File
+### Load Config File
 
 Loads a previously saved configuration JSON and repopulates the UI.
 
@@ -799,7 +894,7 @@ Loads a previously saved configuration JSON and repopulates the UI.
 - Supplemental files referenced in the config (Winget `AppList.json`, BYO `UserAppList.json`, `Drivers.json`) are also imported if they exist. Missing helper files are treated as optional and noted for you.
 - If the file is empty, unreadable, or invalid JSON, the load is stopped and an error message is shown.
 
-## Build FFU
+### Build FFU
 
 Use **Build FFU** to run `BuildFFUVM.ps1` with the current UI selections.
 

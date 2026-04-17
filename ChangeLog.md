@@ -1,5 +1,63 @@
 # Change Log
 
+# 2604.1
+
+## What's Changed
+
+### Fluent style
+
+With the release of PowerShell 7.6 finally going to GA, I was able to release the Fluent UI styling refresh. This will bring significant improvement to the look and feel of FFU Builder. Note that you will want to make sure you're running **PowerShell 7.6**, otherwise the listviews for Drivers and Applications will be missing the column headers.
+
+### Build tab reorganization
+
+The build tab sections now have expanders for the settings within. This should help with organization of each setting.
+
+### Home page build and release status
+
+The Home page of FFU Builder will now tell you what build you're on and if there's a new build along with the release notes for the new build. You can also see disk space and hyper-v status, as well as the latest Github repo discussions and a list of resources.
+
+### Fixed an issue with Surface and Lenovo driver downloads
+
+Microsoft changed the Surface driver download support page. FFU Builder now uses the [Microsoft Learn page for Surface driver downloads ](https://learn.microsoft.com/en-us/surface/manage-surface-driver-and-firmware-updates) that's designed for IT Admins. It's an easier table to parse rather than trying to parse the updated support page that FFU Builder used to use.
+
+Fixed an issue where retrieving Lenovo models was failing.
+
+### Removed Capture ISO
+
+FFU Builder no longer relies on booting to WinPE to capture builds done via the VM. Instead, FFU Builder will now just capture the VHDX directly. This improves FFU build times tremendously and reduces the need for the VM Switch. The switch is still necessary for those that want to add internet connectivity during the FFU build process.
+
+### Refresh Windows SKU after fallback SKU selection
+
+Fixed an issue grabbing the correct Windows SKU when the user incorrectly chose a SKU that wasn't in the media and had to later be prompted for an available SKU. In this situation the SKU that was provided earlier was chosen, which caused a variety of issues.
+
+### Removed registry-based FFU file naming
+
+Removed registry-based FFU file naming and now rely on parameters provided at build time and the custom FFU naming template. This will remove the hard coded wait times that had to do with loading/unloading of the registry.
+
+### Added a checkbox to enable network connectivity during VM build
+
+Add a checkbox to enable network connectivity during the VM build. I'm fairly confident that the build process should be able to withstand any sysprep-related issues being connected to the internet. The checkbox is flagged as experimental. Give it a try and let me know if you notice any issues.
+
+### Added UI controls for Device Naming
+
+Device naming now has an expander in the Build tab that will expose a number of new options available. Rather than writing up a whole thing here in the release notes, the UI should be intuitive enough to explain how it works. The docs have also been updated. I spent a lot of time testing the changes with both legacy naming scenarios and if you make changes in the UI. If you see something that doesn't work, open a discussion or issue.
+
+### Fixed Office installation issues on ARM64 VMs
+
+I actually didn't fix anything, but rather removed a restriction that was put in place due to Office requiring internet access to install on ARM64. It seems the PG has fixed the issue requiring internet access and office will now install. However there's a caveat that it will prompt with a compatibility assistant popup. I think we can disable the compatibility assistant service to prevent the pop up from happening in the orchestrator. Will look into this in a future release.
+
+### Auto-generate ComputerName in Unattend.xml
+
+Now you can provide your own Unattend.xml without a ComputerName element and FFU Builder will add it if you've chosen to include a computer name. If there's a ComputerName element already in the file, ApplyFFU.ps1 will find it and modify it as per your naming choices.
+
+### Add custom unattend.xml paths
+
+There's a new expander for Unattend.xml options in the Build tab which includes paths for the x64 and arm64 unattend.xml files. This means that you can have your unattend files in any location instead of in the FFUDevelopment\unattend folder. This should make upgrades easier for those that have custom unattend.xml files and copying new releases would overwrite your customized unattend files.
+
+### Fixed an issue where CUs wouldn't service after the March 31, 2026 OOB update (KB5086672) was installed on your host machine
+
+The KB5086672 CU which is rolled into the April 14, 2026 update (KB5083769) caused an issue with Add-WindowsPackage. Add-WindowsPackage uses the DISM API to service a Windows image. The native dism.exe doesn't have this issue. To keep things consistent, FFU Builder will now use the dism.exe from the installed Windows ADK. While this version of dism might be older than what's on your machine, it should be consistent and not be impacted by future CUs.
+
 # 2603.2
 
 ## What's Changed

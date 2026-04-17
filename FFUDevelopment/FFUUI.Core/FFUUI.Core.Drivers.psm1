@@ -373,6 +373,7 @@ function Search-DriverModels {
     }
     
     # The view will automatically refresh. No need to call .Refresh() explicitly for filtering.
+    Request-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels
     $filteredCount = 0
     if ($null -ne $collectionView) {
         foreach ($item in $collectionView) { $filteredCount++ }
@@ -715,6 +716,7 @@ function Import-DriversJson {
             
             # Update the UI and apply any existing filter
             $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+            Request-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels
             Search-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $State
 
             $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
@@ -786,6 +788,7 @@ function Invoke-GetModels {
         
         # Update the UI ItemsSource to point to the new list and clear the filter
         $State.Controls.lstDriverModels.ItemsSource = $State.Data.allDriverModels
+        Request-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels
         $State.Controls.txtModelFilter.Text = ""
 
         if ($State.Data.allDriverModels.Count -gt 0) {

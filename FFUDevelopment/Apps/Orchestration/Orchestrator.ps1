@@ -28,6 +28,23 @@ Write-Host "---------------------------------------------------" -ForegroundColo
 # Define the path to the scripts
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
+# Resolve the configured BYO app list path for runtime orchestration.
+$appInstallConfigPath = Join-Path -Path $scriptPath -ChildPath "AppInstallConfig.json"
+$userAppsJsonFile = Join-Path -Path (Split-Path -Parent $scriptPath) -ChildPath "UserAppList.json"
+
+if (Test-Path -Path $appInstallConfigPath) {
+    try {
+        $appInstallConfig = Get-Content -Path $appInstallConfigPath -Raw | ConvertFrom-Json
+        if ($null -ne $appInstallConfig -and $appInstallConfig.PSObject.Properties.Match('UserAppListPath').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($appInstallConfig.UserAppListPath)) {
+            $userAppsJsonFile = $appInstallConfig.UserAppListPath
+            Write-Host "Using BYO app list path from AppInstallConfig.json: $userAppsJsonFile"
+        }
+    }
+    catch {
+        Write-Host "Failed to parse AppInstallConfig.json. Falling back to default BYO app list path."
+    }
+}
+
 # Define the list of scripts to run
 $scriptList = @(
     "Install-LTSCUpdate.ps1",
@@ -51,7 +68,6 @@ foreach ($script in $scriptList) {
     switch ($script) {
         "Install-Win32Apps.ps1" {
             $wingetAppsJsonFile = Join-Path -Path $scriptPath -ChildPath "WinGetWin32Apps.json"
-            $userAppsJsonFile = Join-Path -Path (Split-Path -Parent $scriptPath) -ChildPath "UserAppList.json"
             if (-not (Test-Path -Path $wingetAppsJsonFile) -and -not (Test-Path -Path $userAppsJsonFile)) {
                 $shouldRun = $false
             }
@@ -69,8 +85,13 @@ foreach ($script in $scriptList) {
         Write-Host "---------------------------------------------------" -ForegroundColor Yellow
         Write-Host " Running script: $script                           " -ForegroundColor Yellow
         Write-Host "---------------------------------------------------" -ForegroundColor Yellow
-        # Run script and wait for it to finish
-        & $scriptFile
+        # Run script and wait for it to finish.
+        if ($script -eq "Install-Win32Apps.ps1") {
+            & $scriptFile -UserAppsJsonFile $userAppsJsonFile
+        }
+        else {
+            & $scriptFile
+        }
     }
 }
 

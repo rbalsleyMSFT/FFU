@@ -27,6 +27,12 @@ After following this guide, you will have a USB drive with an FFU that contains 
 
 ## Video Walkthrough
 
+{: .note-title}
+
+> Note
+>
+> The below video was recorded prior to the Fluent UI refresh. Some things will look a bit different until a new quick start video is recorded.
+
 <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">
   <iframe
     src="https://www.youtube-nocookie.com/embed/kOIK5OmDugc"
@@ -45,7 +51,9 @@ Follow the [prerequisites](/FFU/prerequisites.html) documentation before getting
 
 Click the Hyper-V Settings tab
 
-You should be able to keep these settings at the defaults. For VM Switch Name and VM Host IP Address, you'll want to make sure the switch you created in the prerequisites section is listed. FFU Builder should automatically figure out the IP address of the swtich for you.
+You should be able to keep these settings at the defaults. **Enable VM Networking (Experimental)** is off by default and should stay off unless you specifically want to test an internet-connected VM during provisioning.
+
+If you turn on **Enable VM Networking (Experimental)**, make sure the switch you created in the prerequisites section is listed under **VM Switch Name**. If the build does not create a VM, this setting has no effect.
 
 One setting you might need to set is the Logical Sector Size. 512 is the default and that's what most physical disks use today. However 4kn drives and UFS drives use 4k sector sizes, which would require you to select 4096. For now, select 512. If you have issues during deployment, there is error logging that will tell you if you need to set to 4096 on your device.
 
@@ -53,7 +61,7 @@ One setting you might need to set is the Logical Sector Size. 512 is the default
 
 Click the Windows Settings tab
 
-If you keep ISO Path blank, FFU Builder will download the ESD file that the Windows Media Creation Tool uses. Most people should leave this blank since the Media Creation Tool media ESD file is now kept up to date as of Windows 11 25H2 (it's usually updated 2-3 days after patch Tuesday). This reduces the need to service the media and saves time and disk space.
+Keep Download Windows ESD selected. FFU Builder will download the ESD file that the Windows Media Creation Tool uses. This is the recommended approach since the Media Creation Tool media ESD file is now kept up to date as of Windows 11 25H2 (it's usually updated 2-3 days after patch Tuesday). This reduces the need to service the media and saves time and disk space.
 
 Change the Windows language to the one of your choosing.
 
@@ -166,7 +174,7 @@ Check **Copy Drivers to USB drive** (even though we're doing a single model in t
 
 Your view should look like this:
 
-![Drivers tab UI with HP 850 G8 selected and Copy Drivers to USB drive selected](image/quickstart/1769212208722.png "Drivers tab UI")
+![1776377145296](image/quickstart/1776377145296.png)
 
 At this point, you can either Save the Drivers.json file or click Download Selected. Clicking Save Drivers.json will save the Driver model information to the Drivers.json file which will be used at build time to download the drivers. Clicking Download Selected will download the drivers right now. This can be useful for testing without having to go through an entire build, or good for airgapped environments where you can download what you need from the internet on one network, and bring that over to the airgapped network.
 
@@ -184,18 +192,46 @@ Another safety measure is **Select Specific USB Drives**. When you check **Selec
 
 **Device Naming**
 
-Device naming can be done from PE. The way this works is by leveraging an unattend.xml file to either take input from the user at imaging time or read a list of prefix values and append the serial number of the device. There are some major benefits to doing this:
+Use the **Device Naming** expander on the Build page to decide whether `ComputerName` should be set during deployment. There are some major benefits to doing this:
 
 1. Total deployment time is reduced if naming is set at FFU deployment time since there is no additional reboot done during OOBE.
 2. Reduces the need for multiple provisioning packages or autopilot profiles. This means you can use a single PPKG or autopilot profile.
 
-**Prompt for Device Name**
+**No Device Name**
 
-If you want to be prompted for the device name, simply check **Copy Unattend.xml.** This tells the build script to copy the appropriate architecture unattend_arch.xml file from the `C:\FFUDevelopment\Unattend` folder to the `.\unattend` folder on the deploy partition of the USB drive.
+This is the default option. The unattend file is still applied, but Windows generates a random computer name.
 
-**Specifying Multiple Name Prefixes**
+**Specify Device Name**
 
-If you have multiple device name prefixes for different locations or device use cases, or even a single prefix, you can specify a prefixes.txt file in the `C:\FFUDevelopment\unattend` folder. If the prefixes.txt file is detected and a single prefix is listed, the device will just use that prefix and append the serial number of the device. If there are multiple prefixes listed in the prefixes.txt file, you will be prompted to select which prefix you want to name the device and the serial number will be appended to that prefix. If you want a dash in the name, include the dash in the prefix (e.g. if ABCD- is in the prefixes.txt file, the device name will be ABCD-SerialNumber).
+Use this option when you want a static device name or a template such as `Comp-%serial%`.
+
+- With **Copy Unattend.xml**, `%serial%` is resolved during deployment in PE.
+- With **Inject Unattend.xml**, only static names are supported.
+- **Copy Unattend.xml** and **Inject Unattend.xml** are mutually exclusive. Select only one.
+
+**Specify a list of Prefixes**
+
+This option writes `prefixes.txt` from the list in the UI. Enter one prefix per line or import an existing prefixes file. The source file can use any name because the UI tracks the prefixes path separately. If there is one prefix, deployment uses it automatically. If there are multiple prefixes, the technician is prompted to select one and the serial number is appended to that prefix.
+
+{: .note-title}
+
+> Note
+>
+> If the technician skips prefix selection when multiple prefixes are available, `ApplyFFU.ps1` leaves the existing unattend `ComputerName` value unchanged. With the current unattend samples set to `<ComputerName>*</ComputerName>`, Windows falls back to its default random computer-name behavior, typically resulting in a name such as `WIN-*`.
+
+**Specify Serial to Device Name Mapping**
+
+This option writes `SerialComputerNames.csv` from the CSV content in the UI. Use `SerialNumber,ComputerName` as the header row, then add one row per device. During deployment, `ApplyFFU.ps1` compares the current BIOS serial number to the CSV and applies the matching computer name.
+
+- This option requires **Copy Unattend.xml**.
+- **Inject Unattend.xml** is not supported with this option.
+- If no matching serial number is found during deployment, `ApplyFFU.ps1` falls back to a random `FFU-*` computer name.
+
+{: .note-title}
+
+> Note
+>
+> If `prefixes.txt` and `SerialComputerNames.csv` are both present on the same deployment media, `ApplyFFU.ps1` checks `prefixes.txt` first. FFU Builder stages only the naming file for the selected device-naming mode.
 
 {: .warning-title}
 
@@ -203,21 +239,29 @@ If you have multiple device name prefixes for different locations or device use 
 >
 > If using a provisioning package or autopilot json file, DO NOT specify a name in either of these. They will overwrite the name you have specified in the unattend.xml.
 
+For the purposes of this quickstart, we'll use **Prompt for Device Name**
+
 **Post Build Cleanup**
 
 Leave the Post Build Cleanup section at the defaults
 
 Your Build tab should look something like this:
 
-![1769218100003](image/quickstart/1769218100003.png)
+![1776377420583](image/quickstart/1776377420583.png)
+
+![1776377442979](image/quickstart/1776377442979.png)
+
+![1776377516879](image/quickstart/1776377516879.png)
+
+![1776377592432](image/quickstart/1776377592432.png)
+
+![1776377622826](image/quickstart/1776377622826.png)
 
 Click **Build FFU**
 
 Depending on your internet speed, speed of your build machine, etc. this will take some time (probably at least 20 minutes). After clicking Build FFU, you'll be automatically moved to the Monitor tab.
 
 ## Monitor
-
-![1769218278316](image/quickstart/1769218278316.png)
 
 The monitor tab parses the `C:\FFUDevelopment\FFUDevelopment.log` file. If you'd like to use CMTrace or another tool to monitor the log, feel free. The monitor tab has some similar functionality to CMTrace. If you click off the last line of the log in the monitor tab it will stay on that line, allowing you to read what you have selected instead of the log autoscrolling. You can also copy one or multiple lines by selecting a line and shift+clicking the last line you want to select and hitting ctrl+c to copy the lines.
 
@@ -227,7 +271,7 @@ Now sit back, relax, and watch FFU Builder do its magic. You should see a VM pop
 
 > Note
 >
-> Don't interact with the VM (e.g. don't click into the PowerShell window that's orchestrating the install of the updates, apps, etc). The whole process should be completly automated with no user interaction necessary. If you click into the PowerShell window while it's working, you may get PowerShell into "select" mode. If this happens, the PowerShell window will look like it's "stuck." That's because clicking into a cmd/PowerShell window while something is in process and you're in select mode waits for you to exit select by hitting Enter. 
+> Don't interact with the VM (e.g. don't click into the PowerShell window that's orchestrating the install of the updates, apps, etc). The whole process should be completly automated with no user interaction necessary. If you click into the PowerShell window while it's working, you may get PowerShell into "select" mode. If this happens, the PowerShell window will look like it's "stuck." That's because clicking into a cmd/PowerShell window while something is in process and you're in select mode waits for you to exit select by hitting Enter.
 
 ## Post Build
 
@@ -270,18 +314,22 @@ And the Unattend folder should have an unattend.xml file with the following cont
   <settings pass="specialize">
   <!--<ComputerName> must be in the first Component Element  "Microsoft-Windows-Shell-Setup" . Do not change the order or remove it -->
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <ComputerName>MyComputer</ComputerName>
+      <ComputerName>*</ComputerName>
     </component>
   <!--Place addtional Components Elements and settings below here. -->
   </settings>
 </unattend>
 ```
 
-Now you're ready to deploy the FFU to your device. 
+Keep `*` if you want Windows to generate a random device name by default.
+
+If you want the technician to be prompted for the device name during deployment, select **Prompt for Device Name** in the Build tab and enable **Copy Unattend.xml**. FFU Builder will rewrite only the staged deployment copy of `Unattend.xml` for that workflow.
+
+Now you're ready to deploy the FFU to your device.
 
 ## Deployment
 
-Deployment should be fairly straight forward: boot off the USB device, get prompted for a device name, and the deployment of the FFU and drivers should happen automatically. 
+Deployment should be fairly straight forward: boot off the USB device and the deployment of the FFU and drivers should happen automatically. If you selected **Prompt for Device Name** or another supported device naming option, that naming step will happen during deployment.
 
 If you have any questions or run into any issues, [open a discussion in the Github repo](https://github.com/rbalsleyMSFT/FFU/discussions).
 

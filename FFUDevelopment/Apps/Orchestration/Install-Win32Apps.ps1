@@ -1,3 +1,11 @@
+# Allow Orchestrator.ps1 to override the app list file paths while preserving legacy defaults.
+param(
+    [Parameter()]
+    [string]$wingetAppsJsonFile = (Join-Path -Path $PSScriptRoot -ChildPath "WinGetWin32Apps.json"),
+    [Parameter()]
+    [string]$userAppsJsonFile = (Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "UserAppList.json")
+)
+
 function Invoke-Process {
     [CmdletBinding(SupportsShouldProcess)]
     param
@@ -247,11 +255,6 @@ function Install-Applications {
     }
 }
 
-# Define paths for the JSON files
-$wingetAppsJsonFile = "$PSScriptRoot\WinGetWin32Apps.json"
-# Look for UserAppList.json one directory level up from the script's location. This keeps the user specific json files (AppList.json and UserAppList.json in the Apps dir)
-$userAppsJsonFile = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "UserAppList.json"
-
 # Initialize empty arrays for apps from each source
 $wingetApps = @()
 $userApps = @()
@@ -286,9 +289,9 @@ if ($wingetApps.Count -gt 0) {
     Install-Applications -apps $wingetApps
 }
 
-# Read the UserAppList.json file if it exists
+# Read the configured BYO app list file if it exists
 if (Test-Path -Path $userAppsJsonFile) {
-    Write-Host "Processing UserAppList.json..."
+    Write-Host "Processing $(Split-Path -Path $userAppsJsonFile -Leaf)..."
     try {
         $userContent = Get-Content -Path $userAppsJsonFile -Raw -ErrorAction Stop | ConvertFrom-Json
         if ($userContent -is [array]) {
@@ -296,19 +299,19 @@ if (Test-Path -Path $userAppsJsonFile) {
             Write-Host "Found $(($userApps | Measure-Object).Count) user-defined apps."
         }
         elseif ($userContent) {
-            $userApps = @($userContent) # Ensure it's an array
+            $userApps = @($userContent)
             Write-Host "Found 1 user-defined app."
         }
         else {
-            Write-Host "UserAppList.json is empty or invalid."
+            Write-Host "$(Split-Path -Path $userAppsJsonFile -Leaf) is empty or invalid."
         }
     }
     catch {
-        Write-Error "Failed to read or parse UserAppList.json file: $_"
+        Write-Error "Failed to read or parse BYO app list file '$userAppsJsonFile': $_"
     }
 }
 else {
-    Write-Host "UserAppList.json file not found. Skipping."
+    Write-Host "BYO app list file not found at $userAppsJsonFile. Skipping."
 }
 
 # Install User apps if any were found

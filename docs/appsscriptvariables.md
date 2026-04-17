@@ -10,7 +10,7 @@ grand_parent: UI Overview
 ---
 # Apps Script Variables
 
-![1760135511234](image/appsscriptvariables/1760135511234.png)
+![1776379026213](image/appsscriptvariables/1776379026213.png)
 
 Apps Script Variables are key value pairs that are used to create a hashtable that is passed to the `BuildFFUVM.ps1` script (stored in the `$AppScriptVariables` parameter as a hashtable). At build time, `BuildFFUVM.ps1` will export the `$AppsScriptVariables` hashtable to an `AppsScriptVariables.json` file in the `$OrchestrationPath` folder (`$AppsPath\Orchestration`). You can also manually create your own `AppsScriptVariables.json `file and place it in the `$AppsPath\Orchestration` folder.
 
@@ -45,7 +45,7 @@ In the VM, the `Orchestrator.ps1` file will call `Invoke-AppsScript.ps1` if `App
 This allows for you to create a dynamic task sequence via a PowerShell script with simple if statements to run apps, commands, etc. This is all driven by your `FFUConfig.json` file. For example, the following `FFUConfig.json` file contains an AppsScriptVariables hashtable of foo and vmwaretools like the screenshot above. If you build servers that require vmware tools, you may set the value to true. However there may be situations where you don't need vmwaretools installed. If that's the case, you set vmwaretools to false. This allows for your `Invoke-AppsScript.ps1` file to stay the same and all you have to do is adjust the variables.
 
 ```
-{
+s{
   "AdditionalFFUFiles": [],
   "AllowExternalHardDiskMedia": false,
   "AllowVHDXCaching": false,
@@ -57,7 +57,6 @@ This allows for you to create a dynamic task sequence via a PowerShell script wi
   },
   "BuildUSBDrive": false,
   "CleanupAppsISO": true,
-  "CleanupCaptureISO": true,
   "CleanupDeployISO": true,
   "CleanupDrivers": false,
   "CompactOS": true,
@@ -69,7 +68,6 @@ This allows for you to create a dynamic task sequence via a PowerShell script wi
   "CopyPEDrivers": false,
   "CopyPPKG": false,
   "CopyUnattend": false,
-  "CreateCaptureMedia": true,
   "CreateDeploymentMedia": true,
   "CustomFFUNameTemplate": "{WindowsRelease}_{WindowsVersion}_{SKU}_{yyyy}-{MM}-{dd}_{HH}{mm}",
   "Disksize": 53687091200,
@@ -101,7 +99,6 @@ This allows for you to create a dynamic task sequence via a PowerShell script wi
   "RemoveApps": false,
   "RemoveFFU": false,
   "RemoveUpdates": false,
-  "ShareName": "FFUCaptureShare",
   "Threads": 5,
   "UpdateADK": true,
   "UpdateEdge": true,
@@ -115,9 +112,7 @@ This allows for you to create a dynamic task sequence via a PowerShell script wi
   "USBDriveList": {},
   "UseDriversAsPEDrivers": false,
   "UserAppListPath": "C:\\FFUDevelopment\\Apps\\UserAppList.json",
-  "Username": "ffu_user",
   "Verbose": false,
-  "VMHostIPAddress": "192.168.1.169",
   "VMLocation": "C:\\FFUDevelopment\\VM",
   "VMSwitchName": "External",
   "WindowsArch": "x64",
@@ -132,7 +127,5 @@ This allows for you to create a dynamic task sequence via a PowerShell script wi
 Example command line to run with vmwaretools set to false and foo set to foo. This will create the `AppsScriptVariables.json` file in the Orchestration folder with the updated values of `foo=foo` and `vmwaretools=false` without the need to modify the config file.
 
 `.\BuildFFUVM.ps1 -configFile 'C:\FFUDevelopment\config\FFUConfig.json' -appsScriptVariables @{foo='foo'; vmwaretools='false'}`
-
-
 
 {% include page_nav.html %}

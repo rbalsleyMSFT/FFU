@@ -27,6 +27,22 @@ function Update-BYOAppsActionButtonsState {
     }
 }
 
+# Function to resolve the configured BYO app list path
+function Get-BYOApplicationListPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$State
+    )
+
+    # Fall back to the legacy default path when the textbox is empty.
+    if (-not [string]::IsNullOrWhiteSpace($State.Controls.txtUserAppListPath.Text)) {
+        return $State.Controls.txtUserAppListPath.Text
+    }
+
+    return (Join-Path -Path $State.Controls.txtApplicationPath.Text -ChildPath 'UserAppList.json')
+}
+
 # Function to remove all selected BYO applications
 function Remove-SelectedBYOApplications {
     [CmdletBinding()]
@@ -76,10 +92,10 @@ function Remove-SelectedBYOApplications {
     }
 
     # Ask user if they want to save the changes
-    $result = [System.Windows.MessageBox]::Show("The selected applications have been removed from the list. Do you want to save these changes to UserAppList.json now?", "Save Changes", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $result = [System.Windows.MessageBox]::Show("The selected applications have been removed from the list. Do you want to save these changes to the configured BYO app list now?", "Save Changes", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     
     if ($result -eq 'Yes') {
-        $userAppListPath = Join-Path -Path $State.Controls.txtApplicationPath.Text -ChildPath 'UserAppList.json'
+        $userAppListPath = Get-BYOApplicationListPath -State $State
         Save-BYOApplicationList -Path $userAppListPath -State $State
     }
 }
@@ -166,6 +182,7 @@ function Add-BYOApplication {
         
         # Refresh the ListView to show the changes
         $listView.Items.Refresh()
+        Request-ListViewColumnAutoResize -ListView $listView
 
         # Reset state
         $State.Data.editingBYOApplication = $null
@@ -196,6 +213,7 @@ function Add-BYOApplication {
             CopyStatus             = ""
         }
         $listView.Items.Add($application)
+        Request-ListViewColumnAutoResize -ListView $listView
     }
 
     # Clear form and update button states for both add and update operations
@@ -269,6 +287,7 @@ function Add-AppsScriptVariable {
     }
     $State.Data.appsScriptVariablesDataList.Add($newItem)
     $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    Request-ListViewColumnAutoResize -ListView $State.Controls.lstAppsScriptVariables
     $State.Controls.txtAppsScriptKey.Clear()
     $State.Controls.txtAppsScriptValue.Clear()
     # Update the header checkbox state
@@ -295,6 +314,7 @@ function Remove-SelectedAppsScriptVariable {
         $State.Data.appsScriptVariablesDataList.Remove($itemToRemove)
     }
     $State.Controls.lstAppsScriptVariables.ItemsSource = $State.Data.appsScriptVariablesDataList.ToArray()
+    Request-ListViewColumnAutoResize -ListView $State.Controls.lstAppsScriptVariables
 
     # Update the header checkbox state
     if ($null -ne $State.Controls.chkSelectAllAppsScriptVariables) {
@@ -391,18 +411,24 @@ function Invoke-CopyBYOApps {
     )
         
     $localAppsPath = $State.Controls.txtApplicationPath.Text
-    $userAppListPath = Join-Path -Path $localAppsPath -ChildPath 'UserAppList.json'
+    $userAppListPath = Get-BYOApplicationListPath -State $State
     $listView = $State.Controls.lstApplications
 
     try {
-        # Ensure items are sorted by current priority before saving
-        # Exclude CopyStatus when saving and ensure Priority is an integer; include AdditionalExitCodes and IgnoreNonZeroExitCodes for parity with Save-BYOApplicationList
+        # Ensure the configured BYO app list folder exists before writing the manifest.
+        $userAppListDirectory = Split-Path -Path $userAppListPath -Parent
+        if (-not [string]::IsNullOrWhiteSpace($userAppListDirectory) -and -not (Test-Path -Path $userAppListDirectory -PathType Container)) {
+            New-Item -Path $userAppListDirectory -ItemType Directory -Force | Out-Null
+        }
+
+        # Ensure items are sorted by current priority before saving.
+        # Exclude CopyStatus when saving and ensure Priority is an integer; include AdditionalExitCodes and IgnoreNonZeroExitCodes for parity with Save-BYOApplicationList.
         $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source, AdditionalExitCodes, IgnoreNonZeroExitCodes
         $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $userAppListPath -Force -Encoding UTF8
-        WriteLog "Successfully updated UserAppList.json with all applications from the UI."
+        WriteLog "Successfully updated BYO app list at $userAppListPath with all applications from the UI."
     }
     catch {
-        $errorMessage = "Failed to update UserAppList.json: $_"
+        $errorMessage = "Failed to update BYO app list at $($userAppListPath): $_"
         WriteLog $errorMessage
         [System.Windows.MessageBox]::Show($errorMessage, "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
         return

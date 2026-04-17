@@ -59,6 +59,7 @@ function Search-WingetApps {
 
         # Update the ListView's ItemsSource using the passed-in State object
         $State.Controls.lstWingetResults.ItemsSource = $finalAppList.ToArray()
+        Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
 
         # Update status text
         $statusText = ""
@@ -108,20 +109,28 @@ function Save-WingetList {
                 })
         }
 
+        # Default the save dialog to the configured Winget app list path.
+        $currentPath = $State.Controls.txtAppListJsonPath.Text
+        $initialDirectory = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Parent } else { $State.Controls.txtApplicationPath.Text }
+        if ([string]::IsNullOrWhiteSpace($initialDirectory) -or -not (Test-Path -Path $initialDirectory -PathType Container)) {
+            $initialDirectory = $State.Controls.txtApplicationPath.Text
+        }
+        $fileName = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Leaf } else { "AppList.json" }
+
         $sfd = New-Object System.Windows.Forms.SaveFileDialog
         $sfd.Filter = "JSON files (*.json)|*.json"
-        $sfd.Title = "Save App List"
-        # Correctly get the path from the UI control via the State object
-        $sfd.InitialDirectory = $State.Controls.txtApplicationPath.Text
-        $sfd.FileName = "AppList.json"
+        $sfd.Title = "Save Winget App List"
+        $sfd.InitialDirectory = $initialDirectory
+        $sfd.FileName = $fileName
 
         if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $appList | ConvertTo-Json -Depth 10 | Set-Content $sfd.FileName -Encoding UTF8
-            [System.Windows.MessageBox]::Show("App list saved successfully.", "Success", "OK", "Information")
+            $State.Controls.txtAppListJsonPath.Text = $sfd.FileName
+            [System.Windows.MessageBox]::Show("Winget app list saved successfully.", "Success", "OK", "Information")
         }
     }
     catch {
-        [System.Windows.MessageBox]::Show("Error saving app list: $_", "Error", "OK", "Error")
+        [System.Windows.MessageBox]::Show("Error saving Winget app list: $_", "Error", "OK", "Error")
     }
 }
 
@@ -132,11 +141,17 @@ function Import-WingetList {
         [psobject]$State
     )
     try {
+        # Default the import dialog to the configured Winget app list path.
+        $currentPath = $State.Controls.txtAppListJsonPath.Text
+        $initialDirectory = if (-not [string]::IsNullOrWhiteSpace($currentPath)) { Split-Path -Path $currentPath -Parent } else { $State.Controls.txtApplicationPath.Text }
+        if ([string]::IsNullOrWhiteSpace($initialDirectory) -or -not (Test-Path -Path $initialDirectory -PathType Container)) {
+            $initialDirectory = $State.Controls.txtApplicationPath.Text
+        }
+
         $ofd = New-Object System.Windows.Forms.OpenFileDialog
         $ofd.Filter = "JSON files (*.json)|*.json"
-        $ofd.Title = "Import App List"
-        # Correctly get the path from the UI control via the State object
-        $ofd.InitialDirectory = $State.Controls.txtApplicationPath.Text
+        $ofd.Title = "Import Winget App List"
+        $ofd.InitialDirectory = $initialDirectory
 
         if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $importedAppsData = Get-Content $ofd.FileName -Raw | ConvertFrom-Json
@@ -144,16 +159,16 @@ function Import-WingetList {
             $newAppListForItemsSource = [System.Collections.Generic.List[object]]::new()
 
             if ($null -ne $importedAppsData.apps) {
-                # Get default architecture from the UI for fallback
+                # Get default architecture from the UI for fallback.
                 $defaultArch = $State.Controls.cmbWindowsArch.SelectedItem
 
                 foreach ($appInfo in $importedAppsData.apps) {
                     $arch = if ($appInfo.source -eq 'msstore') { 'NA' } else { if ($appInfo.PSObject.Properties['architecture']) { $appInfo.architecture } else { $defaultArch } }
                     $newAppListForItemsSource.Add([PSCustomObject]@{
-                            IsSelected               = $true # Imported apps are marked as selected
+                            IsSelected               = $true
                             Name                     = $appInfo.name
                             Id                       = $appInfo.id
-                            Version                  = ""  # Will be populated when searching or if data exists
+                            Version                  = ""
                             Source                   = $appInfo.source
                             Architecture             = $arch
                             AdditionalExitCodes      = if ($appInfo.PSObject.Properties['AdditionalExitCodes']) { $appInfo.AdditionalExitCodes } else { "" }
@@ -164,12 +179,14 @@ function Import-WingetList {
             }
 
             $State.Controls.lstWingetResults.ItemsSource = $newAppListForItemsSource.ToArray()
+            Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
+            $State.Controls.txtAppListJsonPath.Text = $ofd.FileName
 
-            [System.Windows.MessageBox]::Show("App list imported successfully.", "Success", "OK", "Information")
+            [System.Windows.MessageBox]::Show("Winget app list imported successfully.", "Success", "OK", "Information")
         }
     }
     catch {
-        [System.Windows.MessageBox]::Show("Error importing app list: $_", "Error", "OK", "Error")
+        [System.Windows.MessageBox]::Show("Error importing Winget app list: $_", "Error", "OK", "Error")
     }
 }
 

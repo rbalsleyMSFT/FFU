@@ -36,9 +36,6 @@ Switch to run cleanup-only mode. When specified, the script performs cleanup and
 .PARAMETER CleanupAppsISO
 When set to $true, will remove the Apps ISO after the FFU has been captured. Default is $true.
 
-.PARAMETER CleanupCaptureISO
-When set to $true, will remove the WinPE capture ISO after the FFU has been captured. Default is $true.
-
 .PARAMETER CleanupCurrentRunDownloads
 When set to $true, cleanup mode will remove downloads created during the current run and restore backed up run JSON files. Default is $false.
 
@@ -73,10 +70,31 @@ When set to $true, enables adding WinPE drivers. By default copies drivers from 
 When set to $true, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is $false.
 
 .PARAMETER CopyUnattend
-When set to $true, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is $false.
+When set to $true, stages the selected architecture-specific unattend XML file as Unattend.xml on the deployment partition of the USB drive. Default is $false.
 
-.PARAMETER CreateCaptureMedia
-When set to $true, this will create WinPE capture media for use when $InstallApps is set to $true. This capture media will be automatically attached to the VM, and the boot order will be changed to automate the capture of the FFU.
+.PARAMETER DeviceNamingMode
+Controls how device naming is handled when unattend content is copied to USB media or injected into the FFU. Supported values are Legacy, None, Prompt, Template, Prefixes, and SerialComputerNames.
+
+.PARAMETER DeviceNameTemplate
+Sets the device name used when DeviceNamingMode is Template. Supports a static name or the %serial% token when CopyUnattend is used.
+
+.PARAMETER DeviceNamePrefixes
+Sets the prefixes used when DeviceNamingMode is Prefixes. Each entry becomes a line in prefixes.txt on the deployment media.
+
+.PARAMETER DeviceNamePrefixesPath
+Path to the source prefixes file used for legacy copy or when DeviceNamePrefixes is not supplied. Default is $FFUDevelopmentPath\Unattend\prefixes.txt.
+
+.PARAMETER DeviceNameSerialComputerNames
+Sets the CSV content used when DeviceNamingMode is SerialComputerNames. The CSV must include SerialNumber and ComputerName headers.
+
+.PARAMETER DeviceNameSerialComputerNamesPath
+Path to the source CSV file used when DeviceNamingMode is SerialComputerNames and DeviceNameSerialComputerNames is not supplied. Default is $FFUDevelopmentPath\Unattend\SerialComputerNames.csv.
+
+.PARAMETER UnattendX64FilePath
+Path to the x64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_x64.xml.
+
+.PARAMETER UnattendArm64FilePath
+Path to the arm64 unattend XML source file. Default is $FFUDevelopmentPath\Unattend\unattend_arm64.xml.
 
 .PARAMETER CreateDeploymentMedia
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
@@ -96,6 +114,9 @@ Path to a JSON file that specifies which drivers to download.
 .PARAMETER ExportConfigFile
 Path to a JSON file to export the parameters used for the script.
 
+.PARAMETER EnableVMNetworking
+When set to $true, connects the build VM to the Hyper-V virtual switch named in -VMSwitchName during provisioning. Default is $false because internet-connected Sysprep is experimental.
+
 .PARAMETER FFUCaptureLocation
 Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU.
 
@@ -109,7 +130,7 @@ Prefix for the generated FFU file. Default is _FFU.
 Headers to use when downloading files. Not recommended to modify.
 
 .PARAMETER InjectUnattend
-When set to $true and InstallApps is also $true, copies unattend_[arch].xml from $FFUDevelopmentPath\unattend to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
+When set to $true and InstallApps is also $true, stages the selected architecture-specific unattend XML file to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
 
 .PARAMETER InstallApps
 When set to $true, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.iso, install the apps, sysprep, and capture the VM. When set to $false, the FFU is created from a VHDX file, and no VM is created.
@@ -177,9 +198,6 @@ When set to $true, will remove the downloaded CU, MSRT, Defender, Edge, OneDrive
 .PARAMETER RemoveDownloadedESD
 When set to $true, will remove downloaded Windows ESD files after they have been applied. Default is $true.
 
-.PARAMETER ShareName
-Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.
-
 .PARAMETER Threads
 Controls the throttle applied to parallel tasks inside the script. Default is 5, matching the UI Threads field, and applies to driver downloads invoked through Invoke-ParallelProcessing.
 
@@ -228,17 +246,11 @@ User agent string to use when downloading files.
 .PARAMETER UserAppListPath
 Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json.
 
-.PARAMETER Username
-Username for accessing the shared folder. The default is ffu_user. The script will auto-create the account and password. When finished, it will remove the account.
-
-.PARAMETER VMHostIPAddress
-IP address of the Hyper-V host for FFU capture. If $InstallApps is set to $true, this parameter must be configured. You must manually configure this, or use the UI to auto-detect.
-
 .PARAMETER VMLocation
 Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.
 
 .PARAMETER VMSwitchName
-Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set to capture the FFU from the VM.
+Name of the Hyper-V virtual switch used when -EnableVMNetworking is set to $true. Provide it only if the VM needs network connectivity during provisioning.
 
 .PARAMETER WindowsArch
 String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
@@ -257,25 +269,25 @@ String value of the Windows version to download. This is used to identify which 
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -UpdateLatestCU $true -UpdateLatestNet $true -UpdateLatestDefender $true -UpdateEdge $true -UpdateOneDrive $true -verbose
 
 Command line for most people who want to create an FFU with Office and drivers and have downloaded their own ISO. This assumes you have copied this script and associated files to the C:\FFUDevelopment folder. If you need to use another drive or folder, change the -FFUDevelopment parameter (e.g. -FFUDevelopment 'D:\FFUDevelopment')
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who just want a FFU with no drivers, apps, or Office and have downloaded their own ISO.
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateCaptureMedia $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $false -InstallOffice $false -InstallDrivers $false -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who just want a FFU with Apps and drivers, no Office and have downloaded their own ISO.
-.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -ISOPath 'C:\path_to_iso\Windows.iso' -WindowsSKU 'Pro' -Installapps $true -InstallOffice $false -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 Command line for those who want to download the latest Windows 11 Pro x64 media in French (CA) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -WindowsRelease 11 -WindowsArch 'x64' -WindowsLang 'fr-ca' -MediaType 'consumer' -verbose
 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
-.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
+.\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
 .NOTES
     Additional notes about your script.
@@ -332,16 +344,12 @@ param(
     [uint64]$Memory = 4GB,
     [uint64]$Disksize = 50GB,
     [int]$Processors = 4,
+    [bool]$EnableVMNetworking,
     [string]$VMSwitchName,
     [string]$VMLocation,
     [string]$FFUPrefix = '_FFU',
     [string]$FFUCaptureLocation,
-    [string]$ShareName = "FFUCaptureShare",
-    [string]$Username = "ffu_user",
     [string]$CustomFFUNameTemplate,
-    [Parameter(Mandatory = $false)]
-    [string]$VMHostIPAddress,
-    [bool]$CreateCaptureMedia = $true,
     [bool]$CreateDeploymentMedia,
     [ValidateScript({
             $allowedFeatures = @("Windows-Defender-Default-Definitions", "Printing-PrintToPDFServices-Features", "Printing-XPSServices-Features", "TelnetClient", "TFTP",
@@ -423,9 +431,17 @@ param(
     [bool]$AllowVHDXCaching,
     [bool]$CopyPPKG,
     [bool]$CopyUnattend,
+    [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+    [string]$DeviceNamingMode = 'Legacy',
+    [string]$DeviceNameTemplate,
+    [string[]]$DeviceNamePrefixes,
+    [string]$DeviceNamePrefixesPath,
+    [string[]]$DeviceNameSerialComputerNames,
+    [string]$DeviceNameSerialComputerNamesPath,
+    [string]$UnattendX64FilePath,
+    [string]$UnattendArm64FilePath,
     [bool]$CopyAutopilot,
     [bool]$CompactOS = $true,
-    [bool]$CleanupCaptureISO = $true,
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true,
     [bool]$RemoveUpdates = $true,
@@ -464,7 +480,7 @@ param(
     [switch]$Cleanup
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2603.2'
+$version = '2604.1'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
@@ -519,6 +535,275 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
             # Set the parameter's value to what's in the config file
             Set-Variable -Name $key -Value $value -Scope 0
         }
+    }
+}
+
+function Get-UnattendSourcePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$UnattendFolder,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [string]$UnattendX64FilePath,
+        [string]$UnattendArm64FilePath
+    )
+
+    $resolvedArch = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+    $resolvedSourcePath = if ($resolvedArch -eq 'arm64') {
+        if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) {
+            Join-Path $UnattendFolder 'unattend_arm64.xml'
+        }
+        else {
+            $UnattendArm64FilePath
+        }
+    }
+    else {
+        if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) {
+            Join-Path $UnattendFolder 'unattend_x64.xml'
+        }
+        else {
+            $UnattendX64FilePath
+        }
+    }
+
+    WriteLog "Resolved unattend source path for ${resolvedArch}: $resolvedSourcePath"
+    return $resolvedSourcePath
+}
+
+function Initialize-UnattendComputerNamePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [xml]$UnattendXml,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch
+    )
+
+    $unattendRoot = $UnattendXml.DocumentElement
+    if (($null -eq $unattendRoot) -or ($unattendRoot.LocalName -ne 'unattend')) {
+        throw 'Unattend XML is missing the unattend root element.'
+    }
+
+    $unattendNamespace = $unattendRoot.NamespaceURI
+    if ([string]::IsNullOrWhiteSpace($unattendNamespace)) {
+        throw 'Unattend XML is missing the default unattend namespace.'
+    }
+
+    $namespaceManager = New-Object System.Xml.XmlNamespaceManager($UnattendXml.NameTable)
+    $namespaceManager.AddNamespace('un', $unattendNamespace)
+
+    $specializeSettings = $unattendRoot.SelectSingleNode("un:settings[@pass='specialize']", $namespaceManager)
+    $createdSpecializeSettings = $false
+    if ($null -eq $specializeSettings) {
+        $specializeSettings = $UnattendXml.CreateElement('settings', $unattendNamespace)
+        $null = $specializeSettings.SetAttribute('pass', 'specialize')
+        $firstSettingsNode = $unattendRoot.SelectSingleNode('un:settings', $namespaceManager)
+        if ($null -ne $firstSettingsNode) {
+            $null = $unattendRoot.InsertBefore($specializeSettings, $firstSettingsNode)
+        }
+        else {
+            $null = $unattendRoot.AppendChild($specializeSettings)
+        }
+        $createdSpecializeSettings = $true
+    }
+
+    $shellSetupComponent = $specializeSettings.SelectSingleNode("un:component[@name='Microsoft-Windows-Shell-Setup']", $namespaceManager)
+    $createdShellSetupComponent = $false
+    if ($null -eq $shellSetupComponent) {
+        $processorArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+        $shellSetupComponent = $UnattendXml.CreateElement('component', $unattendNamespace)
+        $null = $shellSetupComponent.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+        $null = $shellSetupComponent.SetAttribute('processorArchitecture', $processorArchitecture)
+        $null = $shellSetupComponent.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+        $null = $shellSetupComponent.SetAttribute('language', 'neutral')
+        $null = $shellSetupComponent.SetAttribute('versionScope', 'nonSxS')
+        $null = $shellSetupComponent.SetAttribute('xmlns:wcm', 'http://www.w3.org/2000/xmlns/', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+        $null = $shellSetupComponent.SetAttribute('xmlns:xsi', 'http://www.w3.org/2000/xmlns/', 'http://www.w3.org/2001/XMLSchema-instance')
+
+        $firstComponentNode = $specializeSettings.SelectSingleNode('un:component', $namespaceManager)
+        if ($null -ne $firstComponentNode) {
+            $null = $specializeSettings.InsertBefore($shellSetupComponent, $firstComponentNode)
+        }
+        else {
+            $null = $specializeSettings.AppendChild($shellSetupComponent)
+        }
+        $createdShellSetupComponent = $true
+    }
+
+    $computerNameElement = $shellSetupComponent.SelectSingleNode('un:ComputerName', $namespaceManager)
+    $createdComputerNameElement = $false
+    if ($null -eq $computerNameElement) {
+        $computerNameElement = $UnattendXml.CreateElement('ComputerName', $unattendNamespace)
+        $null = $shellSetupComponent.AppendChild($computerNameElement)
+        $createdComputerNameElement = $true
+    }
+
+    return [PSCustomObject]@{
+        ComputerNameElement        = $computerNameElement
+        CreatedSpecializeSettings  = $createdSpecializeSettings
+        CreatedShellSetupComponent = $createdShellSetupComponent
+        CreatedComputerNameElement = $createdComputerNameElement
+    }
+}
+
+function Save-StagedUnattendFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Legacy', 'None', 'Prompt', 'Template', 'Prefixes', 'SerialComputerNames')]
+        [string]$DeviceNamingMode,
+        [string]$DeviceNameTemplate,
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsArch,
+        [bool]$LegacyPrefixesWillBeStaged = $false
+    )
+
+    if ($DeviceNamingMode -eq 'None') {
+        Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+        return
+    }
+
+    [xml]$unattendXml = Get-Content -Path $SourcePath
+    $computerNamePath = Initialize-UnattendComputerNamePath -UnattendXml $unattendXml -WindowsArch $WindowsArch
+
+    if ($computerNamePath.CreatedSpecializeSettings -or $computerNamePath.CreatedShellSetupComponent -or $computerNamePath.CreatedComputerNameElement) {
+        $createdParts = @()
+        if ($computerNamePath.CreatedSpecializeSettings) {
+            $createdParts += 'specialize settings'
+        }
+        if ($computerNamePath.CreatedShellSetupComponent) {
+            $createdParts += 'Microsoft-Windows-Shell-Setup component'
+        }
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $createdParts += 'ComputerName element'
+        }
+        WriteLog "Created $($createdParts -join ', ') while staging unattend file $DestinationPath"
+    }
+
+    if ($DeviceNamingMode -eq 'Prompt') {
+        $computerNamePath.ComputerNameElement.InnerText = 'MyComputer'
+    }
+    elseif ($DeviceNamingMode -eq 'Template') {
+        $computerNamePath.ComputerNameElement.InnerText = $DeviceNameTemplate
+    }
+    elseif ($DeviceNamingMode -eq 'Prefixes') {
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $computerNamePath.ComputerNameElement.InnerText = '*'
+        }
+    }
+    elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+        if ($computerNamePath.CreatedComputerNameElement) {
+            $computerNamePath.ComputerNameElement.InnerText = '*'
+        }
+    }
+    elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
+        $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
+    }
+
+    $unattendXml.Save($DestinationPath)
+}
+
+$vmSwitchWasExplicitlyBound = $PSBoundParameters.ContainsKey('VMSwitchName')
+$enableVmNetworkingWasExplicitlyBound = $PSBoundParameters.ContainsKey('EnableVMNetworking')
+if (-not $EnableVMNetworking -and $vmSwitchWasExplicitlyBound -and -not $enableVmNetworkingWasExplicitlyBound) {
+    $EnableVMNetworking = $true
+    WriteLog 'EnableVMNetworking not explicitly set. Enabling VM networking because -VMSwitchName was supplied on the command line.'
+}
+
+$normalizedDeviceNameTemplate = if ($null -ne $DeviceNameTemplate) { $DeviceNameTemplate.Trim() } else { $null }
+$effectiveDeviceNamePrefixes = @($DeviceNamePrefixes | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+$resolvedDeviceNamePrefixesPath = if ([string]::IsNullOrWhiteSpace($DeviceNamePrefixesPath)) {
+    Join-Path (Join-Path $FFUDevelopmentPath 'Unattend') 'prefixes.txt'
+}
+else {
+    $DeviceNamePrefixesPath
+}
+$effectiveDeviceNameSerialComputerNames = @($DeviceNameSerialComputerNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+$resolvedDeviceNameSerialComputerNamesPath = if ([string]::IsNullOrWhiteSpace($DeviceNameSerialComputerNamesPath)) {
+    Join-Path (Join-Path $FFUDevelopmentPath 'Unattend') 'SerialComputerNames.csv'
+}
+else {
+    $DeviceNameSerialComputerNamesPath
+}
+
+if (($DeviceNamingMode -eq 'Prefixes') -and ($effectiveDeviceNamePrefixes.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNamePrefixesPath -PathType Leaf)) {
+    $effectiveDeviceNamePrefixes = @(Get-Content -Path $resolvedDeviceNamePrefixesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    WriteLog "Loaded device name prefixes from $resolvedDeviceNamePrefixesPath"
+}
+
+if (($DeviceNamingMode -eq 'SerialComputerNames') -and ($effectiveDeviceNameSerialComputerNames.Count -eq 0) -and (Test-Path -Path $resolvedDeviceNameSerialComputerNamesPath -PathType Leaf)) {
+    $effectiveDeviceNameSerialComputerNames = @(Get-Content -Path $resolvedDeviceNameSerialComputerNamesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    WriteLog "Loaded serial computer-name mappings from $resolvedDeviceNameSerialComputerNamesPath"
+}
+
+if ($CopyUnattend -and $InjectUnattend) {
+    throw 'CopyUnattend and InjectUnattend cannot both be set to `$true. Select only one unattend delivery method.'
+}
+
+if ($DeviceNamingMode -eq 'Template') {
+    if ([string]::IsNullOrWhiteSpace($normalizedDeviceNameTemplate)) {
+        throw 'DeviceNamingMode Template requires DeviceNameTemplate.'
+    }
+
+    $templateWithoutSupportedVariables = $normalizedDeviceNameTemplate -replace '(?i)%serial%', ''
+    if ($templateWithoutSupportedVariables -match '%') {
+        throw 'Only the %serial% device name variable is supported.'
+    }
+
+    if (-not ($CopyUnattend -or $InjectUnattend)) {
+        throw 'DeviceNamingMode Template requires either CopyUnattend or InjectUnattend.'
+    }
+
+    if ($InjectUnattend -and (-not $CopyUnattend) -and $normalizedDeviceNameTemplate -match '(?i)%serial%') {
+        throw 'The %serial% device name variable is only supported when CopyUnattend is used.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'Prompt') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode Prompt requires CopyUnattend. Prompt-based naming is not supported with InjectUnattend.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'Prefixes') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode Prefixes requires CopyUnattend. Prefix-based naming is not supported with InjectUnattend.'
+    }
+
+    if ($effectiveDeviceNamePrefixes.Count -eq 0) {
+        throw 'DeviceNamingMode Prefixes requires at least one DeviceNamePrefixes entry or a valid DeviceNamePrefixesPath.'
+    }
+}
+elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+    if (-not $CopyUnattend) {
+        throw 'DeviceNamingMode SerialComputerNames requires CopyUnattend. Serial-to-computer-name mapping is not supported with InjectUnattend.'
+    }
+
+    if ($effectiveDeviceNameSerialComputerNames.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires DeviceNameSerialComputerNames content or a valid DeviceNameSerialComputerNamesPath.'
+    }
+
+    try {
+        $serialComputerNameMappings = @($effectiveDeviceNameSerialComputerNames | ConvertFrom-Csv -ErrorAction Stop)
+    }
+    catch {
+        throw "DeviceNamingMode SerialComputerNames requires valid CSV content with SerialNumber and ComputerName headers. $($_.Exception.Message)"
+    }
+
+    if ($serialComputerNameMappings.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires at least one CSV data row.'
+    }
+
+    $serialComputerNameHeaders = @($serialComputerNameMappings[0].PSObject.Properties.Name)
+    if ((-not ($serialComputerNameHeaders -contains 'SerialNumber')) -or (-not ($serialComputerNameHeaders -contains 'ComputerName'))) {
+        throw 'DeviceNamingMode SerialComputerNames requires SerialNumber and ComputerName headers.'
+    }
+
+    $validSerialComputerNameMappings = @($serialComputerNameMappings | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_.SerialNumber) -and -not [string]::IsNullOrWhiteSpace([string]$_.ComputerName)
+        })
+    if ($validSerialComputerNameMappings.Count -eq 0) {
+        throw 'DeviceNamingMode SerialComputerNames requires at least one row with both SerialNumber and ComputerName values.'
     }
 }
 
@@ -608,6 +893,55 @@ public static extern uint GetPrivateProfileSection(
 '@
 Add-Type -MemberDefinition $definition -Namespace Win32 -Name Kernel32 -PassThru | Out-Null
 
+function Get-WindowsTargetRuntimeState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsSKU,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CurrentWindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$UpdateLatestCU
+    )
+
+    $localInstallationType = if ($WindowsSKU -like 'Standard*' -or $WindowsSKU -like 'Datacenter*') { 'Server' } else { 'Client' }
+    $localWindowsVersion = $CurrentWindowsVersion
+    $localIsLTSC = $false
+
+    if ($localInstallationType -eq 'Server') {
+        switch ($WindowsRelease) {
+            2016 { $localWindowsVersion = '1607' }
+            2019 { $localWindowsVersion = '1809' }
+            2022 { $localWindowsVersion = '21H2' }
+            2025 { $localWindowsVersion = '24H2' }
+        }
+    }
+
+    if ($WindowsSKU -like '*LTS*') {
+        switch ($WindowsRelease) {
+            2016 { $localWindowsVersion = '1607' }
+            2019 { $localWindowsVersion = '1809' }
+            2021 { $localWindowsVersion = '21H2' }
+            2024 { $localWindowsVersion = '24H2' }
+        }
+        $localIsLTSC = $true
+    }
+
+    $localIsWindows10LtscClient = ($localInstallationType -eq 'Client') -and ($WindowsRelease -in 2016, 2019, 2021) -and $localIsLTSC
+
+    return [pscustomobject]@{
+        InstallationType      = $localInstallationType
+        WindowsVersion        = $localWindowsVersion
+        IsLTSC                = $localIsLTSC
+        IsWindows10LtscClient = $localIsWindows10LtscClient
+        InstallLatestCuInVm   = ($UpdateLatestCU -and $localIsWindows10LtscClient)
+    }
+}
+
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-CimInstance -ClassName win32_OperatingSystem
 $isServer = $osInfo.Caption -match 'server'
@@ -633,6 +967,7 @@ if (-not $AppsPath) { $AppsPath = "$FFUDevelopmentPath\Apps" }
 if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
 if (-not $UserAppListPath) { $UserAppListPath = "$AppsPath\UserAppList.json" }
 if (-not $OrchestrationPath) { $OrchestrationPath = "$AppsPath\Orchestration" }
+if (-not $appInstallConfigPath) { $appInstallConfigPath = "$OrchestrationPath\AppInstallConfig.json" }
 if (-not $wingetWin32jsonFile) { $wingetWin32jsonFile = "$OrchestrationPath\WinGetWin32Apps.json" }
 if (-not $InstallOfficePath) { $InstallOfficePath = "$OrchestrationPath\Install-Office.ps1" }
 if (-not $InstallDefenderPath) { $InstallDefenderPath = "$OrchestrationPath\Update-Defender.ps1" }
@@ -646,7 +981,6 @@ if (-not $LtscCUStagePath) { $LtscCUStagePath = "$AppsPath\LTSCUpdate" }
 
 if (-not $AppsScriptVarsJsonPath) { $AppsScriptVarsJsonPath = "$OrchestrationPath\AppsScriptVariables.json" }
 if (-not $DeployISO) { $DeployISO = "$FFUDevelopmentPath\WinPE_FFU_Deploy_$WindowsArch.iso" }
-if (-not $CaptureISO) { $CaptureISO = "$FFUDevelopmentPath\WinPE_FFU_Capture_$WindowsArch.iso" }
 if (-not $OfficePath) { $OfficePath = "$AppsPath\Office" }
 if (-not $OfficeDownloadXML) { $OfficeDownloadXML = "$OfficePath\DownloadFFU.xml" }
 if (-not $OfficeInstallXML) { $OfficeInstallXML = "DeployFFU.xml" }
@@ -666,34 +1000,18 @@ if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
 if (-not $DriversFolder) { $DriversFolder = "$FFUDevelopmentPath\Drivers" }
 if (-not $PPKGFolder) { $PPKGFolder = "$FFUDevelopmentPath\PPKG" }
 if (-not $UnattendFolder) { $UnattendFolder = "$FFUDevelopmentPath\Unattend" }
+if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) { $UnattendX64FilePath = Join-Path $UnattendFolder 'unattend_x64.xml' }
+if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) { $UnattendArm64FilePath = Join-Path $UnattendFolder 'unattend_arm64.xml' }
 if (-not $AutopilotFolder) { $AutopilotFolder = "$FFUDevelopmentPath\Autopilot" }
 if (-not $PEDriversFolder) { $PEDriversFolder = "$FFUDevelopmentPath\PEDrivers" }
 if (-not $VHDXCacheFolder) { $VHDXCacheFolder = "$FFUDevelopmentPath\VHDXCache" }
-if (-not $installationType) { $installationType = if ($WindowsSKU -like "Standard*" -or $WindowsSKU -like "Datacenter*") { 'Server' } else { 'Client' } }
-if ($installationType -eq 'Server') {
-    #Map $WindowsRelease to $WindowsVersion for Windows Server
-    switch ($WindowsRelease) {
-        2016 { $WindowsVersion = '1607' }
-        2019 { $WindowsVersion = '1809' }
-        2022 { $WindowsVersion = '21H2' }
-        2025 { $WindowsVersion = '24H2' }
-    }
-}
 if (-not $AppListPath) { $AppListPath = "$AppsPath\AppList.json" }
-
-if ($WindowsSKU -like "*LTS*") {
-    switch ($WindowsRelease) {
-        2016 { $WindowsVersion = '1607' }
-        2019 { $WindowsVersion = '1809' }
-        2021 { $WindowsVersion = '21H2' }
-        2024 { $WindowsVersion = '24H2' }
-    }
-    $isLTSC = $true
-}
-
-# Determine runtime LTSC CU handling flags
-$isWindows10LtscClient = ($installationType -eq 'Client') -and ($WindowsRelease -in 2016, 2019, 2021) -and ($WindowsSKU -like '*LTS*')
-$installLatestCuInVm = ($UpdateLatestCU -and $isWindows10LtscClient)
+$windowsTargetRuntimeState = Get-WindowsTargetRuntimeState -WindowsRelease $WindowsRelease -WindowsSKU $WindowsSKU -CurrentWindowsVersion $WindowsVersion -UpdateLatestCU:$UpdateLatestCU
+$installationType = $windowsTargetRuntimeState.InstallationType
+$WindowsVersion = $windowsTargetRuntimeState.WindowsVersion
+$isLTSC = $windowsTargetRuntimeState.IsLTSC
+$isWindows10LtscClient = $windowsTargetRuntimeState.IsWindows10LtscClient
+$installLatestCuInVm = $windowsTargetRuntimeState.InstallLatestCuInVm
 $refreshAppsIsoForLtscCu = $false
 
 # Set the log path for the common logger
@@ -815,78 +1133,11 @@ function Get-MicrosoftDrivers {
         [int]$WindowsRelease
     )
 
-    $url = "https://support.microsoft.com/en-us/surface/download-drivers-and-firmware-for-surface-09bb2e09-2a4b-cb69-0951-078a7739e120"
-
-    ### DOWNLOAD DRIVER PAGE CONTENT
-    WriteLog "Getting Surface driver information from $url"
-    $OriginalVerbosePreference = $VerbosePreference
-    $VerbosePreference = 'SilentlyContinue'
-    $webContent = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $Headers -UserAgent $UserAgent
-    $VerbosePreference = $OriginalVerbosePreference
+    # Use the shared Learn-based Microsoft model index so the CLI stays aligned with the UI.
+    WriteLog "Getting Surface driver information from the shared Microsoft model index"
+    $models = @(Get-SurfaceDriverModelIndex -DriversFolder $DriversFolder | Select-Object Model, Link)
     WriteLog "Complete"
-
-    ### PARSE THE DRIVER PAGE CONTENT FOR MODELS AND DOWNLOAD LINKS
-    WriteLog "Parsing web content for models and download links"
-    $html = $webContent.Content
-
-    # Regex to match divs with selectable-content-options__option-content classes
-    $divPattern = '<div[^>]*class="selectable-content-options__option-content(?: ocHidden)?"[^>]*>(.*?)</div>'
-    $divMatches = [regex]::Matches($html, $divPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-    $models = @()
-
-    foreach ($divMatch in $divMatches) {
-        $divContent = $divMatch.Groups[1].Value
-
-        # Find all tables within the div
-        $tablePattern = '<table[^>]*>(.*?)</table>'
-        $tableMatches = [regex]::Matches($divContent, $tablePattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-        foreach ($tableMatch in $tableMatches) {
-            $tableContent = $tableMatch.Groups[1].Value
-
-            # Find all rows in the table
-            $rowPattern = '<tr[^>]*>(.*?)</tr>'
-            $rowMatches = [regex]::Matches($tableContent, $rowPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-            foreach ($rowMatch in $rowMatches) {
-                $rowContent = $rowMatch.Groups[1].Value
-
-                # Extract cells from the row
-                $cellPattern = '<td[^>]*>\s*(?:<p[^>]*>)?(.*?)(?:</p>)?\s*</td>'
-                $cellMatches = [regex]::Matches($rowContent, $cellPattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
-
-                if ($cellMatches.Count -ge 2) {
-                    # Model name in the first TD
-                    $modelName = ($cellMatches[0].Groups[1].Value).Trim()
-
-                    # # Remove <p> and </p> tags if present
-                    # $modelName = $modelName -replace '<p[^>]*>', '' -replace '</p>', ''
-                    # $modelName = $modelName.Trim()
-
-
-                    # The second TD might contain a link or just text
-                    $secondTdContent = $cellMatches[1].Groups[1].Value.Trim()
-
-                    # Look for a link in the second TD
-                    $linkPattern = '<a[^>]+href="([^"]+)"[^>]*>'
-                    $linkMatch = [regex]::Match($secondTdContent, $linkPattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-
-                    if ($linkMatch.Success) {
-                        $modelLink = $linkMatch.Groups[1].Value
-                    }
-                    else {
-                        # No link, just text instructions
-                        $modelLink = $secondTdContent
-                    }
-
-                    $models += [PSCustomObject]@{ Model = $modelName; Link = $modelLink }
-                }
-            }
-        }
-    }
-
-    WriteLog "Parsing complete"
+    WriteLog "Loaded $($models.Count) Surface models from the shared Microsoft model index."
 
     ### FIND THE MODEL IN THE LIST OF MODELS
     $selectedModel = $models | Where-Object { $_.Model -eq $Model }
@@ -1271,10 +1522,11 @@ function Get-LenovoDrivers {
         # If anyone knows how to reliably get the the model and machine type information from Lenovo, let me know.
         # https://download.lenovo.com/cdrt/td/catalogv2.xml only provides a subset of the information available from PSREF (e.g. it's missing 300w, 500w, and other consumer models).
 
-        # $lenovoCookie = "X-PSREF-USER-TOKEN=eyJ0eXAiOiJKV1QifQ.bjVTdWk0YklZeUc2WnFzL0lXU0pTeU1JcFo0aExzRXl1UGxHN3lnS1BtckI0ZVU5WEJyVGkvaFE0NmVNU2U1ZjNrK3ZqTEVIZ29nTk1TNS9DQmIwQ0pTN1Q1VytlY1RpNzZTUldXbm4wZ1g2RGJuQWg4MXRkTmxKT2YrOW9LRjBzQUZzV05HM3NpcU92WFVTM0o0blM1SDQyUlVXNThIV1VBS2R0c1B2NjJyQjIrUGxNZ2x6RTRhUjY5UDZWclBX.ZDBmM2EyMWRjZTg2N2JmYWMxZDIxY2NiYjQzMWFhNjg1YjEzZTAxNmU2M2RmN2M5ZjIyZWJhMzZkOWI1OWJhZg"
+        $lenovoCookie = "X-PSREF-USER-TOKEN=eyJ0eXAiOiJKV1QifQ.bjVTdWk0YklZeUc2WnFzL0lXU0pTeU1JcFo0aExzRXl1UGxHN3lnS1BtckI0ZVU5WEJyVGkvaFE0NmVNU2U1ZjNrK3ZqTEVIZ29nTk1TNS9DQmIwQ0pTN1Q1VytlY1RpNzZTUldXbm4wZ1g2RGJuQWg4MXRkTmxKT2YrOW9LRjBzQUZzV05HM3NpcU92WFVTM0o0blM1SDQyUlVXNThIV1VBS2R0c1B2NjJyQjIrUGxNZ2x6RTRhUjY5UDZWclBX.ZDBmM2EyMWRjZTg2N2JmYWMxZDIxY2NiYjQzMWFhNjg1YjEzZTAxNmU2M2RmN2M5ZjIyZWJhMzZkOWI1OWJhZg"
     
         # Wrote a separate function to grab the token. Check the function notes for more details. Keep the above comment for now to see if the cookie ever changes.
-        $lenovoCookie = Get-LenovoPSREFToken
+        # 3/25/2026 - The cookie is still the same after 8 months, but we'll keep the retrieval function in case it changes in the future or if we need to get a new one.
+        # $lenovoCookie = Get-LenovoPSREFToken
 
         # Add the cookie to the headers
         $Headers["Cookie"] = $lenovoCookie
@@ -2437,6 +2689,54 @@ function Save-KB {
     return $fileName
 }
 
+function Sync-UserAppListForOrchestration {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SourcePath,
+        [Parameter(Mandatory)]
+        [string]$AppsPath,
+        [Parameter(Mandatory)]
+        [string]$OrchestrationPath,
+        [Parameter(Mandatory)]
+        [string]$AppInstallConfigPath
+    )
+
+    # Ensure the orchestration folder exists before writing runtime configuration.
+    if (-not (Test-Path -Path $OrchestrationPath -PathType Container)) {
+        New-Item -Path $OrchestrationPath -ItemType Directory -Force | Out-Null
+    }
+
+    # Persist the runtime BYO app list path so Orchestrator can honor custom file names.
+    $appInstallConfig = [ordered]@{
+        UserAppListPath = $null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SourcePath) -and (Test-Path -Path $SourcePath -PathType Leaf)) {
+        $stagedUserAppListName = Split-Path -Path $SourcePath -Leaf
+        $stagedUserAppListPath = Join-Path -Path $AppsPath -ChildPath $stagedUserAppListName
+
+        if (-not [string]::Equals([System.IO.Path]::GetFullPath($SourcePath), [System.IO.Path]::GetFullPath($stagedUserAppListPath), [System.StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -Path $SourcePath -Destination $stagedUserAppListPath -Force | Out-Null
+            WriteLog "Staged BYO app list for orchestration: $SourcePath -> $stagedUserAppListPath"
+        }
+        else {
+            WriteLog "Using BYO app list already staged at $stagedUserAppListPath"
+        }
+
+        $appInstallConfig.UserAppListPath = "D:\$stagedUserAppListName"
+    }
+    elseif (Test-Path -Path (Join-Path -Path $AppsPath -ChildPath 'UserAppList.json') -PathType Leaf) {
+        $appInstallConfig.UserAppListPath = "D:\UserAppList.json"
+        WriteLog "Using default BYO app list path for orchestration."
+    }
+    else {
+        WriteLog "No BYO app list found at configured path '$SourcePath'."
+    }
+
+    $appInstallConfig | ConvertTo-Json | Set-Content -Path $AppInstallConfigPath -Encoding UTF8
+    WriteLog "Wrote app install config to $AppInstallConfigPath"
+}
+
 function New-AppsISO {
     #Create Apps ISO file
     $OSCDIMG = "$adkpath`Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -2462,13 +2762,76 @@ function Get-WimFromISO {
     return $wimPath
 }
 
-function Get-Index {
+function Get-ResolvedWindowsSKUFromImage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EditionId,
+
+        [string]$InstallationType,
+
+        [string]$ImageName,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease
+    )
+
+    $normalizedInstallationType = if ([string]::IsNullOrWhiteSpace($InstallationType)) { '' } else { $InstallationType.Trim() }
+
+    switch ($EditionId) {
+        'Core' { return 'Home' }
+        'CoreN' { return 'Home N' }
+        'CoreSingleLanguage' { return 'Home Single Language' }
+        'Education' { return 'Education' }
+        'EducationN' { return 'Education N' }
+        'Professional' { return 'Pro' }
+        'ProfessionalN' { return 'Pro N' }
+        'ProfessionalEducation' { return 'Pro Education' }
+        'ProfessionalEducationN' { return 'Pro Education N' }
+        'ProfessionalWorkstation' { return 'Pro for Workstations' }
+        'ProfessionalWorkstationN' { return 'Pro N for Workstations' }
+        'Enterprise' { return 'Enterprise' }
+        'EnterpriseN' { return 'Enterprise N' }
+        'EnterpriseS' {
+            if ($WindowsRelease -eq 2016 -or $ImageName -match 'LTSB') {
+                return 'Enterprise 2016 LTSB'
+            }
+            return 'Enterprise LTSC'
+        }
+        'EnterpriseSN' {
+            if ($WindowsRelease -eq 2016 -or $ImageName -match 'LTSB') {
+                return 'Enterprise N 2016 LTSB'
+            }
+            return 'Enterprise N LTSC'
+        }
+        'IoTEnterpriseS' { return 'IoT Enterprise LTSC' }
+        'IoTEnterpriseSN' { return 'IoT Enterprise N LTSC' }
+        'ServerStandard' {
+            if ($normalizedInstallationType -eq 'Server') {
+                return 'Standard (Desktop Experience)'
+            }
+            return 'Standard'
+        }
+        'ServerDatacenter' {
+            if ($normalizedInstallationType -eq 'Server') {
+                return 'Datacenter (Desktop Experience)'
+            }
+            return 'Datacenter'
+        }
+    }
+
+    return $null
+}
+
+function Get-WindowsImageSelection {
     param(
         [Parameter(Mandatory = $true)]
         [string]$WindowsImagePath,
 
         [Parameter(Mandatory = $true)]
-        [string]$WindowsSKU
+        [string]$WindowsSKU,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease
     )
 
     # Get the available indexes in the WIM/ESD
@@ -2553,25 +2916,26 @@ function Get-Index {
         }
     }
 
+    # Build per-index metadata (EditionId, InstallationType, resolved SKU) once for deterministic matching and fallback prompts.
+    $imageMetadata = @(foreach ($imageIndex in $imageIndexes) {
+            try {
+                $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
+                [pscustomobject]@{
+                    ImageIndex        = $details.ImageIndex
+                    ImageName         = $details.ImageName
+                    ImageSize         = $details.ImageSize
+                    EditionId         = $details.EditionId
+                    InstallationType  = $details.InstallationType
+                    ResolvedWindowsSKU = Get-ResolvedWindowsSKUFromImage -EditionId $details.EditionId -InstallationType $details.InstallationType -ImageName $details.ImageName -WindowsRelease $WindowsRelease
+                }
+            }
+            catch {
+                $null
+            }
+        }) | Where-Object { $null -ne $_ }
+
     # If we can map SKU -> EditionId, attempt a non-interactive match
     if ($editionIdCandidates.Count -gt 0) {
-        # Build per-index metadata (EditionId, InstallationType) to match deterministically
-        $imageMetadata = @(foreach ($imageIndex in $imageIndexes) {
-                try {
-                    $details = Get-WindowsImage -ImagePath $WindowsImagePath -Index $imageIndex.ImageIndex
-                    [pscustomobject]@{
-                        ImageIndex       = $details.ImageIndex
-                        ImageName        = $details.ImageName
-                        ImageSize        = $details.ImageSize
-                        EditionId        = $details.EditionId
-                        InstallationType = $details.InstallationType
-                    }
-                }
-                catch {
-                    $null
-                }
-            }) | Where-Object { $null -ne $_ }
-
         # Match by EditionId first
         $imageMatches = $imageMetadata | Where-Object { $_.EditionId -in $editionIdCandidates }
 
@@ -2586,14 +2950,17 @@ function Get-Index {
         # If multiple matches remain, pick the largest image (Desktop Experience tends to be larger)
         if ($imageMatches.Count -gt 0) {
             $bestMatch = $imageMatches | Sort-Object -Property ImageSize -Descending | Select-Object -First 1
-            WriteLog "Selected Windows image index $($bestMatch.ImageIndex) (SKU='$WindowsSKU', EditionId='$($bestMatch.EditionId)', InstallationType='$($bestMatch.InstallationType)'): $($bestMatch.ImageName)"
-            return $bestMatch.ImageIndex
+            WriteLog "Selected Windows image index $($bestMatch.ImageIndex) (RequestedSKU='$WindowsSKU', ResolvedSKU='$($bestMatch.ResolvedWindowsSKU)', EditionId='$($bestMatch.EditionId)', InstallationType='$($bestMatch.InstallationType)'): $($bestMatch.ImageName)"
+            return $bestMatch
         }
     }
 
     # Final fallback: prompt the user to select an ImageName
     # Look for the numbers 10, 11, 2016, 2019, 2022+ in the ImageName
-    $relevantImageIndexes = $imageIndexes | Where-Object { ($_.ImageName -match "(10|11|2016|2019|202\d)") }
+    $relevantImageIndexes = @($imageMetadata | Where-Object { $_.ImageName -match "(10|11|2016|2019|202\d)" })
+    if ($relevantImageIndexes.Count -eq 0) {
+        $relevantImageIndexes = $imageMetadata
+    }
 
     WriteLog "No matching image index found for SKU '$WindowsSKU' in '$WindowsImagePath'. Prompting user to select an ImageName."
 
@@ -2614,8 +2981,8 @@ function Get-Index {
         $selectedImage = $relevantImageIndexes[$inputValue - 1]
 
         if ($selectedImage) {
-            WriteLog "User selected Windows image index $($selectedImage.ImageIndex) (SKU='$WindowsSKU'): $($selectedImage.ImageName)"
-            return $selectedImage.ImageIndex
+            WriteLog "User selected Windows image index $($selectedImage.ImageIndex) (RequestedSKU='$WindowsSKU', ResolvedSKU='$($selectedImage.ResolvedWindowsSKU)'): $($selectedImage.ImageName)"
+            return $selectedImage
         }
         else {
             Write-Host "Invalid selection, please try again."
@@ -2840,6 +3207,27 @@ function New-FFUVM {
     $VM = New-VM -Name $VMName -Path $VMPath -MemoryStartupBytes $memory -VHDPath $VHDXPath -Generation 2
     Set-VMProcessor -VMName $VMName -Count $processors
 
+    # Connect the VM to the requested switch only when the experimental networking flag is enabled.
+    if ($EnableVMNetworking) {
+        $primaryVmNetworkAdapter = Get-VMNetworkAdapter -VMName $VMName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $primaryVmNetworkAdapter) {
+            if ($primaryVmNetworkAdapter.SwitchName -eq $VMSwitchName) {
+                WriteLog "VM '$VMName' is already connected to Hyper-V switch '$VMSwitchName'."
+            }
+            else {
+                Connect-VMNetworkAdapter -VMNetworkAdapter $primaryVmNetworkAdapter -SwitchName $VMSwitchName -ErrorAction Stop
+                WriteLog "Connected VM '$VMName' to Hyper-V switch '$VMSwitchName'."
+            }
+        }
+        else {
+            Add-VMNetworkAdapter -VMName $VMName -SwitchName $VMSwitchName -Name 'FFUNetworkAdapter' -ErrorAction Stop | Out-Null
+            WriteLog "Added VM network adapter for '$VMName' on Hyper-V switch '$VMSwitchName'."
+        }
+    }
+    else {
+        WriteLog "VM networking is disabled for '$VMName'."
+    }
+
     #Mount AppsISO
     Add-VMDvdDrive -VMName $VMName -Path $AppsISO
    
@@ -2863,69 +3251,6 @@ function New-FFUVM {
     Start-VM -Name $VMName
 
     return $VM
-}
-
-Function Set-CaptureFFU {
-    $CaptureFFUScriptPath = "$FFUDevelopmentPath\WinPECaptureFFUFiles\CaptureFFU.ps1"
-
-    # Workaround for PowerShell 7 issue on Windows 11 23H2 and earlier
-    # https://github.com/PowerShell/PowerShell/issues/21645
-    $osBuild = (Get-CimInstance -ClassName Win32_OperatingSystem).BuildNumber
-    if ($osBuild -le 22631) {
-        WriteLog "Applying workaround for PowerShell 7 LocalAccounts module issue on Windows 11 build $osBuild"
-        Import-Module Microsoft.PowerShell.LocalAccounts -UseWindowsPowerShell
-    }
-
-    If (-not (Test-Path -Path $FFUCaptureLocation)) {
-        WriteLog "Creating FFU capture location at $FFUCaptureLocation"
-        New-Item -Path $FFUCaptureLocation -ItemType Directory -Force
-        WriteLog "Successfully created FFU capture location at $FFUCaptureLocation"
-    }
-
-    # Create a standard user
-    $UserExists = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
-    if (-not $UserExists) {
-        WriteLog "Creating FFU_User account as standard user"
-        New-LocalUser -Name $UserName -AccountNeverExpires -NoPassword | Out-null
-        WriteLog "Successfully created FFU_User account"
-    }
-
-    # Create a random password for the standard user
-    $Password = New-Guid | Select-Object -ExpandProperty Guid
-    $SecurePassword = ConvertTo-SecureString -String $Password -AsPlainText -Force
-    Set-LocalUser -Name $UserName -Password $SecurePassword -PasswordNeverExpires:$true
-
-    # Create a share of the $FFUCaptureLocation variable
-    $ShareExists = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
-    if (-not $ShareExists) {
-        WriteLog "Creating $ShareName and giving access to $UserName"
-        New-SmbShare -Name $ShareName -Path $FFUCaptureLocation -FullAccess $UserName | Out-Null
-        WriteLog "Share created"
-    }
-
-    # Return the share path in the format of \\<IPAddress>\<ShareName> /user:<UserName> <password>
-    $SharePath = "\\$VMHostIPAddress\$ShareName /user:$UserName $Password"
-    $SharePath = "net use W: " + $SharePath + ' 2>&1'
-    
-    # Update CaptureFFU.ps1 script
-    if (Test-Path -Path $CaptureFFUScriptPath) {
-        $ScriptContent = Get-Content -Path $CaptureFFUScriptPath
-        #Update variables in CaptureFFU.ps1 script ($VMHostIPAddress, $ShareName, $UserName, $Password)
-        WriteLog 'Updating CaptureFFU.ps1 script with new share information'
-        $ScriptContent = $ScriptContent -replace '(\$VMHostIPAddress = ).*', "`$1'$VMHostIPAddress'"
-        $ScriptContent = $ScriptContent -replace '(\$ShareName = ).*', "`$1'$ShareName'"
-        $ScriptContent = $ScriptContent -replace '(\$UserName = ).*', "`$1'$UserName'"
-        $ScriptContent = $ScriptContent -replace '(\$Password = ).*', "`$1'$Password'"
-        if (![string]::IsNullOrEmpty($CustomFFUNameTemplate)) {
-            $ScriptContent = $ScriptContent -replace '(\$CustomFFUNameTemplate = ).*', "`$1'$CustomFFUNameTemplate'"
-            WriteLog 'Updating CaptureFFU.ps1 script with new ffu name template information'
-        }
-        Set-Content -Path $CaptureFFUScriptPath -Value $ScriptContent
-        WriteLog 'Update complete'
-    }
-    else {
-        throw "CaptureFFU.ps1 script not found at $CaptureFFUScriptPath"
-    }
 }
 
 function Get-PrivateProfileString {
@@ -3388,12 +3713,7 @@ function Copy-Drivers {
 }
 
 function New-PEMedia {
-    param (
-        [Parameter()]
-        [bool]$Capture,
-        [Parameter()]
-        [bool]$Deploy
-    )
+    param ()
     #Need to use the Demployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
@@ -3448,64 +3768,49 @@ function New-PEMedia {
         Add-WindowsPackage -Path "$WinPEFFUPath\mount" -PackagePath $PackagePath | Out-Null
         WriteLog "Adding package complete"
     }
-    If ($Capture) {
-        WriteLog "Copying $FFUDevelopmentPath\WinPECaptureFFUFiles\* to WinPE capture media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPECaptureFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | out-null
-        WriteLog "Copy complete"
-        #Remove Bootfix.bin - for BIOS systems, shouldn't be needed, but doesn't hurt to remove for our purposes
-        #Remove-Item -Path "$WinPEFFUPath\media\boot\bootfix.bin" -Force | Out-null
-        # $WinPEISOName = 'WinPE_FFU_Capture.iso'
-        $WinPEISOFile = $CaptureISO
-        # $Capture = $false
-    }
-    If ($Deploy) {
-        WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
-        Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
-        WriteLog 'Copy complete'
-        #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
-        if ($CopyPEDrivers) {
-            if ($UseDriversAsPEDrivers) {
-                WriteLog "UseDriversAsPEDrivers is set. Building WinPE driver set from Drivers folder (bypassing PEDrivers folder contents)."
-                if (Test-Path -Path $PEDriversFolder) {
-                    try {
-                        Remove-Item -Path (Join-Path $PEDriversFolder '*') -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-                    }
-                    catch {
-                        WriteLog "Warning: Failed clearing existing PEDriversFolder contents: $($_.Exception.Message)"
-                    }
+    WriteLog "Copying $FFUDevelopmentPath\WinPEDeployFFUFiles\* to WinPE deploy media"
+    Copy-Item -Path "$FFUDevelopmentPath\WinPEDeployFFUFiles\*" -Destination "$WinPEFFUPath\mount" -Recurse -Force | Out-Null
+    WriteLog 'Copy complete'
+    #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
+    if ($CopyPEDrivers) {
+        if ($UseDriversAsPEDrivers) {
+            WriteLog "UseDriversAsPEDrivers is set. Building WinPE driver set from Drivers folder (bypassing PEDrivers folder contents)."
+            if (Test-Path -Path $PEDriversFolder) {
+                try {
+                    Remove-Item -Path (Join-Path $PEDriversFolder '*') -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
                 }
-                else {
-                    try {
-                        New-Item -Path $PEDriversFolder -ItemType Directory -Force | Out-Null
-                    }
-                    catch {
-                        WriteLog "Error: Failed to create PEDriversFolder at $PEDriversFolder - continuing may fail when adding drivers."
-                    }
+                catch {
+                    WriteLog "Warning: Failed clearing existing PEDriversFolder contents: $($_.Exception.Message)"
                 }
-                WriteLog "Copying required WinPE drivers from Drivers folder"
-                Copy-Drivers -Path $DriversFolder -Output $PEDriversFolder
             }
             else {
-                WriteLog "Copying PE drivers from PEDrivers folder"
+                try {
+                    New-Item -Path $PEDriversFolder -ItemType Directory -Force | Out-Null
+                }
+                catch {
+                    WriteLog "Error: Failed to create PEDriversFolder at $PEDriversFolder - continuing may fail when adding drivers."
+                }
             }
-            
-            WriteLog "Adding drivers to WinPE media"
-            try {
-                $WinPEMount = "$WinPEFFUPath\Mount"
-
-                # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
-                Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $PEDriversFolder
-            }
-            catch {
-                WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
-            }
-            WriteLog "Adding drivers complete"
+            WriteLog "Copying required WinPE drivers from Drivers folder"
+            Copy-Drivers -Path $DriversFolder -Output $PEDriversFolder
         }
-        # $WinPEISOName = 'WinPE_FFU_Deploy.iso'
-        $WinPEISOFile = $DeployISO
+        else {
+            WriteLog "Copying PE drivers from PEDrivers folder"
+        }
+        
+        WriteLog "Adding drivers to WinPE media"
+        try {
+            $WinPEMount = "$WinPEFFUPath\Mount"
 
-        # $Deploy = $false
+            # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
+            Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $PEDriversFolder
+        }
+        catch {
+            WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
+        }
+        WriteLog "Adding drivers complete"
     }
+    $WinPEISOFile = $DeployISO
     WriteLog 'Dismounting WinPE media' 
     Dismount-WindowsImage -Path "$WinPEFFUPath\mount" -Save | Out-Null
     WriteLog 'Dismount complete'
@@ -3520,21 +3825,10 @@ function New-PEMedia {
     WriteLog "Creating WinPE ISO at $WinPEISOFile"
     # & "$OSCDIMG" -m -o -u2 -udfver102 -bootdata:2`#p0,e,b$OSCDIMGPath\etfsboot.com`#pEF,e,b$OSCDIMGPath\Efisys_noprompt.bin $WinPEFFUPath\media $FFUDevelopmentPath\$WinPEISOName | Out-null
     if ($WindowsArch -eq 'x64') {
-        if ($Capture) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        if ($Deploy) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:2`#p0,e,b`"$OSCDIMGPath\etfsboot.com`"`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
     }
     elseif ($WindowsArch -eq 'arm64') {
-        if ($Capture) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys_noprompt.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        if ($Deploy) {
-            $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
-        }
-        
+        $OSCDIMGArgs = "-m -o -u2 -udfver102 -bootdata:1`#pEF,e,b`"$OSCDIMGPath\Efisys.bin`" `"$WinPEFFUPath\media`" `"$WinPEISOFile`""
     }
     Invoke-Process $OSCDIMG $OSCDIMGArgs | Out-Null
     WriteLog "ISO created successfully"
@@ -3542,7 +3836,7 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
     # Deferred cleanup of preserved driver model folders (only after WinPE Deploy media is created)
-    if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $Deploy -and $CopyPEDrivers) {
+    if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $CopyPEDrivers) {
         WriteLog "Beginning deferred cleanup of preserved driver model folders (UseDriversAsPEDrivers + compression scenario)."
         $removedCount = 0
         $skippedCount = 0
@@ -3633,6 +3927,40 @@ function Optimize-FFUCaptureDrive {
     }
 }
 
+function Get-CaptureVhdContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$VhdxPath
+    )
+
+    WriteLog 'Resolving VHDX context for host-side FFU capture'
+
+    $vhdInfo = Get-VHD -Path $VhdxPath
+    if ($vhdInfo.Attached) {
+        WriteLog 'VHDX is already mounted for capture'
+        $captureDisk = Get-Disk -Number $vhdInfo.DiskNumber
+    }
+    else {
+        WriteLog 'Mounting VHDX for capture'
+        $captureDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+    }
+
+    $captureOsPartition = $captureDisk | Get-Partition | Where-Object { $_.GptType -eq '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' } | Select-Object -First 1
+    if ($null -eq $captureOsPartition) {
+        throw 'Unable to resolve Windows partition for FFU capture.'
+    }
+    if ([string]::IsNullOrWhiteSpace($captureOsPartition.DriveLetter)) {
+        throw 'Unable to resolve Windows partition drive letter for FFU capture.'
+    }
+
+    return [pscustomobject]@{
+        Disk                   = $captureDisk
+        OsPartition            = $captureOsPartition
+        OsPartitionDriveLetter = $captureOsPartition.DriveLetter
+        WindowsPartition       = "$($captureOsPartition.DriveLetter):\"
+    }
+}
+
 function Get-ShortenedWindowsSKU {
     param (
         [string]$WindowsSKU
@@ -3681,128 +4009,101 @@ function Get-ShortenedWindowsSKU {
     return $shortenedWindowsSKU
 
 }
+function Get-FFUCaptureNamingInfo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ShortenedWindowsSKU,
+
+        [Parameter(Mandatory = $true)]
+        [int]$WindowsRelease,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WindowsVersion,
+
+        [Parameter(Mandatory = $true)]
+        [string]$InstallationType,
+
+        [bool]$IsWindows10LtscClient = $false
+    )
+
+    $windowsReleaseToken = [string]$WindowsRelease
+    if ($InstallationType -eq 'Client') {
+        if (($WindowsRelease -eq 10) -or $IsWindows10LtscClient) {
+            $windowsReleaseToken = 'Win10'
+        }
+        else {
+            $windowsReleaseToken = 'Win11'
+        }
+    }
+
+    $defaultFilePrefix = if ($InstallationType -eq 'Client') { $windowsReleaseToken } else { "Server$WindowsRelease" }
+    $buildDate = Get-Date -uformat %b%Y
+
+    return [pscustomobject]@{
+        WindowsReleaseToken = $windowsReleaseToken
+        WindowsVersion      = $WindowsVersion
+        BuildDate           = $buildDate
+        DefaultFileName     = "$defaultFilePrefix`_$WindowsVersion`_$ShortenedWindowsSKU`_$buildDate.ffu"
+        CaptureName         = "$windowsReleaseToken$WindowsVersion$ShortenedWindowsSKU"
+    }
+}
+
 function New-FFUFileName {
 
-    # $Winverinfo.name will be either Win10 or Win11 for client OSes
-    # Since WindowsRelease now includes dates, it breaks default name template in the config file
-    # This should keep in line with the naming that's done via VM Captures
-    if ($installationType -eq 'Client' -and $winverinfo) {
-        $WindowsRelease = $winverinfo.name
-    }
-        
-    $BuildDate = Get-Date -uformat %b%Y
+    $ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
+    $resolvedFFUNameTemplate = $CustomFFUNameTemplate
+
     # Replace '{WindowsRelease}' with the Windows release (e.g., 10, 11, 2016, 2019, 2022, 2025)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsRelease}', $WindowsRelease
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsRelease}', $ffuCaptureNamingInfo.WindowsReleaseToken
     # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{WindowsVersion}', $WindowsVersion
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsVersion}', $ffuCaptureNamingInfo.WindowsVersion
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
     # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{BuildDate}', $BuildDate
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{BuildDate}', $ffuCaptureNamingInfo.BuildDate
     # Replace '{yyyy}' with the current year in 4-digit format (e.g., 2023)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{yyyy}', (Get-Date -UFormat '%Y')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{yyyy}', (Get-Date -UFormat '%Y')
     # Replace '{MM}' with the current month in 2-digit format (e.g., 01 for January)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{MM}', (Get-Date -UFormat '%m')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{MM}', (Get-Date -UFormat '%m')
     # Replace '{dd}' with the current day of the month in 2-digit format (e.g., 05)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{dd}', (Get-Date -UFormat '%d')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{dd}', (Get-Date -UFormat '%d')
     # Replace '{HH}' with the current hour in 24-hour format (e.g., 14 for 2 PM)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{HH}', (Get-Date -UFormat '%H')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{HH}', (Get-Date -UFormat '%H')
     # Replace '{hh}' with the current hour in 12-hour format (e.g., 02 for 2 PM)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{hh}', (Get-Date -UFormat '%I')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{hh}', (Get-Date -UFormat '%I')
     # Replace '{mm}' with the current minute in 2-digit format (e.g., 09)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -creplace '{mm}', (Get-Date -UFormat '%M')
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -creplace '{mm}', (Get-Date -UFormat '%M')
     # Replace '{tt}' with the current AM/PM designator (e.g., AM or PM)
-    $CustomFFUNameTemplate = $CustomFFUNameTemplate -replace '{tt}', (Get-Date -UFormat '%p')
-    if ($CustomFFUNameTemplate -notlike '*.ffu') {
-        $CustomFFUNameTemplate += '.ffu'
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{tt}', (Get-Date -UFormat '%p')
+    if ($resolvedFFUNameTemplate -notlike '*.ffu') {
+        $resolvedFFUNameTemplate += '.ffu'
     }
-    return $CustomFFUNameTemplate
+    return $resolvedFFUNameTemplate
 }
 
 function New-FFU {
-    param (
-        [Parameter(Mandatory = $false)]
-        [string]$VMName
-    )
-    #If $InstallApps = $true, configure the VM
-    If ($InstallApps) {
-        WriteLog 'Creating FFU from VM'
-        WriteLog "Setting $CaptureISO as first boot device"
-        $VMDVDDrive = Get-VMDvdDrive -VMName $VMName
-        Set-VMFirmware -VMName $VMName -FirstBootDevice $VMDVDDrive
-        Set-VMDvdDrive -VMName $VMName -Path $CaptureISO
-        $VMSwitch = Get-VMSwitch -name $VMSwitchName
-        WriteLog "Setting $($VMSwitch.Name) as VMSwitch"
-        get-vm $VMName | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $VMSwitch.Name
-        WriteLog "Configuring VM complete"
+    $captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath
+    $captureDisk = $captureContext.Disk
+    $ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
 
-        #Start VM
-        Set-Progress -Percentage 68 -Message "Capturing FFU from VM..."
-        WriteLog "Starting VM"
-        Start-VM -Name $VMName
-
-        # Wait for the VM to turn off
-        do {
-            $FFUVM = Get-VM -Name $VMName
-            Start-Sleep -Seconds 5
-        } while ($FFUVM.State -ne 'Off')
-        WriteLog "VM Shutdown"
-        # Check for .ffu files in the FFUDevelopment folder
-        WriteLog "Checking for FFU Files"
-        $FFUFiles = Get-ChildItem -Path $FFUCaptureLocation -Filter "*.ffu" -File
-
-        # If there's more than one .ffu file, get the most recent and store its path in $FFUFile
-        if ($FFUFiles.Count -gt 0) {
-            WriteLog 'Getting the most recent FFU file'
-            $FFUFile = ($FFUFiles | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1).FullName
-            WriteLog "Most recent .ffu file: $FFUFile"
-        }
-        else {
-            WriteLog "No .ffu files found in $FFUCaptureLocation"
-            throw $_
-        }
-    }
-    elseif (-not $InstallApps -and (-not $AllowVHDXCaching)) {
-        #Get Windows Version Information from the VHDX
-        $winverinfo = Get-WindowsVersionInfo
-        WriteLog 'Creating FFU File Name'
-        if ($CustomFFUNameTemplate) {
-            $FFUFileName = New-FFUFileName
-        }
-        else {
-            $FFUFileName = "$($winverinfo.Name)`_$($winverinfo.DisplayVersion)`_$($shortenedWindowsSKU)`_$($winverinfo.BuildDate).ffu"
-        }
-        WriteLog "FFU file name: $FFUFileName"
-        $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Capture the FFU
+    try {
         Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
-        WriteLog 'Capturing FFU'
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null
-        WriteLog 'FFU Capture complete'
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
-    }
-    elseif (-not $InstallApps -and $AllowVHDXCaching) {
-        # Make $FFUFileName based on values in the config.json file
+
         WriteLog 'Creating FFU File Name'
         if ($CustomFFUNameTemplate) {
             $FFUFileName = New-FFUFileName
         }
         else {
-            $BuildDate = Get-Date -UFormat %b%Y
-            # Get Windows Information to make the FFU file name from the cachedVHDXInfo file
-            if ($installationType -eq 'Client') {
-                $FFUFileName = "Win$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
-            }
-            else {
-                $FFUFileName = "Server$($cachedVHDXInfo.WindowsRelease)`_$($cachedVHDXInfo.WindowsVersion)`_$($shortenedWindowsSKU)`_$BuildDate.ffu"
-            } 
+            $FFUFileName = $ffuCaptureNamingInfo.DefaultFileName
         }
         WriteLog "FFU file name: $FFUFileName"
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
-        #Capture the FFU
-        WriteLog 'Capturing FFU'
-        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($cachedVHDXInfo.WindowsRelease)$($cachedVHDXInfo.WindowsVersion)$($shortenedWindowsSKU) /Compress:Default" | Out-Null     
+        WriteLog 'Capturing FFU from mounted VHDX on host'
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($captureDisk.DiskNumber) /Name:$($ffuCaptureNamingInfo.CaptureName) /Compress:Default" | Out-Null
+
         WriteLog 'FFU Capture complete'
+    }
+    finally {
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
     }
 
@@ -3909,74 +4210,6 @@ function Remove-FFUVM {
     WriteLog 'Remove unused mountpoints'
     Invoke-Process cmd "/c mountvol /r" | Out-Null
     WriteLog 'Removal complete'
-}
-Function Remove-FFUUserShare {
-    WriteLog "Removing $ShareName"
-    Remove-SmbShare -Name $ShareName -Force | Out-null
-    WriteLog 'Removal complete'
-    WriteLog "Removing $Username"
-    Remove-LocalUser -Name $Username | Out-Null
-    WriteLog 'Removal complete'
-}
-
-Function Get-WindowsVersionInfo {
-    #This sleep prevents CBS/CSI corruption which causes issues with Windows update after deployment. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for. This seems to affect VHDX-only captures, not VM captures. 
-    WriteLog 'Sleep 60 seconds before opening registry to grab Windows version info '
-    Start-sleep 60
-    WriteLog "Getting Windows Version info"
-    #Load Registry Hive
-    $Software = "$osPartitionDriveLetter`:\Windows\System32\config\software"
-    WriteLog "Loading Software registry hive: $Software"
-    Invoke-Process reg "load HKLM\FFU $Software" | Out-Null
-
-    #Find Windows version values
-    # $WindowsSKU = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'EditionID'
-    # WriteLog "Windows SKU: $WindowsSKU"
-    [int]$CurrentBuild = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'CurrentBuild'
-    WriteLog "Windows Build: $CurrentBuild"
-    #DisplayVersion does not exist for 1607 builds (RS1 and Server 2016) and Server 2019
-    if ($CurrentBuild -notin (14393, 17763)) {
-        $DisplayVersion = Get-ItemPropertyValue -Path 'HKLM:\FFU\Microsoft\Windows NT\CurrentVersion\' -Name 'DisplayVersion'
-        WriteLog "Windows Version: $DisplayVersion"
-    }
-    # For Windows 10 LTSC 2019, set DisplayVersion to 2019
-    if ($CurrentBuild -eq 17763 -and $InstallationType -eq "Client") {
-        $DisplayVersion = '2019'
-    }
-    
-    $BuildDate = Get-Date -uformat %b%Y
-
-    if ($shortenedWindowsSKU -notmatch "Srv") {
-        if ($CurrentBuild -ge 22000) {
-            $Name = 'Win11'
-        }
-        else {
-            $Name = 'Win10'
-        }
-    } 
-    else {
-        $Name = switch ($CurrentBuild) {
-            26100 { '2025' }
-            20348 { '2022' }
-            17763 { '2019' }
-            14393 { '2016' }
-            Default { $DisplayVersion }
-        }
-    }
-    
-    WriteLog "Unloading registry"
-    Invoke-Process reg "unload HKLM\FFU" | Out-Null
-    #This prevents Critical Process Died errors you can have during deployment of the FFU. Capturing from very fast disks (NVME) can cause the capture to happen faster than Windows is ready for.
-    WriteLog 'Sleep 60 seconds to allow registry to completely unload'
-    Start-sleep 60
-
-    return @{
-
-        DisplayVersion = $DisplayVersion
-        BuildDate      = $buildDate
-        Name           = $Name
-        # SKU            = $WindowsSKU
-    }
 }
 Function Get-USBDrive {
     # Log the start of the USB drive check
@@ -4248,6 +4481,164 @@ Function New-DeploymentUSB {
         Import-Module "$($using:PSScriptRoot)\FFU.Common" -Force
         Set-CommonCoreLogPath -Path $using:LogFile
 
+        function Get-LocalUnattendSourcePath {
+            param(
+                [string]$UnattendFolder,
+                [string]$WindowsArch,
+                [string]$UnattendX64FilePath,
+                [string]$UnattendArm64FilePath
+            )
+
+            $resolvedArch = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
+            $resolvedSourcePath = if ($resolvedArch -eq 'arm64') {
+                if ([string]::IsNullOrWhiteSpace($UnattendArm64FilePath)) {
+                    Join-Path $UnattendFolder 'unattend_arm64.xml'
+                }
+                else {
+                    $UnattendArm64FilePath
+                }
+            }
+            else {
+                if ([string]::IsNullOrWhiteSpace($UnattendX64FilePath)) {
+                    Join-Path $UnattendFolder 'unattend_x64.xml'
+                }
+                else {
+                    $UnattendX64FilePath
+                }
+            }
+
+            WriteLog "Resolved unattend source path for ${resolvedArch}: $resolvedSourcePath"
+            return $resolvedSourcePath
+        }
+
+        function Initialize-UnattendComputerNamePath {
+            param(
+                [xml]$UnattendXml,
+                [string]$WindowsArch
+            )
+
+            $unattendRoot = $UnattendXml.DocumentElement
+            if (($null -eq $unattendRoot) -or ($unattendRoot.LocalName -ne 'unattend')) {
+                throw 'Unattend XML is missing the unattend root element.'
+            }
+
+            $unattendNamespace = $unattendRoot.NamespaceURI
+            if ([string]::IsNullOrWhiteSpace($unattendNamespace)) {
+                throw 'Unattend XML is missing the default unattend namespace.'
+            }
+
+            $namespaceManager = New-Object System.Xml.XmlNamespaceManager($UnattendXml.NameTable)
+            $namespaceManager.AddNamespace('un', $unattendNamespace)
+
+            $specializeSettings = $unattendRoot.SelectSingleNode("un:settings[@pass='specialize']", $namespaceManager)
+            $createdSpecializeSettings = $false
+            if ($null -eq $specializeSettings) {
+                $specializeSettings = $UnattendXml.CreateElement('settings', $unattendNamespace)
+                $null = $specializeSettings.SetAttribute('pass', 'specialize')
+                $firstSettingsNode = $unattendRoot.SelectSingleNode('un:settings', $namespaceManager)
+                if ($null -ne $firstSettingsNode) {
+                    $null = $unattendRoot.InsertBefore($specializeSettings, $firstSettingsNode)
+                }
+                else {
+                    $null = $unattendRoot.AppendChild($specializeSettings)
+                }
+                $createdSpecializeSettings = $true
+            }
+
+            $shellSetupComponent = $specializeSettings.SelectSingleNode("un:component[@name='Microsoft-Windows-Shell-Setup']", $namespaceManager)
+            $createdShellSetupComponent = $false
+            if ($null -eq $shellSetupComponent) {
+                $processorArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
+                $shellSetupComponent = $UnattendXml.CreateElement('component', $unattendNamespace)
+                $null = $shellSetupComponent.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+                $null = $shellSetupComponent.SetAttribute('processorArchitecture', $processorArchitecture)
+                $null = $shellSetupComponent.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                $null = $shellSetupComponent.SetAttribute('language', 'neutral')
+                $null = $shellSetupComponent.SetAttribute('versionScope', 'nonSxS')
+                $null = $shellSetupComponent.SetAttribute('xmlns:wcm', 'http://www.w3.org/2000/xmlns/', 'http://schemas.microsoft.com/WMIConfig/2002/State')
+                $null = $shellSetupComponent.SetAttribute('xmlns:xsi', 'http://www.w3.org/2000/xmlns/', 'http://www.w3.org/2001/XMLSchema-instance')
+
+                $firstComponentNode = $specializeSettings.SelectSingleNode('un:component', $namespaceManager)
+                if ($null -ne $firstComponentNode) {
+                    $null = $specializeSettings.InsertBefore($shellSetupComponent, $firstComponentNode)
+                }
+                else {
+                    $null = $specializeSettings.AppendChild($shellSetupComponent)
+                }
+                $createdShellSetupComponent = $true
+            }
+
+            $computerNameElement = $shellSetupComponent.SelectSingleNode('un:ComputerName', $namespaceManager)
+            $createdComputerNameElement = $false
+            if ($null -eq $computerNameElement) {
+                $computerNameElement = $UnattendXml.CreateElement('ComputerName', $unattendNamespace)
+                $null = $shellSetupComponent.AppendChild($computerNameElement)
+                $createdComputerNameElement = $true
+            }
+
+            return [PSCustomObject]@{
+                ComputerNameElement        = $computerNameElement
+                CreatedSpecializeSettings  = $createdSpecializeSettings
+                CreatedShellSetupComponent = $createdShellSetupComponent
+                CreatedComputerNameElement = $createdComputerNameElement
+            }
+        }
+
+        function Save-LocalStagedUnattendFile {
+            param(
+                [string]$SourcePath,
+                [string]$DestinationPath,
+                [string]$DeviceNamingMode,
+                [string]$DeviceNameTemplate,
+                [string]$WindowsArch,
+                [bool]$LegacyPrefixesWillBeStaged = $false
+            )
+
+            if ($DeviceNamingMode -eq 'None') {
+                Copy-Item -Path $SourcePath -Destination $DestinationPath -Force | Out-Null
+                return
+            }
+
+            [xml]$unattendXml = Get-Content -Path $SourcePath
+            $computerNamePath = Initialize-UnattendComputerNamePath -UnattendXml $unattendXml -WindowsArch $WindowsArch
+
+            if ($computerNamePath.CreatedSpecializeSettings -or $computerNamePath.CreatedShellSetupComponent -or $computerNamePath.CreatedComputerNameElement) {
+                $createdParts = @()
+                if ($computerNamePath.CreatedSpecializeSettings) {
+                    $createdParts += 'specialize settings'
+                }
+                if ($computerNamePath.CreatedShellSetupComponent) {
+                    $createdParts += 'Microsoft-Windows-Shell-Setup component'
+                }
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $createdParts += 'ComputerName element'
+                }
+                WriteLog "Created $($createdParts -join ', ') while staging unattend file $DestinationPath"
+            }
+
+            if ($DeviceNamingMode -eq 'Prompt') {
+                $computerNamePath.ComputerNameElement.InnerText = 'MyComputer'
+            }
+            elseif ($DeviceNamingMode -eq 'Template') {
+                $computerNamePath.ComputerNameElement.InnerText = $DeviceNameTemplate
+            }
+            elseif ($DeviceNamingMode -eq 'Prefixes') {
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $computerNamePath.ComputerNameElement.InnerText = '*'
+                }
+            }
+            elseif ($DeviceNamingMode -eq 'SerialComputerNames') {
+                if ($computerNamePath.CreatedComputerNameElement) {
+                    $computerNamePath.ComputerNameElement.InnerText = '*'
+                }
+            }
+            elseif (($DeviceNamingMode -eq 'Legacy') -and $computerNamePath.CreatedComputerNameElement) {
+                $computerNamePath.ComputerNameElement.InnerText = if ($LegacyPrefixesWillBeStaged) { '*' } else { 'MyComputer' }
+            }
+
+            $unattendXml.Save($DestinationPath)
+        }
+
         $DiskNumber = $USBDrive.DeviceID.Replace("\\.\PHYSICALDRIVE", "")
         WriteLog "Thread $([System.Threading.Thread]::CurrentThread.ManagedThreadId) processing DiskNumber $DiskNumber ($($USBDrive.Model))"
 
@@ -4308,15 +4699,20 @@ Function New-DeploymentUSB {
             $UnattendPathOnUSB = Join-Path $DeployPartitionDriveLetter "Unattend"
             WriteLog "Copying unattend file to $UnattendPathOnUSB"
             New-Item -Path $UnattendPathOnUSB -ItemType Directory -ErrorAction SilentlyContinue | Out-Null
-            if ($using:WindowsArch -eq 'x64') {
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_x64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            $unattendSource = Get-LocalUnattendSourcePath -UnattendFolder $using:UnattendFolder -WindowsArch $using:WindowsArch -UnattendX64FilePath $using:UnattendX64FilePath -UnattendArm64FilePath $using:UnattendArm64FilePath
+            $legacyPrefixesWillBeStaged = ($using:DeviceNamingMode -eq 'Legacy') -and (Test-Path -Path $using:resolvedDeviceNamePrefixesPath -PathType Leaf)
+            Save-LocalStagedUnattendFile -SourcePath $unattendSource -DestinationPath (Join-Path $UnattendPathOnUSB 'Unattend.xml') -DeviceNamingMode $using:DeviceNamingMode -DeviceNameTemplate $using:normalizedDeviceNameTemplate -WindowsArch $using:WindowsArch -LegacyPrefixesWillBeStaged $legacyPrefixesWillBeStaged
+            if ($using:DeviceNamingMode -eq 'Prefixes') {
+                WriteLog "Writing prefixes.txt file to $UnattendPathOnUSB"
+                $using:effectiveDeviceNamePrefixes | Set-Content -Path (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Encoding UTF8
             }
-            elseif ($using:WindowsArch -eq 'arm64') {
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'unattend_arm64.xml') -Destination (Join-Path $UnattendPathOnUSB 'Unattend.xml') -Force | Out-Null
+            elseif ($using:DeviceNamingMode -eq 'SerialComputerNames') {
+                WriteLog "Writing SerialComputerNames.csv file to $UnattendPathOnUSB"
+                $using:effectiveDeviceNameSerialComputerNames | Set-Content -Path (Join-Path $UnattendPathOnUSB 'SerialComputerNames.csv') -Encoding UTF8
             }
-            if (Test-Path (Join-Path $using:UnattendFolder 'prefixes.txt')) {
+            elseif ($legacyPrefixesWillBeStaged) {
                 WriteLog "Copying prefixes.txt file to $UnattendPathOnUSB"
-                Copy-Item -Path (Join-Path $using:UnattendFolder 'prefixes.txt') -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
+                Copy-Item -Path $using:resolvedDeviceNamePrefixesPath -Destination (Join-Path $UnattendPathOnUSB 'prefixes.txt') -Force | Out-Null
             }
             WriteLog 'Copy completed'
         }
@@ -4458,16 +4854,8 @@ function Get-FFUEnvironment {
         Invoke-Process reg "unload HKLM\FFU" | Out-Null
     }
 
-    #Remove FFU User and Share
-    $UserExists = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
-    if ($UserExists) {
-        WriteLog "Removing FFU User and Share"
-        Remove-FFUUserShare
-        WriteLog 'Removal complete'
-    }
-
     #Run shared cleanup to avoid duplicated logic
-    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
+    Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
 
     # Remove existing Apps.iso
     if (Test-Path -Path $AppsISO) {
@@ -5578,27 +5966,33 @@ if ($CopyAutopilot) {
     WriteLog 'Autopilot validation complete'
 }
 
-#Validate Unattend folder
-if ($CopyUnattend) {
+# Validate unattend source file
+if ($CopyUnattend -or $InjectUnattend) {
     WriteLog 'Doing Unattend validation'
-    if (!(Test-Path -Path $UnattendFolder)) {
-        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
-        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing"
+    $selectedUnattendMode = if ($CopyUnattend) { 'CopyUnattend' } else { 'InjectUnattend' }
+    $unattendSourcePath = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch -UnattendX64FilePath $UnattendX64FilePath -UnattendArm64FilePath $UnattendArm64FilePath
+    if (!(Test-Path -Path $unattendSourcePath -PathType Leaf)) {
+        WriteLog "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is missing: $unattendSourcePath"
+        throw "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is missing: $unattendSourcePath"
     }
-    #Check for .XML file
-    if (!(Get-ChildItem -Path $UnattendFolder -Filter unattend_*.xml)) {
-        WriteLog "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
-        throw "-CopyUnattend is set to `$true, but the $UnattendFolder folder is missing a .XML file"
-    }
-    WriteLog 'Unattend validation complete'
-}
 
-# If InstallApps is true, we need capture media.
-if ($InstallApps) {
-    if (-not $CreateCaptureMedia) {
-        WriteLog "InstallApps is true, but CreateCaptureMedia is false. Forcing to true to allow for VM capture to FFU."
-        $CreateCaptureMedia = $true
+    $selectedUnattendFile = Get-Item -Path $unattendSourcePath -ErrorAction SilentlyContinue
+    if (($null -eq $selectedUnattendFile) -or ($selectedUnattendFile.Length -le 0)) {
+        WriteLog "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is empty: $unattendSourcePath"
+        throw "-$selectedUnattendMode is set to `$true, but the selected unattend XML file is empty: $unattendSourcePath"
     }
+
+    if ($DeviceNamingMode -ne 'None') {
+        try {
+            [xml]$validationUnattendXml = Get-Content -Path $unattendSourcePath
+            $null = Initialize-UnattendComputerNamePath -UnattendXml $validationUnattendXml -WindowsArch $WindowsArch
+        }
+        catch {
+            throw "DeviceNamingMode $DeviceNamingMode requires a valid specialize/Microsoft-Windows-Shell-Setup/ComputerName path in $unattendSourcePath. $($_.Exception.Message)"
+        }
+    }
+
+    WriteLog 'Unattend validation complete'
 }
 
 #Override $InstallApps value if using ESD to build FFU. This is due to a strange issue where building the FFU
@@ -5612,45 +6006,26 @@ if ($InstallApps) {
 if (($InstallOffice -eq $true) -and ($InstallApps -eq $false)) {
     throw "If variable InstallOffice is set to `$true, InstallApps must also be set to `$true."
 }
-if (($InstallApps -and ($VMSwitchName -eq ''))) {
-    throw "If variable InstallApps is set to `$true, VMSwitchName must also be set to capture the FFU. Please set -VMSwitchName and try again."
-}
+if ($EnableVMNetworking) {
+    if ($InstallApps -eq $false) {
+        WriteLog 'EnableVMNetworking is set to true, but InstallApps is false. No VM will be created, so VM networking will be ignored.'
+    }
+    else {
+        if ([string]::IsNullOrWhiteSpace($VMSwitchName)) {
+            throw '-EnableVMNetworking requires -VMSwitchName. Select or enter a Hyper-V switch and try again.'
+        }
 
-if (($InstallApps -and ($VMHostIPAddress -eq ''))) {
-    throw "If variable InstallApps is set to `$true, VMHostIPAddress must also be set to capture the FFU. Please set -VMHostIPAddress and try again."
+        WriteLog "Experimental VM networking enabled. Validating -VMSwitchName $VMSwitchName"
+        #Check $VMSwitchName by using Get-VMSwitch
+        $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
+        if (-not $VMSwitch) {
+            throw "-VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
+        }
+        WriteLog '-EnableVMNetworking validation complete'
+    }
 }
-
-if (($VMHostIPAddress) -and ($VMSwitchName)) {
-    WriteLog "Validating -VMSwitchName $VMSwitchName and -VMHostIPAddress $VMHostIPAddress"
-    #Check $VMSwitchName by using Get-VMSwitch
-    $VMSwitch = Get-VMSwitch -Name $VMSwitchName -ErrorAction SilentlyContinue
-    if (-not $VMSwitch) {
-        throw "-VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
-    }
-    #Find the IP address of $VMSwitch and check if it matches $VMHostIPAddress
-    $interfaceAlias = "vEthernet ($VMSwitchName)"
-    $VMSwitchIPAddress = (Get-NetIPAddress -InterfaceAlias $interfaceAlias -AddressFamily 'IPv4' -ErrorAction SilentlyContinue).IPAddress
-    if (-not $VMSwitchIPAddress) {
-        throw "IP address for -VMSwitchName $VMSwitchName not found. Please check the -VMSwitchName parameter and try again."
-    }
-    if ($VMSwitchIPAddress -ne $VMHostIPAddress) {
-        try {
-            # Bypass the check for systems that could have a Hyper-V NAT switch
-            $null = Get-NetNat -ErrorAction Stop
-            $NetNat = @(Get-NetNat -ErrorAction Stop)
-        }
-        catch {
-            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
-        }
-        if ($NetNat.Count -gt 0) {
-            WriteLog "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress!"
-            WriteLog "NAT setup detected, remember to configure NATing if the FFU image can't be captured to the network share on the host."
-        }
-        else {
-            throw "IP address for -VMSwitchName $VMSwitchName is $VMSwitchIPAddress, which does not match the -VMHostIPAddress $VMHostIPAddress. Please check the -VMHostIPAddress parameter and try again."
-        }
-    }
-    WriteLog '-VMSwitchName and -VMHostIPAddress validation complete'
+elseif ($VMSwitchName) {
+    WriteLog "VM networking is disabled. Stored -VMSwitchName $VMSwitchName will not be used unless -EnableVMNetworking is `$true."
 }
 
 if (-not ($ISOPath) -and ($OptionalFeatures -like '*netfx3*')) {
@@ -5670,10 +6045,10 @@ if (($InstallApps -eq $false) -and (($UpdateLatestDefender -eq $true) -or ($Upda
     WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, Edge, or the latest Windows 10 LTSB/LTSC cumulative update, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
     throw "InstallApps variable must be set to `$true to update Defender, OneDrive, Edge, MSRT, or the latest Windows 10 LTSB/LTSC cumulative update"
 }
-if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
-    $InstallOffice = $false
-    WriteLog 'M365 Apps/Office currently fails to install on ARM64 VMs without an internet connection. Setting InstallOffice to false'
-}
+# if (($WindowsArch -eq 'ARM64') -and ($InstallOffice -eq $true)) {
+#     $InstallOffice = $false
+#     WriteLog 'M365 Apps/Office currently fails to install on ARM64 VMs without an internet connection. Setting InstallOffice to false'
+# }
 
 if (($WindowsArch -eq 'ARM64') -and ($UpdateOneDrive -eq $true)) {
     $UpdateOneDrive = $false
@@ -6082,7 +6457,19 @@ if ($InstallApps) {
     Set-Progress -Percentage 6 -Message "Downloading and preparing applications..."
     if (Test-Path -Path $AppsISO) {
         WriteLog "Apps ISO exists at: $AppsISO"
-        WriteLog "Will use existing ISO"
+
+        # Refresh the Apps ISO when a BYO app list is present so the staged manifest
+        # and AppInstallConfig.json stay in sync with the current build inputs.
+        if (Test-Path -Path $UserAppListPath) {
+            WriteLog "Configured BYO app list detected. Refreshing Apps ISO to include the latest BYO app list data."
+            Sync-UserAppListForOrchestration -SourcePath $UserAppListPath -AppsPath $AppsPath -OrchestrationPath $OrchestrationPath -AppInstallConfigPath $appInstallConfigPath
+            Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
+            New-AppsISO
+            WriteLog "Apps ISO refreshed to include the latest BYO app list data."
+        }
+        else {
+            WriteLog "Will use existing ISO"
+        }
     }
     else {
         try {
@@ -6125,7 +6512,7 @@ if ($InstallApps) {
                 # If there are no existing apps, use the original AppList.json directly
                 if (-not $hasExistingApps) {
                     WriteLog "No existing applications found. Using original AppList.json for all apps."
-                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
+                    Get-Apps -AppList $AppListPath -AppsPath $AppsPath -UserAppListPath $UserAppListPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
                 }
                 else {
                     # Compare apps in AppList.json with existing installations
@@ -6197,7 +6584,7 @@ if ($InstallApps) {
             
                         # Download missing apps
                         WriteLog "Downloading missing applications"
-                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
+                        Get-Apps -AppList $modifiedAppListPath -AppsPath $AppsPath -UserAppListPath $UserAppListPath -WindowsArch $WindowsArch -OrchestrationPath $OrchestrationPath -LogFilePath $LogFile -ThrottleLimit $Threads
                         
                         # Cleanup modified app list
                         Remove-Item -Path $modifiedAppListPath -Force
@@ -6207,11 +6594,11 @@ if ($InstallApps) {
                     }
                 }
             }
-            # Check is UserAppList.json exists and output to the user which apps will be installed
-            # It's expected that the user will have already copied the applications and created the UserAppList.json file
+            # Check if the configured BYO app list exists and output which apps will be installed.
+            # It is expected that the user will have already copied the applications and created the BYO app list file.
             if (Test-Path -Path $UserAppListPath) {
                 $userAppList = Get-Content -Path $UserAppListPath -Raw | ConvertFrom-Json
-                WriteLog "UserAppList.json found, the following apps will be installed:"
+                WriteLog "$(Split-Path -Path $UserAppListPath -Leaf) found, the following apps will be installed:"
                 foreach ($app in $userAppList) {
                     WriteLog "$($app.name)"
                 }
@@ -6505,9 +6892,7 @@ if ($InstallApps) {
             #Create Apps ISO
             # Inject Unattend.xml into Apps if requested and applicable
             if ($InstallApps -and $InjectUnattend) {
-                # Determine source unattend.xml based on architecture
-                $archSuffix = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'x64' }
-                $unattendSource = Join-Path $UnattendFolder "unattend_$archSuffix.xml"
+                $unattendSource = Get-UnattendSourcePath -UnattendFolder $UnattendFolder -WindowsArch $WindowsArch -UnattendX64FilePath $UnattendX64FilePath -UnattendArm64FilePath $UnattendArm64FilePath
 
                 # Ensure target folder exists under Apps
                 $targetFolder = Join-Path $AppsPath 'Unattend'
@@ -6518,13 +6903,16 @@ if ($InstallApps) {
                 # Copy if source exists; otherwise log and skip
                 if (Test-Path -Path $unattendSource -PathType Leaf) {
                     $destination = Join-Path $targetFolder 'Unattend.xml'
-                    Copy-Item -Path $unattendSource -Destination $destination -Force | Out-Null
+                    Save-StagedUnattendFile -SourcePath $unattendSource -DestinationPath $destination -DeviceNamingMode $DeviceNamingMode -DeviceNameTemplate $normalizedDeviceNameTemplate -WindowsArch $WindowsArch
                     WriteLog "Injected unattend file into Apps: $unattendSource -> $destination"
                 }
                 else {
                     WriteLog "InjectUnattend is true but source file missing: $unattendSource. Skipping unattend injection."
                 }
             }
+            # Stage the configured BYO app list and runtime config before creating the Apps ISO.
+            Sync-UserAppListForOrchestration -SourcePath $UserAppListPath -AppsPath $AppsPath -OrchestrationPath $OrchestrationPath -AppInstallConfigPath $appInstallConfigPath
+
             Set-Progress -Percentage 10 -Message "Creating Apps ISO..."
             WriteLog "Creating $AppsISO file"
             New-AppsISO
@@ -7020,7 +7408,38 @@ try {
         }
         #If index not specified by user, try and find based on WindowsSKU
         if (-not($index) -and ($WindowsSKU)) {
-            $index = Get-Index -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU
+            $requestedWindowsSKU = $WindowsSKU
+            $previousInstallationType = $installationType
+            $previousWindowsVersion = $WindowsVersion
+            $previousIsLTSC = [bool]$isLTSC
+            $windowsImageSelection = Get-WindowsImageSelection -WindowsImagePath $wimPath -WindowsSKU $WindowsSKU -WindowsRelease $WindowsRelease
+            $index = $windowsImageSelection.ImageIndex
+
+            if (-not [string]::IsNullOrWhiteSpace($windowsImageSelection.ResolvedWindowsSKU)) {
+                $WindowsSKU = $windowsImageSelection.ResolvedWindowsSKU
+                $windowsTargetRuntimeState = Get-WindowsTargetRuntimeState -WindowsRelease $WindowsRelease -WindowsSKU $WindowsSKU -CurrentWindowsVersion $WindowsVersion -UpdateLatestCU:$UpdateLatestCU
+                $installationType = $windowsTargetRuntimeState.InstallationType
+                $WindowsVersion = $windowsTargetRuntimeState.WindowsVersion
+                $isLTSC = $windowsTargetRuntimeState.IsLTSC
+                $isWindows10LtscClient = $windowsTargetRuntimeState.IsWindows10LtscClient
+                $installLatestCuInVm = $windowsTargetRuntimeState.InstallLatestCuInVm
+
+                if ($requestedWindowsSKU -ne $WindowsSKU) {
+                    WriteLog "Resolved WindowsSKU from '$requestedWindowsSKU' to '$WindowsSKU' based on image selection '$($windowsImageSelection.ImageName)'."
+                }
+
+                if (($previousInstallationType -ne $installationType) -or ($previousWindowsVersion -ne $WindowsVersion) -or ($previousIsLTSC -ne [bool]$isLTSC)) {
+                    WriteLog "Updated Windows target state after image selection: InstallationType='$installationType', WindowsVersion='$WindowsVersion', IsLTSC='$isLTSC'."
+                }
+
+                if (($InstallApps -eq $false) -and ($installLatestCuInVm -eq $true)) {
+                    WriteLog 'You have selected to update Defender, Malicious Software Removal Tool, OneDrive, Edge, or the latest Windows 10 LTSB/LTSC cumulative update, however you are setting InstallApps to false. These updates require the InstallApps variable to be set to true. Please set InstallApps to true and try again.'
+                    throw "InstallApps variable must be set to `$true to update Defender, OneDrive, Edge, MSRT, or the latest Windows 10 LTSB/LTSC cumulative update"
+                }
+            }
+            else {
+                WriteLog "Could not resolve a friendly WindowsSKU for selected image '$($windowsImageSelection.ImageName)'. Continuing with requested SKU '$WindowsSKU'."
+            }
         }
 
         $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
@@ -7051,10 +7470,8 @@ try {
                 if ($WindowsRelease -eq 2016 -and $installationType -eq "Server") {
                     WriteLog 'WindowsRelease is 2016, adding SSU first'
                     WriteLog "Adding SSU to $WindowsPartition"
-                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath -PreventPending | Out-Null
-                    # Commenting out -preventpending as it causes an issue with the SSU being applied
-                    # Seems to be because of the registry being mounted per dism.log
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$SSUFilePath" | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
                     # WriteLog "Removing $SSUFilePath"
                     # Remove-Item -Path $SSUFilePath -Force | Out-Null
@@ -7063,7 +7480,8 @@ try {
                 if ($WindowsRelease -in 2016, 2019, 2021 -and $isLTSC) {
                     WriteLog "WindowsRelease is $WindowsRelease and is $WindowsSKU, adding SSU first"
                     WriteLog "Adding SSU to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $SSUFilePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$SSUFilePath" | Out-Null
                     WriteLog "SSU added to $WindowsPartition"
                     # WriteLog "Removing $SSUFilePath"
                     # Remove-Item -Path $SSUFilePath -Force | Out-Null
@@ -7076,23 +7494,27 @@ try {
                     }
                     else {
                         WriteLog "Adding $CUPath to $WindowsPartition"
-                        Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        # Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPath | Out-Null
+                        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$CUPath" | Out-Null
                         WriteLog "$CUPath added to $WindowsPartition"
                     }
                 }
                 if ($UpdatePreviewCU) {
                     WriteLog "Adding $CUPPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $CUPPath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$CUPPath" | Out-Null
                     WriteLog "$CUPPath added to $WindowsPartition"
                 }
                 if ($UpdateLatestNet) {
                     WriteLog "Adding $NETPath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $NETPath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$NETPath" | Out-Null
                     WriteLog "$NETPath added to $WindowsPartition"
                 }
                 if ($UpdateLatestMicrocode -and $WindowsRelease -in 2016, 2019) {
                     WriteLog "Adding $MicrocodePath to $WindowsPartition"
-                    Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
+                    # Add-WindowsPackage -Path $WindowsPartition -PackagePath $MicrocodePath | Out-Null
+                    Invoke-Process cmd "/c ""$DandIEnv"" && dism /Image:$WindowsPartition /Add-Package /PackagePath:$MicrocodePath" | Out-Null
                     WriteLog "$MicrocodePath added to $WindowsPartition"
                 }
                 WriteLog "KBs added to $WindowsPartition"
@@ -7434,6 +7856,7 @@ if ($InstallApps) {
                 Remove-Item -Path $AppsISO -Force -ErrorAction SilentlyContinue
                 WriteLog 'Removal complete'
             }
+            Sync-UserAppListForOrchestration -SourcePath $UserAppListPath -AppsPath $AppsPath -OrchestrationPath $OrchestrationPath -AppInstallConfigPath $appInstallConfigPath
             New-AppsISO
             WriteLog "Apps ISO refreshed with LTSC CU assets"
         }
@@ -7456,32 +7879,6 @@ if ($InstallApps) {
         throw $_
         
     }
-    #Create ffu user and share to capture FFU to
-    try {
-        Set-CaptureFFU
-    }
-    catch {
-        Write-Host 'Set-CaptureFFU function failed'
-        WriteLog "Set-CaptureFFU function failed with error $_"
-        Remove-FFUVM -VMName $VMName
-        throw $_
-        
-    }
-    If ($CreateCaptureMedia) {
-        #Create Capture Media
-        try {
-            Set-Progress -Percentage 45 -Message "Creating WinPE capture media..."
-            #This should happen while the FFUVM is building
-            New-PEMedia -Capture $true
-        }
-        catch {
-            Write-Host 'Creating capture media failed'
-            WriteLog "Creating capture media failed with error $_"
-            Remove-FFUVM -VMName $VMName
-            throw $_
-        
-        }
-    }    
 }
 #Capture FFU file
 try {
@@ -7491,6 +7888,10 @@ try {
         New-Item -Path $FFUCaptureLocation -ItemType Directory -Force
         WriteLog "Successfully created FFU capture location at $FFUCaptureLocation"
     }
+    #Shorten Windows SKU for use in FFU file name to remove spaces and long names
+    WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
+    $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
+    WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
     #Check if VM is done provisioning
     If ($InstallApps) {
         Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
@@ -7503,13 +7904,9 @@ try {
         Set-Progress -Percentage 65 -Message "Optimizing VHDX before capture..."
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
-        New-FFU $FFUVM.Name
+        New-FFU
     }
     else {
-        #Shorten Windows SKU for use in FFU file name to remove spaces and long names
-        WriteLog "Shortening Windows SKU: $WindowsSKU for FFU file name"
-        $shortenedWindowsSKU = Get-ShortenedWindowsSKU -WindowsSKU $WindowsSKU
-        WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
         #Create FFU file
         New-FFU
     }    
@@ -7527,18 +7924,6 @@ Catch {
     throw $_
     
 }
-#Clean up ffu_user and Share and clean up apps
-If ($InstallApps) {
-    try {
-        Remove-FFUUserShare
-    }
-    catch {
-        Write-Host 'Cleaning up FFU User and/or share failed'
-        WriteLog "Cleaning up FFU User and/or share failed with error $_"
-        Remove-FFUVM -VMName $VMName
-        throw $_
-    }
-}
 #Clean up VM or VHDX
 try {
     Remove-FFUVM
@@ -7555,7 +7940,7 @@ catch {
 If ($CreateDeploymentMedia) {
     Set-Progress -Percentage 91 -Message "Creating deployment media..."
     try {
-        New-PEMedia -Deploy $true
+        New-PEMedia
     }
     catch {
         Write-Host 'Creating deployment media failed'
@@ -7612,13 +7997,20 @@ If ($BuildUSBDrive) {
 
 Set-Progress -Percentage 99 -Message "Finalizing and cleaning up..."
 # Delegated post-build cleanup to common module
-Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -CaptureISOPath $CaptureISO -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveCaptureISO:$CleanupCaptureISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
+Invoke-FFUPostBuildCleanup -RootPath $FFUDevelopmentPath -AppsPath $AppsPath -DriversPath $DriversFolder -FFUCapturePath $FFUCaptureLocation -DeployISOPath $DeployISO -AppsISOPath $AppsISO -RemoveDeployISO:$CleanupDeployISO -RemoveAppsISO:$CleanupAppsISO -RemoveDrivers:$CleanupDrivers -RemoveFFU:$RemoveFFU -RemoveApps:$RemoveApps -RemoveUpdates:$RemoveUpdates -RemoveDownloadedESD:$RemoveDownloadedESD -KBPath:$KBPath
 
 
 # Remove WinGetWin32Apps.json so it is always rebuilt next run
 if (Test-Path -Path $wingetWin32jsonFile -PathType Leaf) {
     WriteLog "Removing $wingetWin32jsonFile"
     Remove-Item -Path $wingetWin32jsonFile -Force -ErrorAction SilentlyContinue
+    WriteLog "Removal complete"
+}
+
+# Remove AppInstallConfig.json so it is always rebuilt next run
+if (Test-Path -Path $appInstallConfigPath -PathType Leaf) {
+    WriteLog "Removing $appInstallConfigPath"
+    Remove-Item -Path $appInstallConfigPath -Force -ErrorAction SilentlyContinue
     WriteLog "Removal complete"
 }
 #Set $LongPathsEnabled registry value back to original value. $LongPathsEnabled could be $null if the registry value was not found
