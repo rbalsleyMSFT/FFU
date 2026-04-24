@@ -35,7 +35,7 @@ After following this guide, you will have a USB drive with an FFU that contains 
 
 <div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;">
   <iframe
-    src="https://www.youtube-nocookie.com/embed/kOIK5OmDugc"
+    src="https://www.youtube-nocookie.com/embed/38sUc3M5Yls"
     title="YouTube video player"
     style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"
     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

@@ -20,11 +20,13 @@ The Full-Flash update (FFU) process can automatically download the latest releas
 
 # Getting Started
 
-If you're new to FFU Builder or new to the FFU Builder UI version, check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html).
+If you're new to FFU Builder or new to the FFU Builder UI version, check out the [Quick Start Guide](https://rbalsleymsft.github.io/FFU/quickstart.html). 
 
-This will be the fastest way to create your first FFU. There's a new [FFU Builder Quickstart Youtube video](https://youtu.be/kOIK5OmDugc) based on the 2602.1 UI Preview release.
+This will be the fastest way to create your first FFU. There's a new [FFU Builder Quickstart Youtube video](https://youtu.be/38sUc3M5Yls) based on the 2604.1 release.
 
 ## Older Youtube Videos
+
+[2602.1 UI Preview Quickstart Video](https://www.youtube.com/watch?v=kOIK5OmDugc) - Original quickstart video without the Fluent UI. 
 
 [2507.1 UI Preview Video](https://www.youtube.com/watch?v=oozG1aVcg9M) - First UI Preview release video. This goes deeper than the quick start video, but is missing some features that have been added since 2507.1 was released.
 
