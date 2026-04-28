@@ -1092,13 +1092,24 @@ if (Test-Path -Path $PPKGFolder) {
 
 #FindUnattend
 $UnattendFolder = $USBDrive + "unattend\"
-$UnattendFilePath = $UnattendFolder + "unattend.xml"
+$UnattendSourceFilePath = $UnattendFolder + "unattend.xml"
+$UnattendWorkingFilePath = Join-Path -Path $env:TEMP -ChildPath 'unattend.xml'
 $UnattendPrefixPath = $UnattendFolder + "prefixes.txt"
 $UnattendComputerNamePath = $UnattendFolder + "SerialComputerNames.csv"
-If (Test-Path -Path $UnattendFilePath) {
-    $UnattendFile = Get-ChildItem -Path $UnattendFilePath
-    If ($UnattendFile) {
-        $Unattend = $true
+If (Test-Path -Path $UnattendSourceFilePath) {
+    $UnattendSourceFile = Get-ChildItem -Path $UnattendSourceFilePath
+    If ($UnattendSourceFile) {
+        try {
+            WriteLog "Copying source unattend file $($UnattendSourceFile.FullName) to temporary working file $UnattendWorkingFilePath"
+            Copy-Item -Path $UnattendSourceFile.FullName -Destination $UnattendWorkingFilePath -Force -ErrorAction Stop
+            $UnattendFile = Get-ChildItem -Path $UnattendWorkingFilePath -ErrorAction Stop
+            WriteLog "Using temporary unattend working file $($UnattendFile.FullName)"
+            $Unattend = $true
+        }
+        catch {
+            WriteLog "Copying source unattend file to temporary working file failed with error: $_"
+            Stop-Script -Message "Copying source unattend file to temporary working file failed with error: $_"
+        }
     }
 }
 If (Test-Path -Path $UnattendPrefixPath) {
