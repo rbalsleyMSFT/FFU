@@ -327,9 +327,78 @@ If you want the technician to be prompted for the device name during deployment,
 
 Now you're ready to deploy the FFU to your device.
 
-## Deployment
+## Deploying to a physical machine
 
 Deployment should be fairly straight forward: boot off the USB device and the deployment of the FFU and drivers should happen automatically. If you selected **Prompt for Device Name** or another supported device naming option, that naming step will happen during deployment.
+
+
+## Deploying to a Hyper-V Virtual Machine
+
+You can test FFU deployment without a physical device by using a Hyper-V virtual machine. Instead of a USB drive, the VM uses two virtual hard disks: one as the target where Windows will be installed, and a second VHDX that mirrors the Deploy partition of your USB drive.
+
+### VM Hard Disk Requirements
+
+Your Hyper-V VM must have two hard disks attached:
+
+- **Disk 0** — The target disk where the FFU will be applied (equivalent to the physical device being imaged)
+- **Disk 1** — A VHDX containing your FFU and any other deployment files (equivalent to the Deploy partition on your USB drive)
+
+The VM also needs to boot from the WinPE ISO created during the FFU build (`C:\FFUDevelopment\WinPE_FFU_Deploy_x64.iso`), which acts as the Boot partition on your USB drive.
+
+### Creating the Deploy VHDX
+
+1. Open **Disk Management** (right-click Start > **Disk Management**, or run `diskmgmt.msc`)
+2. Click **Action** > **Create VHD**
+3. Choose a location and file name for the VHDX (e.g. `C:\VMs\deploy.vhdx`)
+4. Set the size large enough to hold your FFU file (at minimum a few gigabytes larger than the FFU)
+5. Select **VHDX** for the format and **Dynamically expanding** for the type
+6. Click **OK** — the new disk appears in Disk Management
+7. Right-click the new disk and select **Initialize Disk**, then choose **GPT**
+8. Right-click the unallocated space and select **New Simple Volume**
+9. Follow the wizard to format the volume as **NTFS**
+10. When prompted for the **Volume label**, enter **Deploy**
+
+{: .note-title}
+
+> Note
+>
+> The deployment script identifies the deploy partition by its volume label. The label must be **Deploy** (case-insensitive). If you have an existing VHDX whose volume isn't labeled correctly, open File Explorer, right-click the drive, select **Properties**, and update the label to **Deploy**.
+
+### Populating the Deploy VHDX
+
+With the VHDX mounted and labeled, copy your deployment files onto it:
+
+1. Copy your FFU file from `C:\FFUDevelopment\FFU` to the Deploy volume
+2. Optionally copy any of the following to match the layout of your USB drive's Deploy partition:
+   - **Drivers** folder — for automatic driver injection during deployment
+   - **Unattend** folder — containing `unattend.xml`
+   - **Autopilot** folder — your Autopilot JSON file
+   - **PPKG** folder — your provisioning package
+
+{: .note-title}
+
+> Note
+>
+> Copying a large FFU file onto a freshly created dynamic VHDX may take several minutes. The VHDX file needs to expand on disk to accommodate the data as it is copied.
+
+Once populated, the Deploy VHDX contains exactly what a USB drive's Deploy partition would contain, and the deployment script treats it identically.
+
+### Configuring and Starting the VM
+
+1. In **Hyper-V Manager**, open the settings for your VM
+2. Under **SCSI Controller** (Generation 2) or **IDE Controller** (Generation 1), add your deploy VHDX as a second hard disk
+3. Add your WinPE ISO (`C:\FFUDevelopment\WinPE_FFU_Deploy_x64.iso`) as a DVD drive
+
+{: .note-title}
+
+> Note
+>
+> For ARM64 builds, the ISO will be named `WinPE_FFU_Deploy_arm64.iso`.
+
+4. Set the boot order so the VM boots from the DVD drive first
+5. Start the VM — WinPE will boot, locate the Deploy volume by its **Deploy** label, and apply the FFU to Disk 0 automatically
+
+Deployment proceeds identically to a physical device. Drivers, unattend, and any other files present in the Deploy VHDX are applied just as they would be from the Deploy partition of a USB drive.
 
 If you have any questions or run into any issues, [open a discussion in the Github repo](https://github.com/rbalsleyMSFT/FFU/discussions).
 
