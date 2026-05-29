@@ -33,7 +33,13 @@ PowerShell 7.6+ is required as of releases 2507+ onward.
 
 Recommended to use winget to install
 
-`winget install --id Microsoft.PowerShell --source winget`
+`winget install --id Microsoft.PowerShell --source winget --installer-type wix`
+
+{: .note-title}
+
+> Note
+>
+> As of PowerShell 7.6, the default winget installer uses the MSIX version, which is the store version of PowerShell 7.6. Adding `--installer-type wix` will install the MSI version.
 
 If you can't use winget, [download the MSI](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows#installing-the-msi-package)
 
