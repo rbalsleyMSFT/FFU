@@ -100,7 +100,7 @@ Path to the arm64 unattend XML source file. Default is $FFUDevelopmentPath\Unatt
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
 
 .PARAMETER CustomFFUNameTemplate
-Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
+Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
 
 .PARAMETER Disksize
 Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk.
@@ -5039,6 +5039,7 @@ function New-FFUFileName {
     $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsRelease}', $ffuCaptureNamingInfo.WindowsReleaseToken
     # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
     $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsVersion}', $ffuCaptureNamingInfo.WindowsVersion
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsArch}', $WindowsArch
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
     $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
     # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)

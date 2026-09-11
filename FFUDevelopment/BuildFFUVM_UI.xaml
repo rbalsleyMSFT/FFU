@@ -961,8 +961,8 @@
                                     </StackPanel>
                                     <!-- Row 2: Custom FFU Name Template -->
                                     <StackPanel Grid.Row="2" Margin="0,0,0,20">
-                                        <TextBlock Text="Custom FFU Name Template" Margin="0,0,0,8" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
-                                        <TextBox x:Name="txtCustomFFUNameTemplate" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                                        <TextBlock Text="Custom FFU Name Template" Margin="0,0,0,8" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                                        <TextBox x:Name="txtCustomFFUNameTemplate" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
                                     </StackPanel>
                                     <!-- Row 3: FFU Capture Location -->
                                     <StackPanel Grid.Row="3" Margin="0,0,0,20">
