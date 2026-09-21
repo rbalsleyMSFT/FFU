@@ -13,6 +13,152 @@
     This module is critical for setting up the initial state of the application window when it first loads.
 #>
 
+function Get-SessionUserSid {
+    try {
+        # Use the window's session user, which can differ from the elevated process account.
+        if ($null -eq ('FFUUI.SessionIdentity' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+namespace FFUUI
+{
+    public static class SessionIdentity
+    {
+        [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern bool WTSQuerySessionInformationW(IntPtr server, int sessionId,
+            int informationClass, out IntPtr buffer, out int bytesReturned);
+
+        [DllImport("wtsapi32.dll", ExactSpelling = true)]
+        private static extern void WTSFreeMemory(IntPtr buffer);
+
+        private static string GetSessionString(int sessionId, int informationClass)
+        {
+            IntPtr buffer = IntPtr.Zero;
+            try
+            {
+                if (!WTSQuerySessionInformationW(IntPtr.Zero, sessionId, informationClass,
+                    out buffer, out int bytesReturned))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+                return buffer == IntPtr.Zero ? null : Marshal.PtrToStringUni(buffer);
+            }
+            finally
+            {
+                if (buffer != IntPtr.Zero)
+                {
+                    WTSFreeMemory(buffer);
+                }
+            }
+        }
+
+        public static string GetUserAccountName(int sessionId)
+        {
+            const int WTSUserName = 5;
+            const int WTSDomainName = 7;
+            string userName = GetSessionString(sessionId, WTSUserName);
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                return null;
+            }
+            string domainName = GetSessionString(sessionId, WTSDomainName);
+            return string.IsNullOrWhiteSpace(domainName) ? userName : domainName + "\\" + userName;
+        }
+    }
+}
+'@ -ErrorAction Stop
+        }
+        $sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+        $accountName = [FFUUI.SessionIdentity]::GetUserAccountName($sessionId)
+        if ([string]::IsNullOrWhiteSpace($accountName)) {
+            return $null
+        }
+        $account = [System.Security.Principal.NTAccount]::new($accountName)
+        return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+    }
+    catch {
+        WriteLog "Could not resolve the session user for System theme. Using WPF defaults: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Get-SessionThemeMode {
+    param([string]$userSid)
+
+    if ([string]::IsNullOrWhiteSpace($userSid)) {
+        return 'System'
+    }
+    try {
+        $preferences = Get-ItemProperty -LiteralPath "Registry::HKEY_USERS\$userSid\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -ErrorAction Stop
+        foreach ($preferenceName in @('AppsUseLightTheme', 'SystemUsesLightTheme')) {
+            $preference = $preferences.PSObject.Properties[$preferenceName]
+            if ($null -ne $preference -and $preference.Value -is [int]) {
+                if ($preference.Value -eq 0) {
+                    return 'Dark'
+                }
+                return 'Light'
+            }
+        }
+    }
+    catch {
+        return 'System'
+    }
+    return 'System'
+}
+
+function Start-SessionThemeMonitor {
+    param(
+        [System.Windows.Window]$window,
+        [PSCustomObject]$state,
+        [string]$userSid
+    )
+
+    $monitor = $state.Data.systemThemeMonitor
+    if ($null -eq $monitor) {
+        $timer = [System.Windows.Threading.DispatcherTimer]::new([System.Windows.Threading.DispatcherPriority]::Background, $window.Dispatcher)
+        $timer.Interval = [TimeSpan]::FromSeconds(2)
+        $monitor = [PSCustomObject]@{
+            Window = $window
+            State = $state
+            UserSid = $userSid
+            Timer = $timer
+            TickHandler = $null
+            ClosedHandler = $null
+        }
+        $timer.Tag = $monitor
+        $monitor.TickHandler = [System.EventHandler]{
+            param($eventSource, $tickEventArgs)
+            $context = $eventSource.Tag
+            if ($null -eq $context -or $context.State.Data.requestedThemeMode -ne 'System') {
+                $eventSource.Stop()
+                return
+            }
+            $resolvedThemeMode = Get-SessionThemeMode -userSid $context.UserSid
+            $themeModeProperty = [System.Windows.Window].GetProperty('ThemeMode')
+            if ($themeModeProperty.GetValue($context.Window).ToString() -ne $resolvedThemeMode) {
+                $themeModeType = $themeModeProperty.PropertyType
+                $themeModeProperty.SetValue($context.Window, $themeModeType::$resolvedThemeMode)
+                WriteLog "System theme updated from the desktop user's preference: $resolvedThemeMode"
+            }
+        }
+        $monitor.ClosedHandler = [System.EventHandler]({
+            param($eventSource, $closedEventArgs)
+            $monitor.Timer.Stop()
+            $monitor.Timer.Remove_Tick($monitor.TickHandler)
+            $eventSource.Remove_Closed($monitor.ClosedHandler)
+            $monitor.Timer.Tag = $null
+            $monitor.State.Data.systemThemeMonitor = $null
+        }.GetNewClosure())
+        $timer.Add_Tick($monitor.TickHandler)
+        $window.Add_Closed($monitor.ClosedHandler)
+        $state.Data.systemThemeMonitor = $monitor
+    }
+    $monitor.UserSid = $userSid
+    $monitor.Timer.Start()
+}
+
 function Initialize-FluentTheme {
     param(
         [Parameter(Mandatory = $true)]
@@ -56,10 +202,34 @@ function Initialize-FluentTheme {
         $State.Flags.isFluentSupported = $true
     }
 
+    $effectiveThemeMode = $ThemeMode
+    $followSessionTheme = $false
+    if ($null -ne $State) {
+        $State.Data.requestedThemeMode = $ThemeMode
+        if ($null -ne $State.Data.systemThemeMonitor) {
+            $State.Data.systemThemeMonitor.Timer.Stop()
+        }
+    }
+    if ($ThemeMode -eq 'System') {
+        $sessionUserSid = Get-SessionUserSid
+        if (-not [string]::IsNullOrWhiteSpace($sessionUserSid)) {
+            $processIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+            try {
+                $followSessionTheme = $sessionUserSid -ne $processIdentity.User.Value
+            }
+            finally {
+                $processIdentity.Dispose()
+            }
+            if ($followSessionTheme) {
+                $effectiveThemeMode = Get-SessionThemeMode -userSid $sessionUserSid
+            }
+        }
+    }
+
     # Resolve the ThemeMode enum value using reflection to avoid compile-time experimental attribute issues
     $themeModeType = [System.Windows.Window].GetProperty("ThemeMode").PropertyType
     $themeModeValue = $null
-    switch ($ThemeMode) {
+    switch ($effectiveThemeMode) {
         "Light" { $themeModeValue = $themeModeType::Light }
         "Dark" { $themeModeValue = $themeModeType::Dark }
         "System" { $themeModeValue = $themeModeType::System }
@@ -68,7 +238,10 @@ function Initialize-FluentTheme {
 
     # Apply the Fluent theme mode to the window
     $themeModeProperty.SetValue($Window, $themeModeValue)
-    WriteLog "Applied Fluent theme: $ThemeMode"
+	WriteLog "Applied Fluent theme: $ThemeMode (resolved: $effectiveThemeMode)"
+	if ($followSessionTheme -and $null -ne $State) {
+		Start-SessionThemeMonitor -window $Window -state $State -userSid $sessionUserSid
+	}
 
     # Re-create implicit tooltip styles with BasedOn pointing to the Fluent base style
     # This preserves the Tag-to-ToolTip binding while inheriting Fluent visual styling
