@@ -4912,17 +4912,30 @@ function Get-CaptureVhdContext {
         [object[]]$AdditionalDataPartitions = @()
     )
 
+	$ErrorActionPreference = 'Stop'
     WriteLog 'Resolving VHDX context for host-side FFU capture'
 
-    $vhdInfo = Get-VHD -Path $VhdxPath
+    $vhdInfo = Get-VHD -Path $VhdxPath -ErrorAction Stop
+    if ($null -eq $vhdInfo) {
+        throw "Unable to resolve VHDX for capture: $VhdxPath"
+    }
     if ($vhdInfo.Attached) {
-        WriteLog 'VHDX is already mounted for capture'
-        $captureDisk = Get-Disk -Number $vhdInfo.DiskNumber
+        WriteLog 'Dismounting VHDX before capture to commit pending filesystem writes'
+        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        $vhdInfo = Get-VHD -Path $VhdxPath -ErrorAction Stop
+        if ($null -eq $vhdInfo -or $vhdInfo.Attached) {
+            throw "VHDX did not detach before capture: $VhdxPath"
+        }
     }
-    else {
-        WriteLog 'Mounting VHDX for capture'
-        $captureDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+    WriteLog 'Confirmed VHDX is detached before capture'
+
+    WriteLog 'Mounting VHDX for capture'
+    $captureDisk = Mount-VHD -Path $VhdxPath -Passthru -ErrorAction Stop | Get-Disk -ErrorAction Stop
+    $vhdInfo = Get-VHD -Path $VhdxPath -ErrorAction Stop
+    if ($null -eq $captureDisk -or $null -eq $captureDisk.DiskNumber -or $null -eq $vhdInfo -or -not $vhdInfo.Attached -or $captureDisk.DiskNumber -ne $vhdInfo.DiskNumber) {
+        throw "Unable to verify the mounted disk for VHDX capture: $VhdxPath"
     }
+    WriteLog "VHDX mounted for capture on disk $($captureDisk.DiskNumber)"
 
     $partitionLayout = Resolve-VhdxPartitionLayout -Disk $captureDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $AdditionalDataPartitions
     $partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $AdditionalDataPartitions
@@ -5065,15 +5078,17 @@ function New-FFUFileName {
 }
 
 function New-FFU {
-    $captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-    $captureDisk = $captureContext.Disk
-    $resolvedFFUOptimizePartitionNumber = 0
-    if ($Optimize -eq $true) {
-        $resolvedFFUOptimizePartitionNumber = Get-FFUOptimizePartitionNumber -Layout $captureContext.Layout -RequestedPartitionNumber $OptimizeFFUPartitionNumber -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-    }
-    $ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
+	$captureFailed = $false
 
     try {
+		$captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+		$captureDisk = $captureContext.Disk
+		$resolvedFFUOptimizePartitionNumber = 0
+		if ($Optimize -eq $true) {
+			$resolvedFFUOptimizePartitionNumber = Get-FFUOptimizePartitionNumber -Layout $captureContext.Layout -RequestedPartitionNumber $OptimizeFFUPartitionNumber -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+		}
+		$ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
+
         Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
 
         WriteLog 'Creating FFU File Name'
@@ -5090,8 +5105,34 @@ function New-FFU {
 
         WriteLog 'FFU Capture complete'
     }
+    catch {
+        $captureFailed = $true
+        throw
+    }
     finally {
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        try {
+            & {
+                $ErrorActionPreference = 'Stop'
+                $vhdInfo = Get-VHD -Path $VHDXPath -ErrorAction Stop
+                if ($null -eq $vhdInfo) {
+                    throw "Unable to resolve VHDX for capture cleanup: $VHDXPath"
+                }
+                if ($vhdInfo.Attached) {
+                    Dismount-ScratchVhdx -VhdxPath $VHDXPath
+                    $vhdInfo = Get-VHD -Path $VHDXPath -ErrorAction Stop
+                    if ($null -eq $vhdInfo -or $vhdInfo.Attached) {
+                        throw "VHDX did not detach after capture: $VHDXPath"
+                    }
+                }
+                WriteLog 'Confirmed capture VHDX is detached'
+            }
+        }
+        catch {
+            if (-not $captureFailed) {
+                throw
+            }
+            WriteLog "Failed to clean up capture VHDX after an earlier error: $($_.Exception.Message)"
+        }
     }
 
     #Without this 120 second sleep, we sometimes see an error when mounting the FFU due to a file handle lock. Needed for both driver and optimize steps.
