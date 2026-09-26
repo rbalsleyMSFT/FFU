@@ -5,6 +5,269 @@
     This module contains a variety of reusable functions designed to support the FFU Builder UI. It includes utilities for managing ListView controls, such as sorting, reordering items, and handling 'Select All' functionality. It also provides thread-safe mechanisms for updating the UI from background tasks, wrappers for modern and classic file/folder dialogs, and generic functions for clearing UI content. These shared functions help to reduce code duplication and ensure consistent behavior across different parts of the application.
 #>
 
+function Initialize-FFUDialog {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		[System.Windows.Window]$Dialog,
+		[Parameter(Mandatory)]
+		[System.Windows.Window]$Owner
+	)
+
+	$Owner.Dispatcher.VerifyAccess()
+	$Dialog.Owner = $Owner
+	$Dialog.WindowStartupLocation = 'CenterOwner'
+	$Dialog.ShowInTaskbar = $false
+	$Dialog.FontFamily = $Owner.FontFamily
+	$Dialog.FontSize = $Owner.FontSize
+
+	$workArea = [System.Windows.SystemParameters]::WorkArea
+	$presentationSource = [System.Windows.PresentationSource]::FromVisual($Owner)
+	if ($null -ne $presentationSource -and $null -ne $presentationSource.CompositionTarget) {
+		$ownerHandle = [System.Windows.Interop.WindowInteropHelper]::new($Owner).Handle
+		$screenArea = [System.Windows.Forms.Screen]::FromHandle($ownerHandle).WorkingArea
+		$deviceTransform = [System.Windows.Media.MatrixTransform]::new($presentationSource.CompositionTarget.TransformFromDevice)
+		$workArea = $deviceTransform.TransformBounds(
+			[System.Windows.Rect]::new($screenArea.X, $screenArea.Y, $screenArea.Width, $screenArea.Height))
+	}
+	$Dialog.MaxWidth = [Math]::Max(1, $workArea.Width - 48)
+	$Dialog.MaxHeight = [Math]::Max(1, $workArea.Height - 48)
+	if (-not [double]::IsNaN($Dialog.Width)) {
+		$Dialog.Width = [Math]::Min($Dialog.Width, $Dialog.MaxWidth)
+	}
+
+	$themeProperty = [System.Windows.Window].GetProperty('ThemeMode')
+	$themeMode = if ($null -ne $themeProperty) { $themeProperty.GetValue($Owner).ToString() } else { 'System' }
+	Initialize-FluentTheme -Window $Dialog -ThemeMode $themeMode
+}
+
+function Show-FFUDialog {
+	[CmdletBinding(DefaultParameterSetName = 'Message')]
+	param(
+		[Parameter(Mandatory)]
+		[System.Windows.Window]$Owner,
+		[Parameter(Mandatory)]
+		[AllowEmptyString()]
+		[string]$Message,
+		[AllowEmptyString()]
+		[string]$Title = 'FFU Builder',
+		[Parameter(ParameterSetName = 'Message')]
+		[ValidateSet('OK', 'OKCancel', 'YesNo', 'YesNoCancel')]
+		[System.Windows.MessageBoxButton]$Buttons = 'OK',
+		[System.Windows.MessageBoxImage]$Icon = 'None',
+		[Parameter(ParameterSetName = 'Message')]
+		[System.Windows.MessageBoxResult]$DefaultResult = 'None',
+		[Parameter(Mandatory, ParameterSetName = 'Input')]
+		[switch]$InputText,
+		[Parameter(ParameterSetName = 'Input')]
+		[AllowEmptyString()]
+		[string]$DefaultText = ''
+	)
+
+	$dialog = $null
+	try {
+		$Owner.Dispatcher.VerifyAccess()
+		$isInput = $PSCmdlet.ParameterSetName -eq 'Input'
+		if ($isInput) { $Buttons = 'OKCancel' }
+		$results = switch ($Buttons) {
+			'OK' { @('OK') }
+			'OKCancel' { @('OK', 'Cancel') }
+			'YesNo' { @('Yes', 'No') }
+			'YesNoCancel' { @('Yes', 'No', 'Cancel') }
+		}
+		$results = @($results)
+		if ($DefaultResult -eq 'None') {
+			$DefaultResult = $results[0]
+		}
+		if ($DefaultResult.ToString() -notin $results) {
+			throw "The default dialog result '$DefaultResult' is not available for '$Buttons'."
+		}
+		$cancelResult = if ('Cancel' -in $results) { 'Cancel' } elseif ($Buttons -eq 'OK') { 'OK' } else { 'None' }
+		$dialogXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	Width="520" SizeToContent="Height" ResizeMode="NoResize">
+	<Grid Margin="24">
+		<Grid.RowDefinitions>
+			<RowDefinition Height="Auto"/>
+			<RowDefinition Height="*"/>
+			<RowDefinition Height="Auto"/>
+		</Grid.RowDefinitions>
+		<Grid Margin="0,0,0,12">
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="Auto"/>
+				<ColumnDefinition Width="*"/>
+			</Grid.ColumnDefinitions>
+			<TextBlock x:Name="txtDialogIcon" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="24" Margin="0,0,12,0" VerticalAlignment="Center"/>
+			<TextBlock x:Name="txtDialogTitle" Grid.Column="1" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+		</Grid>
+		<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+			<StackPanel>
+				<TextBlock x:Name="txtDialogMessage" TextWrapping="Wrap"/>
+				<TextBox x:Name="txtDialogInput" Visibility="Collapsed" Margin="0,12,0,0"
+					AutomationProperties.LabeledBy="{Binding ElementName=txtDialogMessage}"/>
+			</StackPanel>
+		</ScrollViewer>
+		<WrapPanel x:Name="dialogButtons" Grid.Row="2" HorizontalAlignment="Right" Margin="0,20,0,0"/>
+	</Grid>
+</Window>
+'@
+		$dialog = [System.Windows.Markup.XamlReader]::Parse($dialogXaml)
+		$dialog.Title = $Title
+		Initialize-FFUDialog -Dialog $dialog -Owner $Owner
+		$dialog.FindName('txtDialogTitle').Text = $Title
+		$dialog.FindName('txtDialogMessage').Text = $Message
+		$iconInfo = switch ([int]$Icon) {
+			0 { $null }
+			16 { @{ Glyph = 0xEA39; Name = 'Error' } }
+			32 { @{ Glyph = 0xE897; Name = 'Question' } }
+			48 { @{ Glyph = 0xE7BA; Name = 'Warning' } }
+			64 { @{ Glyph = 0xE946; Name = 'Information' } }
+			default { throw "Unsupported dialog icon: $Icon" }
+		}
+		$iconControl = $dialog.FindName('txtDialogIcon')
+		if ($null -ne $iconInfo) {
+			$iconControl.Text = [string][char]$iconInfo.Glyph
+			[System.Windows.Automation.AutomationProperties]::SetName($iconControl, $iconInfo.Name)
+		}
+		else {
+			$iconControl.Visibility = 'Collapsed'
+		}
+		if ($isInput) {
+			$dialog.FindName('txtDialogInput').Visibility = 'Visible'
+			$dialog.FindName('txtDialogInput').Text = $DefaultText
+		}
+		$dialog.Tag = [pscustomobject]@{
+			Result = [System.Windows.MessageBoxResult]::None
+			CancelResult = [System.Windows.MessageBoxResult]$cancelResult
+			IsInput = $isInput
+			DefaultButtonName = "btnDialog$DefaultResult"
+			CopyText = "$Title`r`n`r`n$Message`r`n`r`n$($results -join '    ')"
+		}
+		foreach ($resultName in $results) {
+			$button = [System.Windows.Controls.Button]::new()
+			$button.Name = "btnDialog$resultName"
+			$button.Content = "_$resultName"
+			$button.Tag = [System.Windows.MessageBoxResult]$resultName
+			$button.MinWidth = 90
+			$button.Padding = [System.Windows.Thickness]::new(12, 4, 12, 4)
+			$button.Margin = if ($resultName -eq $results[-1]) { [System.Windows.Thickness]::new(0) } else { [System.Windows.Thickness]::new(0, 0, 8, 0) }
+			$button.IsDefault = $button.Tag -eq $DefaultResult
+			$button.IsCancel = $resultName -eq 'Cancel'
+			$button.Add_Click({
+				param($eventSource, $routedEventArgs)
+				$dialogWindow = [System.Windows.Window]::GetWindow($eventSource)
+				$dialogWindow.Tag.Result = $eventSource.Tag
+				$dialogWindow.DialogResult = $eventSource.Tag -in @('OK', 'Yes')
+			})
+			$dialog.RegisterName($button.Name, $button)
+			[void]$dialog.FindName('dialogButtons').Children.Add($button)
+		}
+		$dialog.Add_ContentRendered({
+			param($eventSource, $routedEventArgs)
+			if ($eventSource.Tag.IsInput) {
+				$inputControl = $eventSource.FindName('txtDialogInput')
+				$inputControl.SelectAll()
+				[void]$inputControl.Focus()
+			}
+			else {
+				[void]$eventSource.FindName($eventSource.Tag.DefaultButtonName).Focus()
+			}
+		})
+		$dialog.Add_Closing({
+			param($eventSource, $closingEvent)
+			if ($eventSource.Tag.Result -eq 'None') {
+				if ($eventSource.Tag.CancelResult -eq 'None') {
+					$closingEvent.Cancel = $true
+				}
+				else {
+					$eventSource.Tag.Result = $eventSource.Tag.CancelResult
+				}
+			}
+		})
+		$dialog.Add_PreviewKeyDown({
+			param($eventSource, $keyEvent)
+			if ($keyEvent.Key -eq 'Escape') {
+				$keyEvent.Handled = $true
+				if ($eventSource.Tag.CancelResult -ne 'None') {
+					$eventSource.Tag.Result = $eventSource.Tag.CancelResult
+					$eventSource.DialogResult = $false
+				}
+			}
+			elseif (-not $eventSource.Tag.IsInput -and $keyEvent.Key -eq 'C' -and ($keyEvent.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control)) {
+				$keyEvent.Handled = $true
+				try {
+					[System.Windows.Clipboard]::SetText($eventSource.Tag.CopyText)
+				}
+				catch {
+					WriteLog "Unable to copy dialog text: $($_.Exception.Message)"
+					[void](Show-FFUDialog -Owner $eventSource -Message "Unable to copy dialog text: $($_.Exception.Message)" -Title 'Copy Dialog Text' -Icon Error)
+				}
+			}
+		})
+
+		# Like MessageBox, Yes/No requires an explicit choice and disables the caption's Close command.
+		if ($Buttons -eq 'YesNo') {
+			if (-not ('FFU.DialogWindowNativeMethods' -as [type])) {
+				Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+namespace FFU
+{
+	public static class DialogWindowNativeMethods
+	{
+		[DllImport("user32.dll", SetLastError = true)]
+		private static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
+		[DllImport("user32.dll")]
+		private static extern uint EnableMenuItem(IntPtr menu, uint item, uint enable);
+		[DllImport("user32.dll", SetLastError = true)]
+		private static extern bool DrawMenuBar(IntPtr window);
+		public static void DisableClose(IntPtr window)
+		{
+			IntPtr menu = GetSystemMenu(window, false);
+			if (menu == IntPtr.Zero) { throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to retrieve the dialog system menu."); }
+			if (EnableMenuItem(menu, 0xF060, 0x0001) == uint.MaxValue)
+			{
+				throw new InvalidOperationException("Unable to disable the dialog Close command.");
+			}
+			if (!DrawMenuBar(window)) { throw new Win32Exception(Marshal.GetLastWin32Error(), "Unable to refresh the dialog title bar."); }
+		}
+	}
+}
+'@ -ErrorAction Stop
+			}
+			[FFU.DialogWindowNativeMethods]::DisableClose([System.Windows.Interop.WindowInteropHelper]::new($dialog).EnsureHandle())
+		}
+
+		[void]$dialog.ShowDialog()
+		if ($dialog.Tag.Result -eq 'None') {
+			throw 'The dialog closed without a valid response.'
+		}
+		if ($isInput) {
+			if ($dialog.Tag.Result -eq 'OK') { return $dialog.FindName('txtDialogInput').Text }
+			return [string]::Empty
+		}
+		return $dialog.Tag.Result
+	}
+	catch {
+		$dialogError = $_
+		if ($null -ne $dialog) {
+			try {
+				if ($null -ne $dialog.Tag -and $null -ne $dialog.Tag.PSObject.Properties['Result']) {
+					$dialog.Tag.Result = [System.Windows.MessageBoxResult]::Cancel
+				}
+				$dialog.Close()
+			}
+			catch {
+				WriteLog "Unable to close FFU dialog '$Title' after a failure: $($_.Exception.Message)"
+			}
+		}
+		WriteLog "Unable to display FFU dialog '$Title': $($dialogError.Exception.Message)"
+		throw $dialogError
+	}
+}
+
 # Function to update priorities sequentially in a ListView
 function Update-ListViewPriorities {
     param(

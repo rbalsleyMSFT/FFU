@@ -156,6 +156,19 @@ function Invoke-ParallelProcessing {
                 # Execute the appropriate background task based on $localTaskType
                 switch ($localTaskType) {
                     'WingetDownload' {
+						$wingetModulePath = $localJobArgs['WingetModulePath']
+						$wingetModuleVersion = $localJobArgs['WingetModuleVersion']
+						if ([string]::IsNullOrWhiteSpace($wingetModulePath) -or [string]::IsNullOrWhiteSpace($wingetModuleVersion)) {
+							throw 'WinGet prerequisites must be validated before starting parallel downloads.'
+						}
+						$wingetModule = Import-Module -Name $wingetModulePath -Global -PassThru -ErrorAction Stop
+						$loadedVersion = $wingetModule.Version
+						$loadedVersion = [version]::new($loadedVersion.Major, $loadedVersion.Minor, [Math]::Max(0, $loadedVersion.Build), [Math]::Max(0, $loadedVersion.Revision))
+						$expectedVersion = [version]$wingetModuleVersion
+						$expectedVersion = [version]::new($expectedVersion.Major, $expectedVersion.Minor, [Math]::Max(0, $expectedVersion.Build), [Math]::Max(0, $expectedVersion.Revision))
+						if ($loadedVersion -ne $expectedVersion) {
+							throw 'The WinGet module changed after validation. Restart FFU/PowerShell and check WinGet status again.'
+						}
                         # Pass the progress queue and SkipWin32Json to the task function
                         $wingetTaskArgs = @{
                             ApplicationItemData = $currentItem

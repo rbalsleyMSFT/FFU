@@ -335,6 +335,14 @@ function Initialize-UIControls {
     $State.Controls.btnCheckWingetModule = $window.FindName('btnCheckWingetModule')
     $State.Controls.txtWingetVersion = $window.FindName('txtWingetVersion')
     $State.Controls.txtWingetModuleVersion = $window.FindName('txtWingetModuleVersion')
+	$State.Controls.txtLatestWingetVersion = $window.FindName('txtLatestWingetVersion')
+	$State.Controls.txtLatestWingetModuleVersion = $window.FindName('txtLatestWingetModuleVersion')
+	$State.Controls.txtWingetComponentStatus = $window.FindName('txtWingetComponentStatus')
+	$State.Controls.btnUpdateWinget = $window.FindName('btnUpdateWinget')
+	$State.Data.wingetComponentStatus = $null
+	$State.Data.wingetAvailableUpdates = $null
+	$State.Flags.wingetRestartRequired = $false
+	$State.Flags.wingetBusy = $false
     $State.Controls.applicationPathPanel = $window.FindName('applicationPathPanel')
     $State.Controls.appListJsonPathPanel = $window.FindName('appListJsonPathPanel')
     $State.Controls.userAppListPathPanel = $window.FindName('userAppListPathPanel')
@@ -351,6 +359,8 @@ function Initialize-UIControls {
     $State.Controls.btnImportWingetList = $window.FindName('btnImportWingetList')
     $State.Controls.btnClearWingetList = $window.FindName('btnClearWingetList')
     $State.Controls.btnDownloadSelected = $window.FindName('btnDownloadSelected')
+	$State.Controls.btnWingetSearch.IsEnabled = $false
+	$State.Controls.btnDownloadSelected.IsEnabled = $false
     $State.Controls.btnBrowseAppSource = $window.FindName('btnBrowseAppSource')
     $State.Controls.btnBrowseFFUDevPath = $window.FindName('btnBrowseFFUDevPath')
     $State.Controls.btnBrowseFFUCaptureLocation = $window.FindName('btnBrowseFFUCaptureLocation')

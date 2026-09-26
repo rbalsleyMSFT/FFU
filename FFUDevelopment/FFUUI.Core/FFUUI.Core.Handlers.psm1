@@ -1570,54 +1570,16 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $buttonSender = $eventSource
-
-            $buttonSender.IsEnabled = $false
-            $window.Cursor = [System.Windows.Input.Cursors]::Wait
-            # Initial UI update before calling the core function
-            Update-WingetVersionFields -State $localState -wingetText "Checking..." -moduleText "Checking..."
-
-            $statusResult = $null
-            try {
-                # Call the Core function to perform checks and potential install/update
-                # Pass the UI update function as a callback
-                $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback {
-                    param($wingetText, $moduleText)
-                    Update-WingetVersionFields -State $localState -wingetText $wingetText -moduleText $moduleText
-                }
-
-                # Display appropriate message based on the result
-                if ($statusResult.Success -and $statusResult.UpdateAttempted) {
-                    # Update attempted and successful
-                    [System.Windows.MessageBox]::Show("Winget components installed/updated successfully.", "Winget Installation Complete", "OK", "Information")
-                }
-                elseif (-not $statusResult.Success) {
-                    # Error occurred
-                    $errorMessage = if (-not [string]::IsNullOrWhiteSpace($statusResult.Message)) { $statusResult.Message } else { "An unknown error occurred during Winget check/install." }
-                    [System.Windows.MessageBox]::Show($errorMessage, "Winget Error", "OK", "Error")
-                }
-                # If Winget components were already up-to-date ($statusResult.Success -eq $true -and $statusResult.UpdateAttempted -eq $false), no message box is shown.
-
-                # Show search panel only if the final status is successful and checkbox is still checked
-                if ($statusResult.Success -and $localState.Controls.chkInstallWingetApps.IsChecked) {
-                    $localState.Controls.wingetSearchPanel.Visibility = 'Visible'
-                }
-                else {
-                    $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Hide if not successful or unchecked
-                }
-            }
-            catch {
-                # Catch errors from the Confirm-WingetInstallationUI call itself (less likely now)
-                Update-WingetVersionFields -State $localState -wingetText "Error" -moduleText "Error"
-                [System.Windows.MessageBox]::Show("Unexpected error checking/installing Winget components: $($_.Exception.Message)", "Error", "OK", "Error")
-                $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Ensure search is hidden on error
-            }
-            finally {
-                $buttonSender.IsEnabled = $true
-                $window.Cursor = $null
-            }
+			Confirm-WingetInstallationUI -State $localState | Out-Null
         })
-        
+
+	$State.Controls.btnUpdateWinget.Add_Click({
+		param($eventSource, $routedEventArgs)
+		$window = [System.Windows.Window]::GetWindow($eventSource)
+		$localState = $window.Tag
+		Install-WingetComponents -State $localState
+	})
+
     $State.Controls.btnWingetSearch.Add_Click({ 
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

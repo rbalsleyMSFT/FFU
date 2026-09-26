@@ -14,12 +14,27 @@ function Search-WingetApps {
 
     $searchQuery = $State.Controls.txtWingetSearch.Text
     if ([string]::IsNullOrWhiteSpace($searchQuery)) { return }
+	if ($State.Flags.wingetBusy) {
+		$State.Controls.txtStatus.Text = 'Wait for the current WinGet operation to finish.'
+		WriteLog $State.Controls.txtStatus.Text
+		return
+	}
 
     $State.Controls.txtStatus.Text = "Searching Winget for apps matching query '$searchQuery'..."
     $State.Window.Cursor = [System.Windows.Input.Cursors]::Wait
     $State.Controls.btnWingetSearch.IsEnabled = $false
 
     try {
+		$State.Flags.wingetBusy = $true
+		$State.Data.wingetComponentStatus = Get-WinGetComponentStatus
+		if ($State.Flags.wingetRestartRequired) {
+			throw 'Save your work and restart FFU/PowerShell before using the updated WinGet module.'
+		}
+		if (-not $State.Data.wingetComponentStatus.Success) {
+			throw $State.Data.wingetComponentStatus.ErrorMessage
+		}
+		Update-WingetVersionFields -State $State
+
         # Get current items from the ListView
         $currentItemsInListView = @()
         if ($null -ne $State.Controls.lstWingetResults.ItemsSource) {
@@ -74,12 +89,14 @@ function Search-WingetApps {
     }
     catch {
         $errorMessage = "Error searching for apps: $($_.Exception.Message)"
+		WriteLog $errorMessage
         $State.Controls.txtStatus.Text = $errorMessage
         [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
     }
     finally {
+		$State.Flags.wingetBusy = $false
         $State.Window.Cursor = $null
-        $State.Controls.btnWingetSearch.IsEnabled = $true
+		Update-WingetVersionFields -State $State
     }
 }
 
@@ -204,9 +221,10 @@ function Search-WingetPackagesPublic {
 
     WriteLog "Searching Winget packages with query: '$Query'"
     try {
+		Confirm-WinGetInstallation -WindowsArch $DefaultArchitecture
         # Using ForEach-Object -Parallel can speed up object creation on multi-core systems
         # by distributing the work across multiple threads.
-        $results = Find-WinGetPackage -Query $Query -ErrorAction Stop
+        $results = Microsoft.WinGet.Client\Find-WinGetPackage -Query $Query -ErrorAction Stop
         WriteLog "Found $($results.Count) packages matching query '$Query'."
         WriteLog "Creating output objects for Winget search results, please wait..."
         $output = $results | ForEach-Object -Parallel {
@@ -228,145 +246,310 @@ function Search-WingetPackagesPublic {
     }
     catch {
         WriteLog "Error during Winget search: $($_.Exception.Message)"
-        # Return an empty array or throw, depending on desired UI policy
-        return @()
+		throw
     }
+}
+
+function Get-WingetUpdateOptions {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		[psobject]$Status,
+		[psobject]$Updates
+	)
+
+	$cliUpdate = $null -ne $Updates -and $null -ne $Updates.WinGetVersionObject -and (-not $Status.WinGetInstalled -or $Updates.WinGetVersionObject -gt $Status.WinGetVersionObject)
+	$moduleUpdate = $null -ne $Updates -and $null -ne $Updates.ModuleVersionObject -and (-not $Status.ModuleInstalled -or $Updates.ModuleVersionObject -gt $Status.ModuleVersionObject)
+	$cliTarget = if ($cliUpdate) { $Updates.WinGetVersionObject } else { $Status.WinGetVersionObject }
+	$moduleTarget = if ($moduleUpdate) { $Updates.ModuleVersionObject } else { $Status.ModuleVersionObject }
+	$requiredModuleVersion = Get-WinGetRequiredModuleVersion -WinGetVersion $cliTarget
+	return [pscustomobject]@{
+		CliAvailable = $cliUpdate
+		ModuleAvailable = $moduleUpdate
+		CliTarget = $cliTarget
+		ModuleTarget = $moduleTarget
+		RequiredModuleVersion = $requiredModuleVersion
+		CanUpdateCli = $cliUpdate -and $Status.ModuleInstalled -and -not $Status.ModuleNeedsUpdate -and $Status.ModuleVersionObject -ge $requiredModuleVersion -and $Updates.WinGetVersionObject -ge $Status.RequiredWinGetVersion
+		CanUpdateModule = $moduleUpdate -and $Status.WinGetInstalled -and $Updates.ModuleVersionObject -ge $Status.RequiredModuleVersion -and $Status.WinGetVersionObject -ge $Updates.ModuleVersionObject
+		CanUpdateBoth = $cliUpdate -and $moduleUpdate -and $moduleTarget -ge $requiredModuleVersion -and $cliTarget -ge $moduleTarget
+	}
+}
+
+function Show-WingetUpdateDialog {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		[psobject]$State,
+		[Parameter(Mandatory)]
+		[psobject]$UpdateOptions
+	)
+
+	$dialogXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+	Title="Update WinGet" Width="520" SizeToContent="Height" ResizeMode="NoResize"
+	WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+	<StackPanel Margin="24">
+		<TextBlock Text="Choose what to update" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+		<TextBlock x:Name="txtUpdateVersions" TextWrapping="Wrap" Margin="0,0,0,16"/>
+		<RadioButton x:Name="rbUpdateBoth" Content="Update both" Tag="Both" GroupName="WinGetUpdates" Margin="0,0,0,8"/>
+		<RadioButton x:Name="rbUpdateCli" Content="CLI only" Tag="CLI" GroupName="WinGetUpdates" Margin="0,0,0,8"/>
+		<RadioButton x:Name="rbUpdateModule" Content="Module only" Tag="Module" GroupName="WinGetUpdates" Margin="0,0,0,16"/>
+		<TextBlock x:Name="txtUpdateGuidance" TextWrapping="Wrap" Margin="0,0,0,12"/>
+		<TextBlock Text="Updating a module already in use requires restarting FFU/PowerShell." TextWrapping="Wrap" Margin="0,0,0,20"/>
+		<StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+			<Button x:Name="btnConfirmUpdate" Content="Update" IsDefault="True" MinWidth="90" Padding="12,4" Margin="0,0,8,0"/>
+			<Button Content="Cancel" IsCancel="True" MinWidth="90" Padding="12,4"/>
+		</StackPanel>
+	</StackPanel>
+</Window>
+'@
+	$dialog = [System.Windows.Markup.XamlReader]::Parse($dialogXaml)
+	Initialize-FFUDialog -Dialog $dialog -Owner $State.Window
+
+	$status = $State.Data.wingetComponentStatus
+	$updates = $State.Data.wingetAvailableUpdates
+	$dialog.FindName('txtUpdateVersions').Text = "WinGet CLI: $($status.WinGetVersion) -> $($updates.WinGetVersion)`nMicrosoft.WinGet.Client: $($status.ModuleVersion) -> $($updates.ModuleVersion)"
+	$dialog.FindName('rbUpdateBoth').IsEnabled = $UpdateOptions.CanUpdateBoth
+	$dialog.FindName('rbUpdateCli').IsEnabled = $UpdateOptions.CanUpdateCli
+	$dialog.FindName('rbUpdateModule').IsEnabled = $UpdateOptions.CanUpdateModule
+	$defaultChoice = if ($UpdateOptions.CanUpdateBoth) { 'rbUpdateBoth' } elseif ($UpdateOptions.CanUpdateCli) { 'rbUpdateCli' } elseif ($UpdateOptions.CanUpdateModule) { 'rbUpdateModule' }
+	if ($null -eq $defaultChoice) {
+		throw 'No compatible WinGet update selection is available.'
+	}
+	$dialog.FindName($defaultChoice).IsChecked = $true
+	$guidance = if (-not $UpdateOptions.CanUpdateBoth) {
+		if ($UpdateOptions.CanUpdateCli) {
+			'The available CLI cannot support the new module yet. You can update the CLI only and leave the module unchanged.'
+		}
+		else {
+			'The available module cannot support the new CLI yet. You can update the module only and leave the CLI unchanged.'
+		}
+	}
+	elseif (-not $UpdateOptions.CanUpdateCli -and -not $UpdateOptions.CanUpdateModule) {
+		"The CLI update requires module $($UpdateOptions.RequiredModuleVersion) or later, and the module update requires CLI $($updates.ModuleVersion) or later. Choose Update both."
+	}
+	elseif (-not $UpdateOptions.CanUpdateCli) {
+		"CLI only requires module $($UpdateOptions.RequiredModuleVersion) or later. Choose Update both or update the module first."
+	}
+	elseif (-not $UpdateOptions.CanUpdateModule) {
+		"Module only requires CLI $($updates.ModuleVersion) or later. Choose Update both to update the CLI first."
+	}
+	else {
+		''
+	}
+	$dialog.FindName('txtUpdateGuidance').Text = $guidance
+	$dialog.FindName('txtUpdateGuidance').Visibility = if ([string]::IsNullOrWhiteSpace($guidance)) { 'Collapsed' } else { 'Visible' }
+	$dialog.FindName('btnConfirmUpdate').Add_Click({
+		param($eventSource, $routedEventArgs)
+		$dialogWindow = [System.Windows.Window]::GetWindow($eventSource)
+		foreach ($choiceName in @('rbUpdateBoth', 'rbUpdateCli', 'rbUpdateModule')) {
+			$choice = $dialogWindow.FindName($choiceName)
+			if ($choice.IsChecked -and $choice.IsEnabled) {
+				$dialogWindow.Tag = $choice.Tag
+				$dialogWindow.DialogResult = $true
+				return
+			}
+		}
+		[void](Show-FFUDialog -Owner ($dialogWindow) -Message ('Choose an available update option.') -Title ('Update WinGet') -Buttons ('OK') -Icon ('Information'))
+	})
+	if ($dialog.ShowDialog() -eq $true) {
+		return [string]$dialog.Tag
+	}
 }
 
 function Install-WingetComponents {
-    [CmdletBinding()]
-    param(
-        # Add parameter to accept a script block for UI updates
-        [Parameter(Mandatory)]
-        [scriptblock]$UiUpdateCallback
-    )
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		[psobject]$State
+	)
 
-    $minVersion = [version]"1.8.1911"
-    $module = $null
-    
-    try {
-        # Check and update PowerShell Module
-        $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue
-        if (-not $module -or $module.Version -lt $minVersion) {
-            WriteLog "Winget module needs install/update. Attempting..."
-            # Invoke the callback provided by the UI script to update status
-            # Note: We don't have the CLI version readily available here, pass a placeholder or adjust if needed.
-            & $UiUpdateCallback "Checking..." "Installing..." 
+	if ($State.Flags.wingetBusy) {
+		$State.Controls.txtStatus.Text = 'Wait for the current WinGet operation to finish.'
+		WriteLog $State.Controls.txtStatus.Text
+		return
+	}
+	$updateMessage = ''
+	try {
+		$status = Get-WinGetComponentStatus
+		$State.Data.wingetComponentStatus = $status
+		$updates = $State.Data.wingetAvailableUpdates
+		if ($State.Flags.wingetRestartRequired -or $status.RestartRequired) {
+			throw 'Save your work and restart FFU/PowerShell before updating WinGet again.'
+		}
+		if ($status.WinGetStatus -eq 'Unable to check') {
+			throw $status.ErrorMessage
+		}
+		if ($null -eq $updates) {
+			throw 'Click Check Winget Status before updating WinGet.'
+		}
 
-            # Store and modify PSGallery trust setting temporarily if needed
-            $PSGalleryTrust = (Get-PSRepository -Name 'PSGallery').InstallationPolicy
-            if ($PSGalleryTrust -eq 'Untrusted') {
-                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-            }
+		$updateOptions = Get-WingetUpdateOptions -Status $status -Updates $updates
+		$installCli = $updateOptions.CliAvailable
+		$installModule = $updateOptions.ModuleAvailable
+		if (-not ($installCli -or $installModule)) {
+			if ($null -eq $updates.WinGetVersionObject -or $null -eq $updates.ModuleVersionObject) {
+				throw 'One or more WinGet update versions are unknown. Click Check Winget Status to try again.'
+			}
+			$updateMessage = 'No WinGet updates are available.'
+			WriteLog $updateMessage
+			return
+		}
+		if (-not ($updateOptions.CanUpdateCli -or $updateOptions.CanUpdateModule -or $updateOptions.CanUpdateBoth)) {
+			throw 'No compatible WinGet update is available. Check Winget Status for the required versions and any update-check errors.'
+		}
 
-            # Install/Update the module
-            Install-Module -Name Microsoft.WinGet.Client -Force -Repository 'PSGallery' -Scope AllUsers
-            
-            # Restore original PSGallery trust setting
-            if ($PSGalleryTrust -eq 'Untrusted') {
-                Set-PSRepository -Name 'PSGallery' -InstallationPolicy Untrusted
-            }
-            
-            $module = Get-InstalledModule -Name Microsoft.WinGet.Client -ErrorAction Stop
-        }
-        
-        return $module
-    }
-    catch {
-        Write-Error "Failed to install/update Winget PowerShell module: $_"
-        throw
-    }
+		$State.Flags.wingetBusy = $true
+		Update-WingetVersionFields -State $State -Message 'Review the available WinGet updates.'
+		$chooseComponents = $installCli -and $installModule
+		if ($chooseComponents) {
+			$selection = Show-WingetUpdateDialog -State $State -UpdateOptions $updateOptions
+			if ($null -eq $selection) {
+				$updateMessage = 'WinGet update cancelled. No components were changed.'
+				WriteLog $updateMessage
+				return
+			}
+			switch ($selection) {
+				'Both' { $installCli = $true; $installModule = $true }
+				'CLI' { $installCli = $true; $installModule = $false }
+				'Module' { $installCli = $false; $installModule = $true }
+				default { throw "Unknown WinGet update selection: $selection" }
+			}
+		}
+		$cliTarget = if ($installCli) { $updates.WinGetVersionObject } else { $status.WinGetVersionObject }
+		$moduleTarget = if ($installModule) { $updates.ModuleVersionObject } else { $status.ModuleVersionObject }
+		$requiredModuleVersion = Get-WinGetRequiredModuleVersion -WinGetVersion $cliTarget
+		if ($null -eq $moduleTarget -or $moduleTarget -lt $requiredModuleVersion) {
+			throw "The selected CLI requires Microsoft.WinGet.Client $requiredModuleVersion or later. Select Update and choose Update both, or update the module to a compatible version."
+		}
+		if ($null -eq $cliTarget -or $cliTarget -lt $moduleTarget) {
+			throw "The selected module requires WinGet CLI $moduleTarget or later. Update the CLI first or choose Update both. If no compatible stable CLI is available, leave the module unchanged."
+		}
+
+		if (-not $chooseComponents) {
+			$changes = [System.Collections.Generic.List[string]]::new()
+			if ($installCli) { $changes.Add("WinGet CLI: $($status.WinGetVersion) -> $($updates.WinGetVersion)") }
+			if ($installModule) { $changes.Add("Microsoft.WinGet.Client: $($status.ModuleVersion) -> $($updates.ModuleVersion)") }
+			$confirmation = ($changes -join "`n") + "`n`nA module already in use will require restarting FFU/PowerShell. Continue?"
+			if ((Show-FFUDialog -Owner ($State.Window) -Message ($confirmation) -Title ('Update WinGet Components') -Buttons ('YesNo') -Icon ('Question')) -ne 'Yes') {
+				$updateMessage = 'WinGet update cancelled. No components were changed.'
+				WriteLog $updateMessage
+				return
+			}
+		}
+
+		$State.Window.Cursor = [System.Windows.Input.Cursors]::Wait
+		$bootstrapModule = $installModule -and (-not $status.ModuleInstalled -or $status.ModuleVersionObject -lt (Get-WinGetRequiredModuleVersion))
+		$componentOrder = if ($bootstrapModule) { @('Module', 'CLI') } else { @('CLI', 'Module') }
+		foreach ($component in $componentOrder) {
+			if ($component -eq 'CLI' -and $installCli) {
+				$repairStatus = Get-WinGetComponentStatus
+				if ($State.Flags.wingetRestartRequired -or $repairStatus.RestartRequired) {
+					throw 'The module was installed, but its previous version is still loaded. Save your work, restart FFU/PowerShell, and update the CLI before using WinGet.'
+				}
+				if (-not $repairStatus.ModuleInstalled) {
+					throw 'The WinGet module required to update the CLI is not installed. Select Update and choose Update both.'
+				}
+				if (-not $installModule -and $repairStatus.ModuleVersionObject -lt $requiredModuleVersion) {
+					throw "The CLI update requires Microsoft.WinGet.Client $requiredModuleVersion or later. Check Winget Status again and update both components."
+				}
+				Update-WingetVersionFields -State $State -Message "Updating WinGet CLI to $($updates.WinGetVersion)..."
+				Import-Module -Name $repairStatus.ModulePath -Global -ErrorAction Stop
+				Install-WinGet -Version $cliTarget -Architecture $State.Controls.cmbWindowsArch.SelectedItem
+			}
+			elseif ($component -eq 'Module' -and $installModule) {
+				$moduleStatus = Get-WinGetComponentStatus
+				if ($moduleStatus.ModuleInstalled -and $moduleStatus.ModuleVersionObject -ge $moduleTarget) {
+					WriteLog "Microsoft.WinGet.Client $($moduleStatus.ModuleVersion) already meets the selected update version."
+					continue
+				}
+				if (-not $bootstrapModule -and (-not $moduleStatus.WinGetInstalled -or $moduleStatus.WinGetVersionObject -lt $moduleTarget -or $moduleTarget -lt (Get-WinGetRequiredModuleVersion -WinGetVersion $moduleStatus.WinGetVersionObject))) {
+					throw "The installed CLI and selected module version $moduleTarget are no longer compatible. Check Winget Status again before updating."
+				}
+				$moduleWasLoaded = $moduleStatus.ModuleLoaded
+				Update-WingetVersionFields -State $State -Message "Updating Microsoft.WinGet.Client to $($updates.ModuleVersion)..."
+				$galleryTrust = (Get-PSRepository -Name PSGallery -ErrorAction Stop).InstallationPolicy
+				try {
+					if ($galleryTrust -eq 'Untrusted') {
+						Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop
+					}
+					Install-Module -Name Microsoft.WinGet.Client -RequiredVersion $updates.ModuleVersion -Repository PSGallery -Scope AllUsers -Force -ErrorAction Stop
+				}
+				finally {
+					if ($galleryTrust -eq 'Untrusted') {
+						Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction Stop
+					}
+				}
+				$status = Get-WinGetComponentStatus
+				if (-not $status.ModuleInstalled -or $status.ModuleVersionObject -lt $moduleTarget) {
+					throw "Module update is incomplete. Detected: $($status.ModuleVersion). Required: $moduleTarget."
+				}
+				if ($moduleWasLoaded) {
+					$State.Flags.wingetRestartRequired = $true
+				}
+				WriteLog "Microsoft.WinGet.Client installation verified: $($status.ModuleVersion)."
+			}
+		}
+
+		$status = Get-WinGetComponentStatus
+		if ($status.NeedsUpdate -or $status.WinGetStatus -eq 'Unable to check') {
+			throw "WinGet component update is incomplete. $($status.ErrorMessage)"
+		}
+		$updateMessage = if ($State.Flags.wingetRestartRequired -or $status.RestartRequired) {
+			'Selected updates are installed. Save your work and restart FFU/PowerShell before using WinGet.'
+		}
+		else {
+			'Selected WinGet updates are installed and the versions are compatible.'
+		}
+		WriteLog $updateMessage
+		[void](Show-FFUDialog -Owner ($State.Window) -Message ($updateMessage) -Title ('WinGet Update') -Buttons ('OK') -Icon ('Information'))
+	}
+	catch {
+		$updateMessage = "WinGet update failed: $($_.Exception.Message)"
+		WriteLog $updateMessage
+		[void](Show-FFUDialog -Owner ($State.Window) -Message ($updateMessage) -Title ('WinGet Update') -Buttons ('OK') -Icon ('Error'))
+	}
+	finally {
+		$State.Flags.wingetBusy = $false
+		$State.Window.Cursor = $null
+		$State.Data.wingetComponentStatus = Get-WinGetComponentStatus
+		if ($State.Data.wingetComponentStatus.RestartRequired) {
+			$State.Flags.wingetRestartRequired = $true
+		}
+		Update-WingetVersionFields -State $State -Message $updateMessage
+	}
 }
 
-# Winget Module Check Function (UI Version)
-# Performs checks, triggers install if needed, and reports status back to the UI.
 function Confirm-WingetInstallationUI {
-    [CmdletBinding()]
-    param(
-        # Callback for intermediate UI updates (e.g., "Installing...")
-        [Parameter(Mandatory)]
-        [scriptblock]$UiUpdateCallback 
-    )
-    
-    $minVersion = [version]"1.8.1911"
-    $result = [PSCustomObject]@{
-        Success         = $false
-        Message         = ""
-        CliVersion      = "Unknown"
-        ModuleVersion   = "Unknown"
-        NeedsUpdate     = $false
-        UpdateAttempted = $false
-    }
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		[psobject]$State
+	)
 
-    try {
-        # Initial Check
-        WriteLog "Confirm-WingetInstallationUI: Starting checks..."
-        $wingetStatus = Get-WinGetComponentStatus -MinimumVersion $minVersion
-
-        $result.CliVersion = $wingetStatus.WinGetVersion
-        $result.ModuleVersion = $wingetStatus.ModuleVersion
-
-        # Use callback for initial status display
-        & $UiUpdateCallback $result.CliVersion $result.ModuleVersion
-
-        # Determine if install/update is needed
-        $needsCliUpdate = $wingetStatus.WinGetNeedsUpdate
-        $needsModuleUpdate = $wingetStatus.ModuleNeedsUpdate
-        $result.NeedsUpdate = $wingetStatus.NeedsUpdate
-
-        if (-not [string]::IsNullOrWhiteSpace($wingetStatus.ErrorMessage)) {
-            WriteLog "Confirm-WingetInstallationUI: WinGet status error - $($wingetStatus.ErrorMessage)"
-        }
-
-        if ($result.NeedsUpdate) {
-            WriteLog "Confirm-WingetInstallationUI: Update needed. CLI Needs Update: $needsCliUpdate, Module Needs Update: $needsModuleUpdate"
-            $result.UpdateAttempted = $true
-            
-            # Use callback to indicate installation attempt
-            & $UiUpdateCallback $result.CliVersion "Installing/Updating..."
-
-            # Attempt to install/update Winget CLI and module
-            Install-WingetComponents -UiUpdateCallback $UiUpdateCallback | Out-Null
-            
-            # Re-check status after attempt
-            WriteLog "Confirm-WingetInstallationUI: Re-checking status after update attempt..."
-            $wingetStatus = Get-WinGetComponentStatus -MinimumVersion $minVersion
-            $result.CliVersion = $wingetStatus.WinGetVersion
-            $result.ModuleVersion = $wingetStatus.ModuleVersion
-            # Use callback for final status display after update attempt
-            & $UiUpdateCallback $result.CliVersion $result.ModuleVersion
-
-            # Check if update was successful
-            $cliOk = $wingetStatus.WinGetInstalled -and -not $wingetStatus.WinGetNeedsUpdate
-            $moduleOk = $wingetStatus.ModuleInstalled -and -not $wingetStatus.ModuleNeedsUpdate
-            $result.Success = $cliOk -and $moduleOk -and [string]::IsNullOrWhiteSpace($wingetStatus.ErrorMessage)
-            $result.Message = if ($result.Success) {
-                "Winget components installed/updated successfully."
-            }
-            elseif (-not [string]::IsNullOrWhiteSpace($wingetStatus.ErrorMessage)) {
-                "Winget component installation/update failed: $($wingetStatus.ErrorMessage)"
-            }
-            else {
-                "Winget component installation/update failed or is incomplete."
-            }
-            WriteLog "Confirm-WingetInstallationUI: Update attempt finished. Success: $($result.Success). Message: $($result.Message)"
-        }
-        else {
-            # Already up-to-date
-            $result.Success = $true
-            $result.Message = "Winget components are up-to-date."
-            WriteLog "Confirm-WingetInstallationUI: Components already up-to-date."
-        }
-    }
-    catch {
-        $result.Success = $false
-        $result.Message = "Error during Winget check/install: $($_.Exception.Message)"
-        WriteLog "Confirm-WingetInstallationUI: Error - $($result.Message)"
-        # Use callback to show error state
-        & $UiUpdateCallback $result.CliVersion "Error"
-    }
-
-    return $result
+	if ($State.Flags.wingetBusy) {
+		$State.Controls.txtStatus.Text = 'Wait for the current WinGet operation to finish.'
+		WriteLog $State.Controls.txtStatus.Text
+		return
+	}
+	try {
+		$State.Flags.wingetBusy = $true
+		$State.Window.Cursor = [System.Windows.Input.Cursors]::Wait
+		$State.Data.wingetComponentStatus = Get-WinGetComponentStatus
+		Update-WingetVersionFields -State $State -Message 'Checking available WinGet updates...'
+		$State.Data.wingetAvailableUpdates = Get-WinGetAvailableUpdates
+		return $State.Data.wingetComponentStatus
+	}
+	catch {
+		WriteLog "Unable to check WinGet status: $($_.Exception.Message)"
+		[void](Show-FFUDialog -Owner ($State.Window) -Message ($_.Exception.Message) -Title ('WinGet Status') -Buttons ('OK') -Icon ('Error'))
+	}
+	finally {
+		$State.Flags.wingetBusy = $false
+		$State.Window.Cursor = $null
+		Update-WingetVersionFields -State $State
+	}
 }
 
 # Note: Start-WingetAppDownloadTask has been moved to FFU.Common.Winget.psm1
@@ -377,6 +560,11 @@ function Invoke-WingetDownload {
         [psobject]$State,
         [object]$Button
     )
+	if ($State.Flags.wingetBusy) {
+		$State.Controls.txtStatus.Text = 'Wait for the current WinGet operation to finish.'
+		WriteLog $State.Controls.txtStatus.Text
+		return
+	}
     try {
         $selectedApps = $State.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
         if (-not $selectedApps) {
@@ -384,6 +572,13 @@ function Invoke-WingetDownload {
             return
         }
 
+		if ($State.Flags.wingetRestartRequired) {
+			throw 'Save your work and restart FFU/PowerShell before using the updated WinGet module.'
+		}
+		$State.Data.wingetComponentStatus = Get-WinGetComponentStatus
+		$wingetStatus = Confirm-WinGetInstallation -WindowsArch $State.Controls.cmbWindowsArch.SelectedItem -PassThru
+		$State.Flags.wingetBusy = $true
+		Update-WingetVersionFields -State $State
         $Button.IsEnabled = $false
         $State.Controls.pbOverallProgress.Visibility = 'Visible'
         $State.Controls.pbOverallProgress.Value = 0
@@ -403,6 +598,8 @@ function Invoke-WingetDownload {
             OrchestrationPath   = $localOrchestrationPath
             WindowsArch         = $localWindowsArch
             SkipWin32Json       = $true
+            WingetModulePath    = $wingetStatus.ModulePath
+            WingetModuleVersion = $wingetStatus.ModuleVersion
         }
 
         # Select only necessary properties before passing to Invoke-ParallelProcessing
@@ -469,19 +666,97 @@ function Invoke-WingetDownload {
         if ($State.Controls.pbOverallProgress) { $State.Controls.pbOverallProgress.Visibility = 'Collapsed' }
         if ($State.Controls.txtStatus) { $State.Controls.txtStatus.Text = "Winget download failed to start." }
     }
+	finally {
+		$State.Flags.wingetBusy = $false
+		Update-WingetVersionFields -State $State
+	}
 }
 
 function Update-WingetVersionFields {
-    param(
-        [psobject]$State,
-        [string]$wingetText,
-        [string]$moduleText
-    )
-    $State.Window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
-            $State.Controls.txtWingetVersion.Text = $wingetText
-            $State.Controls.txtWingetModuleVersion.Text = $moduleText
-            [System.Windows.Forms.Application]::DoEvents()
-        })
+	param(
+		[psobject]$State,
+		[string]$Message
+	)
+	$State.Window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Normal, [Action] {
+		$status = $State.Data.wingetComponentStatus
+		$updates = $State.Data.wingetAvailableUpdates
+		$busy = [bool]$State.Flags.wingetBusy
+		$State.Controls.btnCheckWingetModule.IsEnabled = -not $busy
+		$State.Controls.btnUpdateWinget.IsEnabled = $false
+		$State.Controls.btnUpdateWinget.Visibility = 'Collapsed'
+		$State.Controls.btnWingetSearch.IsEnabled = $false
+		$State.Controls.btnDownloadSelected.IsEnabled = $false
+		if ($null -eq $status) {
+			$State.Controls.txtWingetComponentStatus.Text = 'Click Check Winget Status before searching or downloading apps.'
+			return
+		}
+
+		$State.Controls.txtWingetVersion.Text = $status.WinGetVersion
+		$State.Controls.txtWingetModuleVersion.Text = $status.ModuleVersion
+		$State.Controls.txtLatestWingetVersion.Text = if ($null -ne $updates) { $updates.WinGetVersion } else { 'Not checked' }
+		$State.Controls.txtLatestWingetModuleVersion.Text = if ($null -ne $updates) { $updates.ModuleVersion } else { 'Not checked' }
+		$restartRequired = $State.Flags.wingetRestartRequired -or $status.RestartRequired
+		$ready = $status.Success -and -not $restartRequired -and -not $busy
+		$State.Controls.btnWingetSearch.IsEnabled = $ready
+		$State.Controls.btnDownloadSelected.IsEnabled = $ready
+		if ($State.Controls.chkInstallApps.IsChecked -and $State.Controls.chkInstallWingetApps.IsChecked -and ($status.Success -or $State.Controls.lstWingetResults.HasItems)) {
+			$State.Controls.wingetSearchPanel.Visibility = 'Visible'
+		}
+		else {
+			$State.Controls.wingetSearchPanel.Visibility = 'Collapsed'
+		}
+
+		$messages = [System.Collections.Generic.List[string]]::new()
+		if ($restartRequired) {
+			$messages.Add("Save your work and restart FFU/PowerShell before using WinGet. Loaded module: $($status.LoadedModuleVersion).")
+		}
+		elseif ($status.Success) {
+			$messages.Add('Installed versions are compatible. Updates are optional.')
+		}
+		else {
+			$messages.Add($status.ErrorMessage)
+		}
+		if ($null -ne $updates) {
+			$updateOptions = Get-WingetUpdateOptions -Status $status -Updates $updates
+			$canUpdate = -not $busy -and -not $restartRequired -and $status.WinGetStatus -ne 'Unable to check'
+			$State.Controls.btnUpdateWinget.IsEnabled = $canUpdate -and ($updateOptions.CanUpdateCli -or $updateOptions.CanUpdateModule -or $updateOptions.CanUpdateBoth)
+			if ($updateOptions.CliAvailable -or $updateOptions.ModuleAvailable) {
+				$State.Controls.btnUpdateWinget.Visibility = 'Visible'
+				if ($updateOptions.CanUpdateCli -or $updateOptions.CanUpdateModule -or $updateOptions.CanUpdateBoth) {
+					$messages.Add('Updates are available. Select Update to continue.')
+				}
+				else {
+					$messages.Add('Updates are available, but no compatible update combination was found.')
+				}
+			}
+			if ($updateOptions.CliAvailable -and (-not $status.ModuleInstalled -or $status.ModuleVersionObject -lt $updateOptions.RequiredModuleVersion)) {
+				$messages.Add("CLI $($updates.WinGetVersion) requires module $($updateOptions.RequiredModuleVersion) or later.")
+			}
+			if ($updateOptions.ModuleAvailable -and (-not $status.WinGetInstalled -or $status.WinGetVersionObject -lt $updates.ModuleVersionObject)) {
+				$messages.Add("Module $($updates.ModuleVersion) requires CLI $($updates.ModuleVersion) or later.")
+			}
+			if ($updateOptions.CanUpdateBoth -and -not $updateOptions.CanUpdateCli -and -not $updateOptions.CanUpdateModule) {
+				$messages.Add('Select Update and choose Update both to keep the versions compatible.')
+			}
+			if ($null -ne $updateOptions.CliTarget -and $null -ne $updateOptions.ModuleTarget -and $updateOptions.CliTarget -lt $updateOptions.ModuleTarget) {
+				$messages.Add('No compatible CLI update was found. Leave the module unchanged and check again after a suitable CLI is released.')
+			}
+			if ($null -ne $updateOptions.CliTarget -and $null -ne $updateOptions.ModuleTarget -and $updateOptions.ModuleTarget -lt $updateOptions.RequiredModuleVersion) {
+				$messages.Add('No compatible module update was found. Leave the CLI unchanged and check again after a suitable module is released.')
+			}
+			if (-not [string]::IsNullOrWhiteSpace($updates.WinGetError)) {
+				$messages.Add("Unable to check CLI updates: $($updates.WinGetError)")
+			}
+			if (-not [string]::IsNullOrWhiteSpace($updates.ModuleError)) {
+				$messages.Add("Unable to check module updates: $($updates.ModuleError)")
+			}
+		}
+		if (-not [string]::IsNullOrWhiteSpace($Message)) {
+			$messages.Insert(0, $Message)
+		}
+		$State.Controls.txtWingetComponentStatus.Text = $messages -join "`n"
+		[System.Windows.Forms.Application]::DoEvents()
+	})
 }
 
 Export-ModuleMember -Function *

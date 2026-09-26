@@ -577,25 +577,36 @@
     
                                                 <Grid Margin="0">
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
                                                     <Grid.RowDefinitions>
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
                                                     </Grid.RowDefinitions>
+
+                                                    <TextBlock Text="Installed" Grid.Row="0" Grid.Column="1" FontWeight="SemiBold" Margin="0,0,24,0"/>
+                                                    <TextBlock Text="Latest stable" Grid.Row="0" Grid.Column="2" FontWeight="SemiBold"/>
     
                                                     <!-- Winget CLI Version Display -->
-                                                    <TextBlock Text="Winget Version:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Winget CLI installed on the system"/>
-                                                    <TextBlock x:Name="txtWingetVersion" Text="Not checked" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Winget CLI Version:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" ToolTip="Current version of the Winget CLI installed on the system"/>
+                                                    <TextBlock x:Name="txtWingetVersion" Text="Not checked" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,24,0"/>
+                                                    <TextBlock x:Name="txtLatestWingetVersion" Text="Not checked" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center"/>
     
                                                     <!-- Winget PowerShell Module Version Display -->
-                                                    <TextBlock Text="Module Version:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
-                                                    <TextBlock x:Name="txtWingetModuleVersion" Text="Not checked" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Module Version:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
+                                                    <TextBlock x:Name="txtWingetModuleVersion" Text="Not checked" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,24,0"/>
+                                                    <TextBlock x:Name="txtLatestWingetModuleVersion" Text="Not checked" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center"/>
     
-                                                    <!-- Check/Install Button -->
-                                                    <Button x:Name="btnCheckWingetModule" Content="Check Winget Status" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="12,4" HorizontalAlignment="Left" ToolTip="Check installation status and version of Winget CLI and PowerShell module. Will install or update if needed."/>
+                                                    <WrapPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                                                        <Button x:Name="btnCheckWingetModule" Content="Check Winget Status" Margin="0,0,8,4" Padding="12,4" ToolTip="Check installed versions, compatibility, and available stable updates. No components are installed or updated by this check."/>
+                                                        <Button x:Name="btnUpdateWinget" Content="Update" Visibility="Collapsed" IsEnabled="False" Margin="0,0,0,4" Padding="12,4" ToolTip="Review available stable updates. If both components have updates, choose whether to update both, the CLI only, or the module only."/>
+                                                    </WrapPanel>
+                                                    <TextBlock x:Name="txtWingetComponentStatus" Text="Click Check Winget Status before searching or downloading apps." Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                                 </Grid>
                                             </StackPanel>
     
