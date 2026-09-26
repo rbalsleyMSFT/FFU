@@ -56,7 +56,7 @@ function Remove-SelectedBYOApplications {
 
     if ($itemsToRemove.Count -eq 0) {
         # This should not happen if the button is correctly disabled, but as a safeguard:
-        [System.Windows.MessageBox]::Show("No applications are selected for removal.", "Remove Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-FFUDialog -Owner $State.Window -Message "No applications are selected for removal." -Title "Remove Applications" -Icon Information | Out-Null
         return
     }
 
@@ -92,7 +92,7 @@ function Remove-SelectedBYOApplications {
     }
 
     # Ask user if they want to save the changes
-    $result = [System.Windows.MessageBox]::Show("The selected applications have been removed from the list. Do you want to save these changes to the configured BYO app list now?", "Save Changes", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $result = Show-FFUDialog -Owner $State.Window -Message "The selected applications have been removed from the list. Do you want to save these changes to the configured BYO app list now?" -Title "Save Changes" -Buttons YesNo -Icon Question
     
     if ($result -eq 'Yes') {
         $userAppListPath = Get-BYOApplicationListPath -State $State
@@ -155,7 +155,7 @@ function Add-BYOApplication {
     $ignoreNonZeroExitCodes = $State.Controls.chkIgnoreExitCodes.IsChecked
 
     if ([string]::IsNullOrWhiteSpace($name) -or [string]::IsNullOrWhiteSpace($commandLine)) {
-        [System.Windows.MessageBox]::Show("Please fill in all fields (Name and Command Line)", "Missing Information", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        Show-FFUDialog -Owner $State.Window -Message "Please fill in all fields (Name and Command Line)" -Title "Missing Information" -Icon Warning | Out-Null
         return
     }
     $listView = $State.Controls.lstApplications
@@ -167,7 +167,7 @@ function Add-BYOApplication {
         # Check for duplicate names, excluding the item being edited
         $existingApp = $listView.Items | Where-Object { $_.Name -eq $name -and $_ -ne $itemToUpdate }
         if ($existingApp) {
-            [System.Windows.MessageBox]::Show("An application with the name '$name' already exists.", "Duplicate Name", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            Show-FFUDialog -Owner $State.Window -Message "An application with the name '$name' already exists." -Title "Duplicate Name" -Icon Warning | Out-Null
             return
         }
 
@@ -193,7 +193,7 @@ function Add-BYOApplication {
         # Check for duplicate names
         $existingApp = $listView.Items | Where-Object { $_.Name -eq $name }
         if ($existingApp) {
-            [System.Windows.MessageBox]::Show("An application with the name '$name' already exists.", "Duplicate Name", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            Show-FFUDialog -Owner $State.Window -Message "An application with the name '$name' already exists." -Title "Duplicate Name" -Icon Warning | Out-Null
             return
         }
         $priority = 1
@@ -239,7 +239,7 @@ function Start-EditBYOApplication {
     $itemToEdit = @($listView.Items | Where-Object { $_.IsSelected }) | Select-Object -First 1
 
     if ($null -eq $itemToEdit) {
-        [System.Windows.MessageBox]::Show("No application selected or multiple applications selected.", "Edit Error", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "No application selected or multiple applications selected." -Title "Edit Error" -Icon Warning | Out-Null
         return
     }
 
@@ -270,13 +270,13 @@ function Add-AppsScriptVariable {
     $value = $State.Controls.txtAppsScriptValue.Text.Trim()
     
     if ([string]::IsNullOrWhiteSpace($key)) {
-        [System.Windows.MessageBox]::Show("Apps Script Variable Key cannot be empty.", "Input Error", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "Apps Script Variable Key cannot be empty." -Title "Input Error" -Icon Warning | Out-Null
         return
     }
     # Check for duplicate keys
     $existingKey = $State.Controls.lstAppsScriptVariables.Items | Where-Object { $_.Key -eq $key }
     if ($existingKey) {
-        [System.Windows.MessageBox]::Show("An Apps Script Variable with the key '$key' already exists.", "Duplicate Key", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "An Apps Script Variable with the key '$key' already exists." -Title "Duplicate Key" -Icon Warning | Out-Null
         return
     }
     
@@ -306,7 +306,7 @@ function Remove-SelectedAppsScriptVariable {
 
     $itemsToRemove = @($State.Data.appsScriptVariablesDataList | Where-Object { $_.IsSelected })
     if ($itemsToRemove.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Please select one or more Apps Script Variables to remove.", "Selection Error", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "Please select one or more Apps Script Variables to remove." -Title "Selection Error" -Icon Warning | Out-Null
         return
     }
 
@@ -334,7 +334,7 @@ function Save-BYOApplicationList {
 
     $listView = $State.Controls.lstApplications
     if (-not $listView -or $listView.Items.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("No applications to save.", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-FFUDialog -Owner $State.Window -Message "No applications to save." -Title "Save Applications" -Icon Information | Out-Null
         return
     }
 
@@ -345,10 +345,10 @@ function Save-BYOApplicationList {
         $applications = $listView.Items | Sort-Object Priority | Select-Object @{N = 'Priority'; E = { [int]$_.Priority } }, Name, CommandLine, Arguments, Source, AdditionalExitCodes, IgnoreNonZeroExitCodes
         
         $applications | ConvertTo-Json -Depth 5 | Set-Content -Path $Path -Force -Encoding UTF8
-        [System.Windows.MessageBox]::Show("Applications saved successfully to `"$Path`".", "Save Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-FFUDialog -Owner $State.Window -Message "Applications saved successfully to `"$Path`"." -Title "Save Applications" -Icon Information | Out-Null
     }
     catch {
-        [System.Windows.MessageBox]::Show("Failed to save applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        Show-FFUDialog -Owner $State.Window -Message "Failed to save applications: $_" -Title "Error" -Icon Error | Out-Null
     }
 }
 
@@ -363,7 +363,7 @@ function Import-BYOApplicationList {
     )
 
     if (-not (Test-Path $Path)) {
-        [System.Windows.MessageBox]::Show("Application list file not found at `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        Show-FFUDialog -Owner $State.Window -Message "Application list file not found at `"$Path`"." -Title "Import Applications" -Icon Warning | Out-Null
         return
     }
 
@@ -396,10 +396,10 @@ function Import-BYOApplicationList {
         # Update the Copy Apps button state
         Update-CopyButtonState -State $State
         Update-BYOAppsActionButtonsState -State $State
-        [System.Windows.MessageBox]::Show("Applications imported successfully from `"$Path`".", "Import Applications", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)    
+        Show-FFUDialog -Owner $State.Window -Message "Applications imported successfully from `"$Path`"." -Title "Import Applications" -Icon Information | Out-Null
     }
     catch {
-        [System.Windows.MessageBox]::Show("Failed to import applications: $_", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        Show-FFUDialog -Owner $State.Window -Message "Failed to import applications: $_" -Title "Error" -Icon Error | Out-Null
     }
 }
         
@@ -430,13 +430,13 @@ function Invoke-CopyBYOApps {
     catch {
         $errorMessage = "Failed to update BYO app list at $($userAppListPath): $_"
         WriteLog $errorMessage
-        [System.Windows.MessageBox]::Show($errorMessage, "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        Show-FFUDialog -Owner $State.Window -Message $errorMessage -Title "Error" -Icon Error | Out-Null
         return
     }
 
     $allAppsWithSource = $State.Controls.lstApplications.Items | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Source) }
     if (-not $allAppsWithSource) {
-        [System.Windows.MessageBox]::Show("No applications with a source path were found to copy.", "Copy BYO Apps", "OK", "Information")
+        Show-FFUDialog -Owner $State.Window -Message "No applications with a source path were found to copy." -Title "Copy BYO Apps" -Icon Information | Out-Null
         return
     }
         
@@ -459,7 +459,7 @@ function Invoke-CopyBYOApps {
 
     if ($appsThatExist.Count -gt 0) {
         $message = "The following application folders already exist in the destination and will be overwritten:`n`n$($appsThatExist -join "`n")`n`nDo you want to proceed with copying and overwriting them?"
-        $result = [System.Windows.MessageBox]::Show($message, "Confirm Overwrite", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Warning)
+        $result = Show-FFUDialog -Owner $State.Window -Message $message -Title "Confirm Overwrite" -Buttons YesNo -Icon Warning
         
         if ($result -eq 'Yes') {
             $appsToProcess.AddRange($appsToConfirm)
@@ -468,7 +468,7 @@ function Invoke-CopyBYOApps {
 
     if ($appsToProcess.Count -eq 0) {
         # This message can be suppressed if you prefer no notification when the user clicks "No"
-        # [System.Windows.MessageBox]::Show("No applications selected for copying.", "Copy BYO Apps", "OK", "Information")
+        # Show-FFUDialog -Owner $State.Window -Message "No applications selected for copying." -Title "Copy BYO Apps" -Icon Information
         return
     }
         

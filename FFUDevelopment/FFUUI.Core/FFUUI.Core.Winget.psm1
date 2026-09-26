@@ -91,7 +91,7 @@ function Search-WingetApps {
         $errorMessage = "Error searching for apps: $($_.Exception.Message)"
 		WriteLog $errorMessage
         $State.Controls.txtStatus.Text = $errorMessage
-        [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message $errorMessage -Title "Error" -Icon Error | Out-Null
     }
     finally {
 		$State.Flags.wingetBusy = $false
@@ -109,7 +109,7 @@ function Save-WingetList {
     try {
         $selectedApps = $State.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
         if (-not $selectedApps) {
-            [System.Windows.MessageBox]::Show("No apps selected to save.", "Warning", "OK", "Warning")
+            Show-FFUDialog -Owner $State.Window -Message "No apps selected to save." -Title "Warning" -Icon Warning | Out-Null
             return
         }
 
@@ -143,11 +143,11 @@ function Save-WingetList {
         if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $appList | ConvertTo-Json -Depth 10 | Set-Content $sfd.FileName -Encoding UTF8
             $State.Controls.txtAppListJsonPath.Text = $sfd.FileName
-            [System.Windows.MessageBox]::Show("Winget app list saved successfully.", "Success", "OK", "Information")
+            Show-FFUDialog -Owner $State.Window -Message "Winget app list saved successfully." -Title "Success" -Icon Information | Out-Null
         }
     }
     catch {
-        [System.Windows.MessageBox]::Show("Error saving Winget app list: $_", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "Error saving Winget app list: $_" -Title "Error" -Icon Error | Out-Null
     }
 }
 
@@ -199,11 +199,11 @@ function Import-WingetList {
             Request-ListViewColumnAutoResize -ListView $State.Controls.lstWingetResults
             $State.Controls.txtAppListJsonPath.Text = $ofd.FileName
 
-            [System.Windows.MessageBox]::Show("Winget app list imported successfully.", "Success", "OK", "Information")
+            Show-FFUDialog -Owner $State.Window -Message "Winget app list imported successfully." -Title "Success" -Icon Information | Out-Null
         }
     }
     catch {
-        [System.Windows.MessageBox]::Show("Error importing Winget app list: $_", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "Error importing Winget app list: $_" -Title "Error" -Icon Error | Out-Null
     }
 }
 
@@ -287,10 +287,9 @@ function Show-WingetUpdateDialog {
 	$dialogXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
 	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-	Title="Update WinGet" Width="520" SizeToContent="Height" ResizeMode="NoResize"
-	WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
-	<StackPanel Margin="24">
-		<TextBlock Text="Choose what to update" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+	Title="Update WinGet">
+	<StackPanel Style="{DynamicResource FFUDialogContentStyle}">
+		<TextBlock Text="Choose what to update" Style="{DynamicResource FFUDialogHeadingStyle}" Margin="0,0,0,12"/>
 		<TextBlock x:Name="txtUpdateVersions" TextWrapping="Wrap" Margin="0,0,0,16"/>
 		<RadioButton x:Name="rbUpdateBoth" Content="Update both" Tag="Both" GroupName="WinGetUpdates" Margin="0,0,0,8"/>
 		<RadioButton x:Name="rbUpdateCli" Content="CLI only" Tag="CLI" GroupName="WinGetUpdates" Margin="0,0,0,8"/>
@@ -298,8 +297,8 @@ function Show-WingetUpdateDialog {
 		<TextBlock x:Name="txtUpdateGuidance" TextWrapping="Wrap" Margin="0,0,0,12"/>
 		<TextBlock Text="Updating a module already in use requires restarting FFU/PowerShell." TextWrapping="Wrap" Margin="0,0,0,20"/>
 		<StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-			<Button x:Name="btnConfirmUpdate" Content="Update" IsDefault="True" MinWidth="90" Padding="12,4" Margin="0,0,8,0"/>
-			<Button Content="Cancel" IsCancel="True" MinWidth="90" Padding="12,4"/>
+			<Button x:Name="btnConfirmUpdate" Content="Update" IsDefault="True" Style="{DynamicResource FFUDialogAccentButtonStyle}" Margin="0,0,8,0"/>
+			<Button Content="Cancel" IsCancel="True" Style="{DynamicResource FFUDialogButtonStyle}"/>
 		</StackPanel>
 	</StackPanel>
 </Window>
@@ -351,7 +350,7 @@ function Show-WingetUpdateDialog {
 				return
 			}
 		}
-		[void](Show-FFUDialog -Owner ($dialogWindow) -Message ('Choose an available update option.') -Title ('Update WinGet') -Buttons ('OK') -Icon ('Information'))
+		Show-FFUDialog -Owner $dialogWindow -Message 'Choose an available update option.' -Title 'Update WinGet' -Icon Information | Out-Null
 	})
 	if ($dialog.ShowDialog() -eq $true) {
 		return [string]$dialog.Tag
@@ -432,7 +431,7 @@ function Install-WingetComponents {
 			if ($installCli) { $changes.Add("WinGet CLI: $($status.WinGetVersion) -> $($updates.WinGetVersion)") }
 			if ($installModule) { $changes.Add("Microsoft.WinGet.Client: $($status.ModuleVersion) -> $($updates.ModuleVersion)") }
 			$confirmation = ($changes -join "`n") + "`n`nA module already in use will require restarting FFU/PowerShell. Continue?"
-			if ((Show-FFUDialog -Owner ($State.Window) -Message ($confirmation) -Title ('Update WinGet Components') -Buttons ('YesNo') -Icon ('Question')) -ne 'Yes') {
+			if ((Show-FFUDialog -Owner $State.Window -Message $confirmation -Title 'Update WinGet Components' -Buttons YesNo -Icon Question) -ne 'Yes') {
 				$updateMessage = 'WinGet update cancelled. No components were changed.'
 				WriteLog $updateMessage
 				return
@@ -503,12 +502,12 @@ function Install-WingetComponents {
 			'Selected WinGet updates are installed and the versions are compatible.'
 		}
 		WriteLog $updateMessage
-		[void](Show-FFUDialog -Owner ($State.Window) -Message ($updateMessage) -Title ('WinGet Update') -Buttons ('OK') -Icon ('Information'))
+		Show-FFUDialog -Owner $State.Window -Message $updateMessage -Title 'WinGet Update' -Icon Information | Out-Null
 	}
 	catch {
 		$updateMessage = "WinGet update failed: $($_.Exception.Message)"
 		WriteLog $updateMessage
-		[void](Show-FFUDialog -Owner ($State.Window) -Message ($updateMessage) -Title ('WinGet Update') -Buttons ('OK') -Icon ('Error'))
+		Show-FFUDialog -Owner $State.Window -Message $updateMessage -Title 'WinGet Update' -Icon Error | Out-Null
 	}
 	finally {
 		$State.Flags.wingetBusy = $false
@@ -543,7 +542,7 @@ function Confirm-WingetInstallationUI {
 	}
 	catch {
 		WriteLog "Unable to check WinGet status: $($_.Exception.Message)"
-		[void](Show-FFUDialog -Owner ($State.Window) -Message ($_.Exception.Message) -Title ('WinGet Status') -Buttons ('OK') -Icon ('Error'))
+		Show-FFUDialog -Owner $State.Window -Message $_.Exception.Message -Title 'WinGet Status' -Icon Error | Out-Null
 	}
 	finally {
 		$State.Flags.wingetBusy = $false
@@ -568,7 +567,7 @@ function Invoke-WingetDownload {
     try {
         $selectedApps = $State.Controls.lstWingetResults.Items | Where-Object { $_.IsSelected }
         if (-not $selectedApps) {
-            [System.Windows.MessageBox]::Show("No applications selected to download.", "Download Winget Apps", "OK", "Information")
+            Show-FFUDialog -Owner $State.Window -Message "No applications selected to download." -Title "Download Winget Apps" -Icon Information | Out-Null
             return
         }
 
@@ -660,7 +659,7 @@ function Invoke-WingetDownload {
     }
     catch {
         WriteLog "FATAL Error in Invoke-WingetDownload: $($_.Exception.ToString())"
-        [System.Windows.MessageBox]::Show("A critical error occurred while starting the Winget download: $($_.Exception.Message)", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "A critical error occurred while starting the Winget download: $($_.Exception.Message)" -Title "Error" -Icon Error | Out-Null
         # Reset UI state on error
         if ($Button) { $Button.IsEnabled = $true }
         if ($State.Controls.pbOverallProgress) { $State.Controls.pbOverallProgress.Visibility = 'Collapsed' }

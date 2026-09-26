@@ -743,7 +743,7 @@ function Register-EventHandlers {
             $prefixLines = @(Get-DeviceNamePrefixes -State $localState)
 
             if ($prefixLines.Count -eq 0) {
-                [System.Windows.MessageBox]::Show("Enter at least one prefix before saving the prefixes file.", "Prefixes Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Enter at least one prefix before saving the prefixes file." -Title "Prefixes Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -756,7 +756,7 @@ function Register-EventHandlers {
             }
 
             if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
-                [System.Windows.MessageBox]::Show("Select a valid Prefixes File Path before saving prefixes.", "Prefixes File Path Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Select a valid Prefixes File Path before saving prefixes." -Title "Prefixes File Path Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -766,7 +766,7 @@ function Register-EventHandlers {
                 WriteLog "Saved device name prefixes to $currentPrefixesPath"
             }
             catch {
-                [System.Windows.MessageBox]::Show("Saving prefixes failed for '$currentPrefixesPath'. $($_.Exception.Message)", "Save Prefixes Failed", "OK", "Error") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Saving prefixes failed for '$currentPrefixesPath'. $($_.Exception.Message)" -Title "Save Prefixes Failed" -Icon Error | Out-Null
             }
         })
     $State.Controls.btnSaveDeviceNameSerialComputerNames.Add_Click({
@@ -776,7 +776,7 @@ function Register-EventHandlers {
             $serialComputerNameLines = @(Get-SerialComputerNamesLines -State $localState)
 
             if ($serialComputerNameLines.Count -eq 0) {
-                [System.Windows.MessageBox]::Show("Enter CSV content before saving the serial mapping file.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Enter CSV content before saving the serial mapping file." -Title "Serial Mapping Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -789,7 +789,7 @@ function Register-EventHandlers {
             }
 
             if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
-                [System.Windows.MessageBox]::Show("Select a valid Serial Computer Names CSV Mapping File Path before saving the serial mapping.", "Serial Mapping File Path Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Select a valid Serial Computer Names CSV Mapping File Path before saving the serial mapping." -Title "Serial Mapping File Path Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -799,7 +799,7 @@ function Register-EventHandlers {
                 WriteLog "Saved serial computer-name mappings to $currentSerialComputerNamesPath"
             }
             catch {
-                [System.Windows.MessageBox]::Show("Saving serial mapping failed for '$currentSerialComputerNamesPath'. $($_.Exception.Message)", "Save Serial Mapping Failed", "OK", "Error") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Saving serial mapping failed for '$currentSerialComputerNamesPath'. $($_.Exception.Message)" -Title "Save Serial Mapping Failed" -Icon Error | Out-Null
             }
         })
     $State.Controls.chkCopyUnattend.Add_Checked({

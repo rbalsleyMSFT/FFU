@@ -140,6 +140,19 @@ function Start-SessionThemeMonitor {
             if ($themeModeProperty.GetValue($context.Window).ToString() -ne $resolvedThemeMode) {
                 $themeModeType = $themeModeProperty.PropertyType
                 $themeModeProperty.SetValue($context.Window, $themeModeType::$resolvedThemeMode)
+
+                # Keep open dialogs, including nested dialogs, in sync with the main window
+                $ownedWindows = [System.Collections.Generic.Stack[System.Windows.Window]]::new()
+                foreach ($ownedWindow in $context.Window.OwnedWindows) {
+                    $ownedWindows.Push($ownedWindow)
+                }
+                while ($ownedWindows.Count -gt 0) {
+                    $ownedWindow = $ownedWindows.Pop()
+                    $themeModeProperty.SetValue($ownedWindow, $themeModeType::$resolvedThemeMode)
+                    foreach ($nestedWindow in $ownedWindow.OwnedWindows) {
+                        $ownedWindows.Push($nestedWindow)
+                    }
+                }
                 WriteLog "System theme updated from the desktop user's preference: $resolvedThemeMode"
             }
         }
