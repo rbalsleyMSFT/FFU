@@ -289,7 +289,7 @@ Integer value of 10, 11, 2016, 2019, 2021, 2022, 2024, or 2025. This is used to 
 Edition/SKU to install. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Enterprise 2016 LTSB', 'Enterprise N 2016 LTSB', 'Enterprise LTSC', 'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'.
 
 .PARAMETER WindowsVersion
-String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'.
+String value of the Windows version. Defaults to '26h2' for Windows 11. ESD downloads use the latest release; specify the matching version when providing an ISO.
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
@@ -421,7 +421,7 @@ param(
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
-    [string]$WindowsVersion = '25h2',
+	[string]$WindowsVersion = '26h2',
     [Parameter(Mandatory = $false)]
     [ValidateSet('x86', 'x64', 'arm64')]
     [string]$WindowsArch = 'x64',
@@ -2334,6 +2334,7 @@ function Get-WindowsESDMetadata {
                 '23H2' = '22631.0.0.0'
                 '24H2' = '26100.0.0.0'
                 '25H2' = '26100.0.0.0'
+				'26H2' = '26100.0.0.0'
             }
             $normalizedVersion = $WindowsVersion.ToUpper()
             if ($buildVersionMap.ContainsKey($normalizedVersion)) {
@@ -7112,15 +7113,15 @@ if (($WindowsArch -eq 'ARM64') -and ($UpdateLatestMSRT -eq $true)) {
     $UpdateLatestMSRT = $false
     WriteLog 'Windows Malicious Software Removal Tool is not available for the ARM64 architecture.'
 }
-#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 25H2 for Windows 11
-#MCT media only provides 22H2 and 25H2 media
+#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 26H2 for Windows 11
+#MCT media only provides 22H2 and 26H2 media
 #This prevents issues with VHDX Caching unecessarily and with searching for CUs
 if ($ISOPath -eq '') {
     if ($WindowsRelease -eq '10') {
         $WindowsVersion = '22H2'
     }
     if ($WindowsRelease -eq '11') {
-        $WindowsVersion = '25H2'
+		$WindowsVersion = '26H2'
     }
 }
 
@@ -8281,7 +8282,7 @@ try {
                 $kbCacheVersionFolder = "LTSC$WindowsRelease"
             }
             elseif ($isLTSC -and $WindowsRelease -eq 2024) {
-                # Windows 11 LTSC 2024 shares the same CU branch as Windows 11 24H2/25H2
+				# Windows 11 LTSC 2024 shares the same CU branch as Windows 11 24H2/25H2/26H2
                 $kbCacheReleaseFolder = 'Windows11'
                 $kbCacheVersionFolder = '24H2'
             }
@@ -8291,8 +8292,8 @@ try {
             }
         }
 
-        # Force Windows 11 25H2 to share Windows 11 24H2 cache folder (same CU branch)
-        if ($kbCacheReleaseFolder -eq 'Windows11' -and $kbCacheVersionFolder -match '(?i)^25H2$') {
+		# Force Windows 11 25H2/26H2 to share Windows 11 24H2 cache folder (same CU branch)
+		if ($kbCacheReleaseFolder -eq 'Windows11' -and $kbCacheVersionFolder -in @('25H2', '26H2')) {
             $kbCacheVersionFolder = '24H2'
         }
 

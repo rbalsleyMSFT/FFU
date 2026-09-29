@@ -109,7 +109,7 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -WindowsLang | string | Windows Language | String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'. |
 | -WindowsRelease | int | Windows Release | Integer value of 10, 11, 2016, 2019, 2021, 2022, 2024, or 2025. This is used to identify which Windows client/LTSC/server release to use. Default is 11. |
 | -WindowsSKU | string | Windows SKU | Edition/SKU to install. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Enterprise 2016 LTSB', 'Enterprise N 2016 LTSB', 'Enterprise LTSC', 'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'. |
-| -WindowsVersion | string | Windows Version | String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'. |
+| -WindowsVersion | string | Windows Version | String value of the Windows version. Defaults to '26h2' for Windows 11. ESD downloads use the latest release; specify the matching version when providing an ISO. |
 {: .parameters-reference-table }
 
 ## AdditionalDataPartitions Items

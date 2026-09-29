@@ -248,7 +248,7 @@ function Save-HPDriversTask {
 
         # Complete list of Windows 11 feature-update versions (newest to oldest)
         $win11Versions = @(
-            "24H2", "23H2", "22H2", "21H2"
+			"26H2", "25H2", "24H2", "23H2", "22H2", "21H2"
         )
 
         # Complete list of Windows 10 feature-update versions (newest to oldest)
