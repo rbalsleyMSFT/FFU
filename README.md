@@ -64,6 +64,7 @@ This might be a good spot to snapshot then add any applications needed for the b
 
 * Harden VHDX
    Run the below command after copying the `sysprep-ffu.xml` into `C:\Build\`
+
    > [!NOTE]
    > `C:\Build\sysprep-ffu.xml` will be removed
    
