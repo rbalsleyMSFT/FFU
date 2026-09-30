@@ -1,4 +1,4 @@
->[!INFO]
+>[!NOTE]
 >This fork was created to isolate the tools used in the original repository to more easily create custom setups.
 
 # Getting Started
