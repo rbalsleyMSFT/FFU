@@ -29,11 +29,11 @@
 # --- Source -------------------------------------------------------------------
 # The sysprepped VHDX. Leave $VMName set to auto-discover the path from the VM,
 # or set $VhdxPath directly and leave $VMName empty.
-$VMName    = 'FFU-Build'
-$VhdxPath  = ''                              # e.g. 'D:\VMs\FFU-Build\Virtual Hard Disks\FFU-Build.vhdx'
+$VMName    = 'Win11-Reference'
+$VhdxPath  = 'C:\ProgramData\Microsoft\Windows\Virtual Hard Disks\Win11-Reference.vhdx'    # e.g. 'D:\VMs\FFU-Build\Virtual Hard Disks\FFU-Build.vhdx'
 
 # --- Output -------------------------------------------------------------------
-$FfuFolder      = 'E:\FFU'                   # must NOT be inside the VHDX
+$FfuFolder      = 'F:\'                   # must NOT be inside the VHDX
 $ImageName      = 'T14G4'                    # short label, also used in filename
 $ImageDescription = 'Win11 25H2 + ThinkPad T14 Gen 4 drivers'
 $AppendDateToName = $true                    # T14G4_20260908.ffu
