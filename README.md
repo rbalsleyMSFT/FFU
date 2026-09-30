@@ -8,8 +8,11 @@ If you're new to FFU Builder or new to the FFU Builder UI version, check out the
 
 # Requirements
 Hyper-V Enabled in features
-`Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
-Poweshell 7`
+
+`Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All`
+
+Poweshell 7
+
 `winget install --id Microsoft.PowerShell --source winget --installer-type wix`
 
 # Custom Guide
