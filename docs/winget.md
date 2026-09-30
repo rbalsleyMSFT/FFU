@@ -14,11 +14,65 @@ grand_parent: UI Overview
 
 ## Check Winget Status
 
-Installing Winget applications requires that both the winget CLI and Microsoft.Winget.Client PowerShell module to be installed. Minimum required version of both the CLI and PowerShell module is 1.8.1911.
+Installing Winget applications requires both the Winget CLI and the Microsoft.WinGet.Client PowerShell module. Both components must be version **1.8.1911** or later, and the **CLI version must match or exceed the module version**.
 
-Click **Check Winget Status** to validate the versions of both the CLI and PowerShell module. If older than the minimum required version, will be updated to the latest version.
+Version `1.29.380` introduces an elevated-use compatibility boundary. If either component is version **1.29.380 or later**, both must be **1.29.380 or later**. CLI `1.29.380` with module `1.29.280` is not supported, nor is the reverse pairing. Older pairs can still be used when both meet the minimum and the CLI matches or exceeds the module.
+
+The versions do not have to be identical. The CLI may be newer because App Installer receives updates through the Microsoft Store, but both compatibility rules must still be met. FFU Builder does not downgrade either component to make the versions identical.
+
+Click **Check Winget Status** to check compatibility and look for the latest stable releases. The **Winget CLI Version** and **Module Version** rows show the **Installed** and **Latest stable** versions side by side. This check **does not install or update anything**. It checks GitHub for CLI releases and PSGallery for module releases.
+
+If an update check fails, the status area displays the reason. You can still use a compatible installed pair even when FFU Builder cannot check for newer releases.
 
 ![1776378813453](image/winget/1776378813453.png)
+
+### Choose which components to update
+
+An **Update** button appears when an update is available. If only one component has an update, click **Update** to review and confirm that update.
+
+If both components have updates, **Update** opens a dialog showing the installed and proposed versions. Choose one of the following options, then click **Update** in the dialog to confirm. Click **Cancel** to leave both components unchanged.
+
+| Choice                | Behavior                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Update both** | Updates both components, starting with the CLI when a usable module is already installed. This is the default choice when both updates are compatible. |
+| **CLI only**    | Updates the CLI only when the resulting version pair is compatible, including the`1.29.380` boundary.                                                |
+| **Module only** | Updates the module only when the resulting version pair is compatible, including the`1.29.380` boundary.                                             |
+
+Updates are optional when the installed versions are compatible. When moving both components from versions below `1.29.380` to versions at or above it, choose **Update both**. **CLI only** and **Module only** are disabled because either choice would leave an incompatible pair.
+
+If one component has already crossed the boundary, **Check Winget Status** reports that the other component needs updating. For example, with CLI `1.29.380` and module `1.29.280`, **Update** can update just the module to a compatible version. Searching and downloading remain disabled until the installed pair is compatible and any required restart is complete.
+
+Choices that would leave the versions incompatible are disabled with an explanation. The **Update** button is disabled while a WinGet operation is running, a restart is required, or no compatible update choice is available. GitHub and PSGallery releases may not become available at the same time. If a compatible version of the other component is not available, leave that update unselected and check again later.
+
+{: .important-title}
+
+> Important
+>
+> Updating a module that is already loaded requires a fresh PowerShell process. Save your configuration, close FFU Builder, and restart FFU Builder from a new PowerShell process before searching or downloading applications. Reimporting the module in the same process does not replace native DLLs that are already loaded. FFU Builder does not restart itself or the PowerShell process automatically. 
+
+When both components need updating and no usable module is installed, **Update both** first installs the module needed to repair or install the CLI. If an older module was already loaded, FFU Builder will ask you to restart before completing the CLI update.
+
+FFU Builder checks compatibility again before searching or downloading, including when applications were imported from an existing configuration. If one step of **Update both** fails, the resulting versions are checked again and WinGet operations remain blocked if the pair is incompatible. Update failures are reported instead of being treated as an empty search result.
+
+Microsoft documents the elevated-use requirement for module `1.29.380` and later in [microsoft/winget-cli#6560](https://github.com/microsoft/winget-cli/issues/6560#issuecomment-5798672092). FFU Builder enforces the `1.29.380` boundary in both directions, in addition to the CLI-at-least-module rule.
+
+### Command-line builds
+
+Command-line builds validate the installed versions before downloading Winget applications. They do not prompt for updates, check for optional newer releases, or install missing prerequisites automatically.
+
+If a prerequisite is missing or incompatible, the build stops with the detected versions and corrective guidance. Use **Check Winget Status** in the UI to choose updates, then restart PowerShell if requested and rerun the build.
+
+If a compatible module is already installed, you can also update the CLI from an elevated PowerShell 7 session. Use **Update both** in FFU Builder when crossing the `1.29.380` boundary with both components:
+
+```powershell
+Import-Module Microsoft.WinGet.Client -ErrorAction Stop
+Repair-WinGetPackageManager -Latest -ErrorAction Stop
+winget --version
+```
+
+See the [Repair-WinGetPackageManager reference](https://github.com/microsoft/winget-cli/blob/master/src/PowerShell/Help/Microsoft.WinGet.Client/Repair-WinGetPackageManager.md) for available options. Before updating either component manually, make sure the resulting pair meets both compatibility rules above. After changing a module that was already loaded, start a new PowerShell process.
+
+### Search for applications
 
 After validating Winget status, you'll be able to search winget for applications. The larger the result set, the longer it will take for the list view to be populated. For example, if searching for **win**, the UI might appear to hang while it searches for apps with a name or id of **win** due to 669 results being returned and processed. Instead, if you search for **windows app**, 13 results are returned within a few seconds.
 

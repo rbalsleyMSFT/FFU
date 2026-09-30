@@ -12,7 +12,7 @@ This is the quick start guide to getting started with FFU Builder. If you're new
 
 After following this guide, you will have a USB drive with an FFU that contains the following:
 
-* Windows 11 25H2 (with your choice of architecture, language, SKU, and media type)
+* Windows 11 26H2 (with your choice of architecture, language, SKU, and media type)
 * The latest
   * Windows and .NET Cumulative Updates
   * Defender definitions, platform updates, and Windows Security Center application update

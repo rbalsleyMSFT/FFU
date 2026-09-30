@@ -126,7 +126,7 @@ $script:mctWindowsReleases = @(
 
 $script:windowsVersionMap = @{
     10   = @("22H2")
-    11   = @("25H2", "24H2", "23H2", "22H2")
+	11   = @("26H2", "25H2", "24H2", "23H2", "22H2")
     2016 = @("1607") # Windows 10 LTSB 2016 & Server 2016
     2019 = @("1809") # Windows 10 LTSC 2019 & Server 2019
     # Note: Server 2016 and LTSB 2016 now share the key 2016, mapping to version "1607"
@@ -269,7 +269,10 @@ function Get-AvailableWindowsVersions {
         $result.Versions = $validVersions
         # Set default selection logic (e.g., latest for Win11)
         if ($SelectedRelease -eq 11) {
-            if ($validVersions -contains "25H2") {
+			if ($validVersions -contains "26H2") {
+				$result.DefaultVersion = "26H2"
+			}
+			elseif ($validVersions -contains "25H2") {
                 $result.DefaultVersion = "25H2"
             }
             elseif ($validVersions -contains "24H2") {
@@ -285,7 +288,7 @@ function Get-AvailableWindowsVersions {
         # Logic for when no ISO is specified (MCT scenario)
         switch ($SelectedRelease) {
             10 { $result.DefaultVersion = "22H2" }
-            11 { $result.DefaultVersion = "25H2" }
+			11 { $result.DefaultVersion = "26H2" }
             # Server versions typically require an ISO, but handle just in case
             2016 { $result.DefaultVersion = "1607" }
             2019 { $result.DefaultVersion = "1809" }
@@ -520,7 +523,7 @@ function Update-WindowsArchCombo {
         }
         else {
             # Standard Windows 11
-            if ($versionValue -in @('24H2', '25H2')) {
+			if ($versionValue -in @('24H2', '25H2', '26H2')) {
                 $availableArchitectures = @('x64', 'arm64')
             }
             else {

@@ -743,7 +743,7 @@ function Register-EventHandlers {
             $prefixLines = @(Get-DeviceNamePrefixes -State $localState)
 
             if ($prefixLines.Count -eq 0) {
-                [System.Windows.MessageBox]::Show("Enter at least one prefix before saving the prefixes file.", "Prefixes Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Enter at least one prefix before saving the prefixes file." -Title "Prefixes Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -756,7 +756,7 @@ function Register-EventHandlers {
             }
 
             if ([string]::IsNullOrWhiteSpace($currentPrefixesPath)) {
-                [System.Windows.MessageBox]::Show("Select a valid Prefixes File Path before saving prefixes.", "Prefixes File Path Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Select a valid Prefixes File Path before saving prefixes." -Title "Prefixes File Path Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -766,7 +766,7 @@ function Register-EventHandlers {
                 WriteLog "Saved device name prefixes to $currentPrefixesPath"
             }
             catch {
-                [System.Windows.MessageBox]::Show("Saving prefixes failed for '$currentPrefixesPath'. $($_.Exception.Message)", "Save Prefixes Failed", "OK", "Error") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Saving prefixes failed for '$currentPrefixesPath'. $($_.Exception.Message)" -Title "Save Prefixes Failed" -Icon Error | Out-Null
             }
         })
     $State.Controls.btnSaveDeviceNameSerialComputerNames.Add_Click({
@@ -776,7 +776,7 @@ function Register-EventHandlers {
             $serialComputerNameLines = @(Get-SerialComputerNamesLines -State $localState)
 
             if ($serialComputerNameLines.Count -eq 0) {
-                [System.Windows.MessageBox]::Show("Enter CSV content before saving the serial mapping file.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Enter CSV content before saving the serial mapping file." -Title "Serial Mapping Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -789,7 +789,7 @@ function Register-EventHandlers {
             }
 
             if ([string]::IsNullOrWhiteSpace($currentSerialComputerNamesPath)) {
-                [System.Windows.MessageBox]::Show("Select a valid Serial Computer Names CSV Mapping File Path before saving the serial mapping.", "Serial Mapping File Path Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Select a valid Serial Computer Names CSV Mapping File Path before saving the serial mapping." -Title "Serial Mapping File Path Required" -Icon Warning | Out-Null
                 return
             }
 
@@ -799,7 +799,7 @@ function Register-EventHandlers {
                 WriteLog "Saved serial computer-name mappings to $currentSerialComputerNamesPath"
             }
             catch {
-                [System.Windows.MessageBox]::Show("Saving serial mapping failed for '$currentSerialComputerNamesPath'. $($_.Exception.Message)", "Save Serial Mapping Failed", "OK", "Error") | Out-Null
+                Show-FFUDialog -Owner $window -Message "Saving serial mapping failed for '$currentSerialComputerNamesPath'. $($_.Exception.Message)" -Title "Save Serial Mapping Failed" -Icon Error | Out-Null
             }
         })
     $State.Controls.chkCopyUnattend.Add_Checked({
@@ -1570,54 +1570,16 @@ function Register-EventHandlers {
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)
             $localState = $window.Tag
-            $buttonSender = $eventSource
-
-            $buttonSender.IsEnabled = $false
-            $window.Cursor = [System.Windows.Input.Cursors]::Wait
-            # Initial UI update before calling the core function
-            Update-WingetVersionFields -State $localState -wingetText "Checking..." -moduleText "Checking..."
-
-            $statusResult = $null
-            try {
-                # Call the Core function to perform checks and potential install/update
-                # Pass the UI update function as a callback
-                $statusResult = Confirm-WingetInstallationUI -UiUpdateCallback {
-                    param($wingetText, $moduleText)
-                    Update-WingetVersionFields -State $localState -wingetText $wingetText -moduleText $moduleText
-                }
-
-                # Display appropriate message based on the result
-                if ($statusResult.Success -and $statusResult.UpdateAttempted) {
-                    # Update attempted and successful
-                    [System.Windows.MessageBox]::Show("Winget components installed/updated successfully.", "Winget Installation Complete", "OK", "Information")
-                }
-                elseif (-not $statusResult.Success) {
-                    # Error occurred
-                    $errorMessage = if (-not [string]::IsNullOrWhiteSpace($statusResult.Message)) { $statusResult.Message } else { "An unknown error occurred during Winget check/install." }
-                    [System.Windows.MessageBox]::Show($errorMessage, "Winget Error", "OK", "Error")
-                }
-                # If Winget components were already up-to-date ($statusResult.Success -eq $true -and $statusResult.UpdateAttempted -eq $false), no message box is shown.
-
-                # Show search panel only if the final status is successful and checkbox is still checked
-                if ($statusResult.Success -and $localState.Controls.chkInstallWingetApps.IsChecked) {
-                    $localState.Controls.wingetSearchPanel.Visibility = 'Visible'
-                }
-                else {
-                    $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Hide if not successful or unchecked
-                }
-            }
-            catch {
-                # Catch errors from the Confirm-WingetInstallationUI call itself (less likely now)
-                Update-WingetVersionFields -State $localState -wingetText "Error" -moduleText "Error"
-                [System.Windows.MessageBox]::Show("Unexpected error checking/installing Winget components: $($_.Exception.Message)", "Error", "OK", "Error")
-                $localState.Controls.wingetSearchPanel.Visibility = 'Collapsed' # Ensure search is hidden on error
-            }
-            finally {
-                $buttonSender.IsEnabled = $true
-                $window.Cursor = $null
-            }
+			Confirm-WingetInstallationUI -State $localState | Out-Null
         })
-        
+
+	$State.Controls.btnUpdateWinget.Add_Click({
+		param($eventSource, $routedEventArgs)
+		$window = [System.Windows.Window]::GetWindow($eventSource)
+		$localState = $window.Tag
+		Install-WingetComponents -State $localState
+	})
+
     $State.Controls.btnWingetSearch.Add_Click({ 
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

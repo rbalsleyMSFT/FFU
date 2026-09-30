@@ -39,7 +39,9 @@ Can be 10, 11, different Server values, or LTSB/LTSC.
 
 ## Windows Version
 
-String value of the Windows version. Default is `25H2`. If an ISO is not specified, this drop down is disabled. If an ISO is specified, you can select from the drop down which version of Windows you're installing. The Windows version is used in quite a few different scenarios (HP driver downloads, VHDXCaching, MCT media downloads, FFU file naming, and cumulative update downloads), so it's important you specify the correct Windows Version.
+String value of the Windows version. Default is `26H2` for Windows 11. ESD downloads use the latest version, and this drop down is disabled. To build an older version, provide its ISO and select the matching Windows version from the drop down.
+
+The Windows version is used in quite a few different scenarios (HP driver downloads, VHDXCaching, MCT media downloads, FFU file naming, and cumulative update downloads), so it's important you specify the correct Windows Version.
 
 ## Windows Architecture
 

@@ -784,7 +784,7 @@ function Clear-AdditionalDataPartitions {
         [psobject]$State
     )
 
-    $result = [System.Windows.MessageBox]::Show("Are you sure you want to clear all additional data partitions?", "Clear Data Partitions", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $result = Show-FFUDialog -Owner $State.Window -Message "Are you sure you want to clear all additional data partitions?" -Title "Clear Data Partitions" -Buttons YesNo -Icon Question
     if ($result -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
     if ($null -eq $State.Data.additionalDataPartitionsDataList) {
@@ -808,7 +808,7 @@ function Reset-DiskLayoutToDefaults {
 
 	if ($PromptForConfirmation) {
 		$message = "Reset the partition layout to FFU Builder defaults?`n`nThis will restore the default System, MSR, Windows, and Recovery partitions and remove all additional data partitions.`n`nDisk Size and Logical Sector Size will not change."
-		$result = [System.Windows.MessageBox]::Show($message, "Reset Partition Layout", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+		$result = Show-FFUDialog -Owner $State.Window -Message $message -Title "Reset Partition Layout" -Buttons YesNo -Icon Question
 		if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
 			WriteLog "ResetDiskLayoutToDefaults: User cancelled."
 			return $false
@@ -930,7 +930,7 @@ function Test-DiskLayoutConfiguration {
     }
 
     if ($errors.Count -gt 0) {
-        [System.Windows.MessageBox]::Show(($errors -join [System.Environment]::NewLine), "Disk Layout Validation", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message ($errors -join [System.Environment]::NewLine) -Title "Disk Layout Validation" -Icon Warning | Out-Null
         return $false
     }
 
@@ -960,7 +960,7 @@ function Add-AdditionalDataPartition {
         Sync-DiskLayoutRowsToControls -State $State
     }
     catch {
-        [System.Windows.MessageBox]::Show($_.Exception.Message, "Disk Layout", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message $_.Exception.Message -Title "Disk Layout" -Icon Warning | Out-Null
         return $false
     }
 
@@ -974,13 +974,13 @@ function Add-AdditionalDataPartition {
     }
 
     if ($State.Data.additionalDataPartitionsDataList | Where-Object { $_.Name -ieq $partitionName } | Select-Object -First 1) {
-        [System.Windows.MessageBox]::Show("A data partition named '$partitionName' already exists.", "Duplicate Data Partition", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "A data partition named '$partitionName' already exists." -Title "Duplicate Data Partition" -Icon Warning | Out-Null
         return $false
     }
 
     $driveLetter = ([string](Get-ComboBoxSelectedContent -ComboBox $State.Controls.cmbDataPartitionDriveLetter)).Trim().TrimEnd(':').ToUpperInvariant()
     if ([string]::IsNullOrWhiteSpace($driveLetter) -or $driveLetter -notmatch '^[D-Z]$') {
-        [System.Windows.MessageBox]::Show("Select a drive letter from D through Z for the data partition.", "Data Partition Drive Letter", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "Select a drive letter from D through Z for the data partition." -Title "Data Partition Drive Letter" -Icon Warning | Out-Null
         return $false
     }
 
@@ -993,23 +993,23 @@ function Add-AdditionalDataPartition {
     }
 
     if ($reservedDriveLetters -contains $driveLetter) {
-        [System.Windows.MessageBox]::Show("Drive letter $driveLetter is already used by a required build partition.", "Duplicate Drive Letter", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "Drive letter $driveLetter is already used by a required build partition." -Title "Duplicate Drive Letter" -Icon Warning | Out-Null
         return $false
     }
 
     if ($State.Data.additionalDataPartitionsDataList | Where-Object { $_.DriveLetter -eq $driveLetter } | Select-Object -First 1) {
-        [System.Windows.MessageBox]::Show("Drive letter $driveLetter is already used by another data partition.", "Duplicate Drive Letter", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "Drive letter $driveLetter is already used by another data partition." -Title "Duplicate Drive Letter" -Icon Warning | Out-Null
         return $false
     }
 
     $fillRemaining = $true -eq $State.Controls.chkDataPartitionFillRemaining.IsChecked
     $persistDriveLetter = $true -eq $State.Controls.chkDataPartitionPersistDriveLetter.IsChecked
     if ($fillRemaining -and [string]::IsNullOrWhiteSpace([string]$State.Controls.txtOSPartitionSizeGB.Text)) {
-        [System.Windows.MessageBox]::Show("Set a fixed Windows partition size before making a data partition fill the remaining VHDX space.", "Windows Partition Size Required", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "Set a fixed Windows partition size before making a data partition fill the remaining VHDX space." -Title "Windows Partition Size Required" -Icon Warning | Out-Null
         return $false
     }
     if ($fillRemaining -and ($State.Data.additionalDataPartitionsDataList | Where-Object { $_.FillRemaining } | Select-Object -First 1)) {
-        [System.Windows.MessageBox]::Show("Only one data partition can fill the remaining VHDX space.", "Fill Remaining Already Used", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "Only one data partition can fill the remaining VHDX space." -Title "Fill Remaining Already Used" -Icon Warning | Out-Null
         return $false
     }
 
@@ -1020,12 +1020,12 @@ function Add-AdditionalDataPartition {
             $sizeBytes = ConvertTo-PartitionSizeBytesFromGBText -Text $State.Controls.txtDataPartitionSizeGB.Text -FieldName 'Data Partition Size'
         }
         catch {
-            [System.Windows.MessageBox]::Show($_.Exception.Message, "Data Partition Size", "OK", "Warning") | Out-Null
+            Show-FFUDialog -Owner $State.Window -Message $_.Exception.Message -Title "Data Partition Size" -Icon Warning | Out-Null
             return $false
         }
 
         if ($sizeBytes -le 0) {
-            [System.Windows.MessageBox]::Show("Enter a data partition size or select Fill Remaining.", "Data Partition Size", "OK", "Warning") | Out-Null
+            Show-FFUDialog -Owner $State.Window -Message "Enter a data partition size or select Fill Remaining." -Title "Data Partition Size" -Icon Warning | Out-Null
             return $false
         }
 
@@ -1077,7 +1077,7 @@ function Remove-SelectedDataPartition {
 
     $itemsToRemove = @($State.Controls.lstDataPartitions.Items | Where-Object { $_.IsSelected -and $_.CanRemove })
     if ($itemsToRemove.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Select one or more removable partitions to remove.", "Selection Required", "OK", "Warning") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message "Select one or more removable partitions to remove." -Title "Selection Required" -Icon Warning | Out-Null
         return
     }
 
@@ -1272,12 +1272,12 @@ function Invoke-LoadConfiguration {
         }
         catch {
             WriteLog "LoadConfig Error: Failed reading file $filePath : $($_.Exception.Message)"
-            [System.Windows.MessageBox]::Show("Failed to read the configuration file.`n$($_.Exception.Message)", "Load Error", "OK", "Error")
+            Show-FFUDialog -Owner $State.Window -Message "Failed to read the configuration file.`n$($_.Exception.Message)" -Title "Load Error" -Icon Error | Out-Null
             return
         }
         if ([string]::IsNullOrWhiteSpace($raw)) {
             WriteLog "LoadConfig Error: File $filePath is empty."
-            [System.Windows.MessageBox]::Show("The selected configuration file is empty.", "Load Error", "OK", "Error")
+            Show-FFUDialog -Owner $State.Window -Message "The selected configuration file is empty." -Title "Load Error" -Icon Error | Out-Null
             return
         }
         $configContent = $null
@@ -1286,12 +1286,12 @@ function Invoke-LoadConfiguration {
         }
         catch {
             WriteLog "LoadConfig Error: JSON parse failure for $filePath : $($_.Exception.Message)"
-            [System.Windows.MessageBox]::Show("Failed to parse the configuration file (invalid JSON).`n$($_.Exception.Message)", "Load Error", "OK", "Error")
+            Show-FFUDialog -Owner $State.Window -Message "Failed to parse the configuration file (invalid JSON).`n$($_.Exception.Message)" -Title "Load Error" -Icon Error | Out-Null
             return
         }
         if ($null -eq $configContent) {
             WriteLog "LoadConfig Error: Parsed config object is null after $filePath."
-            [System.Windows.MessageBox]::Show("Parsed configuration object was null.", "Load Error", "OK", "Error")
+            Show-FFUDialog -Owner $State.Window -Message "Parsed configuration object was null." -Title "Load Error" -Icon Error | Out-Null
             return
         }
         WriteLog "LoadConfig: Successfully parsed config file. Top-level keys: $($configContent.PSObject.Properties.Name -join ', ')"
@@ -1301,7 +1301,7 @@ function Invoke-LoadConfiguration {
     }
     catch {
         WriteLog "LoadConfig FATAL Error: $($_.Exception.ToString())"
-        [System.Windows.MessageBox]::Show("Error loading config file:`n$($_.Exception.Message)", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "Error loading config file:`n$($_.Exception.Message)" -Title "Error" -Icon Error | Out-Null
     }
 }
 
@@ -1832,11 +1832,11 @@ function Invoke-SaveConfiguration {
             $sortedConfig = [ordered]@{}
             foreach ($k in ($config.Keys | Sort-Object)) { $sortedConfig[$k] = $config[$k] }
             $sortedConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $savePath -Encoding UTF8
-            [System.Windows.MessageBox]::Show("Configuration file saved to:`n$savePath", "Success", "OK", "Information")
+            Show-FFUDialog -Owner $State.Window -Message "Configuration file saved to:`n$savePath" -Title "Success" -Icon Information | Out-Null
         }
     }
     catch {
-        [System.Windows.MessageBox]::Show("Error saving config file:`n$($_.Exception.Message)", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "Error saving config file:`n$($_.Exception.Message)" -Title "Error" -Icon Error | Out-Null
     }
 }
 
@@ -1878,7 +1878,7 @@ function Invoke-RestoreDefaults {
         $appsISOPath = Join-Path $rootPath 'Apps.iso'
         
         $msg = "Restore Defaults will:`n`n- Delete generated config and app/driver list JSON files`n- Remove ISO files (Deploy, Apps) if present`n- Remove Apps/Update/downloaded artifacts`n- Remove driver folder contents (not the folder)`n- Remove FFU files in the capture folder`n`nSample/template files and VM/VHDX cache are NOT removed.`n`nProceed?"
-        $result = [System.Windows.MessageBox]::Show($msg, "Confirm Restore Defaults", "YesNo", "Warning")
+        $result = Show-FFUDialog -Owner $State.Window -Message $msg -Title "Confirm Restore Defaults" -Buttons YesNo -Icon Warning
         if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
             WriteLog "RestoreDefaults: User cancelled."
             return
@@ -1952,11 +1952,11 @@ function Invoke-RestoreDefaults {
 		$null = Reset-DiskLayoutToDefaults -State $State
 
         WriteLog "RestoreDefaults: Completed."
-        [System.Windows.MessageBox]::Show("Environment restored to defaults.", "Restore Defaults", "OK", "Information")
+        Show-FFUDialog -Owner $State.Window -Message "Environment restored to defaults." -Title "Restore Defaults" -Icon Information | Out-Null
     }
     catch {
         WriteLog "RestoreDefaults: Failed with $($_.Exception.Message)"
-        [System.Windows.MessageBox]::Show("Restore Defaults failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "Restore Defaults failed:`n$($_.Exception.Message)" -Title "Error" -Icon Error | Out-Null
     }
 }
 
@@ -2265,7 +2265,7 @@ function Import-ConfigSupplementalAssets {
             "Optional helper file(s) referenced in the configuration were not found:`n" +
             ($missing | ForEach-Object { "- $_" } | Out-String) +
             "`nThese files are optional. They won't exist until you create Winget (AppList.json), User (UserAppList.json), or Driver (Drivers.json) manifests. You can create them later or ignore this message."
-        [System.Windows.MessageBox]::Show($msg.TrimEnd(), "Configuration Loaded - Optional Files Missing", "OK", "Information") | Out-Null
+        Show-FFUDialog -Owner $State.Window -Message ($msg.TrimEnd()) -Title "Configuration Loaded - Optional Files Missing" -Icon Information | Out-Null
     }
 
     WriteLog ("SupplementalImport: Complete. Winget={0} BYO={1} Drivers={2} Missing={3}" -f $loadedWinget, $loadedBYO, $loadedDrivers, $missing.Count)

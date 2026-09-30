@@ -207,7 +207,7 @@ function Get-DriverDisplayName {
     $UserAgent = $staticVars.UserAgent
 
     if (-not $localWindowsRelease -and ($SelectedMake -eq 'Dell' -or $SelectedMake -eq 'Lenovo')) {
-        [System.Windows.MessageBox]::Show("Please select a Windows Release first for $SelectedMake.", "Missing Information", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "Please select a Windows Release first for $SelectedMake." -Title "Missing Information" -Icon Warning | Out-Null
         throw "Windows Release not selected for $SelectedMake."
     }
 
@@ -222,7 +222,7 @@ function Get-DriverDisplayName {
             $rawModels = Get-HPDriversModelList -DriversFolder $localDriversFolder -Make $SelectedMake
         }
         'Lenovo' {
-            $modelSearchTerm = [Microsoft.VisualBasic.Interaction]::InputBox("Enter Lenovo Model Name or Machine Type (e.g., T480 or 20L5):", "Lenovo Model Search", "")
+            $modelSearchTerm = Show-FFUDialog -Owner $State.Window -Message "Enter Lenovo Model Name or Machine Type (e.g., T480 or 20L5):" -Title "Lenovo Model Search" -InputText
             if ([string]::IsNullOrWhiteSpace($modelSearchTerm)) {
                 # User cancelled or entered nothing
                 return @()
@@ -231,7 +231,7 @@ function Get-DriverDisplayName {
             $rawModels = Get-LenovoDriversModelList -ModelSearchTerm $modelSearchTerm -Headers $Headers -UserAgent $UserAgent
         }
         default {
-            [System.Windows.MessageBox]::Show("Selected Make '$SelectedMake' is not supported for automatic model retrieval.", "Unsupported Make", "OK", "Warning")
+            Show-FFUDialog -Owner $State.Window -Message "Selected Make '$SelectedMake' is not supported for automatic model retrieval." -Title "Unsupported Make" -Icon Warning | Out-Null
             return @()
         }
     }
@@ -394,7 +394,7 @@ function Save-DriversJson {
     $selectedDrivers = @($driverSelectionSource | Where-Object { $_.IsSelected })
 
     if (-not $selectedDrivers) {
-        [System.Windows.MessageBox]::Show("No drivers selected to save.", "Save Drivers", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-FFUDialog -Owner $State.Window -Message "No drivers selected to save." -Title "Save Drivers" -Icon Information | Out-Null
         WriteLog "No drivers selected to save."
         return
     }
@@ -429,11 +429,11 @@ function Save-DriversJson {
     if ($sfd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
             $outputJson | ConvertTo-Json -Depth 5 | Set-Content -Path $sfd.FileName -Encoding UTF8
-            [System.Windows.MessageBox]::Show("Selected drivers saved to $($sfd.FileName)", "Save Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            Show-FFUDialog -Owner $State.Window -Message "Selected drivers saved to $($sfd.FileName)" -Title "Save Successful" -Icon Information | Out-Null
             WriteLog "Selected drivers saved to $($sfd.FileName)"
         }
         catch {
-            [System.Windows.MessageBox]::Show("Error saving drivers file: $($_.Exception.Message)", "Save Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            Show-FFUDialog -Owner $State.Window -Message "Error saving drivers file: $($_.Exception.Message)" -Title "Save Error" -Icon Error | Out-Null
             WriteLog "Error saving drivers file to $($sfd.FileName): $($_.Exception.Message)"
         }
     }
@@ -458,7 +458,7 @@ function Import-DriversJson {
         try {
             $importedData = Get-Content -Path $ofd.FileName -Raw | ConvertFrom-Json
             if ($null -eq $importedData -or $importedData -isnot [System.Management.Automation.PSCustomObject]) {
-                [System.Windows.MessageBox]::Show("Invalid JSON file format. Expected a JSON object with Makes as keys.", "Import Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+                Show-FFUDialog -Owner $State.Window -Message "Invalid JSON file format. Expected a JSON object with Makes as keys." -Title "Import Error" -Icon Error | Out-Null
                 WriteLog "Import-DriversJson: Invalid JSON format in $($ofd.FileName). Expected an object."
                 return
             }
@@ -720,11 +720,11 @@ function Import-DriversJson {
             Search-DriverModels -filterText $State.Controls.txtModelFilter.Text -State $State
 
             $message = "Driver import complete.`nNew models added: $newModelsAdded`nExisting models updated: $existingModelsUpdated"
-            [System.Windows.MessageBox]::Show($message, "Import Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            Show-FFUDialog -Owner $State.Window -Message $message -Title "Import Successful" -Icon Information | Out-Null
             WriteLog $message
         }
         catch {
-            [System.Windows.MessageBox]::Show("Error importing drivers file: $($_.Exception.Message)", "Import Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            Show-FFUDialog -Owner $State.Window -Message "Error importing drivers file: $($_.Exception.Message)" -Title "Import Error" -Icon Error | Out-Null
             WriteLog "Error importing drivers file from $($ofd.FileName): $($_.Exception.Message)"
         }
     }
@@ -819,7 +819,7 @@ function Invoke-GetModels {
     }
     catch {
         $State.Controls.txtStatus.Text = "Error getting models: $($_.Exception.Message)"
-        [System.Windows.MessageBox]::Show("Error getting models: $($_.Exception.Message)", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "Error getting models: $($_.Exception.Message)" -Title "Error" -Icon Error | Out-Null
         if ($null -eq $State.Data.allDriverModels -or $State.Data.allDriverModels.Count -eq 0) {
             $State.Controls.spModelFilterSection.Visibility = 'Collapsed'
             $State.Controls.lstDriverModels.Visibility = 'Collapsed'
@@ -845,7 +845,7 @@ function Invoke-DownloadSelectedDrivers {
 
     $selectedDrivers = @($State.Data.allDriverModels | Where-Object { $_.IsSelected })
     if (-not $selectedDrivers) {
-        [System.Windows.MessageBox]::Show("No drivers selected to download.", "Download Drivers", "OK", "Information")
+        Show-FFUDialog -Owner $State.Window -Message "No drivers selected to download." -Title "Download Drivers" -Icon Information | Out-Null
         return
     }
 
@@ -857,21 +857,21 @@ function Invoke-DownloadSelectedDrivers {
     # Define common necessary task-specific variables locally
     # Ensure required selections are made
     if ($null -eq $State.Controls.cmbWindowsRelease.SelectedItem) {
-        [System.Windows.MessageBox]::Show("Please select a Windows Release.", "Missing Information", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "Please select a Windows Release." -Title "Missing Information" -Icon Warning | Out-Null
         $Button.IsEnabled = $true
         $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
         $State.Controls.txtStatus.Text = "Driver download cancelled."
         return
     }
     if ($null -eq $State.Controls.cmbWindowsArch.SelectedItem) {
-        [System.Windows.MessageBox]::Show("Please select a Windows Architecture.", "Missing Information", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "Please select a Windows Architecture." -Title "Missing Information" -Icon Warning | Out-Null
         $Button.IsEnabled = $true
         $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
         $State.Controls.txtStatus.Text = "Driver download cancelled."
         return
     }
     if (($selectedDrivers | Where-Object { $_.Make -eq 'HP' }) -and $null -ne $State.Controls.cmbWindowsVersion -and $null -eq $State.Controls.cmbWindowsVersion.SelectedItem) {
-        [System.Windows.MessageBox]::Show("HP drivers are selected. Please select a Windows Version.", "Missing Information", "OK", "Warning")
+        Show-FFUDialog -Owner $State.Window -Message "HP drivers are selected. Please select a Windows Version." -Title "Missing Information" -Icon Warning | Out-Null
         $Button.IsEnabled = $true
         $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
         $State.Controls.txtStatus.Text = "Driver download cancelled."
@@ -936,7 +936,7 @@ function Invoke-DownloadSelectedDrivers {
         catch {
             $errorMessage = "Failed to prepare Dell Catalog: $($_.Exception.Message)"
             WriteLog $errorMessage
-            [System.Windows.MessageBox]::Show($errorMessage, "Dell Catalog Error", "OK", "Error")
+            Show-FFUDialog -Owner $State.Window -Message $errorMessage -Title "Dell Catalog Error" -Icon Error | Out-Null
             $Button.IsEnabled = $true
             $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
             $State.Controls.txtStatus.Text = "Driver download cancelled due to Dell Catalog error."
@@ -1066,7 +1066,7 @@ function Invoke-DownloadSelectedDrivers {
         catch {
             WriteLog "Failed to update DriverMapping.json: $($_.Exception.Message)"
             # This is not a fatal error for the download process itself, so just show a warning.
-            [System.Windows.MessageBox]::Show("The driver download process completed, but failed to update the DriverMapping.json file. Please check the log for details.", "Driver Mapping Error", "OK", "Warning")
+            Show-FFUDialog -Owner $State.Window -Message "The driver download process completed, but failed to update the DriverMapping.json file. Please check the log for details." -Title "Driver Mapping Error" -Icon Warning | Out-Null
         }
     }
 
@@ -1113,7 +1113,7 @@ function Invoke-DownloadSelectedDrivers {
     $Button.IsEnabled = $true
     if ($overallSuccess) {
         $State.Controls.txtStatus.Text = "All selected driver downloads processed."
-        [System.Windows.MessageBox]::Show("All selected driver downloads processed. Check status column for details.", "Download Process Finished", "OK", "Information")
+        Show-FFUDialog -Owner $State.Window -Message "All selected driver downloads processed. Check status column for details." -Title "Download Process Finished" -Icon Information | Out-Null
     }
     else {
         $State.Controls.txtStatus.Text = "Driver download failed. Resolve the errors and try again."
@@ -1130,7 +1130,7 @@ function Invoke-DownloadSelectedDrivers {
         else {
             $messageLines.Add("One or more driver downloads failed. Check the log for details.")
         }
-        [System.Windows.MessageBox]::Show(($messageLines -join [System.Environment]::NewLine), "Driver Download Failed", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message ($messageLines -join [System.Environment]::NewLine) -Title "Driver Download Failed" -Icon Error | Out-Null
     }
 }
 

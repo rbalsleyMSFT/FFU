@@ -267,7 +267,7 @@ $script:uiState.Controls.btnRun.Add_Click({
                 # Inform user: in-progress items will be removed; ask whether to also remove other items downloaded during this run
                 $removeCurrentRunToo = $false
                 $promptText = "Cancel requested.`n`nWe'll remove the download currently in progress to avoid partial/corrupt content.`n`nDo you also want to remove other items downloaded during this run? Previously downloaded items will be kept."
-                $result = [System.Windows.MessageBox]::Show($promptText, "Cancel cleanup options", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+                $result = Show-FFUDialog -Owner $script:uiState.Window -Message $promptText -Title "Cancel cleanup options" -Buttons YesNo -Icon Question
                 if ($result -eq [System.Windows.MessageBoxResult]::Yes) { $removeCurrentRunToo = $true }
 
                 $cleanupParams = @{
@@ -435,21 +435,21 @@ $script:uiState.Controls.btnRun.Add_Click({
 
             # Validate Additional FFU selection if enabled
             if ($config.BuildUSBDrive -and $config.CopyAdditionalFFUFiles -and (($null -eq $config.AdditionalFFUFiles) -or ($config.AdditionalFFUFiles.Count -eq 0))) {
-                [System.Windows.MessageBox]::Show("Please select at least one additional FFU file to copy, or uncheck 'Copy Additional FFU Files'.", "Selection Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $script:uiState.Window -Message "Please select at least one additional FFU file to copy, or uncheck 'Copy Additional FFU Files'." -Title "Selection Required" -Icon Warning | Out-Null
                 $btnRun.IsEnabled = $true
                 $script:uiState.Controls.txtStatus.Text = "Build canceled: Additional FFU selection required."
                 return
             }
 
             if ($config.EnableVMNetworking -and $config.InstallApps -and [string]::IsNullOrWhiteSpace([string]$config.VMSwitchName)) {
-                [System.Windows.MessageBox]::Show("Select or enter a VM Switch Name before enabling VM networking.", "VM Switch Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $script:uiState.Window -Message "Select or enter a VM Switch Name before enabling VM networking." -Title "VM Switch Required" -Icon Warning | Out-Null
                 $btnRun.IsEnabled = $true
                 $script:uiState.Controls.txtStatus.Text = "Build canceled: VM switch required for experimental networking."
                 return
             }
 
             if ($config.CopyUnattend -and $config.InjectUnattend) {
-                [System.Windows.MessageBox]::Show("Copy Unattend.xml and Inject Unattend.xml cannot both be selected. Choose only one unattend delivery method.", "Unattend Selection Required", "OK", "Warning") | Out-Null
+                Show-FFUDialog -Owner $script:uiState.Window -Message "Copy Unattend.xml and Inject Unattend.xml cannot both be selected. Choose only one unattend delivery method." -Title "Unattend Selection Required" -Icon Warning | Out-Null
                 $btnRun.IsEnabled = $true
                 $script:uiState.Controls.txtStatus.Text = "Build canceled: choose only one unattend delivery method."
                 return
@@ -465,14 +465,14 @@ $script:uiState.Controls.btnRun.Add_Click({
                 }
 
                 if ([string]::IsNullOrWhiteSpace($selectedUnattendSourcePath)) {
-                    [System.Windows.MessageBox]::Show("Select a valid $selectedUnattendArch unattend XML file before using Copy Unattend.xml or Inject Unattend.xml.", "Unattend File Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Select a valid $selectedUnattendArch unattend XML file before using Copy Unattend.xml or Inject Unattend.xml." -Title "Unattend File Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file path required."
                     return
                 }
 
                 if (-not (Test-Path -Path $selectedUnattendSourcePath -PathType Leaf)) {
-                    [System.Windows.MessageBox]::Show("The selected $selectedUnattendArch unattend XML file was not found:`n$selectedUnattendSourcePath", "Unattend File Missing", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "The selected $selectedUnattendArch unattend XML file was not found:`n$selectedUnattendSourcePath" -Title "Unattend File Missing" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file missing."
                     return
@@ -480,7 +480,7 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                 $selectedUnattendFileInfo = Get-Item -Path $selectedUnattendSourcePath -ErrorAction SilentlyContinue
                 if (($null -eq $selectedUnattendFileInfo) -or ($selectedUnattendFileInfo.Length -le 0)) {
-                    [System.Windows.MessageBox]::Show("The selected $selectedUnattendArch unattend XML file is empty:`n$selectedUnattendSourcePath", "Unattend File Empty", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "The selected $selectedUnattendArch unattend XML file is empty:`n$selectedUnattendSourcePath" -Title "Unattend File Empty" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend file empty."
                     return
@@ -489,7 +489,7 @@ $script:uiState.Controls.btnRun.Add_Click({
 
             if ($config.DeviceNamingMode -eq 'Prompt') {
                 if (-not $config.CopyUnattend) {
-                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Prompt for Device Name'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Select Copy Unattend.xml before using 'Prompt for Device Name'." -Title "Copy Unattend Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: prompt naming requires Copy Unattend.xml."
                     return
@@ -497,14 +497,14 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
             elseif ($config.DeviceNamingMode -eq 'Template') {
                 if ([string]::IsNullOrWhiteSpace([string]$config.DeviceNameTemplate)) {
-                    [System.Windows.MessageBox]::Show("Specify a device name before using 'Specify Device Name'.", "Device Name Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Specify a device name before using 'Specify Device Name'." -Title "Device Name Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: device name required."
                     return
                 }
 
                 if (-not ($config.CopyUnattend -or $config.InjectUnattend)) {
-                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml or Inject Unattend.xml before using 'Specify Device Name'.", "Unattend Selection Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Select Copy Unattend.xml or Inject Unattend.xml before using 'Specify Device Name'." -Title "Unattend Selection Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: unattend delivery method required for device naming."
                     return
@@ -512,14 +512,14 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                 $templateWithoutSupportedVariables = ([string]$config.DeviceNameTemplate) -replace '(?i)%serial%', ''
                 if ($templateWithoutSupportedVariables -match '%') {
-                    [System.Windows.MessageBox]::Show("Only the %serial% device name variable is supported.", "Unsupported Device Name Variable", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Only the %serial% device name variable is supported." -Title "Unsupported Device Name Variable" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: unsupported device name variable."
                     return
                 }
 
                 if ($config.InjectUnattend -and (-not $config.CopyUnattend) -and ([string]$config.DeviceNameTemplate -match '(?i)%serial%')) {
-                    [System.Windows.MessageBox]::Show("The %serial% device name variable is only supported when Copy Unattend.xml is selected.", "Unsupported Inject Unattend Setting", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "The %serial% device name variable is only supported when Copy Unattend.xml is selected." -Title "Unsupported Inject Unattend Setting" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: %serial% requires Copy Unattend.xml."
                     return
@@ -527,7 +527,7 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
             elseif ($config.DeviceNamingMode -eq 'Prefixes') {
                 if (-not $config.CopyUnattend) {
-                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Specify a list of Prefixes'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Select Copy Unattend.xml before using 'Specify a list of Prefixes'." -Title "Copy Unattend Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: prefixes require Copy Unattend.xml."
                     return
@@ -535,7 +535,7 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                 $hasSavedPrefixesPath = -not [string]::IsNullOrWhiteSpace([string]$config.DeviceNamePrefixesPath) -and (Test-Path -Path $config.DeviceNamePrefixesPath -PathType Leaf)
                 if ((($null -eq $config.DeviceNamePrefixes) -or ($config.DeviceNamePrefixes.Count -eq 0)) -and -not $hasSavedPrefixesPath) {
-                    [System.Windows.MessageBox]::Show("Enter at least one prefix or choose a valid prefixes file before using 'Specify a list of Prefixes'.", "Prefixes Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Enter at least one prefix or choose a valid prefixes file before using 'Specify a list of Prefixes'." -Title "Prefixes Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: prefixes required."
                     return
@@ -543,7 +543,7 @@ $script:uiState.Controls.btnRun.Add_Click({
             }
             elseif ($config.DeviceNamingMode -eq 'SerialComputerNames') {
                 if (-not $config.CopyUnattend) {
-                    [System.Windows.MessageBox]::Show("Select Copy Unattend.xml before using 'Specify Serial to Device Name Mapping'.", "Copy Unattend Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Select Copy Unattend.xml before using 'Specify Serial to Device Name Mapping'." -Title "Copy Unattend Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: serial computer-name mapping requires Copy Unattend.xml."
                     return
@@ -551,7 +551,7 @@ $script:uiState.Controls.btnRun.Add_Click({
 
                 $hasSavedSerialComputerNamesPath = -not [string]::IsNullOrWhiteSpace([string]$config.DeviceNameSerialComputerNamesPath) -and (Test-Path -Path $config.DeviceNameSerialComputerNamesPath -PathType Leaf)
                 if ((($null -eq $config.DeviceNameSerialComputerNames) -or ($config.DeviceNameSerialComputerNames.Count -eq 0)) -and -not $hasSavedSerialComputerNamesPath) {
-                    [System.Windows.MessageBox]::Show("Enter CSV content or choose a valid Serial Computer Names CSV Mapping File Path before using 'Specify Serial to Device Name Mapping'.", "Serial Mapping Required", "OK", "Warning") | Out-Null
+                    Show-FFUDialog -Owner $script:uiState.Window -Message "Enter CSV content or choose a valid Serial Computer Names CSV Mapping File Path before using 'Specify Serial to Device Name Mapping'." -Title "Serial Mapping Required" -Icon Warning | Out-Null
                     $btnRun.IsEnabled = $true
                     $script:uiState.Controls.txtStatus.Text = "Build canceled: serial computer-name mapping required."
                     return
@@ -728,7 +728,7 @@ $script:uiState.Controls.btnRun.Add_Click({
                                 $buildErrorMessage += "`n`n$failureDetail"
                             }
                             $buildErrorMessage += "`n`nExit code: $exitCode"
-                            [System.Windows.MessageBox]::Show($buildErrorMessage, "Build Error", "OK", "Error") | Out-Null
+                            Show-FFUDialog -Owner $script:uiState.Window -Message $buildErrorMessage -Title "Build Error" -Icon Error | Out-Null
                             $script:uiState.Controls.pbOverallProgress.Visibility = 'Collapsed'
                         }
                         else {
@@ -762,7 +762,7 @@ $script:uiState.Controls.btnRun.Add_Click({
             # This catch block handles errors during the setup of the job (e.g., Get-UIConfig fails)
             $errorMessage = "An error occurred before starting the build job: $_"
             WriteLog $errorMessage
-            [System.Windows.MessageBox]::Show($errorMessage, "Error", "OK", "Error")
+            Show-FFUDialog -Owner $script:uiState.Window -Message $errorMessage -Title "Error" -Icon Error | Out-Null
             
             # Clean up stream reader if it was opened
             if ($null -ne $script:uiState.Data.logStreamReader) {

@@ -5,6 +5,330 @@
     This module contains a variety of reusable functions designed to support the FFU Builder UI. It includes utilities for managing ListView controls, such as sorting, reordering items, and handling 'Select All' functionality. It also provides thread-safe mechanisms for updating the UI from background tasks, wrappers for modern and classic file/folder dialogs, and generic functions for clearing UI content. These shared functions help to reduce code duplication and ensure consistent behavior across different parts of the application.
 #>
 
+function Initialize-FFUDialog {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		[System.Windows.Window]$Dialog,
+		[Parameter(Mandatory)]
+		[System.Windows.Window]$Owner
+	)
+
+	$Owner.Dispatcher.VerifyAccess()
+	$Dialog.Owner = $Owner
+	$Dialog.WindowStartupLocation = 'CenterOwner'
+	$Dialog.ShowInTaskbar = $false
+	$Dialog.ResizeMode = 'NoResize'
+	$Dialog.SizeToContent = 'Height'
+	$Dialog.Width = 520
+	$Dialog.FontFamily = $Owner.FontFamily
+	$Dialog.FontSize = $Owner.FontSize
+
+	# Keep the dialog within the work area of the owner's monitor
+	$workArea = [System.Windows.SystemParameters]::WorkArea
+	$presentationSource = [System.Windows.PresentationSource]::FromVisual($Owner)
+	if ($null -ne $presentationSource -and $null -ne $presentationSource.CompositionTarget) {
+		$ownerHandle = [System.Windows.Interop.WindowInteropHelper]::new($Owner).Handle
+		$screenArea = [System.Windows.Forms.Screen]::FromHandle($ownerHandle).WorkingArea
+		$deviceTransform = [System.Windows.Media.MatrixTransform]::new($presentationSource.CompositionTarget.TransformFromDevice)
+		$workArea = $deviceTransform.TransformBounds(
+			[System.Windows.Rect]::new($screenArea.X, $screenArea.Y, $screenArea.Width, $screenArea.Height))
+	}
+	$Dialog.MaxWidth = [Math]::Max(1, $workArea.Width - 48)
+	$Dialog.MaxHeight = [Math]::Max(1, $workArea.Height - 48)
+	$Dialog.Width = [Math]::Min($Dialog.Width, $Dialog.MaxWidth)
+
+	# Match the owner's current theme; if this fails, the dialog still works with default styling
+	$themeProperty = [System.Windows.Window].GetProperty('ThemeMode')
+	if ($null -ne $themeProperty) {
+		try {
+			$themeProperty.SetValue($Dialog, $themeProperty.GetValue($Owner))
+		}
+		catch {
+			WriteLog "Unable to apply the owner theme to dialog '$($Dialog.Title)': $($_.Exception.Message)"
+		}
+	}
+
+	# Shared dialog styles, based on the active theme's styles when available
+	$contentStyle = [System.Windows.Style]::new([System.Windows.FrameworkElement])
+	$contentStyle.Setters.Add([System.Windows.Setter]::new([System.Windows.FrameworkElement]::MarginProperty, [System.Windows.Thickness]::new(24)))
+	$Dialog.Resources['FFUDialogContentStyle'] = $contentStyle
+
+	$headingStyle = [System.Windows.Style]::new([System.Windows.Controls.TextBlock], ($Dialog.TryFindResource([System.Windows.Controls.TextBlock]) -as [System.Windows.Style]))
+	$headingStyle.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.TextBlock]::FontSizeProperty, [double]18))
+	$headingStyle.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.TextBlock]::FontWeightProperty, [System.Windows.FontWeights]::SemiBold))
+	$headingStyle.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.TextBlock]::TextWrappingProperty, [System.Windows.TextWrapping]::Wrap))
+	$Dialog.Resources['FFUDialogHeadingStyle'] = $headingStyle
+
+	$defaultButtonStyle = $Dialog.TryFindResource([System.Windows.Controls.Button]) -as [System.Windows.Style]
+	$accentButtonStyle = $Dialog.TryFindResource('AccentButtonStyle') -as [System.Windows.Style]
+	if ($null -eq $accentButtonStyle) {
+		$accentButtonStyle = $defaultButtonStyle
+	}
+	foreach ($buttonStyleInfo in @(
+			@{ Key = 'FFUDialogButtonStyle'; BasedOn = $defaultButtonStyle },
+			@{ Key = 'FFUDialogAccentButtonStyle'; BasedOn = $accentButtonStyle }
+		)) {
+		$buttonStyle = [System.Windows.Style]::new([System.Windows.Controls.Button], $buttonStyleInfo.BasedOn)
+		$buttonStyle.Setters.Add([System.Windows.Setter]::new([System.Windows.FrameworkElement]::MinWidthProperty, [double]90))
+		$buttonStyle.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.Control]::PaddingProperty, [System.Windows.Thickness]::new(12, 4, 12, 4)))
+		$Dialog.Resources[$buttonStyleInfo.Key] = $buttonStyle
+	}
+}
+
+function Show-FFUDialog {
+	[CmdletBinding(DefaultParameterSetName = 'Message')]
+	param(
+		[Parameter(Mandatory)]
+		[System.Windows.Window]$Owner,
+		[Parameter(Mandatory)]
+		[AllowEmptyString()]
+		[string]$Message,
+		[AllowEmptyString()]
+		[string]$Title = 'FFU Builder',
+		[Parameter(ParameterSetName = 'Message')]
+		[ValidateSet('OK', 'OKCancel', 'YesNo', 'YesNoCancel')]
+		[System.Windows.MessageBoxButton]$Buttons = 'OK',
+		[System.Windows.MessageBoxImage]$Icon = 'None',
+		[Parameter(ParameterSetName = 'Message')]
+		[System.Windows.MessageBoxResult]$DefaultResult = 'None',
+		[Parameter(Mandatory, ParameterSetName = 'Input')]
+		[switch]$InputText,
+		[Parameter(ParameterSetName = 'Input')]
+		[AllowEmptyString()]
+		[string]$DefaultText = ''
+	)
+
+	$isInput = $PSCmdlet.ParameterSetName -eq 'Input'
+	if ($isInput) { $Buttons = 'OKCancel' }
+	$results = switch ($Buttons) {
+		'OK' { @('OK') }
+		'OKCancel' { @('OK', 'Cancel') }
+		'YesNo' { @('Yes', 'No') }
+		'YesNoCancel' { @('Yes', 'No', 'Cancel') }
+	}
+	$results = @($results)
+	if ($DefaultResult -eq 'None') {
+		$DefaultResult = $results[0]
+	}
+	if ($DefaultResult.ToString() -notin $results) {
+		throw "The default dialog result '$DefaultResult' is not available for '$Buttons'."
+	}
+	$cancelResult = if ('Cancel' -in $results) { 'Cancel' } elseif ($Buttons -eq 'OK') { 'OK' } else { 'None' }
+
+	$dialog = $null
+	try {
+		$Owner.Dispatcher.VerifyAccess()
+		$dialogXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+	xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+	<Grid Style="{DynamicResource FFUDialogContentStyle}">
+		<Grid.RowDefinitions>
+			<RowDefinition Height="Auto"/>
+			<RowDefinition Height="*"/>
+			<RowDefinition Height="Auto"/>
+		</Grid.RowDefinitions>
+		<Grid Margin="0,0,0,12">
+			<Grid.ColumnDefinitions>
+				<ColumnDefinition Width="Auto"/>
+				<ColumnDefinition Width="*"/>
+			</Grid.ColumnDefinitions>
+			<TextBlock x:Name="txtDialogIcon" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="24" Margin="0,0,12,0" VerticalAlignment="Center"/>
+			<TextBlock x:Name="txtDialogTitle" Grid.Column="1" Style="{DynamicResource FFUDialogHeadingStyle}" VerticalAlignment="Center"/>
+		</Grid>
+		<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+			<StackPanel>
+				<TextBlock x:Name="txtDialogMessage" TextWrapping="Wrap"/>
+				<TextBox x:Name="txtDialogInput" Visibility="Collapsed" Margin="0,12,0,0"
+					AutomationProperties.LabeledBy="{Binding ElementName=txtDialogMessage}"/>
+			</StackPanel>
+		</ScrollViewer>
+		<WrapPanel x:Name="dialogButtons" Grid.Row="2" HorizontalAlignment="Right" Margin="0,20,0,0"/>
+	</Grid>
+</Window>
+'@
+		$dialog = [System.Windows.Markup.XamlReader]::Parse($dialogXaml)
+		$dialog.Title = $Title
+		Initialize-FFUDialog -Dialog $dialog -Owner $Owner
+		$dialog.FindName('txtDialogTitle').Text = $Title
+		$dialog.FindName('txtDialogMessage').Text = $Message
+		$iconInfo = switch ([int]$Icon) {
+			0 { $null }
+			16 { @{ Glyph = 0xEA39; Name = 'Error'; Brush = 'SystemFillColorCriticalBrush' } }
+			32 { @{ Glyph = 0xE897; Name = 'Question'; Brush = 'SystemFillColorAttentionBrush' } }
+			48 { @{ Glyph = 0xE7BA; Name = 'Warning'; Brush = 'SystemFillColorCautionBrush' } }
+			64 { @{ Glyph = 0xE946; Name = 'Information'; Brush = 'SystemFillColorAttentionBrush' } }
+			default { throw "Unsupported dialog icon: $Icon" }
+		}
+		$iconControl = $dialog.FindName('txtDialogIcon')
+		if ($null -ne $iconInfo) {
+			$iconControl.Text = [string][char]$iconInfo.Glyph
+			# Fluent status colors follow theme changes; without Fluent the icon keeps the default text color
+			$iconControl.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $iconInfo.Brush)
+			[System.Windows.Automation.AutomationProperties]::SetName($iconControl, $iconInfo.Name)
+		}
+		else {
+			$iconControl.Visibility = 'Collapsed'
+		}
+		if ($isInput) {
+			$dialog.FindName('txtDialogInput').Visibility = 'Visible'
+			$dialog.FindName('txtDialogInput').Text = $DefaultText
+		}
+		$dialog.Tag = [pscustomobject]@{
+			Result = [System.Windows.MessageBoxResult]::None
+			CancelResult = [System.Windows.MessageBoxResult]$cancelResult
+			IsInput = $isInput
+			DefaultButtonName = "btnDialog$DefaultResult"
+			CopyText = "$Title`r`n`r`n$Message`r`n`r`n$($results -join '    ')"
+		}
+		foreach ($resultName in $results) {
+			$button = [System.Windows.Controls.Button]::new()
+			$button.Name = "btnDialog$resultName"
+			# AccessText keeps the Alt access key working in both the standard and accent button templates
+			$accessText = [System.Windows.Controls.AccessText]::new()
+			$accessText.Text = "_$resultName"
+			$button.Content = $accessText
+			$button.Tag = [System.Windows.MessageBoxResult]$resultName
+			$button.Margin = if ($resultName -eq $results[-1]) { [System.Windows.Thickness]::new(0) } else { [System.Windows.Thickness]::new(0, 0, 8, 0) }
+			$button.IsDefault = $button.Tag -eq $DefaultResult
+			$button.IsCancel = $resultName -eq 'Cancel'
+			$buttonStyleKey = if ($button.IsDefault) { 'FFUDialogAccentButtonStyle' } else { 'FFUDialogButtonStyle' }
+			$button.SetResourceReference([System.Windows.FrameworkElement]::StyleProperty, $buttonStyleKey)
+			$button.Add_Click({
+				param($eventSource, $routedEventArgs)
+				$dialogWindow = [System.Windows.Window]::GetWindow($eventSource)
+				$dialogWindow.Tag.Result = $eventSource.Tag
+				$dialogWindow.DialogResult = $eventSource.Tag -in @('OK', 'Yes')
+			})
+			$dialog.RegisterName($button.Name, $button)
+			[void]$dialog.FindName('dialogButtons').Children.Add($button)
+		}
+		$dialog.Add_ContentRendered({
+			param($eventSource, $routedEventArgs)
+			if ($eventSource.Tag.IsInput) {
+				$inputControl = $eventSource.FindName('txtDialogInput')
+				$inputControl.SelectAll()
+				[void]$inputControl.Focus()
+			}
+			else {
+				[void]$eventSource.FindName($eventSource.Tag.DefaultButtonName).Focus()
+			}
+		})
+		$dialog.Add_Closing({
+			param($eventSource, $closingEvent)
+			if ($eventSource.Tag.Result -eq 'None') {
+				if ($eventSource.Tag.CancelResult -eq 'None') {
+					$closingEvent.Cancel = $true
+				}
+				else {
+					$eventSource.Tag.Result = $eventSource.Tag.CancelResult
+				}
+			}
+		})
+		$dialog.Add_PreviewKeyDown({
+			param($eventSource, $keyEvent)
+			if ($keyEvent.Key -eq 'Escape') {
+				$keyEvent.Handled = $true
+				if ($eventSource.Tag.CancelResult -ne 'None') {
+					$eventSource.Tag.Result = $eventSource.Tag.CancelResult
+					$eventSource.DialogResult = $false
+				}
+			}
+			elseif (-not $eventSource.Tag.IsInput -and $keyEvent.Key -eq 'C' -and ($keyEvent.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control)) {
+				$keyEvent.Handled = $true
+				try {
+					[System.Windows.Clipboard]::SetText($eventSource.Tag.CopyText)
+				}
+				catch {
+					WriteLog "Unable to copy dialog text: $($_.Exception.Message)"
+					Show-FFUDialog -Owner $eventSource -Message "Unable to copy dialog text: $($_.Exception.Message)" -Title 'Copy Dialog Text' -Icon Error | Out-Null
+				}
+			}
+		})
+
+		# Like MessageBox, Yes/No requires an explicit choice, so grey out the title bar Close button when possible
+		if ($Buttons -eq 'YesNo') {
+			try {
+				if ($null -eq ('FFUUI.DialogNativeMethods' -as [type])) {
+					Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace FFUUI
+{
+	public static class DialogNativeMethods
+	{
+		private const uint SC_CLOSE = 0xF060;
+		private const uint MF_GRAYED = 0x0001;
+
+		[DllImport("user32.dll")]
+		private static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
+
+		[DllImport("user32.dll")]
+		private static extern int EnableMenuItem(IntPtr menu, uint item, uint enable);
+
+		public static bool DisableClose(IntPtr window)
+		{
+			IntPtr menu = GetSystemMenu(window, false);
+			return menu != IntPtr.Zero && EnableMenuItem(menu, SC_CLOSE, MF_GRAYED) != -1;
+		}
+	}
+}
+'@ -ErrorAction Stop
+				}
+				$dialogHandle = [System.Windows.Interop.WindowInteropHelper]::new($dialog).EnsureHandle()
+				if (-not [FFUUI.DialogNativeMethods]::DisableClose($dialogHandle)) {
+					WriteLog "Unable to disable the Close button for dialog '$Title'."
+				}
+			}
+			catch {
+				WriteLog "Unable to disable the Close button for dialog '$Title': $($_.Exception.Message)"
+			}
+		}
+
+		[void]$dialog.ShowDialog()
+		if ($dialog.Tag.Result -eq 'None') {
+			throw 'The dialog closed without a valid response.'
+		}
+		if ($isInput) {
+			if ($dialog.Tag.Result -eq 'OK') { return $dialog.FindName('txtDialogInput').Text }
+			return [string]::Empty
+		}
+		return $dialog.Tag.Result
+	}
+	catch {
+		$dialogError = $_
+		WriteLog "Unable to display FFU dialog '$Title': $($dialogError.Exception.Message). Showing a standard Windows dialog instead."
+		if ($null -ne $dialog) {
+			try {
+				if ($null -ne $dialog.Tag -and $null -ne $dialog.Tag.PSObject.Properties['Result']) {
+					$dialog.Tag.Result = [System.Windows.MessageBoxResult]::Cancel
+				}
+				$dialog.Close()
+			}
+			catch {
+				WriteLog "Unable to close FFU dialog '$Title' after a failure: $($_.Exception.Message)"
+			}
+		}
+	}
+
+	# Fall back to a standard Windows dialog so the message is never lost
+	try {
+		if ($isInput) {
+			Add-Type -AssemblyName Microsoft.VisualBasic
+			return [Microsoft.VisualBasic.Interaction]::InputBox($Message, $Title, $DefaultText)
+		}
+		if ($Owner.Dispatcher.CheckAccess()) {
+			return [System.Windows.MessageBox]::Show($Owner, $Message, $Title, $Buttons, $Icon, $DefaultResult)
+		}
+		return [System.Windows.MessageBox]::Show($Message, $Title, $Buttons, $Icon, $DefaultResult)
+	}
+	catch {
+		WriteLog "Unable to display the standard Windows dialog for '$Title': $($_.Exception.Message)"
+		throw $dialogError
+	}
+}
+
 # Function to update priorities sequentially in a ListView
 function Update-ListViewPriorities {
     param(
@@ -1255,7 +1579,7 @@ function Clear-ListViewContent {
         [scriptblock]$PostClearAction
     )
 
-    $result = [System.Windows.MessageBox]::Show($ConfirmationMessage, $ConfirmationTitle, [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $result = Show-FFUDialog -Owner $State.Window -Message $ConfirmationMessage -Title $ConfirmationTitle -Buttons YesNo -Icon Question
     if ($result -ne [System.Windows.MessageBoxResult]::Yes) {
         return
     }
@@ -1300,7 +1624,7 @@ function Clear-ListViewContent {
     }
     catch {
         WriteLog "Error in Clear-ListViewContent for $($ListViewControl.Name): $($_.Exception.Message)"
-        [System.Windows.MessageBox]::Show("An error occurred while clearing the list: $($_.Exception.Message)", "Error", "OK", "Error")
+        Show-FFUDialog -Owner $State.Window -Message "An error occurred while clearing the list: $($_.Exception.Message)" -Title "Error" -Icon Error | Out-Null
     }
 }
 

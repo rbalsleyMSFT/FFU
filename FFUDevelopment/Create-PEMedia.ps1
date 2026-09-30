@@ -3,7 +3,7 @@ param (
     [string]$adkPath = 'C:\Program Files (x86)\Windows Kits\10\',
     [string]$WindowsArch = 'x64',
     [bool]$CopyPEDrivers = $false,
-    [string]$DeployISO = "$PSScriptRoot\WinPE_FFU_Deploy_x64.iso",
+    [string]$DeployISO = "$PSScriptRoot\WinPE_FFU_Deploy_$WindowsArch.iso",
     [string]$LogFile = "$PSScriptRoot\Create-PEMedia.log"
 )
 

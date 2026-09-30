@@ -100,7 +100,7 @@ Path to the arm64 unattend XML source file. Default is $FFUDevelopmentPath\Unatt
 When set to $true, this will create WinPE deployment media for use when deploying to a physical device.
 
 .PARAMETER CustomFFUNameTemplate
-Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
+Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
 
 .PARAMETER Disksize
 Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk.
@@ -289,7 +289,7 @@ Integer value of 10, 11, 2016, 2019, 2021, 2022, 2024, or 2025. This is used to 
 Edition/SKU to install. Accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N', 'Enterprise 2016 LTSB', 'Enterprise N 2016 LTSB', 'Enterprise LTSC', 'Enterprise N LTSC', 'IoT Enterprise LTSC', 'IoT Enterprise N LTSC', 'Standard', 'Standard (Desktop Experience)', 'Datacenter', 'Datacenter (Desktop Experience)'.
 
 .PARAMETER WindowsVersion
-String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '25h2'.
+String value of the Windows version. Defaults to '26h2' for Windows 11. ESD downloads use the latest release; specify the matching version when providing an ISO.
 
 .EXAMPLE
 Command line for most people who want to download the latest Windows 11 Pro x64 media in English (US) with the latest Windows Cumulative Update, .NET Framework, Defender platform and definition updates, Edge, OneDrive, and Office/M365 Apps. It will also copy drivers to the FFU. This can take about 40 minutes to create the FFU due to the time it takes to download and install the updates.
@@ -421,7 +421,7 @@ param(
     [ValidateSet(10, 11, 2016, 2019, 2021, 2022, 2024, 2025)]
     [int]$WindowsRelease = 11,
     [Parameter(Mandatory = $false)]
-    [string]$WindowsVersion = '25h2',
+	[string]$WindowsVersion = '26h2',
     [Parameter(Mandatory = $false)]
     [ValidateSet('x86', 'x64', 'arm64')]
     [string]$WindowsArch = 'x64',
@@ -512,7 +512,7 @@ param(
     [switch]$Cleanup
 )
 $ProgressPreference = 'SilentlyContinue'
-$version = '2608.1'
+$version = '2609.1'
 
 # Remove any existing modules to avoid conflicts
 if (Get-Module -Name 'FFU.Common.Core' -ErrorAction SilentlyContinue) {
@@ -545,6 +545,7 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         $valueIsEmptyString = ($value -is [string]) -and [string]::IsNullOrEmpty($value)
         $valueIsEmptyArray = ($value -is [System.Array]) -and ($value.Count -eq 0)
         $valueIsEmptyHashtable = ($value -is [System.Collections.Hashtable]) -and ($value.Count -eq 0)
+        $valueIsEmptyCustomObject = ($value -is [System.Management.Automation.PSCustomObject]) -and (@($value.PSObject.Properties).Count -eq 0)
         $valueIsZero = (($value -is [System.UInt32]) -or ($value -is [System.UInt64]) -or ($value -is [System.Int32])) -and ($value -eq 0)
         
         # If $value is empty, skip
@@ -552,6 +553,7 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
             $valueIsEmptyString -or 
             $valueIsEmptyArray -or 
             $valueIsEmptyHashtable -or 
+            $valueIsEmptyCustomObject -or
             $valueIsZero) {
             continue
         }
@@ -2332,6 +2334,7 @@ function Get-WindowsESDMetadata {
                 '23H2' = '22631.0.0.0'
                 '24H2' = '26100.0.0.0'
                 '25H2' = '26100.0.0.0'
+				'26H2' = '26100.0.0.0'
             }
             $normalizedVersion = $WindowsVersion.ToUpper()
             if ($buildVersionMap.ContainsKey($normalizedVersion)) {
@@ -4910,17 +4913,30 @@ function Get-CaptureVhdContext {
         [object[]]$AdditionalDataPartitions = @()
     )
 
+	$ErrorActionPreference = 'Stop'
     WriteLog 'Resolving VHDX context for host-side FFU capture'
 
-    $vhdInfo = Get-VHD -Path $VhdxPath
+    $vhdInfo = Get-VHD -Path $VhdxPath -ErrorAction Stop
+    if ($null -eq $vhdInfo) {
+        throw "Unable to resolve VHDX for capture: $VhdxPath"
+    }
     if ($vhdInfo.Attached) {
-        WriteLog 'VHDX is already mounted for capture'
-        $captureDisk = Get-Disk -Number $vhdInfo.DiskNumber
+        WriteLog 'Dismounting VHDX before capture to commit pending filesystem writes'
+        Dismount-ScratchVhdx -VhdxPath $VhdxPath
+        $vhdInfo = Get-VHD -Path $VhdxPath -ErrorAction Stop
+        if ($null -eq $vhdInfo -or $vhdInfo.Attached) {
+            throw "VHDX did not detach before capture: $VhdxPath"
+        }
     }
-    else {
-        WriteLog 'Mounting VHDX for capture'
-        $captureDisk = Mount-VHD -Path $VhdxPath -Passthru | Get-Disk
+    WriteLog 'Confirmed VHDX is detached before capture'
+
+    WriteLog 'Mounting VHDX for capture'
+    $captureDisk = Mount-VHD -Path $VhdxPath -Passthru -ErrorAction Stop | Get-Disk -ErrorAction Stop
+    $vhdInfo = Get-VHD -Path $VhdxPath -ErrorAction Stop
+    if ($null -eq $captureDisk -or $null -eq $captureDisk.DiskNumber -or $null -eq $vhdInfo -or -not $vhdInfo.Attached -or $captureDisk.DiskNumber -ne $vhdInfo.DiskNumber) {
+        throw "Unable to verify the mounted disk for VHDX capture: $VhdxPath"
     }
+    WriteLog "VHDX mounted for capture on disk $($captureDisk.DiskNumber)"
 
     $partitionLayout = Resolve-VhdxPartitionLayout -Disk $captureDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $AdditionalDataPartitions
     $partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $AdditionalDataPartitions
@@ -5037,6 +5053,7 @@ function New-FFUFileName {
     $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsRelease}', $ffuCaptureNamingInfo.WindowsReleaseToken
     # Replace '{WindowsVersion}' with the Windows version (e.g., 1607, 1809, 21h2, 22h2, 23h2, 24h2, etc)
     $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsVersion}', $ffuCaptureNamingInfo.WindowsVersion
+    $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{WindowsArch}', $WindowsArch
     # Replace '{SKU}' with the SKU of the Windows image (e.g., Pro, Enterprise, etc.)
     $resolvedFFUNameTemplate = $resolvedFFUNameTemplate -replace '{SKU}', $shortenedWindowsSKU
     # Replace '{BuildDate}' with the current month and year (e.g., Jan2023)
@@ -5062,15 +5079,17 @@ function New-FFUFileName {
 }
 
 function New-FFU {
-    $captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-    $captureDisk = $captureContext.Disk
-    $resolvedFFUOptimizePartitionNumber = 0
-    if ($Optimize -eq $true) {
-        $resolvedFFUOptimizePartitionNumber = Get-FFUOptimizePartitionNumber -Layout $captureContext.Layout -RequestedPartitionNumber $OptimizeFFUPartitionNumber -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-    }
-    $ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
+	$captureFailed = $false
 
     try {
+		$captureContext = Get-CaptureVhdContext -VhdxPath $VHDXPath -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+		$captureDisk = $captureContext.Disk
+		$resolvedFFUOptimizePartitionNumber = 0
+		if ($Optimize -eq $true) {
+			$resolvedFFUOptimizePartitionNumber = Get-FFUOptimizePartitionNumber -Layout $captureContext.Layout -RequestedPartitionNumber $OptimizeFFUPartitionNumber -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+		}
+		$ffuCaptureNamingInfo = Get-FFUCaptureNamingInfo -ShortenedWindowsSKU $shortenedWindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -InstallationType $installationType -IsWindows10LtscClient:$isWindows10LtscClient
+
         Set-Progress -Percentage 68 -Message "Capturing FFU from VHDX..."
 
         WriteLog 'Creating FFU File Name'
@@ -5087,8 +5106,34 @@ function New-FFU {
 
         WriteLog 'FFU Capture complete'
     }
+    catch {
+        $captureFailed = $true
+        throw
+    }
     finally {
-        Dismount-ScratchVhdx -VhdxPath $VHDXPath
+        try {
+            & {
+                $ErrorActionPreference = 'Stop'
+                $vhdInfo = Get-VHD -Path $VHDXPath -ErrorAction Stop
+                if ($null -eq $vhdInfo) {
+                    throw "Unable to resolve VHDX for capture cleanup: $VHDXPath"
+                }
+                if ($vhdInfo.Attached) {
+                    Dismount-ScratchVhdx -VhdxPath $VHDXPath
+                    $vhdInfo = Get-VHD -Path $VHDXPath -ErrorAction Stop
+                    if ($null -eq $vhdInfo -or $vhdInfo.Attached) {
+                        throw "VHDX did not detach after capture: $VHDXPath"
+                    }
+                }
+                WriteLog 'Confirmed capture VHDX is detached'
+            }
+        }
+        catch {
+            if (-not $captureFailed) {
+                throw
+            }
+            WriteLog "Failed to clean up capture VHDX after an earlier error: $($_.Exception.Message)"
+        }
     }
 
     #Without this 120 second sleep, we sometimes see an error when mounting the FFU due to a file handle lock. Needed for both driver and optimize steps.
@@ -5202,9 +5247,10 @@ function Remove-FFUVM {
 Function Get-USBDrive {
     # Log the start of the USB drive check
     WriteLog 'Checking for USB drives'
+    $hasConfiguredUSBDrives = ($null -ne $USBDriveList) -and ($USBDriveList.Count -gt 0)
     
     # Check if external hard disk media is allowed and user has not specified USB drives
-    If ($AllowExternalHardDiskMedia -and (-not($USBDriveList))) {
+    If ($AllowExternalHardDiskMedia -and (-not $hasConfiguredUSBDrives)) {
         # Get all removable and external hard disk media drives
         [array]$USBDrives = (Get-CimInstance -ClassName Win32_DiskDrive -Filter "MediaType='Removable Media' OR MediaType='External hard disk media'")
         [array]$ExternalHardDiskDrives = $USBDrives | Where-Object { $_.MediaType -eq 'External hard disk media' }
@@ -5308,7 +5354,7 @@ Function Get-USBDrive {
             }
         }
     }
-    elseif ($USBDriveList) {
+    elseif ($hasConfiguredUSBDrives) {
         # Log the count of specified USB drives
         # USBDriveList values can be a single UniqueId string, or an array of UniqueIds (multiple same-model drives)
         $USBDriveListCount = 0
@@ -7067,15 +7113,15 @@ if (($WindowsArch -eq 'ARM64') -and ($UpdateLatestMSRT -eq $true)) {
     $UpdateLatestMSRT = $false
     WriteLog 'Windows Malicious Software Removal Tool is not available for the ARM64 architecture.'
 }
-#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 25H2 for Windows 11
-#MCT media only provides 22H2 and 25H2 media
+#If downloading ESD from MCT, hardcode WindowsVersion to 22H2 for Windows 10 and 26H2 for Windows 11
+#MCT media only provides 22H2 and 26H2 media
 #This prevents issues with VHDX Caching unecessarily and with searching for CUs
 if ($ISOPath -eq '') {
     if ($WindowsRelease -eq '10') {
         $WindowsVersion = '22H2'
     }
     if ($WindowsRelease -eq '11') {
-        $WindowsVersion = '25H2'
+		$WindowsVersion = '26H2'
     }
 }
 
@@ -8236,7 +8282,7 @@ try {
                 $kbCacheVersionFolder = "LTSC$WindowsRelease"
             }
             elseif ($isLTSC -and $WindowsRelease -eq 2024) {
-                # Windows 11 LTSC 2024 shares the same CU branch as Windows 11 24H2/25H2
+				# Windows 11 LTSC 2024 shares the same CU branch as Windows 11 24H2/25H2/26H2
                 $kbCacheReleaseFolder = 'Windows11'
                 $kbCacheVersionFolder = '24H2'
             }
@@ -8246,8 +8292,8 @@ try {
             }
         }
 
-        # Force Windows 11 25H2 to share Windows 11 24H2 cache folder (same CU branch)
-        if ($kbCacheReleaseFolder -eq 'Windows11' -and $kbCacheVersionFolder -match '(?i)^25H2$') {
+		# Force Windows 11 25H2/26H2 to share Windows 11 24H2 cache folder (same CU branch)
+		if ($kbCacheReleaseFolder -eq 'Windows11' -and $kbCacheVersionFolder -in @('25H2', '26H2')) {
             $kbCacheVersionFolder = '24H2'
         }
 

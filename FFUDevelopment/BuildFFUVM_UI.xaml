@@ -470,11 +470,11 @@
                                     <TextBlock Text="Windows Release" Margin="0,0,0,8" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
                                     <ComboBox x:Name="cmbWindowsRelease" HorizontalAlignment="Stretch" Margin="0,0,0,20" ToolTip="Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11."/>
                                     <!-- Windows Version -->
-                                    <TextBlock Text="Windows Version" Margin="0,0,0,8" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
-                                    <ComboBox x:Name="cmbWindowsVersion" Width="120" HorizontalAlignment="Left" IsEnabled="False" Margin="0,0,0,20" ToolTip="String value of the Windows version to download. This is used to identify which version of Windows to download. Default is '24h2'."/>
+                                    <TextBlock Text="Windows Version" Margin="0,0,0,8" ToolTip="Windows version. Default is '26H2' for Windows 11. ESD downloads use the latest version; provide an ISO to select an older version."/>
+                                    <ComboBox x:Name="cmbWindowsVersion" Width="120" HorizontalAlignment="Left" IsEnabled="False" Margin="0,0,0,20" ToolTip="Windows version. Default is '26H2' for Windows 11. ESD downloads use the latest version; provide an ISO to select an older version."/>
                                     <!-- Windows Architecture -->
-                                    <TextBlock Text="Windows Architecture" Margin="0,0,0,8" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
-                                    <ComboBox x:Name="cmbWindowsArch" Width="120" HorizontalAlignment="Left" Margin="0,0,0,20" ToolTip="String value of 'x86' or 'x64'. This is used to identify which architecture of Windows to download. Default is 'x64'."/>
+                                    <TextBlock Text="Windows Architecture" Margin="0,0,0,8" ToolTip="Windows architecture: 'x86', 'x64', or 'arm64', depending on the selected release and version. Default is 'x64'."/>
+                                    <ComboBox x:Name="cmbWindowsArch" Width="120" HorizontalAlignment="Left" Margin="0,0,0,20" ToolTip="Windows architecture: 'x86', 'x64', or 'arm64', depending on the selected release and version. Default is 'x64'."/>
                                     <!-- Windows Language -->
                                     <StackPanel x:Name="WindowsLangStackPanel" Margin="0,0,0,8">
                                         <TextBlock Text="Windows Language" ToolTip="String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'."/>
@@ -577,25 +577,36 @@
     
                                                 <Grid Margin="0">
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="150"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
                                                         <ColumnDefinition Width="*"/>
                                                     </Grid.ColumnDefinitions>
                                                     <Grid.RowDefinitions>
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
                                                         <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
                                                     </Grid.RowDefinitions>
+
+                                                    <TextBlock Text="Installed" Grid.Row="0" Grid.Column="1" FontWeight="SemiBold" Margin="0,0,24,0"/>
+                                                    <TextBlock Text="Latest stable" Grid.Row="0" Grid.Column="2" FontWeight="SemiBold"/>
     
                                                     <!-- Winget CLI Version Display -->
-                                                    <TextBlock Text="Winget Version:" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Winget CLI installed on the system"/>
-                                                    <TextBlock x:Name="txtWingetVersion" Text="Not checked" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Winget CLI Version:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" ToolTip="Current version of the Winget CLI installed on the system"/>
+                                                    <TextBlock x:Name="txtWingetVersion" Text="Not checked" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,24,0"/>
+                                                    <TextBlock x:Name="txtLatestWingetVersion" Text="Not checked" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center"/>
     
                                                     <!-- Winget PowerShell Module Version Display -->
-                                                    <TextBlock Text="Module Version:" Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
-                                                    <TextBlock x:Name="txtWingetModuleVersion" Text="Not checked" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Module Version:" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0" ToolTip="Current version of the Microsoft.WinGet.Client PowerShell module"/>
+                                                    <TextBlock x:Name="txtWingetModuleVersion" Text="Not checked" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,24,0"/>
+                                                    <TextBlock x:Name="txtLatestWingetModuleVersion" Text="Not checked" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center"/>
     
-                                                    <!-- Check/Install Button -->
-                                                    <Button x:Name="btnCheckWingetModule" Content="Check Winget Status" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="12,4" HorizontalAlignment="Left" ToolTip="Check installation status and version of Winget CLI and PowerShell module. Will install or update if needed."/>
+                                                    <WrapPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
+                                                        <Button x:Name="btnCheckWingetModule" Content="Check Winget Status" Margin="0,0,8,4" Padding="12,4" ToolTip="Check installed versions, compatibility, and available stable updates. No components are installed or updated by this check."/>
+                                                        <Button x:Name="btnUpdateWinget" Content="Update" Visibility="Collapsed" IsEnabled="False" Margin="0,0,0,4" Padding="12,4" ToolTip="Review available stable updates. If both components have updates, choose whether to update both, the CLI only, or the module only."/>
+                                                    </WrapPanel>
+                                                    <TextBlock x:Name="txtWingetComponentStatus" Text="Click Check Winget Status before searching or downloading apps." Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                                 </Grid>
                                             </StackPanel>
     
@@ -961,8 +972,8 @@
                                     </StackPanel>
                                     <!-- Row 2: Custom FFU Name Template -->
                                     <StackPanel Grid.Row="2" Margin="0,0,0,20">
-                                        <TextBlock Text="Custom FFU Name Template" Margin="0,0,0,8" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
-                                        <TextBox x:Name="txtCustomFFUNameTemplate" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                                        <TextBlock Text="Custom FFU Name Template" Margin="0,0,0,8" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
+                                        <TextBox x:Name="txtCustomFFUNameTemplate" VerticalAlignment="Center" ToolTip="Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}."/>
                                     </StackPanel>
                                     <!-- Row 3: FFU Capture Location -->
                                     <StackPanel Grid.Row="3" Margin="0,0,0,20">

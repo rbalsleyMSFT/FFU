@@ -33,6 +33,7 @@ If left blank, the default FFU naming convention is used.
 | -------------------- | ---------------------- | ------------------------------------------------------------------------------ |
 | `{WindowsRelease}` | Windows release number | `10`, `11`, `2016`, `2019`, `2022`, `2025`                         |
 | `{WindowsVersion}` | Windows version        | `1607`, `1809`, `21h2`, `22h2`, `23h2`, `24h2`                     |
+| `{WindowsArch}`    | Target Windows architecture | `x86`, `x64`, `arm64`                                                      |
 | `{SKU}`            | Windows edition        | `Home`, `Pro`, `Enterprise`, `Education`, `Standard`, `Datacenter` |
 | `{BuildDate}`      | Month and year         | `Nov2025`                                                                    |
 | `{yyyy}`           | 4-digit year           | `2025`                                                                       |
@@ -42,6 +43,8 @@ If left blank, the default FFU naming convention is used.
 | `{hh}`             | Hour in 12-hour format | `02` (for 2 PM)                                                              |
 | `{mm}`             | 2-digit minute         | `09`                                                                         |
 | `{tt}`             | AM/PM designator       | `AM` or `PM`                                                               |
+
+The `{WindowsArch}` placeholder uses the `-WindowsArch` build setting, not the architecture of the host running FFU Builder.
 
 ### Examples
 
@@ -68,6 +71,14 @@ Result: `Win11_24h2_Pro_Office_2025-11-28_1425.ffu`
 ```
 
 Result: `Win11_24h2_Pro_Nov2025.ffu`
+
+**Template that distinguishes architectures:**
+
+```
+{WindowsRelease}_{WindowsVersion}_{SKU}_{WindowsArch}_{BuildDate}
+```
+
+Result with `-WindowsArch arm64`: `Win11_24h2_Pro_arm64_Nov2025.ffu`
 
 {: .note-title}
 

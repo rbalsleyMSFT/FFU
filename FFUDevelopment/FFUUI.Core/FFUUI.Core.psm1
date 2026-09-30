@@ -795,7 +795,6 @@ function Get-FFUBuilderReleaseNotesSections {
         $releaseNoteSections.Add([PSCustomObject]@{
                 Title       = 'Release Notes'
                 Content     = 'No release notes were published for this release.'
-                UseExpander = $false
                 IsExpanded  = $true
             })
         return $releaseNoteSections
@@ -810,11 +809,9 @@ function Get-FFUBuilderReleaseNotesSections {
         if ($trimmedLine -match '^#+\s*(.+)$') {
             $sectionContent = ($currentLines -join [Environment]::NewLine).Trim()
             if (-not [string]::IsNullOrWhiteSpace($sectionContent)) {
-                $useExpander = (($sectionContent -split "`r?`n").Count -gt 2 -or $sectionContent.Length -gt 220)
                 $releaseNoteSections.Add([PSCustomObject]@{
                         Title       = $currentTitle
                         Content     = $sectionContent
-                        UseExpander = $useExpander
                         IsExpanded  = ($releaseNoteSections.Count -eq 0)
                     })
             }
@@ -836,11 +833,9 @@ function Get-FFUBuilderReleaseNotesSections {
 
     $finalSectionContent = ($currentLines -join [Environment]::NewLine).Trim()
     if (-not [string]::IsNullOrWhiteSpace($finalSectionContent)) {
-        $useExpander = (($finalSectionContent -split "`r?`n").Count -gt 2 -or $finalSectionContent.Length -gt 220)
         $releaseNoteSections.Add([PSCustomObject]@{
                 Title       = $currentTitle
                 Content     = $finalSectionContent
-                UseExpander = $useExpander
                 IsExpanded  = ($releaseNoteSections.Count -eq 0)
             })
     }
@@ -849,7 +844,6 @@ function Get-FFUBuilderReleaseNotesSections {
         $releaseNoteSections.Add([PSCustomObject]@{
                 Title       = 'Release Notes'
                 Content     = 'No release notes were published for this release.'
-                UseExpander = $false
                 IsExpanded  = $true
             })
     }
@@ -879,35 +873,18 @@ function Set-HomeReleaseNotesContent {
     foreach ($releaseNoteSection in $releaseNoteSections) {
         $sectionContent = New-ReleaseNotesSectionContent -Content $releaseNoteSection.Content
 
-        if ($releaseNoteSection.UseExpander) {
-            $headerTextBlock = New-Object System.Windows.Controls.TextBlock
-            $headerTextBlock.Text = $releaseNoteSection.Title
-            $headerTextBlock.TextWrapping = 'Wrap'
-            $headerTextBlock.FontWeight = 'SemiBold'
+        $headerTextBlock = New-Object System.Windows.Controls.TextBlock
+        $headerTextBlock.Text = $releaseNoteSection.Title
+        $headerTextBlock.TextWrapping = 'Wrap'
+        $headerTextBlock.FontWeight = 'SemiBold'
 
-            $releaseNotesExpander = New-Object System.Windows.Controls.Expander
-            $releaseNotesExpander.Header = $headerTextBlock
-            $releaseNotesExpander.IsExpanded = [bool]$releaseNoteSection.IsExpanded
-            $releaseNotesExpander.Margin = '0,0,0,8'
-            $releaseNotesExpander.Content = $sectionContent
+        $releaseNotesExpander = New-Object System.Windows.Controls.Expander
+        $releaseNotesExpander.Header = $headerTextBlock
+        $releaseNotesExpander.IsExpanded = [bool]$releaseNoteSection.IsExpanded
+        $releaseNotesExpander.Margin = '0,0,0,8'
+        $releaseNotesExpander.Content = $sectionContent
 
-            $releaseNotesPanel.Children.Add($releaseNotesExpander) | Out-Null
-        }
-        else {
-            $releaseNotesSectionPanel = New-Object System.Windows.Controls.StackPanel
-            $releaseNotesSectionPanel.Margin = '0,0,0,8'
-
-            if (-not [string]::IsNullOrWhiteSpace($releaseNoteSection.Title)) {
-                $titleTextBlock = New-Object System.Windows.Controls.TextBlock
-                $titleTextBlock.Text = $releaseNoteSection.Title
-                $titleTextBlock.FontWeight = 'SemiBold'
-                $titleTextBlock.TextWrapping = 'Wrap'
-                $releaseNotesSectionPanel.Children.Add($titleTextBlock) | Out-Null
-            }
-
-            $releaseNotesSectionPanel.Children.Add($sectionContent) | Out-Null
-            $releaseNotesPanel.Children.Add($releaseNotesSectionPanel) | Out-Null
-        }
+        $releaseNotesPanel.Children.Add($releaseNotesExpander) | Out-Null
     }
 }
 
