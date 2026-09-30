@@ -1,5 +1,45 @@
 # Change Log
 
+# 2609.1
+
+## What's Changed
+
+### Windows 11 26H2 Support
+
+2609.1 adds support for Windows 11 26H2 on x64 and arm64. 26H2 is now the default for Windows 11 builds and ESD downloads. If you're building an older version of Windows 11, provide its ISO and select the matching Windows version.
+
+### WinGet Version Checks and Updates
+
+FFU Builder now checks that the WinGet CLI and Microsoft.WinGet.Client PowerShell module are compatible before searching for or downloading applications. The CLI must be at least as new as the module. If either component is version 1.29.380 or later, both must be 1.29.380 or later.
+
+**Check Winget Status** now shows the installed and latest stable versions without installing or updating anything. A new **Update** button lets you update both components, the CLI only, or the module only. Choices that would leave the versions incompatible are disabled.
+
+If the module was already loaded when it was updated, save your configuration and restart FFU Builder from a new PowerShell process before using WinGet.
+
+Command-line builds no longer install or update WinGet prerequisites automatically. They stop with an error and instructions if either component is missing or the versions are incompatible. Read more in the [Winget](https://rbalsleymsft.github.io/FFU/winget.html) documentation. [#561](https://github.com/rbalsleyMSFT/FFU/discussions/561)
+
+### Fixed Intune Device Wipe Failures
+
+Fixed an issue where an FFU could deploy and boot normally, but an Intune device wipe would fail. In VHDX-only builds, the VHDX wasn't being dismounted before capture, which could leave corrupted files in the FFU. The VHDX is now dismounted and remounted before capture to commit pending filesystem writes. [#540](https://github.com/rbalsleyMSFT/FFU/issues/540)
+
+### Fluent Dialogs
+
+Confirmation, information, warning, error, and text-entry dialogs now use the same Fluent styling and light or dark theme as the main window. File and folder pickers still use the standard Windows dialogs.
+
+### Windows Architecture in Custom FFU Names
+
+You can now use `{WindowsArch}` in a custom FFU name template to include the target architecture in the filename. It uses the architecture selected for the build, not the architecture of the host machine. Existing templates and the default FFU filename are unchanged. [#554](https://github.com/rbalsleyMSFT/FFU/issues/554)
+
+### Home Page Release Notes
+
+Each What's New section on the Home page now has its own expander, including short sections that were previously always visible.
+
+### Fixes
+
+- Fixed an issue where an empty USB drive list in a configuration file could prevent USB drives from being found. Empty lists now use automatic USB drive discovery. https://github.com/rbalsleyMSFT/FFU/commit/d4a6f747e2f2ef925ee7c42b0b42686b08f6c167
+- Fixed an issue where the System theme used the administrator account's light or dark setting instead of the signed-in desktop user's setting when running under a different account. https://github.com/rbalsleyMSFT/FFU/commit/a79986d76afd75d10fcab019f8df59b71eb4ab97
+- Fixed an issue where the default WinPE ISO filename included x64 even when building arm64 media. [#555](https://github.com/rbalsleyMSFT/FFU/pull/555) thanks @danbu
+
 # 2608.1
 
 ## What's Changed
