@@ -91,7 +91,8 @@ function Save-LenovoDriversTask {
         [Parameter()]
         [bool]$CompressToWim = $false,
         [Parameter()]
-        [bool]$PreserveSourceOnCompress = $false
+        [bool]$PreserveSourceOnCompress = $false,
+		[pscustomobject]$DriverOperationContext
     )
             
     # The Model property from the UI already contains the combined "ProductName (MachineType)" string
@@ -108,12 +109,16 @@ function Save-LenovoDriversTask {
     # Use the identifier (which contains the model name and machine type) and sanitize it for the path
     $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedIdentifier
     $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedIdentifier # Relative path for the driver folder
-    $tempDownloadPath = Join-Path -Path $makeDriversPath -ChildPath "_TEMP_$($machineType)_$($PID)" # Temp folder for catalog/package XMLs
+    $tempDownloadPath = Join-Path -Path $makeDriversPath -ChildPath "_TEMP_$($machineType)_$([guid]::NewGuid().ToString('N').Substring(0, 8))"
     
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking..." }
     
+	$modelMutex = $null
+	$modelExisted = $true
     try {
-        # Check for existing drivers
+		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
+		$modelExisted = Test-Path -LiteralPath $modelPath
+		$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
         $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedIdentifier -DriversFolder $DriversFolder -Identifier $identifier -ProgressQueue $ProgressQueue
         if ($null -ne $existingDriver) {
             # The return object from Test-ExistingDriver uses 'Model' as the identifier key.
@@ -147,6 +152,7 @@ function Save-LenovoDriversTask {
         }
 
         # Ensure base directories exist
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
         if (-not (Test-Path -Path $makeDriversPath)) { New-Item -Path $makeDriversPath -ItemType Directory -Force | Out-Null }
         if (-not (Test-Path -Path $modelPath)) { New-Item -Path $modelPath -ItemType Directory -Force | Out-Null }
         if (-not (Test-Path -Path $tempDownloadPath)) { New-Item -Path $tempDownloadPath -ItemType Directory -Force | Out-Null }
@@ -166,7 +172,7 @@ function Save-LenovoDriversTask {
         }
         catch { throw "Lenovo Driver catalog URL is not accessible: $catalogUrl. Error: $($_.Exception.Message)" }
 
-        Start-BitsTransferWithRetry -Source $catalogUrl -Destination $lenovoCatalogXML
+		Save-DriverCatalogFile -Source $catalogUrl -Path $lenovoCatalogXML -DriverOperationContext $DriverOperationContext
         WriteLog "Catalog download Complete: $lenovoCatalogXML"
 
         # 3. Parse Catalog and Process Packages
@@ -203,7 +209,7 @@ function Save-LenovoDriversTask {
             # Download the package XML
             WriteLog "($processedPackages/$totalPackages) Downloading package XML: $packageUrl"
             try {
-                Start-BitsTransferWithRetry -Source $packageUrl -Destination $packageXMLPath
+				Save-DriverCatalogFile -Source $packageUrl -Path $packageXMLPath -DriverOperationContext $DriverOperationContext
             }
             catch {
                 $failureMessage = "Failed to download Lenovo package XML '$packageUrl': $($_.Exception.Message)"
@@ -255,13 +261,13 @@ function Save-LenovoDriversTask {
             $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driverFileName
             $extractFolder = Join-Path -Path $downloadFolder -ChildPath ($driverFileName -replace '\.exe$', '') # Extract to subfolder named after exe
             # Check if already extracted
-            if (Test-Path -Path $extractFolder -PathType Container) {
-                $extractSize = (Get-ChildItem -Path $extractFolder -Recurse | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                if ($extractSize -gt 1KB) {
-                    WriteLog "($processedPackages/$totalPackages) Driver '$packageTitleRaw' already extracted to '$extractFolder'. Skipping."
-                    Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue # Clean up package XML
-                    continue
-                }
+            if (-not $retryModel -and (Test-Path -Path $extractFolder -PathType Container)) {
+				try {
+					$null = Test-DriverExtractionOutput -Path $extractFolder -RequireInf -AllowProvisioningPackage -ComponentName "$identifier | $packageTitle"
+					Remove-Item -LiteralPath $packageXMLPath -Force -ErrorAction Stop
+					continue
+				}
+				catch { WriteLog "Re-extracting incomplete Lenovo package '$packageTitleRaw': $($_.Exception.Message)" }
             }
 
             # Ensure download folder exists
@@ -273,144 +279,35 @@ function Save-LenovoDriversTask {
             $status = "$processedPackages/$totalPackages Downloading $packageTitle"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
             WriteLog "($processedPackages/$totalPackages) Downloading driver: $driverUrl to $driverFilePath"
+			$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $driverFileName -FinalPath $extractFolder -CachePath $driverFilePath -ComponentName "$identifier | $packageTitle"
             try {
-                Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath
+				Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $driverUrl
                 WriteLog "($processedPackages/$totalPackages) Driver downloaded: $driverFileName"
-            }
-            catch {
-                $failureMessage = "Failed to download driver '$packageTitle' from $($driverUrl): $($_.Exception.Message)"
-                WriteLog "($processedPackages/$totalPackages) $failureMessage"
-                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
-                throw (New-Object System.Exception($failureMessage, $_.Exception))
-            }
-
-            # --- Extraction Logic ---
             $status = "$processedPackages/$totalPackages Extracting $packageTitle"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-    
-            # Always use a temporary extraction path to avoid long path issues
-            $originalExtractFolder = $extractFolder # Store the originally intended final path
-            $extractionSucceeded = $false
-            $tempExtractBase = $null # Initialize
-    
-            # Create randomized number for use with temp folder name
-            $randomNumber = Get-Random -Minimum 1000 -Maximum 9999
-            $tempExtractBase = Join-Path $env:TEMP "LenovoDriverExtract_$randomNumber"
-            $extractFolder = Join-Path $tempExtractBase ($driverFileName -replace '\.exe$', '') # Actual temp extraction folder
-            WriteLog "($processedPackages/$totalPackages) Using temporary extraction path: $extractFolder"
-    
-            # Ensure the base temp directory exists
-            if (-not (Test-Path -Path $tempExtractBase)) {
-                New-Item -Path $tempExtractBase -ItemType Directory -Force | Out-Null
-            }
-            # Ensure the target temporary extraction folder exists
-            if (-not (Test-Path -Path $extractFolder)) {
-                New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-            }
-    
-            # Modify the extract command to point to the temporary folder
-            $modifiedExtractCommand = $extractCommand -replace '%PACKAGEPATH%', "`"$extractFolder`""
-            WriteLog "$processedPackages/$totalPackages Extracting driver: $driverFilePath using command: $modifiedExtractCommand"
-                
-            try {
-                Invoke-Process -FilePath $driverFilePath -ArgumentList $modifiedExtractCommand -Wait $true | Out-Null
-                WriteLog "($processedPackages/$totalPackages) Driver extracted to temporary path: $extractFolder"
-                $extractionSucceeded = $true
-            }
-            catch {
-                $failureMessage = "Failed to extract driver package '$packageTitle': $($_.Exception.Message)"
-                WriteLog "($processedPackages/$totalPackages) $failureMessage"
-                Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
-                if ($tempExtractBase -and (Test-Path -Path $tempExtractBase)) {
-                    Remove-Item -Path $tempExtractBase -Recurse -Force -ErrorAction SilentlyContinue
-                }
-                throw (New-Object System.Exception($failureMessage, $_.Exception))
-            }
-    
-            # --- Post-Extraction Handling (Move from Temp to Final Destination) ---
-            if ($extractionSucceeded) {
-                WriteLog "($processedPackages/$totalPackages) Performing post-extraction move from temp to final destination..."
-                try {
-                    # Ensure the *original* final destination folder exists and is empty
-                    if (Test-Path -Path $originalExtractFolder) {
-                        WriteLog "($processedPackages/$totalPackages) Clearing existing final destination folder: $originalExtractFolder"
-                        Get-ChildItem -Path $originalExtractFolder -Recurse | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                    else {
-                        WriteLog "($processedPackages/$totalPackages) Creating final destination folder: $originalExtractFolder"
-                        New-Item -Path $originalExtractFolder -ItemType Directory -Force | Out-Null
-                    }
-    
-                    # Get all items (files and folders) directly inside the temp extraction folder
-                    $extractedItems = Get-ChildItem -Path $extractFolder -ErrorAction Stop
-    
-                    foreach ($item in $extractedItems) {
-                        $itemName = $item.Name
-                        $finalDestinationPath = $null
-    
-                        # Check if it's a directory containing 'Liteon'
-                        if ($item.PSIsContainer -and $itemName -like '*Liteon*') {
-                            # Rename Liteon folders with a random number suffix
-                            $randomNumber = Get-Random -Minimum 1000 -Maximum 9999
-                            $finalFolderName = "Liteon_$randomNumber"
-                            $finalDestinationPath = Join-Path -Path $originalExtractFolder -ChildPath $finalFolderName
-                            WriteLog "($processedPackages/$totalPackages) Moving Liteon folder '$itemName' to '$finalDestinationPath'"
-                        }
-                        else {
-                            # For other files/folders, move them directly
-                            $finalDestinationPath = Join-Path -Path $originalExtractFolder -ChildPath $itemName
-                            WriteLog "($processedPackages/$totalPackages) Moving item '$itemName' to '$finalDestinationPath'"
-                        }
-    
-                        # Perform the move
-                        try {
-                            Move-Item -Path $item.FullName -Destination $finalDestinationPath -Force -ErrorAction Stop
-                        }
-                        catch {
-                            $failureMessage = "Failed to move extracted item '$($item.FullName)' to '$finalDestinationPath': $($_.Exception.Message)"
-                            WriteLog "($processedPackages/$totalPackages) $failureMessage"
-                            throw (New-Object System.Exception($failureMessage, $_.Exception))
-                        }
-                    } # End foreach ($item in $extractedItems)
-    
-                    if ($extractionSucceeded) {
-                        WriteLog "($processedPackages/$totalPackages) All driver contents moved successfully from temp to final destination."
-                    }
-                    else {
-                        WriteLog "($processedPackages/$totalPackages) Some driver contents failed to move. Check logs."
-                    }
-    
-                }
-                catch {
-                    WriteLog "($processedPackages/$totalPackages) Error during post-extraction move: $($_.Exception.Message). Files might remain in temp."
-                    $extractionSucceeded = $false # Mark as failed for cleanup logic below
-                }
-                finally {
-                    # Clean up the base temporary directory regardless of move success/failure
-                    if ($tempExtractBase -and (Test-Path -Path $tempExtractBase)) {
-                        WriteLog "($processedPackages/$totalPackages) Cleaning up temporary extraction base: $tempExtractBase"
-                        Remove-Item -Path $tempExtractBase -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                }
-            }
-    
-            # --- Final Cleanup ---
-            # Delete the downloaded .exe only if extraction AND move were successful
-            if ($extractionSucceeded) {
-                WriteLog "($processedPackages/$totalPackages) Deleting driver installation file: $driverFilePath"
-                Remove-Item -Path $driverFilePath -Force -ErrorAction SilentlyContinue
-            }
-            else {
-                WriteLog "($processedPackages/$totalPackages) Keeping driver installation file due to extraction/move failure: $driverFilePath"
-            }
-            # Always delete the package XML
-            WriteLog "($processedPackages/$totalPackages) Deleting package XML file: $packageXMLPath"
-            Remove-Item -Path $packageXMLPath -Force -ErrorAction SilentlyContinue
-            if (-not $extractionSucceeded) {
-                throw (New-Object System.Exception("Failed to extract driver '$packageTitle'. See log for details."))
-            }
+			$modifiedExtractCommand = $extractCommand.Replace('%PACKAGEPATH%', "`"$($driverWorkspace.OutputPath)`"", [StringComparison]::OrdinalIgnoreCase)
+			WriteLog "$processedPackages/$totalPackages Extracting '$($driverWorkspace.InputPath)' using '$modifiedExtractCommand'."
+			$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $modifiedExtractCommand -EnableInnoLogging
+			$null = Test-DriverExtractionOutput -Path $driverWorkspace.OutputPath -RequireInf -AllowProvisioningPackage -ComponentName $driverWorkspace.ComponentName
+			foreach ($item in @(Get-ChildItem -LiteralPath $driverWorkspace.OutputPath -Directory -ErrorAction Stop | Where-Object { $_.Name -like '*Liteon*' })) {
+				do { $finalFolderName = "Liteon_$(Get-Random -Minimum 1000 -Maximum 9999)" }
+				while (Test-Path -LiteralPath (Join-Path $driverWorkspace.OutputPath $finalFolderName))
+				WriteLog "Renaming Lenovo Liteon folder '$($item.Name)' to '$finalFolderName' before publication to '$extractFolder'."
+				Rename-Item -LiteralPath $item.FullName -NewName $finalFolderName -ErrorAction Stop
+			}
+			Publish-DriverExtractionContent -Workspace $driverWorkspace -RequireInf -AllowProvisioningPackage
+			}
+			catch {
+				WriteLog "Failed to download, extract, or publish Lenovo driver '$packageTitle': $($_.Exception.Message)"
+				throw
+			}
+			finally {
+				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
+				Remove-Item -LiteralPath $packageXMLPath -Force -ErrorAction SilentlyContinue
+			}
     
         } # End foreach package
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
         
         # --- Compress to WIM if requested (after all drivers processed) ---
         if ($CompressToWim) {
@@ -448,14 +345,18 @@ function Save-LenovoDriversTask {
         $status = "Error: $($_.Exception.Message)"
         WriteLog "Error saving Lenovo drivers for '$identifier': $($_.Exception.ToString())"
         $success = $false
-        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $identifier
+		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $identifier }
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
         return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null }
     }
     finally {
-        # Clean up the main catalog XML and temp folder
-        WriteLog "Cleaning up temporary download folder: $tempDownloadPath"
-        Remove-Item -Path $tempDownloadPath -Recurse -Force -ErrorAction SilentlyContinue
+		try {
+			WriteLog "Cleaning up temporary download folder: $tempDownloadPath"
+			Remove-Item -LiteralPath $tempDownloadPath -Recurse -Force -ErrorAction SilentlyContinue
+		}
+		finally {
+			if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
+		}
     }
 
     # Enqueue the final status (success or error) before returning

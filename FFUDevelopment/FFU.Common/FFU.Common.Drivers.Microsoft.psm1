@@ -9,6 +9,16 @@
     - Source C: Download Center details (window.__DLCDetails__)
 #>
 
+function Get-SurfaceDriverContentType {
+	[CmdletBinding()]
+	param([Parameter(Mandatory)][string]$FileName)
+
+	if ($FileName -match '^SurfaceDock2_WmiInstanceProvider_.+\.msi$') {
+		return 'SurfaceDockWmi'
+	}
+	return 'Driver'
+}
+
 # --------------------------------------------------------------------------
 # SECTION: Microsoft Surface Driver Index Cache (Sources A/B/C)
 # --------------------------------------------------------------------------
@@ -751,6 +761,7 @@ function Get-SurfaceSystemSkuListForMicrosoftDriver {
 }
 
 Export-ModuleMember -Function `
+	Get-SurfaceDriverContentType, `
     Get-SurfaceDriverIndexCachePath, `
     Import-SurfaceDriverIndexCache, `
     Save-SurfaceDriverIndexCache, `

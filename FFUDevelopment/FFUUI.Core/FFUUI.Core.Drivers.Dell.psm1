@@ -56,9 +56,7 @@ function Get-DellDriversModelList {
     if ($download) {
         if (Test-Path $dellCabFile) { Remove-Item $dellCabFile -Force -ErrorAction SilentlyContinue }
         if (Test-Path $dellCatalogXML) { Remove-Item $dellCatalogXML -Force -ErrorAction SilentlyContinue }
-        Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFile
-        Invoke-Process -FilePath Expand.exe -ArgumentList """$dellCabFile"" ""$dellCatalogXML""" | Out-Null
-        Remove-Item $dellCabFile -Force -ErrorAction SilentlyContinue
+		Expand-DriverCatalog -Source $catalogUrl -CabPath $dellCabFile -XmlPath $dellCatalogXML -ForceDownload
     }
 
     if (-not (Test-Path $dellCatalogXML)) { throw "Dell server catalog XML missing: $dellCatalogXML" }
@@ -123,7 +121,8 @@ function Save-DellDriversTask {
         [Parameter()]
         [bool]$CompressToWim = $false,
         [Parameter()]
-        [bool]$PreserveSourceOnCompress = $false
+        [bool]$PreserveSourceOnCompress = $false,
+		[pscustomobject]$DriverOperationContext
     )
 
     $modelDisplay = $DriverItemData.Model
@@ -148,8 +147,12 @@ function Save-DellDriversTask {
         Remove-Item -Path $target -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+	$modelMutex = $null
+	$modelExisted = $true
     try {
-        # Existing drivers short‑circuit
+		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
+		$modelExisted = Test-Path -LiteralPath $modelPath
+		$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
         $existing = Test-ExistingDriver -Make $make -Model $sanitizedModelName -DriversFolder $DriversFolder -Identifier $modelDisplay -ProgressQueue $ProgressQueue
         if ($existing) {
             if (-not $existing.PSObject.Properties['Model']) {
@@ -176,6 +179,7 @@ function Save-DellDriversTask {
             return $existing
         }
 
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
         if (-not (Test-Path $makeDriversPath)) { New-Item -Path $makeDriversPath -ItemType Directory -Force | Out-Null }
         if (-not (Test-Path $modelPath)) { New-Item -Path $modelPath -ItemType Directory -Force | Out-Null }
 
@@ -207,9 +211,7 @@ function Save-DellDriversTask {
             if (Test-Path $modelXmlPath) { Remove-SafeFolder $modelXmlPath }
             
             WriteLog "Downloading Dell model catalog from $cabUrl to $modelCabPath"
-            Start-BitsTransferWithRetry -Source $cabUrl -Destination $modelCabPath
-            Invoke-Process -FilePath Expand.exe -ArgumentList """$modelCabPath"" ""$modelXmlPath""" | Out-Null
-            Remove-Item $modelCabPath -Force -ErrorAction SilentlyContinue
+			Expand-DriverCatalog -Source $cabUrl -CabPath $modelCabPath -XmlPath $modelXmlPath -DriverOperationContext $DriverOperationContext -ForceDownload
             if (-not (Test-Path $modelXmlPath)) { throw "Model XML not found after extraction: $modelXmlPath" }
 
             # Track extracted model XML so cancel cleanup can remove it even if file timestamps are preserved from source metadata.
@@ -237,9 +239,7 @@ function Save-DellDriversTask {
                 if (Test-Path $catalogCab) { Remove-SafeFolder $catalogCab }
                 if (Test-Path $catalogXml) { Remove-SafeFolder $catalogXml }
                 WriteLog "Downloading Dell server catalog from $catalogUrl to $catalogCab"
-                Start-BitsTransferWithRetry -Source $catalogUrl -Destination $catalogCab
-                Invoke-Process -FilePath Expand.exe -ArgumentList """$catalogCab"" ""$catalogXml""" | Out-Null
-                Remove-Item $catalogCab -Force -ErrorAction SilentlyContinue
+				Expand-DriverCatalog -Source $catalogUrl -CabPath $catalogCab -XmlPath $catalogXml -DriverOperationContext $DriverOperationContext -ForceDownload
             }
             if (-not (Test-Path $catalogXml)) { throw "Server catalog XML missing: $catalogXml" }
 
@@ -277,6 +277,7 @@ function Save-DellDriversTask {
         }
 
         if (-not $packages -or $packages.Count -eq 0) {
+			Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'No drivers found for OS' }
             return [pscustomobject]@{ Model = $modelDisplay; Status = 'No drivers found for OS'; Success = $true; DriverPath = $driverRelativePath }
         }
@@ -298,55 +299,67 @@ function Save-DellDriversTask {
             if ([string]::IsNullOrWhiteSpace($plainName)) { $plainName = "_extract" }
             $extractFolder = Join-Path $downloadFolder $plainName
 
-            if (Test-Path $extractFolder) {
-                $sz = (Get-ChildItem -Path $extractFolder -Recurse -Exclude *.log | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                if ($sz -gt 1KB) { continue }
+            if (-not $retryModel -and (Test-Path $extractFolder)) {
+				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB -ComponentName "$modelDisplay | $driverName"; continue }
+				catch { WriteLog "Re-extracting incomplete Dell package '$driverName': $($_.Exception.Message)" }
             }
 
-            if (-not (Test-Path $driverFilePath)) {
+			$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $pkg.DriverFileName -FinalPath $extractFolder -CachePath $driverFilePath -ComponentName "$modelDisplay | $driverName"
+			try {
                 WriteLog "$status URL: $($pkg.DownloadUrl)"
-                try { Start-BitsTransferWithRetry -Source $pkg.DownloadUrl -Destination $driverFilePath }
+                try { Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $pkg.DownloadUrl }
                 catch {
                     $failureMessage = "Failed to download driver '$driverName' from $($pkg.DownloadUrl): $($_.Exception.Message)"
                     WriteLog $failureMessage
                     throw (New-Object System.Exception($failureMessage, $_.Exception))
                 }
-            }
-
             $status = "$idx/$total Extracting $driverName"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $status }
 
-            if (-not (Test-Path $extractFolder)) { New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null }
-
-            $arg1 = "/s /e=`"$extractFolder`" /l=`"$extractFolder\log.log`""
-            $arg2 = "/s /drivers=`"$extractFolder`" /l=`"$extractFolder\log.log`""
             $ok = $false
-            try {
-                Invoke-Process -FilePath $driverFilePath -ArgumentList $arg1 | Out-Null
-                $sz = (Get-ChildItem -Path $extractFolder -Recurse -Exclude *.log | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                if ($sz -gt 1KB) { $ok = $true }
-                if (-not $ok) {
-                    Remove-SafeFolder $extractFolder
-                    New-Item -Path $extractFolder -ItemType Directory -Force | Out-Null
-                    Invoke-Process -FilePath $driverFilePath -ArgumentList $arg2 | Out-Null
-                    $sz = (Get-ChildItem -Path $extractFolder -Recurse -Exclude *.log | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
-                    if ($sz -gt 1KB) { $ok = $true }
-                }
-            }
-            catch {
-                WriteLog "Extraction error: $($_.Exception.Message)"
-            }
+			foreach ($extractionMethod in @('/e=', '/drivers=')) {
+				$extractionLogPath = Join-Path $driverWorkspace.DiagnosticsPath ($extractionMethod.Trim('/', '=') + '.log')
+				$arguments = "/s $extractionMethod`"$($driverWorkspace.OutputPath)`" /l=`"$extractionLogPath`""
+				try {
+					if ($extractionMethod -eq '/drivers=') {
+						WriteLog "Retrying extraction of driver '$driverName' with /drivers=."
+						Reset-DriverExtractionOutput -Workspace $driverWorkspace
+					}
+					WriteLog "Extracting driver '$driverName' with $extractionMethod. Command: `"$($driverWorkspace.InputPath)`" $arguments"
+					$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $arguments
+					$null = Test-DriverExtractionOutput -Path $driverWorkspace.OutputPath -MinimumBytes 1KB -ComponentName $driverWorkspace.ComponentName
+					$ok = $true
+					WriteLog "Extraction with $extractionMethod succeeded for driver '$driverName'."
+					break
+				}
+				catch {
+					WriteLog "Extraction error for driver '$driverName' with $extractionMethod`: $($_.Exception.Message)"
+					Confirm-DriverOperationActive -Context $driverWorkspace.Context
+				}
+
+				try {
+					Save-DriverExtractionLog -Workspace $driverWorkspace -LogPath $extractionLogPath -Label "Dell '$driverName' with $extractionMethod"
+				}
+				catch {
+					WriteLog "Unable to read Dell extraction log for driver '$driverName' with $extractionMethod`: $($_.Exception.Message)"
+				}
+			}
 
             if ($ok) {
-                Remove-Item $driverFilePath -Force -ErrorAction SilentlyContinue
+				Publish-DriverExtractionContent -Workspace $driverWorkspace -MinimumBytes 1KB
             }
             else {
                 $failureMessage = "Failed to extract driver '$driverName'."
                 WriteLog $failureMessage
                 throw (New-Object System.Exception($failureMessage))
             }
+			}
+			finally {
+				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
+			}
         }
 
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
         if ($CompressToWim) {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Compressing...' }
             $wimPath = Join-Path $makeDriversPath "$sanitizedModelName.wim"
@@ -370,10 +383,13 @@ function Save-DellDriversTask {
     catch {
         $errorStatus = "Error: $($_.Exception.Message)"
         WriteLog "Save-DellDriversTask error for $($modelDisplay): $($_.Exception.ToString())"
-        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelDisplay
+		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelDisplay }
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $errorStatus }
         return [pscustomobject]@{ Model = $modelDisplay; Status = $errorStatus; Success = $false; DriverPath = $null }
     }
+	finally {
+		if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
+	}
 }
 
 Export-ModuleMember -Function *

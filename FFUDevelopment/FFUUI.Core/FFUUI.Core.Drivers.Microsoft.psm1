@@ -37,7 +37,8 @@ function Save-MicrosoftDriversTask {
         [Parameter()]
         [bool]$CompressToWim = $false, # New parameter for compression
         [Parameter()]
-        [bool]$PreserveSourceOnCompress = $false
+        [bool]$PreserveSourceOnCompress = $false,
+		[pscustomobject]$DriverOperationContext
         # REMOVED: UI-related parameters
     )
         
@@ -55,9 +56,12 @@ function Save-MicrosoftDriversTask {
     # Initial status update
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Checking..." }
     
+	$modelMutex = $null
+	$modelExisted = $true
     try {
-        # Check for existing drivers
-        $existingDriver = Test-ExistingDriver -Make $make -Model $modelName -DriversFolder $DriversFolder -Identifier $modelName -ProgressQueue $ProgressQueue
+		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
+		$modelExisted = Test-Path -LiteralPath $modelPath
+        $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedModelName -DriversFolder $DriversFolder -Identifier $modelName -ProgressQueue $ProgressQueue
         if ($null -ne $existingDriver) {
             # Add the 'Model' property to the return object for consistency if it's not there
             if (-not $existingDriver.PSObject.Properties['Model']) {
@@ -91,6 +95,7 @@ function Save-MicrosoftDriversTask {
         }
 
         ### GET THE DOWNLOAD LINK
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
         $status = "Getting download link..."
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
@@ -264,114 +269,28 @@ function Save-MicrosoftDriversTask {
 
                 ### DOWNLOAD
                 $filePath = Join-Path -Path $makeDriversPath -ChildPath ($fileName)
-                WriteLog "Downloading $modelName driver file to $filePath"
-                # Use Start-BitsTransferWithRetry
-                Start-BitsTransferWithRetry -Source $downloadLink -Destination $filePath
+				$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $fileName -FinalPath $modelPath -CachePath $filePath -ComponentName "$modelName | $fileName" -AllowShortName -RetainInstallerOnFailure
+				try {
+				WriteLog "Downloading $modelName driver file to '$($driverWorkspace.InputPath)'."
+				Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $downloadLink
                 WriteLog "Download complete"
 
                 $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
+				$contentType = Get-SurfaceDriverContentType -FileName $fileName
 
                 ### EXTRACT
                 if ($fileExtension -eq ".msi") {
                     $status = "Waiting for MSI lock..."
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
 
-                    # Use a named mutex to ensure only one MSI extraction happens at a time across all parallel tasks
-                    $msiMutexName = "Global\FFUDevelopmentMSIExtractionMutex"
-                    $msiMutex = New-Object System.Threading.Mutex($false, $msiMutexName)
-
-                    try {
-                        WriteLog "Waiting to acquire global MSI extraction lock for '$modelName'..."
-                        $msiMutex.WaitOne() | Out-Null
-                        WriteLog "Acquired global MSI extraction lock for '$modelName'."
-
-                        # Loop indefinitely to wait for system mutex and handle MSIExec exit codes
-                        while ($true) {
-                            $mutexClear = $false
-
-                            # 1. Check System-level MSI Mutex
-                            try {
-                                $sysMutex = [System.Threading.Mutex]::OpenExisting("Global\_MSIExecute")
-                                $sysMutex.Dispose()
-                                $status = "Waiting for MSIExec..."
-                                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                                WriteLog "Another MSIExec installer is running (System Mutex Held). Waiting 5 seconds before rechecking for $modelName..."
-                                Start-Sleep -Seconds 5
-                                continue # Go back to start of while loop to re-check mutex
-                            }
-                            catch [System.Threading.WaitHandleCannotBeOpenedException] {
-                                # Mutex is clear, proceed to extraction attempt
-                                WriteLog "System MSI mutex clear. Proceeding with MSI extraction attempt for $modelName."
-                                $status = "Extracting Win$downloadedVersion $fileName"
-                                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                                $mutexClear = $true
-                            }
-                            catch {
-                                # Handle other potential errors when checking the mutex
-                                WriteLog "Warning: Error checking system MSI mutex for $($modelName): $_. Proceeding with caution."
-                                $status = "Extracting Win$downloadedVersion $fileName (Mutex Error)"
-                                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                                $mutexClear = $true # Proceed despite mutex error
-                            }
-
-                            # 2. Attempt Extraction (only if mutex was clear)
-                            if ($mutexClear) {
-                                WriteLog "Extracting MSI file to $modelPath"
-                                $arguments = "/a `"$($filePath)`" /qn TARGETDIR=`"$($modelPath)`""
-                                try {
-                                    # Use Invoke-Process. It will throw an error for any non-zero exit code.
-                                    Invoke-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait $true -ErrorAction Stop | Out-Null
-                                    
-                                    # If Invoke-Process succeeded (didn't throw), extraction is complete.
-                                    WriteLog "Extraction complete for $modelName (Exit Code 0)."
-                                    
-                                    # Verification Step: Ensure the target folder is not empty.
-                                    $itemsInDest = Get-ChildItem -Path $modelPath -Recurse
-                                    if ($itemsInDest.Count -eq 0) {
-                                        WriteLog "VERIFICATION FAILED: MSI extraction for '$modelName' produced an empty folder. Retrying..."
-                                        $status = "Retrying (Empty Folder)"
-                                        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                                        Start-Sleep -Seconds 5
-                                        continue # Retry the whole process
-                                    }
-                                    
-                                    WriteLog "VERIFICATION PASSED: Target folder for '$modelName' is not empty."
-                                    break # Success, exit the while loop
-                                }
-                                catch {
-                                    # Catch errors thrown by Invoke-Process
-                                    $errorMessage = $_.Exception.Message
-                                    if ($errorMessage -match 'Process exited with code 1618') {
-                                        # Specific handling for MSIExec busy error (1618)
-                                        WriteLog "MSIExec collision detected (Exit Code 1618) for $modelName. Retrying after wait..."
-                                        $status = "Waiting (MSI Collision)..."
-                                        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                                        Start-Sleep -Seconds 5 # Wait before retrying
-                                        continue # Go back to start of while loop to re-check mutex/retry
-                                    }
-                                    else {
-                                        # Handle other errors from Invoke-Process (e.g., file not found, permissions, other exit codes)
-                                        WriteLog "Error during MSI extraction process for $($modelName): $errorMessage"
-                                        throw # Re-throw the original exception to be caught by the outer try/catch
-                                    }
-                                }
-                            } # End if ($mutexClear)
-                        } # End while ($true)
-                    }
-                    finally {
-                        if ($null -ne $msiMutex) {
-                            $msiMutex.ReleaseMutex()
-                            $msiMutex.Dispose()
-                            WriteLog "Released global MSI extraction lock for '$modelName'."
-                        }
-                    }
+					Invoke-DriverMsiExtraction -Workspace $driverWorkspace -ProgressQueue $ProgressQueue -Identifier $modelName -ContentType $contentType
                 }
                 elseif ($fileExtension -eq ".zip") {
                     $status = "Extracting Win$downloadedVersion $fileName"
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                    WriteLog "Extracting ZIP file to $modelPath"
+                    WriteLog "Extracting ZIP file to '$($driverWorkspace.OutputPath)'."
                     $ProgressPreference = 'SilentlyContinue'
-                    Expand-Archive -Path $filePath -DestinationPath $modelPath -Force
+					Expand-Archive -LiteralPath $driverWorkspace.InputPath -DestinationPath $driverWorkspace.OutputPath -Force -ErrorAction Stop
                     $ProgressPreference = 'Continue'
                     WriteLog "Extraction complete"
                 }
@@ -379,13 +298,13 @@ function Save-MicrosoftDriversTask {
                     WriteLog "Unsupported file type: $fileExtension"
                     throw "Unsupported file type: $fileExtension"
                 }
-                # Remove downloaded file
-                $status = "Cleaning up..."
-                if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
-                WriteLog "Removing $filePath"
-                Remove-Item -Path $filePath -Force
-                WriteLog "Cleanup complete." # Changed log message slightly
+				Publish-DriverExtractionContent -Workspace $driverWorkspace -RequireInf -AllowProvisioningPackage -ContentType $contentType
+				}
+				finally {
+					$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
+				}
         
+				Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
                 # --- Compress to WIM if requested ---
                 if ($CompressToWim) {
                     $status = "Compressing..."
@@ -437,12 +356,15 @@ function Save-MicrosoftDriversTask {
         $status = "Error: $($_.Exception.Message.Split('.')[0])" # Shorten error message
         WriteLog "Error saving Microsoft drivers for $($modelName): $($_.Exception.Message)"
         $success = $false
-        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelName
+		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelName }
         # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
         # Ensure return object is created even on error
         return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $null }
     }
+	finally {
+		if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
+	}
     
     # Enqueue the final status (success or error) before returning
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }

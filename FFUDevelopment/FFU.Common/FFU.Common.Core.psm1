@@ -57,11 +57,13 @@ function WriteLog {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$LogText
+        [string]$LogText,
+		[switch]$ThrowOnError
     )
 
     # Check if the log file path has been set
     if ([string]::IsNullOrWhiteSpace($script:CommonCoreLogFilePath)) {
+		if ($ThrowOnError) { throw "CommonCoreLogFilePath not set. Message: $LogText" }
         Write-Warning "CommonCoreLogFilePath not set. Message: $LogText"
         return
     }
@@ -84,6 +86,7 @@ function WriteLog {
     catch {
         # Use Write-Host for console visibility as Write-Warning might also try to log
         Write-Host "WARNING: Error writing to log file '$($script:CommonCoreLogFilePath)': $($_.Exception.Message)" -ForegroundColor Yellow
+		if ($ThrowOnError) { throw }
     }
     finally {
         if ($null -ne $streamWriter) {
@@ -107,10 +110,21 @@ function Invoke-Process {
 
         [Parameter()]
         [ValidateNotNullOrEmpty()]
-        [bool]$Wait = $true
+        [bool]$Wait = $true,
+
+		[Parameter()]
+		[switch]$CheckExitCode,
+
+		[Parameter()]
+		[ValidateNotNullOrEmpty()]
+		[int[]]$SuccessExitCodes = @(0)
     )
 
     $ErrorActionPreference = 'Stop'
+
+	if ($CheckExitCode -and -not $Wait) {
+		throw 'CheckExitCode requires a waited process.'
+	}
 
     try {
         $stdOutTempFile = "$env:TEMP\$((New-Guid).Guid)"
@@ -129,7 +143,19 @@ function Invoke-Process {
             $cmd = Start-Process @startProcessParams
             $cmdOutput = Get-Content -Path $stdOutTempFile -Raw
             $cmdError = Get-Content -Path $stdErrTempFile -Raw
-            if ($cmd.ExitCode -ne 0 -and $wait -eq $true) {
+			if ($CheckExitCode) {
+				if ($null -eq $cmd -or $null -eq $cmd.ExitCode) {
+					throw "Process result is unavailable for '$FilePath'."
+				}
+				WriteLog "Process '$FilePath' exited with code $($cmd.ExitCode)."
+				if ($cmd.ExitCode -notin $SuccessExitCodes) {
+					$details = @($cmdError, $cmdOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+					$processException = [System.Exception]::new("Process exited with code $($cmd.ExitCode): $FilePath`n$($details -join [Environment]::NewLine)")
+					$processException.Data['ExitCode'] = $cmd.ExitCode
+					throw $processException
+				}
+			}
+            if (-not $CheckExitCode -and $cmd.ExitCode -ne 0 -and $wait -eq $true) {
                 if ($cmdError) {
                     throw $cmdError.Trim()
                 }
@@ -192,40 +218,62 @@ function Register-CurrentRunDownloadTarget {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Destination
+        [string]$Destination,
+		[string]$ManifestPath,
+		[string[]]$AdditionalDestinations,
+		[string]$ExpectedRunStartUtc
     )
 
     if ([string]::IsNullOrWhiteSpace($Destination)) { return }
 
-    $manifestPath = Get-RunManifestPathForDownloadTarget -Destination $Destination
+	$explicitManifest = $PSBoundParameters.ContainsKey('ManifestPath')
+	if (-not $explicitManifest) { $ManifestPath = Get-RunManifestPathForDownloadTarget -Destination $Destination }
     if ([string]::IsNullOrWhiteSpace($manifestPath)) { return }
 
     $mutexName = 'Global\FFUCurrentRunDownloadTargetsMutex'
     $mutex = New-Object System.Threading.Mutex($false, $mutexName)
+	$locked = $false
 
     try {
-        $null = $mutex.WaitOne()
+		try { $locked = $mutex.WaitOne() }
+		catch [Threading.AbandonedMutexException] {
+			$locked = $true
+			WriteLog 'Recovered an abandoned current-run download manifest lock.'
+		}
 
-        $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        if ($null -eq $manifest) { return }
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop
+		if ($null -eq $manifest) {
+			if ($explicitManifest) { throw "Current-run download manifest is empty: $manifestPath" }
+			return
+		}
+		if ($PSBoundParameters.ContainsKey('ExpectedRunStartUtc') -and $manifest.RunStartUtc -ne $ExpectedRunStartUtc) {
+			throw 'Driver operation does not belong to the current build-run manifest.'
+		}
 
         if ($null -eq $manifest.PSObject.Properties['DownloadTargets']) {
             Add-Member -InputObject $manifest -MemberType NoteProperty -Name DownloadTargets -Value @()
         }
 
         $downloadTargets = @($manifest.DownloadTargets)
-        if ($Destination -notin $downloadTargets) {
-            $downloadTargets += $Destination
-            $manifest.DownloadTargets = $downloadTargets
-            $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-            WriteLog "Registered current-run download target: $Destination"
+		$changed = $false
+		foreach ($target in @($Destination) + @($AdditionalDestinations)) {
+			if (-not [string]::IsNullOrWhiteSpace($target) -and $target -notin $downloadTargets) {
+				$downloadTargets += $target
+				$changed = $true
+				WriteLog "Registered current-run download target: $target"
+			}
         }
+		if ($changed) {
+			$manifest.DownloadTargets = $downloadTargets
+			$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8 -ErrorAction Stop
+		}
     }
     catch {
         WriteLog "Register-CurrentRunDownloadTarget failed for '$Destination': $($_.Exception.Message)"
+		if ($explicitManifest) { throw }
     }
     finally {
-        try { $mutex.ReleaseMutex() | Out-Null } catch {}
+		if ($locked) { $mutex.ReleaseMutex() }
         $mutex.Dispose()
     }
 }

@@ -38,12 +38,8 @@ function Get-HPDriversModelList {
         if (-not (Test-Path -Path $platformListCab) -or ((Get-Date) - (Get-Item $platformListCab).LastWriteTime).TotalDays -gt 7) {
             WriteLog "Downloading $platformListUrl to $platformListCab"
             # Use the private helper function for download with retry
-            Start-BitsTransferWithRetry -Source $platformListUrl -Destination $platformListCab -ErrorAction Stop
+			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -ForceDownload -KeepCab
             WriteLog "PlatformList.cab download complete."
-            # Force extraction if downloaded
-            if (Test-Path -Path $platformListXml) {
-                Remove-Item -Path $platformListXml -Force
-            }
         }
         else {
             WriteLog "Using existing PlatformList.cab found at $platformListCab"
@@ -53,7 +49,7 @@ function Get-HPDriversModelList {
         if (-not (Test-Path -Path $platformListXml)) {
             WriteLog "Expanding $platformListCab to $platformListXml"
             # Use the private helper function for process invocation
-            Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$platformListCab`"", "`"$platformListXml`"") -ErrorAction Stop | Out-Null
+			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -KeepCab
             WriteLog "PlatformList.xml extraction complete."
         }
         else {
@@ -135,7 +131,8 @@ function Save-HPDriversTask {
         [Parameter()]
         [bool]$CompressToWim = $false, # New parameter for compression
         [Parameter()]
-        [bool]$PreserveSourceOnCompress = $false
+        [bool]$PreserveSourceOnCompress = $false,
+		[pscustomobject]$DriverOperationContext
     )
             
     $displayModelName = if (-not [string]::IsNullOrWhiteSpace($DriverItemData.Model)) { $DriverItemData.Model } else { $DriverItemData.Id }
@@ -167,8 +164,12 @@ function Save-HPDriversTask {
     
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Checking HP drivers for $displayModelName..." }
     
+	$modelMutex = $null
+	$modelExisted = $true
     try {
-        # Check for existing drivers
+		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelSpecificFolder -Context $DriverOperationContext
+		$modelExisted = Test-Path -LiteralPath $modelSpecificFolder
+		$retryModel = Test-DriverModelIncomplete -ModelPath $modelSpecificFolder
         $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedModelName -DriversFolder $DriversFolder -Identifier $identifier -ProgressQueue $ProgressQueue
         if ($null -ne $existingDriver) {
             # The return object from Test-ExistingDriver uses 'Model' as the identifier key.
@@ -202,6 +203,7 @@ function Save-HPDriversTask {
         }
 
         # If folder does not exist, proceed with download and extraction
+		Set-DriverModelDownloadState -ModelPath $modelSpecificFolder -State Incomplete -Context $DriverOperationContext
         WriteLog "HP drivers for '$identifier' not found locally. Starting download process..."
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Downloading..." }
 
@@ -212,9 +214,7 @@ function Save-HPDriversTask {
             $platformListUrl = 'https://hpia.hpcloud.hp.com/ref/platformList.cab'
             $platformListCab = Join-Path -Path $hpDriversBaseFolder -ChildPath "platformList.cab"
             # Base folder already checked/created
-            Start-BitsTransferWithRetry -Source $platformListUrl -Destination $platformListCab -ErrorAction Stop
-            if (Test-Path -Path $platformListXml) { Remove-Item -Path $platformListXml -Force }
-            Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$platformListCab`"", "`"$platformListXml`"") -ErrorAction Stop | Out-Null
+			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -DriverOperationContext $DriverOperationContext -ForceDownload -KeepCab
             WriteLog "PlatformList.xml download/extract complete for HP task."
             if (-not (Test-Path -Path $platformListXml)) {
                 throw "Failed to obtain PlatformList.xml for HP driver task."
@@ -343,10 +343,8 @@ function Save-HPDriversTask {
 
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Downloading driver index..." }
         WriteLog "Downloading HP Driver cab from $driverCabUrl to $driverCabFile"
-        Start-BitsTransferWithRetry -Source $driverCabUrl -Destination $driverCabFile -ErrorAction Stop
-        WriteLog "Expanding HP Driver cab $driverCabFile to $driverXmlFile"
         if (Test-Path -Path $driverXmlFile) { Remove-Item -Path $driverXmlFile -Force }
-        Invoke-Process -FilePath "expand.exe" -ArgumentList @("`"$driverCabFile`"", "`"$driverXmlFile`"") -ErrorAction Stop | Out-Null
+		Expand-DriverCatalog -Source $driverCabUrl -CabPath $driverCabFile -XmlPath $driverXmlFile -DriverOperationContext $DriverOperationContext -ForceDownload
 
         WriteLog "Parsing driver XML $driverXmlFile"
         [xml]$driverXmlContent = Get-Content -Path $driverXmlFile -Raw -Encoding UTF8 -ErrorAction Stop
@@ -375,32 +373,32 @@ function Save-HPDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
             WriteLog "$progressMsg URL: $driverUrl"
 
-            if (Test-Path -Path $extractFolder) {
-                WriteLog "Driver already extracted to $extractFolder, skipping download."
-                continue
+            if (-not $retryModel -and (Test-Path -Path $extractFolder)) {
+				try { $null = Test-DriverExtractionOutput -Path $extractFolder -ComponentName "$identifier | $driverName $version"; continue }
+				catch { WriteLog "Re-extracting incomplete HP package '$driverName': $($_.Exception.Message)" }
             }
             if (-not (Test-Path -Path $downloadFolder)) {
                 New-Item -Path $downloadFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
             }
-            WriteLog "Downloading driver to: $driverFilePath"
-            Start-BitsTransferWithRetry -Source $driverUrl -Destination $driverFilePath -ErrorAction Stop
-            WriteLog "Driver downloaded: $driverFilePath"
+			$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $driverFileName -FinalPath $extractFolder -CachePath $driverFilePath -ComponentName "$identifier | $driverName $version"
+			try {
+			WriteLog "Downloading HP driver from '$driverUrl' to '$($driverWorkspace.InputPath)'."
+			Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $driverUrl
             $progressMsg = "$downloadedCount/$totalDrivers Extracting $driverName"
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
-            WriteLog "Creating extraction folder: $extractFolder"
-            New-Item -Path $extractFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
-            $arguments = "/s /e /f `"$extractFolder`"" 
-            WriteLog "Extracting driver $driverFilePath with args: $arguments"
-            WriteLog "Running HP Driver Extraction Command: $driverFilePath $arguments"
-            Invoke-Process -FilePath $driverFilePath -ArgumentList $arguments -ErrorAction Stop | Out-Null
-            # Start-Process -FilePath $driverFilePath -ArgumentList $arguments -Wait -NoNewWindow -ErrorAction Stop | Out-Null
-            WriteLog "Driver extracted to: $extractFolder"
-            Remove-Item -Path $driverFilePath -Force -ErrorAction SilentlyContinue
-            WriteLog "Deleted driver installer: $driverFilePath"
+			$arguments = "/s /e /f `"$($driverWorkspace.OutputPath)`""
+			WriteLog "Running HP Driver Extraction Command: $($driverWorkspace.InputPath) $arguments"
+			$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $arguments -HPSoftPaq
+			Publish-DriverExtractionContent -Workspace $driverWorkspace
+			}
+			finally {
+				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
+			}
         }
 
         Remove-Item -Path $driverCabFile, $driverXmlFile -Force -ErrorAction SilentlyContinue
         WriteLog "Cleaned up driver cab and xml files for $displayModelName"
+		Set-DriverModelDownloadState -ModelPath $modelSpecificFolder -State Complete -Context $DriverOperationContext
         
         $finalStatus = "Completed" 
         if ($CompressToWim) {
@@ -426,8 +424,11 @@ function Save-HPDriversTask {
         $finalStatus = "Error: $($_.Exception.Message.Split([Environment]::NewLine)[0])"
         $successState = $false
         $driverRelativePath = $null # Ensure path is null on error
-        Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelSpecificFolder -Description $identifier
+		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelSpecificFolder -Description $identifier }
     }
+	finally {
+		if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
+	}
             
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
     return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $successState; DriverPath = $driverRelativePath }

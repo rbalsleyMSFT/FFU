@@ -799,6 +799,7 @@ $window.Add_SourceInitialized({
 
 # Register cleanup to reclaim memory and revert LongPathsEnabled setting when the UI window closes
 $window.Add_Closed({
+		Stop-DriverDownloadOperation -State $script:uiState
         # Stop any running build process if the window is closed
         if ($null -ne $script:uiState.Data.currentBuildProcess) {
             WriteLog "UI closing, stopping background build process."

@@ -49,7 +49,8 @@ function Test-DellDriverComponentOsArch {
 function Get-DellCatalogIndex {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)][string]$DriversFolder
+        [Parameter(Mandatory=$true)][string]$DriversFolder,
+		[pscustomobject]$DriverOperationContext
     )
 
     $dellFolder = Join-Path $DriversFolder 'Dell'
@@ -67,9 +68,7 @@ function Get-DellCatalogIndex {
     if ($need) {
         if (Test-Path $cabPath) { Remove-Item $cabPath -Force -ErrorAction SilentlyContinue }
         if (Test-Path $xmlPath) { Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue }
-        Start-BitsTransferWithRetry -Source $url -Destination $cabPath
-        Invoke-Process -FilePath Expand.exe -ArgumentList """$cabPath"" ""$xmlPath""" | Out-Null
-        Remove-Item $cabPath -Force -ErrorAction SilentlyContinue
+		Expand-DriverCatalog -Source $url -CabPath $cabPath -XmlPath $xmlPath -DriverOperationContext $DriverOperationContext -ForceDownload
     }
 
     if (-not (Test-Path $xmlPath)) { throw "Dell CatalogIndexPC XML missing: $xmlPath" }

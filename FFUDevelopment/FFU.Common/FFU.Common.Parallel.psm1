@@ -219,6 +219,7 @@ function Invoke-ParallelProcessing {
                         switch ($make) {
                             'Microsoft' {
                                 $taskResult = Save-MicrosoftDriversTask -DriverItemData $currentItem `
+									-DriverOperationContext $localJobArgs['DriverOperationContext'] `
                                     -DriversFolder $localJobArgs['DriversFolder'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
                                     -Headers $localJobArgs['Headers'] `
@@ -229,6 +230,7 @@ function Invoke-ParallelProcessing {
                             }
                             'Dell' {
                                 $taskResult = Save-DellDriversTask -DriverItemData $currentItem `
+									-DriverOperationContext $localJobArgs['DriverOperationContext'] `
                                     -DriversFolder $localJobArgs['DriversFolder'] `
                                     -WindowsArch $localJobArgs['WindowsArch'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
@@ -238,6 +240,7 @@ function Invoke-ParallelProcessing {
                             }
                             'HP' {
                                 $taskResult = Save-HPDriversTask -DriverItemData $currentItem `
+									-DriverOperationContext $localJobArgs['DriverOperationContext'] `
                                     -DriversFolder $localJobArgs['DriversFolder'] `
                                     -WindowsArch $localJobArgs['WindowsArch'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
@@ -248,6 +251,7 @@ function Invoke-ParallelProcessing {
                             }
                             'Lenovo' {
                                 $taskResult = Save-LenovoDriversTask -DriverItemData $currentItem `
+									-DriverOperationContext $localJobArgs['DriverOperationContext'] `
                                     -DriversFolder $localJobArgs['DriversFolder'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
                                     -Headers $localJobArgs['Headers'] `
@@ -355,6 +359,11 @@ function Invoke-ParallelProcessing {
         }
         return
     }
+
+	if ($TaskType -eq 'DownloadDriverByMake' -and $null -ne $TaskArguments.DriverOperationContext) {
+		$jobs.Name = "FFUDriver_$($TaskArguments.DriverOperationContext.OperationId)"
+		$TaskArguments.DriverOperationContext.ActiveJobId = $jobs.Id
+	}
 
     # Check if any jobs failed to start immediately (e.g., module loading issues within the job)
     $failedJobs = $jobs | Where-Object { $_.State -eq 'Failed' -and $_.JobStateInfo.Reason }

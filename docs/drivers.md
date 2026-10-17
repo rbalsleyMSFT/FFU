@@ -74,6 +74,12 @@ You can multi-select different models within the same make, or mix and match dif
 
 ![1776379241359](image/drivers/1776379241359.png)
 
+### Download and extraction folders
+
+Long driver filenames and nested folders can exceed the [Windows path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation). FFU Builder uses a shorter temporary folder structure under `FFUDrv` during extraction to help stay within that limit, then copies the verified drivers to your **Drivers Folder**.
+
+By default, `FFUDrv` is created at the root of the drive containing `FFUDevelopment` (e.g `C:\FFUDrv`). If you choose a **Drivers Folder** on another local drive, `FFUDrv`uses that drive instead. Temporary package folders are removed after processing.
+
 ## Save Drivers.json
 
 After selecting the drivers you want to download, clicking **Save Drivers.json** will prompt you for a location to save the `Drivers.json` file to. The `Drivers.json` file is responsible for telling `BuildFFUVM.ps1` what drivers to download during the build process.
@@ -124,11 +130,11 @@ Import Drivers.json allows you to import a previously saved Drivers.json file. T
 
 ## Download Selected
 
-Download Selected will download the selected models to the Drivers Folder path (default .\FFUDevelopment\Drivers). Drivers will download the the .\FFUDevelopment\Drivers\Make\Model folder. Download select also interacts with the Compress Driver Model Folder to WIM checkbox which will download and compress the drivers to WIM.
+Download Selected will download the selected models to the Drivers Folder path (default `.\FFUDevelopment\Drivers`). Drivers will download to the `\FFUDevelopment\Drivers\Make\Model` folder. Download selected also interacts with the **Compress Driver Model Folder to WIM** checkbox which will download and compress the drivers to WIM.
 
-If you've previously downloaded a driver model and want to compress it to a WIM, you can check he Compress Driver Model Folder to WIM checkbox and click Download Selected again. This will skip the download and compress the driver folder to a WIM file.
+If you've previously downloaded a driver model and want to compress it to a WIM, you can check he **Compress Driver Model Folder to WIM** checkbox and click **Download Selected** again. This will skip the download and compress the driver folder to a WIM file.
 
-Download Selected leverages BITS and the BITS Priority can be controlled by the BITS Priority drop down on the Build tab. If driver downloads via the UI feel slow, change BITS Priority to Foreground to speed them up.
+Download Selected leverages BITS and the BITS Priority can be controlled by the **BITS Priority** drop down on the **Build** tab. If driver downloads via the UI feel slow, change BITS Priority to Foreground to speed them up.
 
 ## Clear List
 

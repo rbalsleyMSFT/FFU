@@ -927,9 +927,7 @@ function Invoke-DownloadSelectedDrivers {
                 if (Test-Path -Path $dellCabFile) { Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue }
                 if (Test-Path -Path $dellCatalogXML) { Remove-Item -Path $dellCatalogXML -Force -ErrorAction SilentlyContinue }
 
-                Start-BitsTransferWithRetry -Source $catalogUrl -Destination $dellCabFile
-                Invoke-Process -FilePath "Expand.exe" -ArgumentList """$dellCabFile"" ""$dellCatalogXML""" | Out-Null
-                Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue
+				Expand-DriverCatalog -Source $catalogUrl -CabPath $dellCabFile -XmlPath $dellCatalogXML -ForceDownload
                 WriteLog "Dell Catalog prepared successfully."
             }
         }
@@ -955,6 +953,11 @@ function Invoke-DownloadSelectedDrivers {
         PreserveSourceOnCompress = $preserveSource
     }
 
+	$driverOperationContext = $null
+	try {
+		$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $State.FFUDevelopmentPath -DriversFolder $localDriversFolder
+		$State.Data.driverOperationContext = $driverOperationContext
+		$taskArguments['DriverOperationContext'] = $driverOperationContext
     $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
         -ListViewControl $State.Controls.lstDriverModels `
         -IdentifierProperty 'Model' `
@@ -966,6 +969,25 @@ function Invoke-DownloadSelectedDrivers {
         -WindowObject $State.Window `
         -MainThreadLogPath $State.LogFilePath `
         -ThrottleLimit $State.Controls.txtThreads.Text
+	}
+	catch {
+		WriteLog "Driver download operation failed: $($_.Exception.Message)"
+		$Button.IsEnabled = $true
+		$State.Controls.pbOverallProgress.Visibility = 'Collapsed'
+		$State.Controls.txtStatus.Text = 'Driver download failed. See the FFU log.'
+		if ($State.Window.IsVisible) {
+			Show-FFUDialog -Owner $State.Window -Message $_.Exception.Message -Title 'Driver Download Failed' -Icon Error | Out-Null
+		}
+		return
+	}
+	finally {
+		if ($null -ne $driverOperationContext) {
+			try { Remove-DriverDownloadOperation -Context $driverOperationContext }
+			catch { WriteLog "Driver operation cleanup failed; workspace retained: $($_.Exception.Message)" }
+		}
+		$State.Data.driverOperationContext = $null
+	}
+	if ($driverOperationContext.Cancelled) { return }
 
     $overallSuccess = $true
     $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -1132,6 +1154,28 @@ function Invoke-DownloadSelectedDrivers {
         }
         Show-FFUDialog -Owner $State.Window -Message ($messageLines -join [System.Environment]::NewLine) -Title "Driver Download Failed" -Icon Error | Out-Null
     }
+}
+
+function Stop-DriverDownloadOperation {
+	param([Parameter(Mandatory)][psobject]$State)
+
+	if ($null -ne $State.Data.driverOperationContext) {
+		try {
+			$context = $State.Data.driverOperationContext
+			Remove-DriverDownloadOperation -Context $context -Cancel -CancelOnly
+			if ($null -ne $context.ActiveJobId) {
+				$job = Get-Job -Id $context.ActiveJobId -ErrorAction SilentlyContinue
+				if ($null -ne $job) {
+					if ($context.OwnerPid -ne $PID -or $job.Name -ne "FFUDriver_$($context.OperationId)") {
+						throw 'Refusing to stop a driver job owned by another operation.'
+					}
+					Stop-Job -Job $job -ErrorAction Stop
+				}
+			}
+			Remove-DriverDownloadOperation -Context $context -Cancel
+		}
+		catch { WriteLog "Unable to stop/clean the UI driver operation; workspace retained: $($_.Exception.Message)" }
+	}
 }
 
 Export-ModuleMember -Function *
