@@ -49,23 +49,10 @@ function New-DriverOperationContext {
 	)
 
 	$volume = Get-DriverWorkspaceVolume -Path $DriversFolder
-	$operationId = [guid]::NewGuid().ToString('N')
+	$operationId = $null
 	$ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 	$root = "$($volume.DriveLetter):\FFUDrv"
-	$operationPath = Join-Path $root $operationId
-	$context = [pscustomobject]@{
-		OperationId = $operationId
-		OwnerSid = $ownerSid
-		OwnerPid = $PID
-		OwnerStartUtc = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o')
-		StartedUtc = [datetime]::UtcNow.ToString('o')
-		RunStartUtc = $RunStartUtc
-		FFUDevelopmentPath = [IO.Path]::GetFullPath($FFUDevelopmentPath)
-		DriversFolder = [IO.Path]::GetFullPath($DriversFolder)
-		WorkspaceRoot = $root
-		OperationPath = $operationPath
-		CancelPath = Join-Path $operationPath 'cancelled'
-	}
+	$operationPath = $null
 	$mutex = [Threading.Mutex]::new($false, "Global\FFUDriverWorkspaceRoot_$($volume.DriveLetter)")
 	$locked = $false
 	$created = $false
@@ -83,8 +70,30 @@ function New-DriverOperationContext {
 		if ((Get-Item -LiteralPath $root -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint) {
 			throw "Refusing a reparse point in the driver workspace root: $root"
 		}
-		New-Item -Path $operationPath -ItemType Directory -ErrorAction Stop | Out-Null
-		$created = $true
+		for ($attempt = 0; $attempt -lt 5; $attempt++) {
+			$operationId = [guid]::NewGuid().ToString('N').Substring(0, 12)
+			$operationPath = Join-Path $root $operationId
+			if (Test-Path -LiteralPath $operationPath -ErrorAction Stop) { continue }
+			New-Item -Path $operationPath -ItemType Directory -ErrorAction Stop | Out-Null
+			$created = $true
+			break
+		}
+		if (-not $created) {
+			throw "Unable to find an unused driver operation folder under '$root' after 5 attempts."
+		}
+		$context = [pscustomobject]@{
+			OperationId = $operationId
+			OwnerSid = $ownerSid
+			OwnerPid = $PID
+			OwnerStartUtc = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o')
+			StartedUtc = [datetime]::UtcNow.ToString('o')
+			RunStartUtc = $RunStartUtc
+			FFUDevelopmentPath = [IO.Path]::GetFullPath($FFUDevelopmentPath)
+			DriversFolder = [IO.Path]::GetFullPath($DriversFolder)
+			WorkspaceRoot = $root
+			OperationPath = $operationPath
+			CancelPath = Join-Path $operationPath 'cancelled'
+		}
 		$context | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $operationPath 'operation.json') -Encoding UTF8 -ErrorAction Stop
 		$context | Add-Member -NotePropertyMembers @{
 			ActiveJobId = $null
@@ -95,7 +104,7 @@ function New-DriverOperationContext {
 		return $context
 	}
 	catch {
-		WriteLog "Unable to create driver operation '$operationId': $($_.Exception.Message)"
+		WriteLog "Unable to create driver operation '$operationId' under '$root': $($_.Exception.Message)"
 		if ($created -or $rootCreated) {
 			try {
 				if ($created) {
@@ -118,7 +127,7 @@ function New-DriverOperationContext {
 function Confirm-DriverOperationIdentity {
 	param([Parameter(Mandatory)][pscustomobject]$Context)
 
-	if ($Context.OperationId -notmatch '^[a-f0-9]{32}$' -or
+	if ($Context.OperationId -cnotmatch '^[a-f0-9]{12}$' -or
 		$Context.WorkspaceRoot -notmatch '^[A-Za-z]:\\FFUDrv$' -or
 		$Context.OwnerSid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
 		throw 'Invalid driver workspace ownership.'
@@ -1643,7 +1652,7 @@ function Remove-DriverDownloadOperation {
 				throw "Refusing cleanup through a reparse point: $root"
 			}
 			foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction Stop |
-				Where-Object { $_.Name -match '^[a-f0-9]{32}$' })) {
+				Where-Object { $_.Name -cmatch '^[a-f0-9]{12}$' })) {
 				if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing cleanup through a reparse point: $($directory.FullName)" }
 				$markerPath = Join-Path $directory.FullName 'operation.json'
 				$operation = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop
