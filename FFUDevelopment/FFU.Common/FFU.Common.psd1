@@ -69,6 +69,7 @@ Description = 'Common functions shared between FFU Builder UI and the BuildFFUVM
 NestedModules = @('FFU.Common.Drivers.psm1', 
                'FFU.Common.Drivers.Microsoft.psm1',
                'FFU.Common.Drivers.Dell.psm1',
+               'FFU.Common.Drivers.HP.psm1',
                'FFU.Common.Winget.psm1', 
                'FFU.Common.Parallel.psm1',
                'FFU.Common.Cleanup.psm1')
@@ -134,4 +135,3 @@ PrivateData = @{
 # DefaultCommandPrefix = ''
 
 }
-

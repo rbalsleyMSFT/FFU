@@ -1368,8 +1368,6 @@ function Get-HPDrivers {
                 $ProductNames += [PSCustomObject]@{
                     ProductName = $productName.'#text'
                     SystemID    = $node.SystemID
-                    OSReleaseID = $node.OS.OSReleaseIdFileName -replace 'H', 'h'
-                    IsWindows11 = $node.OS.IsWindows11 -contains 'true'
                 }
             }
         }
@@ -1393,10 +1391,6 @@ function Get-HPDrivers {
             WriteLog "Selected model: $ProductName"
             $SystemID = $SelectedProduct.SystemID
             WriteLog "SystemID: $SystemID"
-            $ValidOSReleaseIDs = $SelectedProduct.OSReleaseID
-            WriteLog "Valid OSReleaseIDs: $ValidOSReleaseIDs"
-            $IsWindows11 = $SelectedProduct.IsWindows11
-            WriteLog "IsWindows11 supported: $IsWindows11"
         }
         else {
             WriteLog "Invalid selection. Exiting."
@@ -1412,10 +1406,6 @@ function Get-HPDrivers {
         WriteLog "Selected model: $ProductName"
         $SystemID = $SelectedProduct.SystemID
         WriteLog "SystemID: $SystemID"
-        $ValidOSReleaseIDs = $SelectedProduct.OSReleaseID
-        WriteLog "OSReleaseID: $ValidOSReleaseIDs"
-        $IsWindows11 = $SelectedProduct.IsWindows11
-        WriteLog "IsWindows11: $IsWindows11"
     }
     else {
         WriteLog "No models found matching '$Model'. Exiting."
@@ -1433,73 +1423,17 @@ function Get-HPDrivers {
         exit
     }
 
-    # Validate if WindowsRelease is 11 and there is no IsWindows11 element set to true
-    if ($WindowsRelease -eq 11 -and -not $IsWindows11) {
-        WriteLog "WindowsRelease is set to 11, but no drivers are available for this Windows release. Please set the -WindowsRelease parameter to 10, or provide your own drivers to the FFUDevelopment\Drivers folder."
-        Write-Output "WindowsRelease is set to 11, but no drivers are available for this Windows release. Please set the -WindowsRelease parameter to 10, or provide your own drivers to the FFUDevelopment\Drivers folder."
-        exit
-    }
-
-    # Validate WindowsVersion against OSReleaseID
-    $OSReleaseIDs = $ValidOSReleaseIDs -split ' '
-    $MatchingReleaseID = $OSReleaseIDs | Where-Object { $_ -eq "$WindowsVersion" }
-
-    if (-not $MatchingReleaseID) {
-        Write-Output "The specified WindowsVersion value '$WindowsVersion' is not valid for the selected model. Please select a valid OSReleaseID:"
-        $OSReleaseIDs | ForEach-Object -Begin { $i = 1 } -Process {
-            Write-Output "$i. $_"
-            $i++
-        }
-        $selection = Read-Host "Please select the number corresponding to the correct OSReleaseID"
-        WriteLog "User selected OSReleaseID number: $selection"
-        if ($selection -match '^\d+$' -and [int]$selection -le $OSReleaseIDs.Count) {
-            $WindowsVersion = $OSReleaseIDs[[int]$selection - 1]
-            WriteLog "Selected OSReleaseID: $WindowsVersion"
-        }
-        else {
-            WriteLog "Invalid selection. Exiting."
-            exit
-        }
-    }
-
 	$modelPath = Join-Path $DriversFolder $ProductName
 	$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
 	try {
 	$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
 	Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
-    # Modify WindowsArch for URL
-    $Arch = $WindowsArch -replace "^x", ""
-
-    # Construct the URL to download the driver XML cab for the model
-    # The HPcloud reference site is case sensitve so we must convert the Windowsversion to lower 'h' first
-    $WindowsVersionHP = $WindowsVersion -replace 'H', 'h'
-    $ModelRelease = $SystemID + "_$Arch" + "_$WindowsRelease" + ".0.$WindowsVersionHP"
-    $DriverCabUrl = "https://hpia.hpcloud.hp.com/ref/$SystemID/$ModelRelease.cab"
-    $DriverCabFile = "$DriversFolder\$ModelRelease.cab"
-    $DriverXmlFile = "$DriversFolder\$ModelRelease.xml"
-
-    if (-not (Test-Url -Url $DriverCabUrl)) {
-        WriteLog "HP Driver cab URL is not accessible: $DriverCabUrl Exiting"
-        if ($VerbosePreference -ne 'Continue') {
-            Write-Host "HP Driver cab URL is not accessible: $DriverCabUrl Exiting"
-        }
-        exit
-    }
-
-    # Download and extract the driver XML cab
-    Writelog "Downloading HP Driver cab from $DriverCabUrl to $DriverCabFile"
-	Expand-DriverCatalog -Source $DriverCabUrl -CabPath $DriverCabFile -XmlPath $DriverXmlFile -DriverOperationContext $DriverOperationContext -ForceDownload -KeepCab
-
-    # Parse the extracted XML file to download individual drivers
-    [xml]$DriverXmlContent = Get-Content -Path $DriverXmlFile
-    $baseUrl = "https://ftp.hp.com/pub/softpaq/sp"
+	$platformNode = $PlatformListContent.ImagePal.Platform | Where-Object SystemID -EQ $SystemID | Select-Object -First 1
+	$updates = @(Get-HPLatestDriverUpdates -Platform $platformNode -HPDriversFolder $DriversFolder `
+		-WindowsArch $WindowsArch -WindowsRelease $WindowsRelease -DriverOperationContext $DriverOperationContext)
 
     WriteLog "Downloading drivers for $ProductName"
-    foreach ($update in $DriverXmlContent.ImagePal.Solutions.UpdateInfo) {
-        if ($update.Category -notmatch '^Driver') {
-            continue
-        }
-    
+    foreach ($update in $updates) {
         $Name = $update.Name
         # Fix the name for drivers that contain illegal characters for folder name purposes
         $Name = $Name -replace '[\\\/\:\*\?\"\<\>\|]', '_'
@@ -1530,16 +1464,15 @@ function Get-HPDrivers {
 			Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $DriverUrl
 			$arguments = "/s /e /f `"$($driverWorkspace.OutputPath)`""
 			WriteLog "Extracting HP driver '$($driverWorkspace.InputPath)' with '$arguments'."
-			$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $arguments -HPSoftPaq
+			$null = Expand-HPDriverPackage -Workspace $driverWorkspace -ArgumentList $arguments
 			Publish-DriverExtractionContent -Workspace $driverWorkspace
 		}
 		finally {
 			$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
 		}
     }
-    # Clean up the downloaded cab and xml files
-    Remove-Item -Path $DriverCabFile, $DriverXmlFile, $PlatformListCab, $PlatformListXml -Force
-    WriteLog "Driver cab and xml files deleted"
+    Remove-Item -LiteralPath $PlatformListCab, $PlatformListXml -Force -ErrorAction Stop
+    WriteLog "HP platform catalog files deleted"
 	Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
 	}
 	finally { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }

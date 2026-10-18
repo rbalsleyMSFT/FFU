@@ -2786,6 +2786,7 @@ Export-ModuleMember -Function `
 	New-DriverOperationContext, `
 	New-DriverExtractionWorkspace, `
 	Save-DriverPackageToWorkspace, `
+	Get-DriverPathFreeSpace, `
 	Test-DriverProvisioningPackage, `
 	Resolve-DriverProvisioningPath, `
 	Get-DriverInfOwnedFiles, `

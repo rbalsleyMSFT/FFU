@@ -4,7 +4,7 @@
 .DESCRIPTION
     This module contains the logic specific to handling HP drivers for the FFU Builder UI. It includes functions to:
     - Download and parse the HP PlatformList.xml to generate a list of supported HP computer models.
-    - For a selected model, find the most appropriate driver pack based on the specified Windows release and version, with intelligent fallback logic.
+    - For a selected model, combine the published catalogs for its Windows release and select the latest driver packages for each component.
     - Download the driver pack, extract all individual driver installers, and then extract the driver files from each installer.
     - Optionally, compress the final extracted drivers into a single WIM file for easier deployment.
     These functions are designed to be called by the main UI logic, often in parallel, to efficiently manage driver acquisition.
@@ -124,8 +124,8 @@ function Save-HPDriversTask {
         [Parameter(Mandatory = $true)]
         [ValidateSet(10, 11)]
         [int]$WindowsRelease,
-        [Parameter(Mandatory = $true)]
-        [string]$WindowsVersion, # e.g., 22H2, 23H2, etc.
+        [Parameter()]
+        [string]$WindowsVersion,
         [Parameter()] # Made optional
         [System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue = $null, # Default to null
         [Parameter()]
@@ -240,115 +240,9 @@ function Save-HPDriversTask {
             throw "Model '$displayModelName' (SystemID: $systemIdentifier) not found in PlatformList.xml."
         }
 
-        $systemID = $platformNode.SystemID
-        # --- OS Node Selection with Fallback Logic ---
-        $selectedOSNode = $null
-        $selectedOSVersion = $null
-        $selectedOSRelease = $WindowsRelease # Start with the requested release
-
-        # Complete list of Windows 11 feature-update versions (newest to oldest)
-        $win11Versions = @(
-			"26H2", "25H2", "24H2", "23H2", "22H2", "21H2"
-        )
-
-        # Complete list of Windows 10 feature-update versions (newest to oldest)
-        $win10Versions = @(
-            "22H2", "21H2", "21H1", "20H2", "2004", "1909", "1903", "1809", "1803", "1709", "1703", "1607", "1511", "1507"
-        )
-
-        # Helper function to find a matching OS node for a given release and version list
-        function Find-MatchingOSNode {
-            param(
-                [int]$ReleaseToSearch,
-                [array]$VersionsToSearch
-            )
-            $osNodesForRelease = $platformNode.OS | Where-Object {
-                ($ReleaseToSearch -eq 11 -and $_.IsWindows11 -contains 'true') -or
-                ($ReleaseToSearch -eq 10 -and ($null -eq $_.IsWindows11 -or $_.IsWindows11 -notcontains 'true'))
-            }
-
-            if ($null -eq $osNodesForRelease) { return $null } 
-
-            foreach ($version in $VersionsToSearch) {
-                foreach ($osNode in $osNodesForRelease) {
-                    $releaseIDs = $osNode.OSReleaseIdFileName -replace 'H', 'h' -split ' '
-                    if ($releaseIDs -contains $version.ToLower()) {
-                        return @{ Node = $osNode; Version = $version }
-                    }
-                }
-            }
-            return $null 
-        }
-
-        # 1. Attempt Exact Match (Requested Release and Version)
-        WriteLog "Attempting to find exact match for Win$($WindowsRelease) ($($WindowsVersion))..."
-        $exactMatchResult = Find-MatchingOSNode -ReleaseToSearch $WindowsRelease -VersionsToSearch @($WindowsVersion)
-        if ($null -ne $exactMatchResult) {
-            $selectedOSNode = $exactMatchResult.Node
-            $selectedOSVersion = $exactMatchResult.Version
-            WriteLog "Exact match found: Win$($selectedOSRelease) ($($selectedOSVersion))."
-        }
-        else {
-            WriteLog "Exact match not found for Win$($WindowsRelease) ($($WindowsVersion))."
-            # 2. Fallback: Same Release, Other Versions (Newest First)
-            WriteLog "Attempting fallback within Win$($WindowsRelease)..."
-            $versionsForCurrentRelease = if ($WindowsRelease -eq 11) { $win11Versions } else { $win10Versions }
-            $fallbackVersions = $versionsForCurrentRelease | Where-Object { $_ -ne $WindowsVersion }
-            $fallbackResult = Find-MatchingOSNode -ReleaseToSearch $WindowsRelease -VersionsToSearch $fallbackVersions
-            if ($null -ne $fallbackResult) {
-                $selectedOSNode = $fallbackResult.Node
-                $selectedOSVersion = $fallbackResult.Version
-                WriteLog "Fallback successful within Win$($selectedOSRelease). Using version: $($selectedOSVersion)."
-            }
-            else {
-                WriteLog "Fallback within Win$($WindowsRelease) unsuccessful."
-                # 3. Fallback: Other Release, Versions (Newest First)
-                $otherRelease = if ($WindowsRelease -eq 11) { 10 } else { 11 }
-                WriteLog "Attempting fallback to Win$($otherRelease)..."
-                $versionsForOtherRelease = if ($otherRelease -eq 11) { $win11Versions } else { $win10Versions }
-                $otherFallbackResult = Find-MatchingOSNode -ReleaseToSearch $otherRelease -VersionsToSearch $versionsForOtherRelease
-                if ($null -ne $otherFallbackResult) {
-                    $selectedOSNode = $otherFallbackResult.Node
-                    $selectedOSVersion = $otherFallbackResult.Version
-                    $selectedOSRelease = $otherRelease 
-                    WriteLog "Fallback successful to Win$($selectedOSRelease). Using version: $($selectedOSVersion)."
-                }
-                else {
-                    WriteLog "Fallback to Win$($otherRelease) also failed."
-                }
-            }
-        }
-
-        if ($null -eq $selectedOSNode) {
-            $allAvailableVersions = @()
-            if ($platformNode.OS) {
-                foreach ($osNode in $platformNode.OS) {
-                    $osRel = if ($osNode.IsWindows11 -contains 'true') { 11 } else { 10 }
-                    $relIDs = $osNode.OSReleaseIdFileName -replace 'H', 'h' -split ' '
-                    foreach ($id in $relIDs) { $allAvailableVersions += "Win$($osRel) $($id)" }
-                }
-            }
-            $availableVersionsString = ($allAvailableVersions | Select-Object -Unique) -join ', '
-            if ([string]::IsNullOrWhiteSpace($availableVersionsString)) { $availableVersionsString = "None" }
-            throw "Could not find any suitable OS driver pack for model '$displayModelName' matching requested or fallback versions (Win$($WindowsRelease) $WindowsVersion). Available: $availableVersionsString"
-        }
-
-        $osReleaseIdFileName = $selectedOSNode.OSReleaseIdFileName -replace 'H', 'h' 
-        WriteLog "Using SystemID: $systemID and OS Info: Win$($selectedOSRelease) ($($selectedOSVersion)) for '$displayModelName'"
-        $archSuffix = $WindowsArch -replace "^x", "" 
-        $modelRelease = "$($systemID)_$($archSuffix)_$($selectedOSRelease).0.$($selectedOSVersion.ToLower())"
-        $driverCabUrl = "https://hpia.hpcloud.hp.com/ref/$systemID/$modelRelease.cab"
-        $driverCabFile = Join-Path -Path $hpDriversBaseFolder -ChildPath "$modelRelease.cab" # Store in base HP folder
-        $driverXmlFile = Join-Path -Path $hpDriversBaseFolder -ChildPath "$modelRelease.xml" # Store in base HP folder
-
-        if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Downloading driver index..." }
-        WriteLog "Downloading HP Driver cab from $driverCabUrl to $driverCabFile"
-        if (Test-Path -Path $driverXmlFile) { Remove-Item -Path $driverXmlFile -Force }
-		Expand-DriverCatalog -Source $driverCabUrl -CabPath $driverCabFile -XmlPath $driverXmlFile -DriverOperationContext $DriverOperationContext -ForceDownload
-
-        WriteLog "Parsing driver XML $driverXmlFile"
-        [xml]$driverXmlContent = Get-Content -Path $driverXmlFile -Raw -Encoding UTF8 -ErrorAction Stop
-        $updates = $driverXmlContent.ImagePal.Solutions.UpdateInfo | Where-Object { $_.Category -match '^Driver' }
+		if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Selecting latest HP drivers..." }
+		$updates = @(Get-HPLatestDriverUpdates -Platform $platformNode -HPDriversFolder $hpDriversBaseFolder `
+			-WindowsArch $WindowsArch -WindowsRelease $WindowsRelease -DriverOperationContext $DriverOperationContext)
         $totalDrivers = ($updates | Measure-Object).Count
         $downloadedCount = 0
         WriteLog "Found $totalDrivers driver updates for $displayModelName."
@@ -388,7 +282,7 @@ function Save-HPDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $progressMsg }
 			$arguments = "/s /e /f `"$($driverWorkspace.OutputPath)`""
 			WriteLog "Running HP Driver Extraction Command: $($driverWorkspace.InputPath) $arguments"
-			$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $arguments -HPSoftPaq
+			$null = Expand-HPDriverPackage -Workspace $driverWorkspace -ArgumentList $arguments
 			Publish-DriverExtractionContent -Workspace $driverWorkspace
 			}
 			finally {
@@ -396,8 +290,6 @@ function Save-HPDriversTask {
 			}
         }
 
-        Remove-Item -Path $driverCabFile, $driverXmlFile -Force -ErrorAction SilentlyContinue
-        WriteLog "Cleaned up driver cab and xml files for $displayModelName"
 		Set-DriverModelDownloadState -ModelPath $modelSpecificFolder -State Complete -Context $DriverOperationContext
         
         $finalStatus = "Completed" 

@@ -870,14 +870,6 @@ function Invoke-DownloadSelectedDrivers {
         $State.Controls.txtStatus.Text = "Driver download cancelled."
         return
     }
-    if (($selectedDrivers | Where-Object { $_.Make -eq 'HP' }) -and $null -ne $State.Controls.cmbWindowsVersion -and $null -eq $State.Controls.cmbWindowsVersion.SelectedItem) {
-        Show-FFUDialog -Owner $State.Window -Message "HP drivers are selected. Please select a Windows Version." -Title "Missing Information" -Icon Warning | Out-Null
-        $Button.IsEnabled = $true
-        $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
-        $State.Controls.txtStatus.Text = "Driver download cancelled."
-        return
-    }
-
     $localDriversFolder = $State.Controls.txtDriversFolder.Text
     $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
     $localWindowsReleaseDisplay = $State.Controls.cmbWindowsRelease.SelectedItem.Display
