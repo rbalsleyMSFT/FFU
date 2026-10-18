@@ -211,7 +211,9 @@ function Get-DriverPathFreeSpace {
 		$drive = New-PSDrive -Name $driveName -PSProvider FileSystem -Root $root -ErrorAction Stop
 		$freeBytes = $drive.Free
 		if ($null -eq $freeBytes) { throw "Cannot determine free disk space for '$root'." }
-		WriteLog "Driver volume '$root': $freeBytes bytes free; $RequiredBytes known bytes required."
+		if ($RequiredBytes -gt 0) {
+			WriteLog "Driver volume '$root': $freeBytes bytes free; $RequiredBytes known bytes required."
+		}
 		if ($freeBytes -le 0 -or $freeBytes -lt $RequiredBytes) {
 			throw "Insufficient disk space on '$root': $freeBytes bytes free; $RequiredBytes bytes required."
 		}
