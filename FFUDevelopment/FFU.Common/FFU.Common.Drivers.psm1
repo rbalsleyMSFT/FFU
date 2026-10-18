@@ -71,6 +71,7 @@ function New-DriverOperationContext {
 	$operationId = [guid]::NewGuid().ToString('N')
 	$ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 	$root = "$($volume.DriveLetter):\FFUDrv"
+	$rootMarker = Join-Path $root 'ffu-workspace.json'
 	$operationPath = Join-Path $root $operationId
 	$context = [pscustomobject]@{
 		OperationId = $operationId
@@ -88,15 +89,16 @@ function New-DriverOperationContext {
 	$mutex = [Threading.Mutex]::new($false, "Global\FFUDriverWorkspaceRoot_$($volume.DriveLetter)")
 	$locked = $false
 	$created = $false
+	$rootCreated = $false
 	try {
 		try { $locked = $mutex.WaitOne() }
 		catch [Threading.AbandonedMutexException] {
 			$locked = $true
 			WriteLog 'Recovered an abandoned driver workspace-root lock; validating ownership before reuse.'
 		}
-		$rootMarker = Join-Path $root 'ffu-workspace.json'
 		if (-not (Test-Path -LiteralPath $root)) {
 			New-Item -Path $root -ItemType Directory -ErrorAction Stop | Out-Null
+			$rootCreated = $true
 			Set-DriverWorkspaceAccess -Path $root -OwnerSid $ownerSid
 			@{ Type = 'FFUDriverWorkspace'; OwnerSid = $ownerSid } | ConvertTo-Json |
 				Set-Content -LiteralPath $rootMarker -Encoding UTF8 -ErrorAction Stop
@@ -128,11 +130,21 @@ function New-DriverOperationContext {
 	}
 	catch {
 		WriteLog "Unable to create driver operation '$operationId': $($_.Exception.Message)"
-		if ($created) {
+		if ($created -or $rootCreated) {
 			try {
-				$markerPath = Join-Path $operationPath 'operation.json'
-				if (Test-Path -LiteralPath $markerPath -PathType Leaf) { Remove-Item -LiteralPath $markerPath -ErrorAction Stop }
-				if (-not (Get-ChildItem -LiteralPath $operationPath -Force -ErrorAction Stop)) { [IO.Directory]::Delete($operationPath) }
+				if ($created) {
+					$markerPath = Join-Path $operationPath 'operation.json'
+					if (Test-Path -LiteralPath $markerPath -PathType Leaf) { Remove-Item -LiteralPath $markerPath -ErrorAction Stop }
+					if (-not (Get-ChildItem -LiteralPath $operationPath -Force -ErrorAction Stop)) { [IO.Directory]::Delete($operationPath) }
+				}
+				if ($rootCreated -and -not (Test-Path -LiteralPath $rootMarker)) {
+					if ((Get-Item -LiteralPath $root -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint -or
+						(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)) {
+						throw "New driver workspace root contains unexpected content: $root"
+					}
+					[IO.Directory]::Delete($root)
+				}
+				else { Remove-DriverWorkspaceRoot -Path $root }
 			}
 			catch { WriteLog "Unable to clean the new driver operation '$operationPath': $($_.Exception.Message)" }
 		}
@@ -1618,6 +1630,64 @@ function Save-DriverCatalogFile {
 	}
 }
 
+function Remove-DriverWorkspaceRoot {
+	[CmdletBinding()]
+	param([Parameter(Mandatory)][string]$Path)
+
+	$driveLetter = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path)).Substring(0, 1)
+	$mutex = [Threading.Mutex]::new($false, "Global\FFUDriverWorkspaceRoot_$driveLetter")
+	$locked = $false
+	try {
+		try { $locked = $mutex.WaitOne() }
+		catch [Threading.AbandonedMutexException] {
+			$locked = $true
+			WriteLog 'Recovered an abandoned driver workspace-root lock; validating ownership before cleanup.'
+		}
+		if (-not (Test-Path -LiteralPath $Path)) { return }
+		$root = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+		if (-not $root.PSIsContainer -or $root.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+			throw "Refusing cleanup of an invalid driver workspace root: $Path"
+		}
+		$markerPath = Join-Path $Path 'ffu-workspace.json'
+		$markerFile = Get-Item -LiteralPath $markerPath -Force -ErrorAction Stop
+		if ($markerFile.PSIsContainer -or $markerFile.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+			throw "Refusing cleanup of an invalid driver workspace marker: $markerPath"
+		}
+		$markerContent = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop
+		$marker = $markerContent | ConvertFrom-Json -ErrorAction Stop
+		$acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+		if ($marker.Type -ne 'FFUDriverWorkspace' -or -not $acl.AreAccessRulesProtected -or
+			$marker.OwnerSid -ne $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value) {
+			throw "The staging root is not a private FFU-owned directory: $Path"
+		}
+		if (@(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop).Count -ne 1) { return }
+		Remove-Item -LiteralPath $markerPath -Force -ErrorAction Stop
+		try { [IO.Directory]::Delete($Path) }
+		catch {
+			$deletionError = $_
+			try {
+				# Keep a retained root usable when its final deletion fails.
+				$remainingRoot = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+				if (-not $remainingRoot.PSIsContainer -or $remainingRoot.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+					throw "Refusing to restore ownership through an invalid driver workspace root: $Path"
+				}
+				$markerContent | Out-File -LiteralPath $markerPath -Encoding UTF8 -NoClobber -NoNewline -ErrorAction Stop
+			}
+			catch { WriteLog "Unable to restore driver workspace marker '$markerPath': $($_.Exception.Message)" }
+			throw $deletionError
+		}
+		WriteLog "Removed unused driver workspace root '$Path'."
+	}
+	catch {
+		WriteLog "Driver workspace root cleanup failed for '$Path': $($_.Exception.Message)"
+		throw
+	}
+	finally {
+		if ($locked) { $mutex.ReleaseMutex() }
+		$mutex.Dispose()
+	}
+}
+
 function Remove-DriverDownloadOperation {
 	[CmdletBinding()]
 	param(
@@ -1652,12 +1722,16 @@ function Remove-DriverDownloadOperation {
 				}
 			}
 		}
+		if (-not $CancelOnly) { Remove-DriverWorkspaceRoot -Path $root }
 		return
 	}
 	Confirm-DriverOperationIdentity -Context $Context
 	$operationPath = $Context.OperationPath
 	if ($Cancel) { $Context | Add-Member -NotePropertyName Cancelled -NotePropertyValue $true -Force }
-	if (-not (Test-Path -LiteralPath $operationPath)) { return }
+	if (-not (Test-Path -LiteralPath $operationPath)) {
+		if (-not $CancelOnly) { Remove-DriverWorkspaceRoot -Path $Context.WorkspaceRoot }
+		return
+	}
 	if ($Cancel) {
 		Set-Content -LiteralPath $Context.CancelPath -Value 'Cancelled' -Encoding UTF8 -ErrorAction Stop
 		Stop-DriverWorkspaceProcess -Context $Context
@@ -1672,7 +1746,10 @@ function Remove-DriverDownloadOperation {
 			throw "Driver workspaces could not be cleaned. Keep '$operationPath' and see the FFU log."
 		}
 	}
-	if (-not (Test-Path -LiteralPath $operationPath)) { return }
+	if (-not (Test-Path -LiteralPath $operationPath)) {
+		Remove-DriverWorkspaceRoot -Path $Context.WorkspaceRoot
+		return
+	}
 	Confirm-DriverOperationIdentity -Context $Context
 	$items = @(Get-ChildItem -LiteralPath $operationPath -Recurse -Force -ErrorAction Stop)
 	if ($items | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { throw "Refusing cleanup of driver reparse points: $operationPath" }
@@ -1688,6 +1765,7 @@ function Remove-DriverDownloadOperation {
 	if (Test-Path -LiteralPath $Context.CancelPath) { Remove-Item -LiteralPath $Context.CancelPath -ErrorAction Stop }
 	Remove-Item -LiteralPath (Join-Path $operationPath 'operation.json') -ErrorAction Stop
 	[IO.Directory]::Delete($operationPath)
+	Remove-DriverWorkspaceRoot -Path $Context.WorkspaceRoot
 }
 
 function Set-DriverModelDownloadState {
