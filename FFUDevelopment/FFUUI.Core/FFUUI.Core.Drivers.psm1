@@ -238,11 +238,6 @@ function Get-DriverDisplayName {
 
     if ($null -ne $rawModels) {
         foreach ($rawModel in $rawModels) {
-            # Filter out Chromebooks for Lenovo before standardization
-            if ($SelectedMake -eq 'Lenovo' -and $rawModel.Model -match 'Chromebook') {
-                WriteLog "Get-ModelsForMake: Skipping Chromebook model: $($rawModel.Model)"
-                continue
-            }
             $standardizedModels.Add((ConvertTo-StandardizedDriverModel -RawDriverObject $rawModel -Make $SelectedMake -State $State))
         }
     }

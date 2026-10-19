@@ -1490,57 +1490,13 @@ function Get-LenovoDrivers {
 		[pscustomobject]$DriverOperationContext
     )
 
-    function Get-LenovoPSREF {
-        param (
-            [string]$ModelName
-        )
-
-        $normalizedModelName = $ModelName.Trim()
-        $searchType = if ($normalizedModelName.Length -eq 4) { 'MT' } elseif ($normalizedModelName.Length -eq 10) { 'Model' } else { 'Normal' }
-        $cacheBuster = ([System.Random]::new().NextDouble()).ToString('0.################', [Globalization.CultureInfo]::InvariantCulture)
-        $url = "https://psref.lenovo.com/api/search/DefinitionFilterAndSearch/Suggest?kw=$([uri]::EscapeDataString($normalizedModelName))&limit=6&IsPreviewProduct=true&SearchType=$searchType&t=$cacheBuster"
-        WriteLog "Querying Lenovo PSREF API for model: $normalizedModelName"
-        $requestHeaders = Get-LenovoPSREFRequestHeaders -Method GET -Uri $url -Headers $Headers -UserAgent $UserAgent
-        $originalVerbosePreference = $VerbosePreference
-        try {
-            $VerbosePreference = 'SilentlyContinue'
-            $jsonResponse = Invoke-RestMethod -Uri $url -Headers $requestHeaders -UserAgent $UserAgent -ErrorAction Stop
-        }
-        finally {
-            $VerbosePreference = $originalVerbosePreference
-        }
-        WriteLog "Lenovo PSREF API query complete."
-
-        $products = @()
-        foreach ($item in $jsonResponse.data) {
-            if (-not [string]::IsNullOrEmpty($item.MachineType) -and -not [string]::IsNullOrEmpty($item.ProductName)) {
-                $productName = $item.ProductName
-                $machineTypes = $item.MachineType -split '\s*/\s*'
-
-                foreach ($machineType in $machineTypes) {
-                    if ($machineType -eq $normalizedModelName) {
-                        WriteLog "Model name entered is a matching machine type"
-                        $products = @()
-                        $products += [pscustomobject]@{
-                            ProductName = $productName
-                            MachineType = $machineType
-                        }
-                        WriteLog "Product Name: $productName Machine Type: $machineType"
-                        return $products
-                    }
-                    $products += [pscustomobject]@{
-                        ProductName = $productName
-                        MachineType = $machineType
-                    }
-                }
-            }
-        }
-
-        return , $products
-    }
-    
-    # Parse the Lenovo PSREF page for the model
-    $machineTypes = Get-LenovoPSREF -ModelName $Model
+	$normalizedModelName = $Model.Trim()
+	$machineTypes = @(Get-LenovoPSREFModels -ModelSearchTerm $normalizedModelName -Headers $Headers -UserAgent $UserAgent)
+	$exactMachineType = $machineTypes | Where-Object { $_.MachineType -eq $normalizedModelName } | Select-Object -First 1
+	if ($null -ne $exactMachineType) {
+		WriteLog "Model name entered is a matching machine type: $($exactMachineType.MachineType)"
+		$machineTypes = @($exactMachineType)
+	}
     if ($machineTypes.ProductName.Count -eq 0) {
         WriteLog "No machine types found for model: $Model"
         WriteLog "Enter a valid model or machine type in the -model parameter"

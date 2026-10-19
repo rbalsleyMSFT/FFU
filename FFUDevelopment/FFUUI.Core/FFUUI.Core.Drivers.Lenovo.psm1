@@ -7,70 +7,25 @@
 
 # Function to get the list of Lenovo models using the PSREF API
 function Get-LenovoDriversModelList {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$ModelSearchTerm, # User input for model/machine type
-        [Parameter(Mandatory = $true)]
-        [hashtable]$Headers,
-        [Parameter(Mandatory = $true)]
-        [string]$UserAgent
-    )
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$ModelSearchTerm,
+		[Parameter(Mandatory = $true)]
+		[hashtable]$Headers,
+		[Parameter(Mandatory = $true)]
+		[string]$UserAgent
+	)
 
-    $normalizedSearchTerm = $ModelSearchTerm.Trim()
-    $searchType = if ($normalizedSearchTerm.Length -eq 4) { 'MT' } elseif ($normalizedSearchTerm.Length -eq 10) { 'Model' } else { 'Normal' }
-    $cacheBuster = ([System.Random]::new().NextDouble()).ToString('0.################', [Globalization.CultureInfo]::InvariantCulture)
-    $url = "https://psref.lenovo.com/api/search/DefinitionFilterAndSearch/Suggest?kw=$([uri]::EscapeDataString($normalizedSearchTerm))&limit=6&IsPreviewProduct=true&SearchType=$searchType&t=$cacheBuster"
-    $models = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-    try {
-        WriteLog "Querying Lenovo PSREF API for model/machine type: $normalizedSearchTerm"
-        $requestHeaders = Get-LenovoPSREFRequestHeaders -Method GET -Uri $url -Headers $Headers -UserAgent $UserAgent
-        $originalVerbosePreference = $VerbosePreference
-        try {
-            $VerbosePreference = 'SilentlyContinue'
-            $jsonResponse = Invoke-RestMethod -Uri $url -Headers $requestHeaders -UserAgent $UserAgent -ErrorAction Stop
-        }
-        finally {
-            $VerbosePreference = $originalVerbosePreference
-        }
-        WriteLog "PSREF API query complete."
-
-        if ($null -ne $jsonResponse.data -and $jsonResponse.data.Count -gt 0) {
-            foreach ($item in $jsonResponse.data) {
-                $productName = $item.ProductName
-                $machineTypes = $item.MachineType -split '\s*/\s*' # Split if multiple machine types are listed
-
-                foreach ($machineTypeRaw in $machineTypes) {
-                    $machineType = $machineTypeRaw.Trim()
-                    # Only add if machine type is not empty
-                    if (-not [string]::IsNullOrWhiteSpace($machineType)) {
-                        # Create the combined display string
-                        $displayModel = "$productName ($machineType)"
-                        # Add each combination as a separate entry
-                        $models.Add([PSCustomObject]@{
-                                Make        = 'Lenovo'
-                                Model       = $displayModel
-                                ProductName = $productName 
-                                MachineType = $machineType 
-                            })
-                    }
-                    else {
-                        WriteLog "Skipping entry for product '$productName' due to missing machine type."
-                    }
-                }
-            }
-            WriteLog "Found $($models.Count) potential model/machine type combinations for '$ModelSearchTerm'."
-        }
-        else {
-            WriteLog "No models found matching '$ModelSearchTerm' in Lenovo PSREF."
-        }
-    }
-    catch {
-        WriteLog "Error querying Lenovo PSREF API: $($_.Exception.Message)"
-        throw "Lenovo PSREF model search failed: $($_.Exception.Message)"
-    }
-    return $models
+	$models = @(Get-LenovoPSREFModels -ModelSearchTerm $ModelSearchTerm -Headers $Headers -UserAgent $UserAgent)
+	foreach ($model in $models) {
+		[pscustomobject]@{
+			Make        = 'Lenovo'
+			Model       = "$($model.ProductName) ($($model.MachineType))"
+			ProductName = $model.ProductName
+			MachineType = $model.MachineType
+		}
+	}
 }
 # Function to download and extract drivers for a specific Lenovo model (Background Task)
 function Save-LenovoDriversTask {

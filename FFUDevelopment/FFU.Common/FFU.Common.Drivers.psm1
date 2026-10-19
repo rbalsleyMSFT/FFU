@@ -2442,6 +2442,125 @@ function Get-LenovoPSREFRequestHeaders {
     return $requestHeaders
 }
 
+function Get-LenovoPSREFModels {
+	[CmdletBinding()]
+	[OutputType([pscustomobject])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$ModelSearchTerm,
+		[Parameter(Mandatory = $true)]
+		[hashtable]$Headers,
+		[Parameter(Mandatory = $true)]
+		[string]$UserAgent
+	)
+
+	try {
+		$normalizedSearchTerm = $ModelSearchTerm.Trim()
+		if ([string]::IsNullOrWhiteSpace($normalizedSearchTerm)) {
+			throw 'Enter a Lenovo model name or machine type.'
+		}
+		$searchType = if ($normalizedSearchTerm.Length -eq 4) { 'MT' } elseif ($normalizedSearchTerm.Length -eq 10) { 'Model' } else { 'Normal' }
+		$requestedLimit = 6
+		$expectedTotal = $null
+		$retriedChangedTotal = $false
+
+		while ($true) {
+			$cacheBuster = ([System.Random]::new().NextDouble()).ToString('0.################', [Globalization.CultureInfo]::InvariantCulture)
+			$url = "https://psref.lenovo.com/api/search/DefinitionFilterAndSearch/Suggest?kw=$([uri]::EscapeDataString($normalizedSearchTerm))&limit=$requestedLimit&IsPreviewProduct=true&SearchType=$searchType&t=$cacheBuster"
+			WriteLog "Querying Lenovo PSREF for '$normalizedSearchTerm' with a limit of $requestedLimit results."
+			$originalVerbosePreference = $VerbosePreference
+			try {
+				$VerbosePreference = 'SilentlyContinue'
+				$requestHeaders = Get-LenovoPSREFRequestHeaders -Method GET -Uri $url -Headers $Headers -UserAgent $UserAgent
+				$jsonResponse = Invoke-RestMethod -Uri $url -Headers $requestHeaders -UserAgent $UserAgent -ErrorAction Stop
+			}
+			finally {
+				$VerbosePreference = $originalVerbosePreference
+			}
+
+			$responseCode = 0
+			if ($null -eq $jsonResponse -or
+				-not [int]::TryParse([string]$jsonResponse.code, [ref]$responseCode) -or $responseCode -ne 1) {
+				throw 'Lenovo PSREF returned an unsuccessful model search response.'
+			}
+			$reportedTotal = 0
+			if (-not [int]::TryParse([string]$jsonResponse.total, [ref]$reportedTotal) -or $reportedTotal -lt 0) {
+				throw 'Lenovo PSREF returned an invalid search result total.'
+			}
+			$dataProperty = $jsonResponse.PSObject.Properties['data']
+			if ($null -eq $dataProperty -or ($null -ne $dataProperty.Value -and $dataProperty.Value -isnot [array])) {
+				throw 'Lenovo PSREF returned invalid search result data.'
+			}
+			$responseData = @()
+			if ($null -ne $dataProperty.Value) { $responseData = @($dataProperty.Value) }
+			WriteLog "Lenovo PSREF returned $($responseData.Count) of $reportedTotal search results."
+
+			# PSREF totals include accessories, before machine types are expanded.
+			if ($responseData.Count -eq $reportedTotal) { break }
+			if ($null -eq $expectedTotal -and $reportedTotal -gt $requestedLimit -and $responseData.Count -lt $reportedTotal) {
+				$expectedTotal = $reportedTotal
+				$requestedLimit = $reportedTotal
+				continue
+			}
+			if ($null -ne $expectedTotal -and $reportedTotal -ne $expectedTotal -and -not $retriedChangedTotal) {
+				WriteLog "Lenovo PSREF result total changed from $expectedTotal to $reportedTotal; retrying the complete search."
+				$expectedTotal = $reportedTotal
+				$requestedLimit = $reportedTotal
+				$retriedChangedTotal = $true
+				continue
+			}
+			throw "Lenovo PSREF returned an incomplete search response ($($responseData.Count) of $reportedTotal results). Try the search again."
+		}
+
+		$models = [System.Collections.Generic.List[pscustomobject]]::new()
+		$modelIdentifiers = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		$excludedCount = 0
+		foreach ($item in $responseData) {
+			if ($null -eq $item) { $excludedCount++; continue }
+			if ($item -isnot [pscustomobject]) { throw 'Lenovo PSREF returned an invalid product record.' }
+			$productNameProperty = $item.PSObject.Properties['ProductName']
+			$machineTypeProperty = $item.PSObject.Properties['MachineType']
+			if ($null -eq $productNameProperty -or $productNameProperty.Value -isnot [string] -or
+				[string]::IsNullOrWhiteSpace($productNameProperty.Value) -or
+				$null -eq $machineTypeProperty -or $machineTypeProperty.Value -isnot [string]) {
+				$excludedCount++
+				continue
+			}
+			$productName = $productNameProperty.Value.Trim()
+			$isChromebook = $false
+			foreach ($propertyName in @('ProductName', 'MarketingName', 'ProductLine')) {
+				$property = $item.PSObject.Properties[$propertyName]
+				if ($null -ne $property -and $property.Value -is [string] -and
+					$property.Value -match 'Chromebook|Chrome\s*OS|\bChrome\b') {
+					$isChromebook = $true
+					break
+				}
+			}
+			if ($isChromebook) {
+				WriteLog "Skipping Lenovo Chromebook model: $productName"
+				continue
+			}
+			$machineTypes = @($machineTypeProperty.Value -split '\s*/\s*' |
+				ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+			if ($machineTypes.Count -eq 0) { $excludedCount++; continue }
+			foreach ($machineType in $machineTypes) {
+				if ($modelIdentifiers.Add("$($productName)::$machineType")) {
+					$models.Add([pscustomobject]@{
+						ProductName = $productName
+						MachineType = $machineType
+					})
+				}
+			}
+		}
+		WriteLog "Found $($models.Count) Lenovo model/machine type combinations for '$normalizedSearchTerm'. Excluded $excludedCount search results without a product name or machine type."
+		return $models.ToArray()
+	}
+	catch {
+		WriteLog "Error querying Lenovo PSREF API: $($_.Exception.Message)"
+		throw "Lenovo PSREF model search failed: $($_.Exception.Message)"
+	}
+}
+
 function Get-LenovoPSREFToken {
 
     <# 
@@ -2827,4 +2946,5 @@ Export-ModuleMember -Function `
     Update-DriverMappingJson, `
     Test-ExistingDriver, `
     Get-LenovoPSREFRequestHeaders, `
+	Get-LenovoPSREFModels, `
     Get-LenovoPSREFToken
