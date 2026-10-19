@@ -2537,7 +2537,6 @@ function Get-LenovoPSREFModels {
 				}
 			}
 			if ($isChromebook) {
-				WriteLog "Skipping Lenovo Chromebook model: $productName"
 				continue
 			}
 			$machineTypes = @($machineTypeProperty.Value -split '\s*/\s*' |
