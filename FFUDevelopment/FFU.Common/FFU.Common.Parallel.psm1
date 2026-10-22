@@ -254,6 +254,8 @@ function Invoke-ParallelProcessing {
 									-DriverOperationContext $localJobArgs['DriverOperationContext'] `
                                     -DriversFolder $localJobArgs['DriversFolder'] `
                                     -WindowsRelease $localJobArgs['WindowsRelease'] `
+                                    -WindowsArch $localJobArgs['WindowsArch'] `
+                                    -WindowsVersion $localJobArgs['WindowsVersion'] `
                                     -Headers $localJobArgs['Headers'] `
                                     -UserAgent $localJobArgs['UserAgent'] `
                                     -ProgressQueue $localProgressQueue `

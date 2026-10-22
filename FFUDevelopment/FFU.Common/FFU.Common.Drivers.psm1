@@ -1504,14 +1504,14 @@ function Stop-DriverWorkspaceProcess {
 
 function Remove-DriverExtractionWorkspace {
 	[CmdletBinding()]
-	param([Parameter(Mandatory)][pscustomobject]$Workspace, [switch]$StopProcesses)
+	param([Parameter(Mandatory)][pscustomobject]$Workspace, [switch]$StopProcesses, [switch]$Discard)
 
 	try {
 		Confirm-DriverWorkspaceOwnership -Workspace $Workspace
 		if ($StopProcesses) { Stop-DriverWorkspaceProcess -Context $Workspace.Context }
 		$cancelled = $Workspace.Context.Cancelled -or (Test-Path -LiteralPath $Workspace.Context.CancelPath)
 		if (Test-Path -LiteralPath $Workspace.Path) {
-			if (-not $Workspace.Published -or $Workspace.PreserveLogs) {
+			if ((-not $Workspace.Published -and -not $Discard) -or $Workspace.PreserveLogs) {
 				$logs = @(Get-ChildItem -LiteralPath $Workspace.Path -Filter *.log -File -Recurse -Force -ErrorAction Stop)
 				foreach ($logFile in $logs) {
 					Save-DriverExtractionLog -Workspace $Workspace -LogPath $logFile.FullName -Label $Workspace.OriginalFileName
@@ -1521,7 +1521,7 @@ function Remove-DriverExtractionWorkspace {
 				}
 				$Workspace.PreserveLogs = $false
 			}
-			if (-not $Workspace.Published -and -not $cancelled -and $Workspace.RetainInstallerOnFailure -and $Workspace.InputComplete) {
+			if (-not $Workspace.Published -and -not $Discard -and -not $cancelled -and $Workspace.RetainInstallerOnFailure -and $Workspace.InputComplete) {
 				if (-not (Test-Path -LiteralPath $Workspace.CachePath -PathType Leaf)) {
 					[IO.Directory]::CreateDirectory((Split-Path $Workspace.CachePath -Parent)) | Out-Null
 					Copy-Item -LiteralPath $Workspace.InputPath -Destination $Workspace.CachePath -ErrorAction Stop
@@ -1748,13 +1748,82 @@ function Test-DriverModelIncomplete {
 	return (Test-Path -LiteralPath "$([IO.Path]::GetFullPath($ModelPath).TrimEnd('\')).ffu-incomplete" -ErrorAction Stop)
 }
 
+function Export-DriverEmbeddedCabinets {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)][string]$Path,
+		[Parameter(Mandatory)][string]$DestinationPath,
+		[switch]$All
+	)
+
+	$inputStream = [IO.File]::OpenRead($Path)
+	$cabinets = [Collections.Generic.List[string]]::new()
+	try {
+		$buffer = [byte[]]::new(64KB)
+		$header = [byte[]]::new(36)
+		while ($inputStream.Position -lt $inputStream.Length) {
+			$blockStart = $inputStream.Position
+			$count = $inputStream.Read($buffer, 0, $buffer.Length)
+			if ($count -lt 4) { break }
+			$text = [Text.Encoding]::ASCII.GetString($buffer, 0, $count)
+			$matchOffset = $text.IndexOf('MSCF', [StringComparison]::Ordinal)
+			$cabinetOffset = -1L
+			$cabinetLength = 0L
+			while ($matchOffset -ge 0) {
+				$offset = $blockStart + $matchOffset
+				if ($offset + $header.Length -le $inputStream.Length) {
+					$inputStream.Position = $offset
+					$inputStream.ReadExactly($header, 0, $header.Length)
+					$length = [long][BitConverter]::ToUInt32($header, 8)
+					$fileOffset = [BitConverter]::ToUInt32($header, 16)
+					if ([BitConverter]::ToUInt32($header, 4) -eq 0 -and
+						[BitConverter]::ToUInt32($header, 12) -eq 0 -and [BitConverter]::ToUInt32($header, 20) -eq 0 -and
+						$header[24] -eq 3 -and $header[25] -eq 1 -and
+						[BitConverter]::ToUInt16($header, 26) -gt 0 -and [BitConverter]::ToUInt16($header, 28) -gt 0 -and
+						$fileOffset -ge $header.Length -and $fileOffset -lt $length -and $offset + $length -le $inputStream.Length) {
+						$cabinetOffset = $offset
+						$cabinetLength = $length
+						break
+					}
+				}
+				$matchOffset = $text.IndexOf('MSCF', $matchOffset + 4, [StringComparison]::Ordinal)
+			}
+			if ($cabinetOffset -lt 0) {
+				$inputStream.Position = $blockStart + $count - 3
+				continue
+			}
+			$null = Get-DriverPathFreeSpace -Path $DestinationPath -RequiredBytes $cabinetLength
+			$name = if ($cabinets.Count -eq 0) { 'payload.cab' } else { "payload$($cabinets.Count).cab" }
+			$cabinetPath = Join-Path $DestinationPath $name
+			$inputStream.Position = $cabinetOffset
+			$cabinetStream = [IO.File]::Create($cabinetPath)
+			try {
+				$remaining = $cabinetLength
+				while ($remaining -gt 0) {
+					$count = $inputStream.Read($buffer, 0, [int][Math]::Min($remaining, $buffer.Length))
+					if ($count -eq 0) { throw "Unexpected end of embedded cabinet in '$Path'." }
+					$cabinetStream.Write($buffer, 0, $count)
+					$remaining -= $count
+				}
+			}
+			finally { $cabinetStream.Dispose() }
+			$cabinets.Add($cabinetPath)
+			if (-not $All) { break }
+		}
+	}
+	finally { $inputStream.Dispose() }
+	if ($cabinets.Count -eq 0) { WriteLog "No valid embedded Windows cabinet found in '$Path'." }
+	return $cabinets.ToArray()
+}
+
 function Invoke-DriverMsiExtraction {
 	[CmdletBinding()]
 	param(
 		[Parameter(Mandatory)][pscustomobject]$Workspace,
 		[System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue,
 		[string]$Identifier,
-		[ValidateSet('Driver', 'SurfaceDockWmi')][string]$ContentType = 'Driver'
+		[ValidateSet('Driver', 'SurfaceDockWmi')][string]$ContentType = 'Driver',
+		[ValidatePattern('^[A-Z_][A-Z0-9_]*$')][string]$RootDirectoryProperty = 'TARGETDIR'
 	)
 
 	$mutex = [Threading.Mutex]::new($false, 'Global\FFUDevelopmentMSIExtractionMutex')
@@ -1769,6 +1838,7 @@ function Invoke-DriverMsiExtraction {
 				WriteLog 'Recovered an abandoned FFU MSI lock; checking system MSI activity before extraction.'
 			}
 		}
+		$emptyAttempts = 0
 		while ($true) {
 			Confirm-DriverOperationActive -Context $Workspace.Context
 			try {
@@ -1786,7 +1856,7 @@ function Invoke-DriverMsiExtraction {
 			}
 			if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $Identifier -Status 'Extracting MSI...' }
 			$msiLogPath = Join-Path $Workspace.DiagnosticsPath 'msi.log'
-			$arguments = "/a `"$($Workspace.InputPath)`" /qn TARGETDIR=`"$($Workspace.OutputPath)`" /L*v `"$msiLogPath`""
+			$arguments = "/a `"$($Workspace.InputPath)`" /qn $RootDirectoryProperty=`"$($Workspace.OutputPath)`" /L*v `"$msiLogPath`""
 			try {
 				$null = Invoke-DriverExtractionProcess -Workspace $Workspace -FilePath 'msiexec.exe' -ArgumentList $arguments
 			}
@@ -1807,6 +1877,11 @@ function Invoke-DriverMsiExtraction {
 				$payloadItems = @(Get-ChildItem -LiteralPath $Workspace.OutputPath -File -Recurse -ErrorAction Stop |
 					Where-Object { $_.Extension -notin @('.log', '.msi') })
 				if ($payloadItems.Count -gt 0) { throw }
+				$emptyAttempts++
+				if ($emptyAttempts -ge 2) {
+					WriteLog "MSI extraction produced no useful driver content after 2 completed attempts for '$($Workspace.OriginalFileName)'."
+					throw
+				}
 				WriteLog "MSI extraction has no useful driver content; retrying '$($Workspace.OriginalFileName)'."
 				Reset-DriverExtractionOutput -Workspace $Workspace
 				Start-Sleep -Seconds 5
@@ -2939,6 +3014,7 @@ Export-ModuleMember -Function `
 	Set-DriverModelDownloadState, `
 	Test-DriverModelIncomplete, `
 	Invoke-DriverMsiExtraction, `
+	Export-DriverEmbeddedCabinets, `
 	Expand-DriverCatalog, `
 	Save-DriverCatalogFile, `
     Compress-DriverFolderToWim, `

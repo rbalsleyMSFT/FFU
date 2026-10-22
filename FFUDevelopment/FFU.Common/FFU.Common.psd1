@@ -70,6 +70,7 @@ NestedModules = @('FFU.Common.Drivers.psm1',
                'FFU.Common.Drivers.Microsoft.psm1',
                'FFU.Common.Drivers.Dell.psm1',
                'FFU.Common.Drivers.HP.psm1',
+               'FFU.Common.Drivers.Lenovo.psm1',
                'FFU.Common.Winget.psm1', 
                'FFU.Common.Parallel.psm1',
                'FFU.Common.Cleanup.psm1')

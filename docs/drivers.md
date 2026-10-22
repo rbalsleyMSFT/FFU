@@ -74,17 +74,6 @@ You can multi-select different models within the same make, or mix and match dif
 
 ![1776379241359](image/drivers/1776379241359.png)
 
-### HP driver selection
-
-HP publishes separate driver catalogs for different Windows versions. A new version's catalog can contain only a few drivers, while earlier catalogs contain other drivers needed for the same model. This created an issue where if you were building a 26H2 FFU for an HP device, HP may have only offered a handful of drivers instead of all of the drivers expected. 
-
-FFU Builder combines all catalogs HP lists for your model's System ID, selected Windows release (Windows 10 or Windows 11), and architecture. For example, selecting Windows 11 includes the model's published Windows 11 catalogs across all feature updates. If HP lists no catalogs for that Windows release and architecture, FFU Builder uses the other Windows release and records the fallback in the log.
-
-FFU Builder selects the latest available packages for each component. It downloads each selected SoftPaq once and follows HP's replacement information to remove superseded packages. When that information is incomplete, it checks HP's component metadata to identify packages that newer drivers replace. Packages with the same name can support different hardware, so a package is kept when it still provides the latest driver for another component.
-
-This behavior applies to **Download Selected**, builds using **Drivers.json**, and single-model command-line downloads. 
-
-Existing downloaded folders and WIMs continue to be reused. To replace a previous download that contains only a subset of drivers, remove that model's folder and its WIM file, if present, then download the model again.
 
 ### Download and extraction folders
 
@@ -102,8 +91,6 @@ C:\FFUDrv\736382af9b53\bb49f5e67b81\
 By default, `FFUDrv` is created at the root of the drive containing `FFUDevelopment` (e.g `C:\FFUDrv`). If you choose a **Drivers Folder** on another local drive, `FFUDrv` uses that drive instead. Temporary package folders are removed after processing.
 
 FFU Builder also removes `FFUDrv` after the last driver operation completes, fails, or is cancelled. This applies to UI downloads and command-line builds/downloads. The folder is kept while another operation is using it or files remain that cleanup cannot remove, such as an extraction log that cannot be saved. Cleanup errors are recorded in the FFU log.
-
-If an HP SoftPaq's self-extractor reports compression error `0x80300113`, FFU Builder tries extracting its embedded Windows cabinet using Windows' built-in tools. The fallback must finish successfully and produce driver INF files before the package is accepted.
 
 ## Save Drivers.json
 

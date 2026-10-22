@@ -297,60 +297,12 @@ function Expand-HPDriverPackage {
 		WriteLog "HP SoftPaq '$($Workspace.OriginalFileName)' reported compression error 0x80300113. Checking for an embedded Windows cabinet."
 	}
 
-	# A SoftPaq can contain the text MSCF in its resources before the actual cabinet.
-	$inputStream = [IO.File]::OpenRead($Workspace.InputPath)
-	$cabinetPath = Join-Path (Split-Path $Workspace.InputPath -Parent) 'payload.cab'
-	try {
-		$cabinetOffset = -1L
-		$cabinetLength = 0L
-		$buffer = [byte[]]::new(64KB)
-		$header = [byte[]]::new(36)
-		while ($inputStream.Position -lt $inputStream.Length -and $cabinetOffset -lt 0) {
-			$blockStart = $inputStream.Position
-			$count = $inputStream.Read($buffer, 0, $buffer.Length)
-			if ($count -lt 4) { break }
-			$text = [Text.Encoding]::ASCII.GetString($buffer, 0, $count)
-			$matchOffset = $text.IndexOf('MSCF', [StringComparison]::Ordinal)
-			while ($matchOffset -ge 0) {
-				$offset = $blockStart + $matchOffset
-				if ($offset + $header.Length -le $inputStream.Length) {
-					$inputStream.Position = $offset
-					$inputStream.ReadExactly($header, 0, $header.Length)
-					$length = [long][BitConverter]::ToUInt32($header, 8)
-					$fileOffset = [BitConverter]::ToUInt32($header, 16)
-					if ([BitConverter]::ToUInt32($header, 4) -eq 0 -and
-						[BitConverter]::ToUInt32($header, 12) -eq 0 -and [BitConverter]::ToUInt32($header, 20) -eq 0 -and
-						$header[24] -eq 3 -and $header[25] -eq 1 -and
-						[BitConverter]::ToUInt16($header, 26) -gt 0 -and [BitConverter]::ToUInt16($header, 28) -gt 0 -and
-						$fileOffset -ge $header.Length -and $fileOffset -lt $length -and $offset + $length -le $inputStream.Length) {
-						$cabinetOffset = $offset
-						$cabinetLength = $length
-						break
-					}
-				}
-				$matchOffset = $text.IndexOf('MSCF', $matchOffset + 4, [StringComparison]::Ordinal)
-			}
-			if ($cabinetOffset -lt 0) { $inputStream.Position = $blockStart + $count - 3 }
-		}
-		if ($cabinetOffset -lt 0) {
-			WriteLog "HP SoftPaq '$($Workspace.OriginalFileName)' has no valid embedded Windows cabinet for extraction fallback."
-			throw $extractionError
-		}
-		$null = Get-DriverPathFreeSpace -Path $Workspace.Path -RequiredBytes $cabinetLength
-		$inputStream.Position = $cabinetOffset
-		$cabinetStream = [IO.File]::Create($cabinetPath)
-		try {
-			$remaining = $cabinetLength
-			while ($remaining -gt 0) {
-				$count = $inputStream.Read($buffer, 0, [int][Math]::Min($remaining, $buffer.Length))
-				if ($count -eq 0) { throw "Unexpected end of HP cabinet in '$($Workspace.OriginalFileName)'." }
-				$cabinetStream.Write($buffer, 0, $count)
-				$remaining -= $count
-			}
-		}
-		finally { $cabinetStream.Dispose() }
+	$cabinets = @(Export-DriverEmbeddedCabinets -Path $Workspace.InputPath -DestinationPath (Split-Path $Workspace.InputPath -Parent))
+	if ($cabinets.Count -eq 0) {
+		WriteLog "HP SoftPaq '$($Workspace.OriginalFileName)' has no valid embedded Windows cabinet for extraction fallback."
+		throw $extractionError
 	}
-	finally { $inputStream.Dispose() }
+	$cabinetPath = $cabinets[0]
 
 	Reset-DriverExtractionOutput -Workspace $Workspace
 	$result = Invoke-DriverExtractionProcess -Workspace $Workspace -FilePath 'expand.exe' `

@@ -1487,6 +1487,7 @@ function Get-LenovoDrivers {
         [Parameter()]
         [ValidateSet(10, 11)]
         [int]$WindowsRelease,
+		[string]$WindowsVersion,
 		[pscustomobject]$DriverOperationContext
     )
 
@@ -1525,133 +1526,19 @@ function Get-LenovoDrivers {
     }
     
 
-    # Construct the catalog URL based on Windows release and machine type
-    $ModelRelease = $machineType + "_Win" + $WindowsRelease
-    $CatalogUrl = "https://download.lenovo.com/catalog/$ModelRelease.xml"
-    WriteLog "Lenovo Driver catalog URL: $CatalogUrl"
-
-    if (-not (Test-Url -Url $catalogUrl)) {
-        Write-Error "Lenovo Driver catalog URL is not accessible: $catalogUrl"
-        WriteLog "Lenovo Driver catalog URL is not accessible: $catalogUrl"
-        exit
-    }
-
-    # Create the folder structure for the Lenovo drivers
-    $driversFolder = "$DriversFolder\$Make"
-    if (-not (Test-Path -Path $DriversFolder)) {
-        WriteLog "Creating Drivers folder: $DriversFolder"
-        New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
-        WriteLog "Drivers folder created"
-    }
-
-	$modelPath = Join-Path $DriversFolder $Model
+	$makeDriversPath = Join-Path $DriversFolder 'Lenovo'
+	if (-not (Test-Path -LiteralPath $makeDriversPath)) {
+		$null = New-Item -Path $makeDriversPath -ItemType Directory -Force
+	}
+	$modelPath = Join-Path $makeDriversPath $Model
 	$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
 	try {
-	$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
-	Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
-    # Download and parse the Lenovo catalog XML
-    $LenovoCatalogXML = "$DriversFolder\$ModelRelease.xml"
-    WriteLog "Downloading $catalogUrl to $LenovoCatalogXML"
-	Save-DriverCatalogFile -Source $catalogUrl -Path $LenovoCatalogXML -DriverOperationContext $DriverOperationContext
-    WriteLog "Download Complete"
-    $xmlContent = [xml](Get-Content -Path $LenovoCatalogXML)
-
-    WriteLog "Parsing Lenovo catalog XML"
-    # Process each package in the catalog
-    foreach ($package in $xmlContent.packages.package) {
-        $packageUrl = $package.location
-        $category = $package.category
-
-        #If category starts with BIOS, skip the package
-        if ($category -like 'BIOS*') {
-            continue
-        }
-
-        #If category name is 'Motherboard Devices Backplanes core chipset onboard video PCIe switches', truncate to 'Motherboard Devices' to shorten path
-        if ($category -eq 'Motherboard Devices Backplanes core chipset onboard video PCIe switches') {
-            $category = 'Motherboard Devices'
-        }
-
-        $packageName = [System.IO.Path]::GetFileName($packageUrl)
-        #Remove the filename from the $packageURL
-        $baseURL = $packageUrl -replace $packageName, "" 
-
-        # Download the package XML
-        $packageXMLPath = "$DriversFolder\$packageName"
-        WriteLog "Downloading $category package XML $packageUrl to $packageXMLPath"
-		Save-DriverCatalogFile -Source $packageUrl -Path $packageXMLPath -DriverOperationContext $DriverOperationContext
-
-        # Load the package XML content
-        $packageXmlContent = [xml](Get-Content -Path $packageXMLPath)
-        $packageType = $packageXmlContent.Package.PackageType.type
-        $packageTitle = $packageXmlContent.Package.title.InnerText
-
-        # Fix the name for drivers that contain illegal characters for folder name purposes
-        $packageTitle = $packageTitle -replace '[\\\/\:\*\?\"\<\>\|]', '_'
-
-        # If ' - ' is in the package title, truncate the title to the first part of the string.
-        $packageTitle = $packageTitle -replace ' - .*', ''
-
-        #Check if packagetype = 2. If packagetype is not 2, skip the package. $packageType is a System.Xml.XmlElement.
-        #This filters out Firmware, BIOS, and other non-INF drivers
-        if ($packageType -ne 2) {
-            Remove-Item -Path $packageXMLPath -Force
-            continue
-        }
-
-        # Extract the driver file name and the extract command
-        $driverFileName = $packageXmlContent.Package.Files.Installer.File.Name
-        $extractCommand = $packageXmlContent.Package.ExtractCommand
-
-        #if extract command is empty/missing, skip the package
-        if (!($extractCommand)) {
-            Remove-Item -Path $packageXMLPath -Force
-            continue
-        }
-
-        # Create the download URL and folder structure
-        $driverUrl = $baseUrl + $driverFileName
-        $downloadFolder = "$DriversFolder\$Model\$Category\$packageTitle"
-        $driverFilePath = Join-Path -Path $downloadFolder -ChildPath $driverFileName
-
-        if (-not (Test-Path -Path $downloadFolder)) {
-            WriteLog "Creating download folder: $downloadFolder"
-            New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
-            WriteLog "Download folder created"
-        }
-
-        $extractFolder = $downloadFolder + "\" + $driverFileName.TrimEnd($driverFileName[-4..-1])
-		if (-not $retryModel -and (Test-Path -LiteralPath $extractFolder -PathType Container)) {
-			try {
-				$null = Test-DriverExtractionOutput -Path $extractFolder -RequireInf -AllowProvisioningPackage -ComponentName "$Model | $packageTitle"
-				Remove-Item -LiteralPath $packageXMLPath -Force -ErrorAction Stop
-				continue
-			}
-			catch { WriteLog "Re-extracting incomplete Lenovo package '$packageTitle': $($_.Exception.Message)" }
-		}
-		$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $driverFileName -FinalPath $extractFolder -CachePath $driverFilePath -ComponentName "$Model | $packageTitle" -RetainInstallerOnFailure
-		try {
-			Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $driverUrl
-			$modifiedExtractCommand = $extractCommand.Replace('%PACKAGEPATH%', "`"$($driverWorkspace.OutputPath)`"", [StringComparison]::OrdinalIgnoreCase)
-			WriteLog "Extracting Lenovo driver '$($driverWorkspace.InputPath)' with '$modifiedExtractCommand'."
-			$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $modifiedExtractCommand -EnableInnoLogging
-			Publish-DriverExtractionContent -Workspace $driverWorkspace -RequireInf -AllowProvisioningPackage
-		}
-		finally {
-			$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
-		}
-
-        # Delete the package XML file after extraction
-        WriteLog "Deleting package XML file: $packageXMLPath"
-        Remove-Item -Path $packageXMLPath -Force
-        WriteLog "Package XML file deleted"
-    }
-
-    #Delete the catalog XML file after processing
-    WriteLog "Deleting catalog XML file: $LenovoCatalogXML"
-    Remove-Item -Path $LenovoCatalogXML -Force
-    WriteLog "Catalog XML file deleted"
-	Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
+		$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
+		Save-LenovoDriverPackages -MachineType $machineType -ModelPath $modelPath -DriversFolder $makeDriversPath `
+			-WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsVersion $WindowsVersion `
+			-Identifier $Model -DriverOperationContext $DriverOperationContext -RetryIncomplete:$retryModel -RetainInstallerOnFailure
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
 	}
 	finally { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
 }
@@ -7429,7 +7316,7 @@ elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
         }
         if ($make -eq 'Lenovo') {
             WriteLog 'Getting Lenovo drivers'
-            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -DriverOperationContext $driverOperationContext
+            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -WindowsVersion $WindowsVersion -DriverOperationContext $driverOperationContext
             WriteLog 'Getting Lenovo drivers completed successfully'
         }
         if ($make -eq 'Dell') {
