@@ -311,6 +311,142 @@ function New-DriverExtractionWorkspace {
 	}
 }
 
+function Get-DriverIgnoreDownloadErrors {
+	param([Parameter(Mandatory)][psobject]$DriverItem)
+
+	$property = $DriverItem.PSObject.Properties['IgnoreDriverDownloadErrors']
+	if ($null -eq $property) { return $false }
+	if ($property.Value -isnot [bool]) {
+		$model = if ($DriverItem.PSObject.Properties['Model']) { $DriverItem.Model } else { $DriverItem.Name }
+		throw "IgnoreDriverDownloadErrors must be a JSON Boolean (true or false) for model '$model'."
+	}
+	return $property.Value
+}
+
+function Get-DriverDownloadHttpStatus {
+	param(
+		[Parameter(Mandatory)][Exception]$Exception,
+		[string]$Source,
+		[string]$ErrorId
+	)
+
+	$details = [pscustomobject]@{ StatusCode = $null; IsProbe = $false }
+	while ($null -ne $Exception) {
+		if ($Exception.Data.Contains('DriverHttpStatus')) { return $Exception.Data['DriverHttpStatus'] }
+		if ($Exception.PSObject.Properties['Response'] -and $null -ne $Exception.Response -and
+			$Exception.Response.PSObject.Properties['StatusCode']) {
+			$details.StatusCode = [int]$Exception.Response.StatusCode
+		}
+		elseif ($Exception.Data.Contains('StatusCode')) {
+			$details.StatusCode = [int]$Exception.Data['StatusCode']
+		}
+		elseif (($Exception.HResult -band [int]0xffff0000) -eq [int]0x80190000) {
+			$details.StatusCode = $Exception.HResult -band 0xffff
+		}
+		if ($null -ne $details.StatusCode) { break }
+		$Exception = $Exception.InnerException
+	}
+
+	# BITS can lose the HTTP status while formatting a COM error.
+	if ($null -eq $details.StatusCode -and $Source -match '^https?://' -and
+		$ErrorId -match '^StartBitsTransferCOMException(?:,|$)') {
+		try {
+			$response = Invoke-WebRequest -Uri $Source -Method Head -SkipHttpErrorCheck -TimeoutSec 30 -ErrorAction Stop
+			$details.StatusCode = [int]$response.StatusCode
+			$details.IsProbe = $true
+			WriteLog "HTTP availability check for failed driver download '$Source': $($details.StatusCode)."
+		}
+		catch {
+			WriteLog "Unable to confirm the HTTP status of failed driver download '$Source': $($_.Exception.Message)"
+		}
+	}
+	return $details
+}
+
+function Resolve-DriverPackageFailure {
+	param(
+		[Parameter(Mandatory)][Management.Automation.ErrorRecord]$ErrorRecord,
+		[Parameter(Mandatory)][bool]$IgnoreErrors,
+		[Parameter(Mandatory)][pscustomobject]$Workspace,
+		[Parameter(Mandatory)][string]$Make,
+		[Parameter(Mandatory)][string]$Model,
+		[Parameter(Mandatory)][string]$DriverName,
+		[Parameter(Mandatory)][string]$Source,
+		[hashtable]$ValidationParameters = @{}
+	)
+
+	Confirm-DriverOperationActive -Context $Workspace.Context
+	$exception = $ErrorRecord.Exception
+	$stage = $null
+	$exitCode = $null
+	$httpStatusCode = $null
+	$hResult = $null
+	while ($null -ne $exception) {
+		if ($exception -is [OperationCanceledException]) { throw $ErrorRecord }
+		$hResult = '0x{0:X8}' -f ($exception.HResult -band 0xffffffffL)
+		if ($null -eq $stage -and $exception.Data.Contains('DriverFailureStage')) { $stage = $exception.Data['DriverFailureStage'] }
+		if ($null -eq $exitCode -and $exception.Data.Contains('ExitCode')) { $exitCode = $exception.Data['ExitCode'] }
+		if ($null -eq $httpStatusCode -and $exception.Data.Contains('DriverHttpStatus')) { $httpStatusCode = $exception.Data['DriverHttpStatus'].StatusCode }
+		$exception = $exception.InnerException
+	}
+	if (-not $IgnoreErrors -or $stage -notin @('Download', 'Extraction')) { throw $ErrorRecord }
+
+	# Existing output must also be verified before accepting a partial model.
+	if ((Test-Path -LiteralPath $Workspace.FinalPath -PathType Container) -and
+		@(Get-ChildItem -LiteralPath $Workspace.FinalPath -File -Recurse -Force -ErrorAction Stop).Count -gt 0) {
+		try {
+			$null = Test-DriverExtractionOutput -Path $Workspace.FinalPath -ComponentName $Workspace.ComponentName @ValidationParameters
+		}
+		catch {
+			throw [Exception]::new("Cannot ignore the $stage failure for '$DriverName': $($ErrorRecord.Exception.Message) Existing output is not usable: $($_.Exception.Message)", $_.Exception)
+		}
+	}
+	$failure = [pscustomobject]@{
+		Make = $Make
+		Model = $Model
+		DriverName = $DriverName
+		FileName = $Workspace.OriginalFileName
+		Source = $Source
+		Stage = $stage
+		Message = $ErrorRecord.Exception.Message
+		ExitCode = $exitCode
+		HttpStatusCode = $httpStatusCode
+		HResult = $hResult
+		ErrorId = $ErrorRecord.FullyQualifiedErrorId
+	}
+	WriteLog "WARNING: Skipping driver '$DriverName' ($($failure.FileName)) for '$Make / $Model' after a $stage failure. URL: $Source. $($ErrorRecord.Exception.ToString())"
+	return $failure
+}
+
+function Get-DriverFailureSummary {
+	param(
+		[Parameter(Mandatory)][array]$FailedDrivers,
+		[switch]$Concise
+	)
+
+	$lines = [Collections.Generic.List[string]]::new()
+	if ($Concise) { $lines.Add('Some drivers were skipped:') }
+	else { $lines.Add('Some drivers failed to download or extract and were skipped:') }
+	foreach ($group in ($FailedDrivers | Group-Object Make, Model)) {
+		$lines.Add('')
+		$lines.Add("$($group.Group[0].Make) / $($group.Group[0].Model)")
+		foreach ($failure in $group.Group) {
+			if ($Concise) {
+				$lines.Add("- $($failure.DriverName) [$($failure.Stage)]")
+			}
+			else {
+				$lines.Add("- $($failure.DriverName) ($($failure.FileName)) [$($failure.Stage)]: $($failure.Message)")
+				$lines.Add("  URL: $($failure.Source)")
+			}
+		}
+	}
+	if (-not $Concise) {
+		$lines.Add('')
+		$lines.Add('Missing drivers can affect boot, networking, or input. Review the drivers before deployment.')
+	}
+	return $lines -join [Environment]::NewLine
+}
+
 function Save-DriverPackageToWorkspace {
 	[CmdletBinding()]
 	param([Parameter(Mandatory)][pscustomobject]$Workspace, [Parameter(Mandatory)][string]$Source, [switch]$ForceDownload)
@@ -327,12 +463,33 @@ function Save-DriverPackageToWorkspace {
 	else {
 		$null = Get-DriverPathFreeSpace -Path $Workspace.Path
 		WriteLog 'Driver expanded size is not known; free-space checks do not guarantee enough space for extraction.'
-		Start-BitsTransferWithRetry -Source $Source -Destination $Workspace.InputPath -ErrorAction Stop
+		try {
+			Start-BitsTransferWithRetry -Source $Source -Destination $Workspace.InputPath -ErrorAction Stop
+		}
+		catch [OperationCanceledException] { throw }
+		catch {
+			Confirm-DriverOperationActive -Context $Workspace.Context
+			$details = Get-DriverDownloadHttpStatus -Exception $_.Exception -Source $Source -ErrorId $_.FullyQualifiedErrorId
+			$message = "Failed to download '$($Workspace.OriginalFileName)' from '$Source'."
+			if ($details.StatusCode -ge 400 -and $details.StatusCode -le 599) {
+				$reason = ([Net.HttpStatusCode]$details.StatusCode).ToString() -creplace '(?<=[a-z])(?=[A-Z])', ' '
+				$label = if ($details.IsProbe) { 'HTTP availability check returned' } else { 'HTTP' }
+				$message += " $label $($details.StatusCode) ($reason)."
+			}
+			$message += " Transfer error: $($_.Exception.Message)"
+			$downloadException = [Exception]::new($message, $_.Exception)
+			$downloadException.Data['DriverFailureStage'] = 'Download'
+			$downloadException.Data['DriverHttpStatus'] = $details
+			WriteLog $message
+			throw $downloadException
+		}
 	}
 	Confirm-DriverOperationActive -Context $Workspace.Context
 	if (-not (Test-Path -LiteralPath $Workspace.InputPath -PathType Leaf) -or
 		(Get-Item -LiteralPath $Workspace.InputPath -ErrorAction Stop).Length -eq 0) {
-		throw "Driver download produced no input file: $($Workspace.InputPath)"
+		$downloadException = [Exception]::new("Driver download produced no input file for '$Source': $($Workspace.InputPath)")
+		$downloadException.Data['DriverFailureStage'] = 'Download'
+		throw $downloadException
 	}
 	$Workspace.InputComplete = $true
 }
@@ -1276,14 +1433,25 @@ function Invoke-DriverExtractionProcess {
 	WriteLog "Extracting '$($Workspace.ComponentName)' ($($Workspace.OriginalFileName)). Command: `"$FilePath`" $ArgumentList"
 	$null = Get-DriverPathFreeSpace -Path $Workspace.Path
 	$successExitCodes = if ($HPSoftPaq) { @(0, 1168) } else { @(0) }
-	$processResult = Invoke-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait $true -CheckExitCode -SuccessExitCodes $successExitCodes -ErrorAction Stop
+	try {
+		$processResult = Invoke-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait $true -CheckExitCode -SuccessExitCodes $successExitCodes -ErrorAction Stop
+	}
+	catch [OperationCanceledException] { throw }
+	catch {
+		Confirm-DriverOperationActive -Context $Workspace.Context
+		$_.Exception.Data['DriverFailureStage'] = 'Extraction'
+		throw
+	}
 	Confirm-DriverOperationActive -Context $Workspace.Context
 	if ($null -eq $processResult -or $null -eq $processResult.ExitCode) {
-		throw "Driver extraction did not return a process exit code: $FilePath"
+		$exception = [Exception]::new("Driver extraction did not return a process exit code: $FilePath")
+		$exception.Data['DriverFailureStage'] = 'Extraction'
+		throw $exception
 	}
 	if ($processResult.ExitCode -notin $successExitCodes) {
 		$exception = [Exception]::new("Driver extraction exited with code $($processResult.ExitCode): $FilePath")
 		$exception.Data['ExitCode'] = $processResult.ExitCode
+		$exception.Data['DriverFailureStage'] = 'Extraction'
 		throw $exception
 	}
 	if ($HPSoftPaq -and $processResult.ExitCode -eq 1168) {
@@ -1365,6 +1533,7 @@ function Test-DriverExtractionOutput {
 	}
 	catch {
 		WriteLog "Driver output validation failed: $($_.Exception.Message)"
+		$_.Exception.Data['DriverFailureStage'] = 'Extraction'
 		throw
 	}
 }
@@ -1956,7 +2125,7 @@ function Compress-DriverFolderToWim {
 
             # Call Invoke-Process (assumed to be available from FFUUI.Core.psm1 or another imported module)
             # Invoke-Process is expected to throw an exception for non-zero exit codes.
-            Invoke-Process -FilePath "dism.exe" -ArgumentList $dismArgs -Wait $true
+			$null = Invoke-Process -FilePath "dism.exe" -ArgumentList $dismArgs -Wait $true -CheckExitCode -ErrorAction Stop
             
             WriteLog "Successfully compressed '$SourceFolderPath' to '$DestinationWimPath' using dism.exe."
             
@@ -2329,6 +2498,7 @@ function Test-ExistingDriver {
             Status     = $status
             Success    = $true
             DriverPath = $wimRelativePath
+			FailedDrivers = @()
         }
     }
 
@@ -2344,6 +2514,7 @@ function Test-ExistingDriver {
                 Status     = $status
                 Success    = $true
                 DriverPath = $driverRelativePath
+				FailedDrivers = @()
             }
         }
         else {
@@ -2994,6 +3165,10 @@ function Get-LenovoPSREFToken {
 # --------------------------------------------------------------------------
 
 Export-ModuleMember -Function `
+	Get-DriverIgnoreDownloadErrors, `
+	Get-DriverDownloadHttpStatus, `
+	Resolve-DriverPackageFailure, `
+	Get-DriverFailureSummary, `
 	New-DriverOperationContext, `
 	New-DriverExtractionWorkspace, `
 	Save-DriverPackageToWorkspace, `

@@ -133,6 +133,8 @@ function Save-DellDriversTask {
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $make
     $modelPath = Join-Path -Path $makeDriversPath -ChildPath $sanitizedModelName
     $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedModelName
+	$failedDrivers = [Collections.Generic.List[object]]::new()
+	$successfulPackageCount = 0
 
     # Helper: safe folder removal
     function Remove-SafeFolder {
@@ -150,6 +152,7 @@ function Save-DellDriversTask {
 	$modelMutex = $null
 	$modelExisted = $true
     try {
+		$ignoreErrors = Get-DriverIgnoreDownloadErrors -DriverItem $DriverItemData
 		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
 		$modelExisted = Test-Path -LiteralPath $modelPath
 		$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
@@ -164,7 +167,7 @@ function Save-DellDriversTask {
                 $srcPath = Join-Path $makeDriversPath $sanitizedModelName
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Compressing existing...' }
                 try {
-                    $null = Compress-DriverFolderToWim -SourceFolderPath $srcPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription "Drivers for $modelDisplay" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+					if (-not (Compress-DriverFolderToWim -SourceFolderPath $srcPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription "Drivers for $modelDisplay" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop)) { throw 'Driver folder compression failed. See the FFU log.' }
                     $existing.Status = 'Compression successful'
                     $existing.DriverPath = $wimRelativePath
                     $existing.Success = $true
@@ -277,9 +280,7 @@ function Save-DellDriversTask {
         }
 
         if (-not $packages -or $packages.Count -eq 0) {
-			Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
-            if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'No drivers found for OS' }
-            return [pscustomobject]@{ Model = $modelDisplay; Status = 'No drivers found for OS'; Success = $true; DriverPath = $driverRelativePath }
+			throw "No usable drivers were found for Dell model '$modelDisplay', Windows $WindowsRelease ($WindowsArch)."
         }
 
         $total = $packages.Count
@@ -300,7 +301,7 @@ function Save-DellDriversTask {
             $extractFolder = Join-Path $downloadFolder $plainName
 
             if (-not $retryModel -and (Test-Path $extractFolder)) {
-				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB -ComponentName "$modelDisplay | $driverName"; continue }
+				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB -ComponentName "$modelDisplay | $driverName"; $successfulPackageCount++; continue }
 				catch { WriteLog "Re-extracting incomplete Dell package '$driverName': $($_.Exception.Message)" }
             }
 
@@ -317,6 +318,7 @@ function Save-DellDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $status }
 
             $ok = $false
+			$lastExtractionError = $null
 			foreach ($extractionMethod in @('/e=', '/drivers=')) {
 				$extractionLogPath = Join-Path $driverWorkspace.DiagnosticsPath ($extractionMethod.Trim('/', '=') + '.log')
 				$arguments = "/s $extractionMethod`"$($driverWorkspace.OutputPath)`" /l=`"$extractionLogPath`""
@@ -333,6 +335,7 @@ function Save-DellDriversTask {
 					break
 				}
 				catch {
+					$lastExtractionError = $_
 					WriteLog "Extraction error for driver '$driverName' with $extractionMethod`: $($_.Exception.Message)"
 					Confirm-DriverOperationActive -Context $driverWorkspace.Context
 				}
@@ -349,22 +352,29 @@ function Save-DellDriversTask {
 				Publish-DriverExtractionContent -Workspace $driverWorkspace -MinimumBytes 1KB
             }
             else {
-                $failureMessage = "Failed to extract driver '$driverName'."
+                $failureMessage = "Failed to extract driver '$driverName' using /e= or /drivers=. $($lastExtractionError.Exception.Message)"
                 WriteLog $failureMessage
-                throw (New-Object System.Exception($failureMessage))
+                throw [Exception]::new($failureMessage, $lastExtractionError.Exception)
             }
+			$successfulPackageCount++
+			}
+			catch {
+				$failedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $ignoreErrors `
+					-Workspace $driverWorkspace -Make $make -Model $modelDisplay -DriverName $driverName -Source $pkg.DownloadUrl `
+					-ValidationParameters @{ MinimumBytes = 1KB }))
 			}
 			finally {
 				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
 			}
         }
 
+		if ($successfulPackageCount -eq 0) { throw "No usable drivers remain for Dell model '$modelDisplay'." }
 		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
         if ($CompressToWim) {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status 'Compressing...' }
             $wimPath = Join-Path $makeDriversPath "$sanitizedModelName.wim"
             try {
-                $null = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription $modelDisplay -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+				if (-not (Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $wimPath -WimName $modelDisplay -WimDescription $modelDisplay -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop)) { throw 'Driver folder compression failed. See the FFU log.' }
                 $driverRelativePath = Join-Path $make "$sanitizedModelName.wim"
                 $statusFinal = 'Completed & Compressed'
             }
@@ -376,16 +386,17 @@ function Save-DellDriversTask {
         else {
             $statusFinal = 'Completed'
         }
+		if ($failedDrivers.Count -gt 0) { $statusFinal += " with warnings ($($failedDrivers.Count) skipped)" }
 
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $statusFinal }
-        return [pscustomobject]@{ Model = $modelDisplay; Status = $statusFinal; Success = $true; DriverPath = $driverRelativePath }
+        return [pscustomobject]@{ Model = $modelDisplay; Status = $statusFinal; Success = $true; DriverPath = $driverRelativePath; FailedDrivers = $failedDrivers.ToArray() }
     }
     catch {
         $errorStatus = "Error: $($_.Exception.Message)"
         WriteLog "Save-DellDriversTask error for $($modelDisplay): $($_.Exception.ToString())"
 		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelDisplay }
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelDisplay -Status $errorStatus }
-        return [pscustomobject]@{ Model = $modelDisplay; Status = $errorStatus; Success = $false; DriverPath = $null }
+        return [pscustomobject]@{ Model = $modelDisplay; Status = $errorStatus; Success = $false; DriverPath = $null; FailedDrivers = $failedDrivers.ToArray() }
     }
 	finally {
 		if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }

@@ -284,18 +284,13 @@ function Invoke-ParallelProcessing {
 
                             $resultStatus = $taskResult.Status
                             # Simplified success check. All driver tasks should now return a 'Success' property.
-                            if ($taskResult.PSObject.Properties.Name -contains 'Success') {
+                            if ($taskResult.PSObject.Properties.Name -contains 'Success' -and $taskResult.Success -is [bool]) {
                                 $resultCode = if ($taskResult.Success) { 0 } else { 1 }
                             }
                             else {
-                                # Fallback for any task that *still* doesn't return 'Success'. This is now the exceptional case.
-                                WriteLog "Warning: Task for '$taskSpecificIdentifier' did not return a 'Success' property. Inferring from status: '$($taskResult.Status)'"
-                                if ($taskResult.Status -like 'Completed*' -or $taskResult.Status -like 'Already downloaded*' -or $taskResult.Status -like 'Compression successful*') {
-                                    $resultCode = 0 # Treat as success
-                                }
-                                else {
-                                    $resultCode = 1 # Treat as error
-                                }
+								$resultStatus = "Error: Driver task for '$taskSpecificIdentifier' did not return a Boolean Success value."
+								$resultCode = 1
+								WriteLog $resultStatus
                             }
                         }
                         elseif ($make -in ('Microsoft', 'Dell', 'HP', 'Lenovo')) {
@@ -335,9 +330,13 @@ function Invoke-ParallelProcessing {
             }
 
             $driverPathValue = $null
+			$failedDriversValue = @()
             if ($null -ne $taskResult -and $taskResult.PSObject.Properties.Name -contains 'DriverPath') {
                 $driverPathValue = $taskResult.DriverPath
             }
+			if ($null -ne $taskResult -and $taskResult.PSObject.Properties.Name -contains 'FailedDrivers' -and $null -ne $taskResult.FailedDrivers) {
+				$failedDriversValue = @($taskResult.FailedDrivers)
+			}
 
             # Return a consistent hashtable structure (final result)
             return @{
@@ -345,12 +344,14 @@ function Invoke-ParallelProcessing {
                 Status     = $resultStatus
                 ResultCode = $resultCode
                 DriverPath = $driverPathValue
+				FailedDrivers = $failedDriversValue
             }
 
         } -ThrottleLimit $ThrottleLimit -AsJob
     }
     catch {
         WriteLog "Error initiating ForEach-Object -Parallel: $($_.Exception.Message)"
+		if ($TaskType -eq 'DownloadDriverByMake') { throw }
         # Update all items to show a general startup error
         $errorStatus = "$ErrorStatusPrefix Failed to start processing"
         foreach ($item in $ItemsToProcess) {
@@ -539,6 +540,25 @@ function Invoke-ParallelProcessing {
         WriteLog "Invoke-ParallelProcessing finished (non-UI mode). Processed $processedCount of $totalItems."
     }
         
+	if ($TaskType -eq 'DownloadDriverByMake') {
+		$returnedIdentifiers = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		foreach ($result in $resultsCollection) {
+			if ($result -is [hashtable] -and -not [string]::IsNullOrWhiteSpace($result.Identifier)) {
+				$null = $returnedIdentifiers.Add($result.Identifier)
+			}
+		}
+		foreach ($item in $ItemsToProcess) {
+			$identifier = $item.$IdentifierProperty
+			if ($returnedIdentifiers.Contains($identifier)) { continue }
+			$status = "Error: No driver result was returned for '$identifier'."
+			WriteLog $status
+			$resultsCollection.Add(@{ Identifier = $identifier; Status = $status; ResultCode = 1; DriverPath = $null; FailedDrivers = @() })
+			if ($isUiMode) {
+				Update-ListViewItemStatus -WindowObject $WindowObject -ListView $ListViewControl -IdentifierProperty $IdentifierProperty -IdentifierValue $identifier -StatusProperty $StatusProperty -StatusValue $status
+			}
+		}
+	}
+
     # Return all collected final results from jobs
     return $resultsCollection
 }

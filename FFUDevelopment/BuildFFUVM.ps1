@@ -141,6 +141,9 @@ Prefix for the generated FFU file. Default is _FFU.
 .PARAMETER Headers
 Headers to use when downloading files. Not recommended to modify.
 
+.PARAMETER IgnoreDriverDownloadErrors
+When set to $true, skips individual driver download or extraction failures for -Make/-Model downloads and reports them in the console and log. Default is $false. At least one usable package must remain. Drivers.json uses the same Boolean property per model; this parameter does not override those model settings.
+
 .PARAMETER InjectUnattend
 When set to $true and InstallApps is also $true, stages the selected architecture-specific unattend XML file to $FFUDevelopmentPath\Apps\Unattend\Unattend.xml so sysprep can use it inside the VM. Default is $false.
 
@@ -445,6 +448,7 @@ param(
     [bool]$Optimize = $true,
     [int]$OptimizeFFUPartitionNumber = 0,
     [string]$DriversJsonPath,
+	[bool]$IgnoreDriverDownloadErrors = $false,
     [bool]$CompressDownloadedDriversToWim = $false,
     [bool]$CopyDrivers,
     [bool]$CopyPEDrivers,
@@ -1174,9 +1178,12 @@ function Get-MicrosoftDrivers {
         [string]$Make,
         [string]$Model,
         [int]$WindowsRelease,
-		[pscustomobject]$DriverOperationContext
+		[pscustomobject]$DriverOperationContext,
+		[bool]$IgnoreDriverDownloadErrors = $false,
+		[Collections.Generic.List[object]]$FailedDrivers
     )
 
+	if ($null -eq $FailedDrivers) { $FailedDrivers = [Collections.Generic.List[object]]::new() }
     # Use the shared Learn-based Microsoft model index so the CLI stays aligned with the UI.
     WriteLog "Getting Surface driver information from the shared Microsoft model index"
     $models = @(Get-SurfaceDriverModelIndex -DriversFolder $DriversFolder | Select-Object Model, Link)
@@ -1277,6 +1284,7 @@ function Get-MicrosoftDrivers {
 
             ### DOWNLOAD THE FILE
             $filePath = Join-Path -Path $surfaceDriversPath -ChildPath ($fileName)
+			$contentType = Get-SurfaceDriverContentType -FileName $fileName
 			$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $fileName -FinalPath $modelPath -CachePath $filePath -ComponentName "$Model | $fileName" -AllowShortName -RetainInstallerOnFailure
 			try {
 			WriteLog "Downloading $Model driver file to '$($driverWorkspace.InputPath)'."
@@ -1285,7 +1293,6 @@ function Get-MicrosoftDrivers {
 
             # Determine file extension
             $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
-			$contentType = Get-SurfaceDriverContentType -FileName $fileName
 
             ### EXTRACT THE FILE
             if ($fileExtension -eq ".msi") {
@@ -1297,7 +1304,12 @@ function Get-MicrosoftDrivers {
                 # Extract the ZIP file
                 WriteLog "Extracting ZIP file to $modelPath"
                 # $ProgressPreference = 'SilentlyContinue'
-				Expand-Archive -LiteralPath $driverWorkspace.InputPath -DestinationPath $driverWorkspace.OutputPath -Force -ErrorAction Stop
+				try { $null = Expand-Archive -LiteralPath $driverWorkspace.InputPath -DestinationPath $driverWorkspace.OutputPath -Force -ErrorAction Stop }
+				catch {
+					$zipException = [Exception]::new("ZIP extraction failed for '$fileName': $($_.Exception.Message) (error: $($_.FullyQualifiedErrorId)).", $_.Exception)
+					$zipException.Data['DriverFailureStage'] = 'Extraction'
+					throw $zipException
+				}
                 # $ProgressPreference = 'Continue'
                 WriteLog "Extraction complete"
             }
@@ -1307,17 +1319,23 @@ function Get-MicrosoftDrivers {
             }
 			Publish-DriverExtractionContent -Workspace $driverWorkspace -RequireInf -AllowProvisioningPackage -ContentType $contentType
 			}
+			catch {
+				$FailedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $IgnoreDriverDownloadErrors `
+					-Workspace $driverWorkspace -Make $Make -Model $Model -DriverName $fileName -Source $downloadLink `
+					-ValidationParameters @{ RequireInf = $true; AllowProvisioningPackage = $true; ContentType = $contentType }))
+				throw [Exception]::new("No usable drivers remain for Microsoft model '$Model'. $($_.Exception.Message)", $_.Exception)
+			}
 			finally {
 				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
 			}
 			Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
         }
         else {
-            WriteLog "No download link found for Windows $WindowsRelease."
+			throw "No download link found for Microsoft model '$Model', Windows $WindowsRelease."
         }
     }
     else {
-        WriteLog "Failed to parse the download page for the MSI file."
+		throw "Failed to parse the Microsoft driver download page for model '$Model'."
     }
 	}
 	finally { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
@@ -1338,9 +1356,13 @@ function Get-HPDrivers {
         [int]$WindowsRelease,
         [Parameter()]
         [string]$WindowsVersion,
-		[pscustomobject]$DriverOperationContext
+		[pscustomobject]$DriverOperationContext,
+		[bool]$IgnoreDriverDownloadErrors = $false,
+		[Collections.Generic.List[object]]$FailedDrivers
     )
 
+	if ($null -eq $FailedDrivers) { $FailedDrivers = [Collections.Generic.List[object]]::new() }
+	$successfulPackageCount = 0
     # Download and extract the PlatformList.cab
     $PlatformListUrl = 'https://hpia.hpcloud.hp.com/ref/platformList.cab'
     $DriversFolder = "$DriversFolder\$Make"
@@ -1456,7 +1478,7 @@ function Get-HPDrivers {
 
         $extractFolder = "$downloadFolder\$Name\$Version\" + $DriverFileName.TrimEnd('.exe')
 		if (-not $retryModel -and (Test-Path -LiteralPath $extractFolder -PathType Container)) {
-			try { $null = Test-DriverExtractionOutput -Path $extractFolder -ComponentName "$ProductName | $Name $Version"; continue }
+			try { $null = Test-DriverExtractionOutput -Path $extractFolder -ComponentName "$ProductName | $Name $Version"; $successfulPackageCount++; continue }
 			catch { WriteLog "Re-extracting incomplete HP package '$Name': $($_.Exception.Message)" }
 		}
 		$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $DriverFileName -FinalPath $extractFolder -CachePath $DriverFilePath -ComponentName "$ProductName | $Name $Version" -RetainInstallerOnFailure
@@ -1466,6 +1488,11 @@ function Get-HPDrivers {
 			WriteLog "Extracting HP driver '$($driverWorkspace.InputPath)' with '$arguments'."
 			$null = Expand-HPDriverPackage -Workspace $driverWorkspace -ArgumentList $arguments
 			Publish-DriverExtractionContent -Workspace $driverWorkspace
+			$successfulPackageCount++
+		}
+		catch {
+			$FailedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $IgnoreDriverDownloadErrors `
+				-Workspace $driverWorkspace -Make $Make -Model $ProductName -DriverName $Name -Source $DriverUrl))
 		}
 		finally {
 			$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
@@ -1473,6 +1500,7 @@ function Get-HPDrivers {
     }
     Remove-Item -LiteralPath $PlatformListCab, $PlatformListXml -Force -ErrorAction Stop
     WriteLog "HP platform catalog files deleted"
+	if ($successfulPackageCount -eq 0) { throw "No usable drivers remain for HP model '$ProductName'." }
 	Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
 	}
 	finally { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
@@ -1488,9 +1516,12 @@ function Get-LenovoDrivers {
         [ValidateSet(10, 11)]
         [int]$WindowsRelease,
 		[string]$WindowsVersion,
-		[pscustomobject]$DriverOperationContext
+		[pscustomobject]$DriverOperationContext,
+		[bool]$IgnoreDriverDownloadErrors = $false,
+		[Collections.Generic.List[object]]$FailedDrivers
     )
 
+	if ($null -eq $FailedDrivers) { $FailedDrivers = [Collections.Generic.List[object]]::new() }
 	$normalizedModelName = $Model.Trim()
 	$machineTypes = @(Get-LenovoPSREFModels -ModelSearchTerm $normalizedModelName -Headers $Headers -UserAgent $UserAgent)
 	$exactMachineType = $machineTypes | Where-Object { $_.MachineType -eq $normalizedModelName } | Select-Object -First 1
@@ -1535,9 +1566,10 @@ function Get-LenovoDrivers {
 	try {
 		$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
 		Set-DriverModelDownloadState -ModelPath $modelPath -State Incomplete -Context $DriverOperationContext
-		Save-LenovoDriverPackages -MachineType $machineType -ModelPath $modelPath -DriversFolder $makeDriversPath `
+		$null = Save-LenovoDriverPackages -MachineType $machineType -ModelPath $modelPath -DriversFolder $makeDriversPath `
 			-WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsVersion $WindowsVersion `
-			-Identifier $Model -DriverOperationContext $DriverOperationContext -RetryIncomplete:$retryModel -RetainInstallerOnFailure
+			-Identifier $Model -DriverOperationContext $DriverOperationContext -RetryIncomplete:$retryModel -RetainInstallerOnFailure `
+			-IgnoreDriverDownloadErrors $IgnoreDriverDownloadErrors -FailedDrivers $FailedDrivers
 		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
 	}
 	finally { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
@@ -1552,10 +1584,13 @@ function Get-DellDrivers {
         [string]$WindowsArch,
         [Parameter(Mandatory = $true)]
         [int]$WindowsRelease,
-		[pscustomobject]$DriverOperationContext
+		[pscustomobject]$DriverOperationContext,
+		[bool]$IgnoreDriverDownloadErrors = $false,
+		[Collections.Generic.List[object]]$FailedDrivers
     )
 
-	$allPackagesSucceeded = $true
+	if ($null -eq $FailedDrivers) { $FailedDrivers = [Collections.Generic.List[object]]::new() }
+	$successfulPackageCount = 0
     if (-not (Test-Path -Path $DriversFolder)) {
         New-Item -Path $DriversFolder -ItemType Directory -Force | Out-Null
     }
@@ -1598,9 +1633,7 @@ function Get-DellDrivers {
 
         $pkgs = Get-DellLatestDriverPackages -ModelXmlPath $modelXmlPath -WindowsArch $WindowsArch -WindowsRelease $WindowsRelease
         if (-not $pkgs) {
-            WriteLog "No drivers found for '$Model'."
-			Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
-            return $true
+			throw "No usable drivers were found for Dell model '$Model', Windows $WindowsRelease ($WindowsArch)."
         }
 
         foreach ($pkg in $pkgs) {
@@ -1612,13 +1645,14 @@ function Get-DellDrivers {
             $extractFolder = Join-Path $downloadFolder ($pkg.DriverFileName.TrimEnd($pkg.DriverFileName[-4..-1]))
 
             if (-not $retryModel -and (Test-Path $extractFolder)) {
-				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB; continue }
+				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB; $successfulPackageCount++; continue }
 				catch { WriteLog "Re-extracting incomplete Dell package '$driverName': $($_.Exception.Message)" }
             }
 			$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $pkg.DriverFileName -FinalPath $extractFolder -CachePath $driverFilePath -ComponentName "$Model | $driverName" -RetainInstallerOnFailure
 			try {
 			Save-DriverPackageToWorkspace -Workspace $driverWorkspace -Source $pkg.DownloadUrl
             $ok = $false
+			$lastExtractionError = $null
 			foreach ($extractionMethod in @('/e=', '/drivers=')) {
 				$extractionLogPath = Join-Path $driverWorkspace.DiagnosticsPath ($extractionMethod.Trim('/', '=') + '.log')
 				$arguments = "/s $extractionMethod`"$($driverWorkspace.OutputPath)`" /l=`"$extractionLogPath`""
@@ -1635,6 +1669,7 @@ function Get-DellDrivers {
 					break
 				}
 				catch {
+					$lastExtractionError = $_
 					WriteLog "Extraction error for driver '$driverName' with $extractionMethod`: $($_.Exception.Message)"
 					Confirm-DriverOperationActive -Context $driverWorkspace.Context
 				}
@@ -1648,21 +1683,23 @@ function Get-DellDrivers {
 			}
 			if ($ok) { Publish-DriverExtractionContent -Workspace $driverWorkspace -MinimumBytes 1KB }
 			else {
-				$allPackagesSucceeded = $false
-				WriteLog "Failed to extract driver '$driverName' using /e= or /drivers=."
+				throw [Exception]::new("Failed to extract driver '$driverName' using /e= or /drivers=. $($lastExtractionError.Exception.Message)", $lastExtractionError.Exception)
 			}
+			$successfulPackageCount++
 			}
 			catch [OperationCanceledException] { throw }
 			catch {
-				$allPackagesSucceeded = $false
-				WriteLog "Failed to download, extract, or publish Dell driver '$driverName': $($_.Exception.Message)"
+				$FailedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $IgnoreDriverDownloadErrors `
+					-Workspace $driverWorkspace -Make Dell -Model $Model -DriverName $driverName -Source $pkg.DownloadUrl `
+					-ValidationParameters @{ MinimumBytes = 1KB }))
 			}
 			finally {
 				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
 			}
         }
-		if ($allPackagesSucceeded) { Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext }
-        return $allPackagesSucceeded
+		if ($successfulPackageCount -eq 0) { throw "No usable drivers remain for Dell model '$Model'." }
+		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
+        return $true
     }
 
     # Server pathway (unchanged legacy)
@@ -1707,7 +1744,7 @@ function Get-DellDrivers {
             $driverFilePath = Join-Path $downloadFolder $driver.DriverFileName
             $extractFolder = Join-Path $downloadFolder ($driver.DriverFileName.TrimEnd($driver.DriverFileName[-4..-1]))
 			if (-not $retryModel -and (Test-Path -LiteralPath $extractFolder -PathType Container)) {
-				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB; continue }
+				try { $null = Test-DriverExtractionOutput -Path $extractFolder -MinimumBytes 1KB; $successfulPackageCount++; continue }
 				catch { WriteLog "Re-extracting incomplete Dell server package '$($driver.Name)': $($_.Exception.Message)" }
 			}
 			$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $driver.DriverFileName -FinalPath $extractFolder -CachePath $driverFilePath -ComponentName "$Model | $($driver.Name)" -RetainInstallerOnFailure
@@ -1717,19 +1754,22 @@ function Get-DellDrivers {
 				$arguments = "/s /drivers=`"$($driverWorkspace.OutputPath)`" /l=`"$extractionLogPath`""
 				$null = Invoke-DriverExtractionProcess -Workspace $driverWorkspace -ArgumentList $arguments
 				Publish-DriverExtractionContent -Workspace $driverWorkspace -MinimumBytes 1KB
+				$successfulPackageCount++
 			}
 			catch [OperationCanceledException] { throw }
 			catch {
-				$allPackagesSucceeded = $false
-				WriteLog "Failed to extract/publish Dell server driver '$($driver.Name)' with /drivers=: $($_.Exception.Message)"
+				$FailedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $IgnoreDriverDownloadErrors `
+					-Workspace $driverWorkspace -Make Dell -Model $Model -DriverName $driver.Name -Source $driver.DownloadUrl `
+					-ValidationParameters @{ MinimumBytes = 1KB }))
 			}
 			finally {
 				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
 			}
         }
     }
-	if ($allPackagesSucceeded) { Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext }
-	return $allPackagesSucceeded
+	if ($successfulPackageCount -eq 0) { throw "No usable drivers remain for Dell model '$Model'." }
+	Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
+	return $true
 	}
 	finally { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
 }
@@ -7105,6 +7145,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                 }
 
                 if ($null -ne $driverItem) {
+					$driverItem | Add-Member -NotePropertyName IgnoreDriverDownloadErrors -NotePropertyValue (Get-DriverIgnoreDownloadErrors -DriverItem $modelEntry)
                     $driversToProcess += $driverItem
                 }
             }
@@ -7178,8 +7219,9 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         # After processing, update the driver mapping file and detect failures
         $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
         $failedDownloads = [System.Collections.Generic.List[PSCustomObject]]::new()
+		$ignoredDriverFailures = [Collections.Generic.List[object]]::new()
 
-        if ($null -ne $parallelResults) {
+        if ($null -ne $parallelResults -and @($parallelResults).Count -gt 0) {
             # Create a lookup table from the original items to retain full metadata for mapping.
             $driverLookup = @{}
             foreach ($driver in $driversToProcess) {
@@ -7195,11 +7237,13 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                 $resultStatus = $null
                 $resultDriverPath = $null
                 $resultSuccess = $false
+				$resultFailedDrivers = @()
 
                 if ($result -is [hashtable]) {
                     $lookupModelName = $result['Identifier']
                     $resultStatus = $result['Status']
                     if ($result.ContainsKey('DriverPath')) { $resultDriverPath = $result['DriverPath'] }
+					if ($result.ContainsKey('FailedDrivers') -and $null -ne $result['FailedDrivers']) { $resultFailedDrivers = @($result['FailedDrivers']) }
                     if ($result.ContainsKey('Success')) {
                         $resultSuccess = [bool]$result['Success']
                     }
@@ -7217,6 +7261,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
 
                     if ($result.PSObject.Properties.Name -contains 'Status') { $resultStatus = $result.Status }
                     if ($result.PSObject.Properties.Name -contains 'DriverPath') { $resultDriverPath = $result.DriverPath }
+					if ($result.PSObject.Properties.Name -contains 'FailedDrivers' -and $null -ne $result.FailedDrivers) { $resultFailedDrivers = @($result.FailedDrivers) }
                     if ($result.PSObject.Properties.Name -contains 'Success') {
                         $resultSuccess = [bool]$result.Success
                     }
@@ -7225,6 +7270,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
                     }
                 }
 
+				foreach ($failure in $resultFailedDrivers) { $ignoredDriverFailures.Add($failure) }
                 if ($resultSuccess -and -not [string]::IsNullOrWhiteSpace($resultDriverPath)) {
                     $modelKey = if (-not [string]::IsNullOrWhiteSpace($lookupModelName)) { $lookupModelName } else { 'Unknown model' }
                     $driverMetadata = $null
@@ -7266,11 +7312,16 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
         }
         else {
             WriteLog "Invoke-ParallelProcessing returned null or no results."
+			$failedDownloads.Add([pscustomobject]@{ Model = 'Selected models'; Status = 'Driver processing returned no results. Check the log for details.' })
         }
 
+		if ($ignoredDriverFailures.Count -gt 0) {
+			$warningMessage = Get-DriverFailureSummary -FailedDrivers $ignoredDriverFailures.ToArray()
+			WriteLog "WARNING: $warningMessage"
+			Write-Warning $warningMessage
+		}
         if ($failedDownloads.Count -gt 0) {
-            $firstFailure = $failedDownloads[0]
-            $errorMessage = "Driver download failed for model '$($firstFailure.Model)': $($firstFailure.Status)"
+            $errorMessage = "Driver downloads failed:`n" + (($failedDownloads | ForEach-Object { "- $($_.Model): $($_.Status)" }) -join [Environment]::NewLine)
             WriteLog $errorMessage
             throw $errorMessage
         }
@@ -7303,28 +7354,27 @@ elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
 		throw 'Driver downloads require the current build-run manifest for owned workspace cleanup.'
 	}
 	$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc
+	$singleModelFailures = [Collections.Generic.List[object]]::new()
+	$driverFailureArguments = @{ IgnoreDriverDownloadErrors = $IgnoreDriverDownloadErrors; FailedDrivers = $singleModelFailures }
     try {
         if ($Make -eq 'HP') {
             WriteLog 'Getting HP drivers'
-            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -WindowsVersion $WindowsVersion -DriverOperationContext $driverOperationContext
-            WriteLog 'Getting HP drivers completed successfully'
+            Get-HPDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -WindowsVersion $WindowsVersion -DriverOperationContext $driverOperationContext @driverFailureArguments
         }
         if ($make -eq 'Microsoft') {
             WriteLog 'Getting Microsoft drivers'
-            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -DriverOperationContext $driverOperationContext
-            WriteLog 'Getting Microsoft drivers completed successfully'
+            Get-MicrosoftDrivers -Make $Make -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -DriverOperationContext $driverOperationContext @driverFailureArguments
         }
         if ($make -eq 'Lenovo') {
             WriteLog 'Getting Lenovo drivers'
-            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -WindowsVersion $WindowsVersion -DriverOperationContext $driverOperationContext
-            WriteLog 'Getting Lenovo drivers completed successfully'
+            Get-LenovoDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -WindowsVersion $WindowsVersion -DriverOperationContext $driverOperationContext @driverFailureArguments
         }
         if ($make -eq 'Dell') {
             WriteLog 'Getting Dell drivers'
-			$dellDownloadComplete = Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -DriverOperationContext $driverOperationContext
-			if ($dellDownloadComplete) { WriteLog 'Getting Dell drivers completed successfully' }
-			else { WriteLog 'Getting Dell drivers completed with failed packages. Retaining the existing CLI continue-on-error policy; see extraction diagnostics.' }
+			$null = Get-DellDrivers -Model $Model -WindowsArch $WindowsArch -WindowsRelease $localDriverWindowsRelease -DriverOperationContext $driverOperationContext @driverFailureArguments
         }
+		$completion = if ($singleModelFailures.Count -gt 0) { 'completed with warnings' } else { 'completed successfully' }
+		WriteLog "Getting $Make drivers $completion"
     }
     catch {
         Writelog "Getting drivers failed with error $_"
@@ -7333,6 +7383,11 @@ elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
 	finally {
 		try { Remove-DriverDownloadOperation -Context $driverOperationContext }
 		catch { WriteLog "Driver operation cleanup failed; workspace retained: $($_.Exception.Message)" }
+		if ($singleModelFailures.Count -gt 0) {
+			$warningMessage = Get-DriverFailureSummary -FailedDrivers $singleModelFailures.ToArray()
+			WriteLog "WARNING: $warningMessage"
+			Write-Warning $warningMessage
+		}
 	}
 }
             

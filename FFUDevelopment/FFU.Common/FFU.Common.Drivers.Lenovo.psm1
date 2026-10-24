@@ -96,24 +96,8 @@ function Test-LenovoDriverCondition {
 function Test-LenovoCatalogNotFound {
 	param([Exception]$Exception, [string]$Source, [string]$ErrorId)
 
-	while ($null -ne $Exception) {
-		if ($Exception.HResult -eq [int]0x80190194) { return $true }
-		if ($Exception.PSObject.Properties['Response'] -and $null -ne $Exception.Response -and
-			$Exception.Response.PSObject.Properties['StatusCode'] -and [int]$Exception.Response.StatusCode -eq 404) { return $true }
-		if ($Exception.Data.Contains('StatusCode') -and [int]$Exception.Data['StatusCode'] -eq 404) { return $true }
-		$Exception = $Exception.InnerException
-	}
-	# BITS can discard the HTTP status when it creates a generic COM error.
-	if ($Source -and $ErrorId -match '^StartBitsTransferCOMException(?:,|$)') {
-		try {
-			$response = Invoke-WebRequest -Uri $Source -Method Head -SkipHttpErrorCheck -TimeoutSec 30 -ErrorAction Stop
-			return [int]$response.StatusCode -eq 404
-		}
-		catch {
-			WriteLog "Unable to confirm the HTTP status of failed Lenovo catalog '$Source': $($_.Exception.Message)"
-		}
-	}
-	return $false
+	$details = Get-DriverDownloadHttpStatus -Exception $Exception -Source $Source -ErrorId $ErrorId
+	return $details.StatusCode -eq 404
 }
 
 function Confirm-LenovoDriverHash {
@@ -1182,9 +1166,13 @@ function Save-LenovoDriverPackages {
 		[System.Collections.Concurrent.ConcurrentQueue[hashtable]]$ProgressQueue,
 		[switch]$RetryIncomplete,
 		[switch]$RenameLiteonFolders,
-		[switch]$RetainInstallerOnFailure
+		[switch]$RetainInstallerOnFailure,
+		[bool]$IgnoreDriverDownloadErrors = $false,
+		[Collections.Generic.List[object]]$FailedDrivers
 	)
 
+	if ($null -eq $FailedDrivers) { $FailedDrivers = [Collections.Generic.List[object]]::new() }
+	$usablePackages = [Collections.Generic.List[object]]::new()
 	$target = Get-LenovoDriverTarget -WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsVersion $WindowsVersion
 	$metadataPath = Join-Path $DriversFolder ("_TEMP_$($MachineType)_$([guid]::NewGuid().ToString('N').Substring(0, 8))")
 	$workspaces = [Collections.Generic.List[object]]::new()
@@ -1222,6 +1210,7 @@ function Save-LenovoDriverPackages {
 				}
 				catch { WriteLog "Re-extracting incomplete Lenovo package '$($package.Id)': $($_.Exception.Message)" }
 			}
+			try {
 			if (-not $package.Reused) {
 				$workspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder `
 					-FileName $package.FileName -FinalPath $finalPath -CachePath (Join-Path $downloadFolder $package.FileName) `
@@ -1238,6 +1227,7 @@ function Save-LenovoDriverPackages {
 					Confirm-LenovoDriverHash -Path $workspace.InputPath -Hash $package.Hash
 				}
 				if ($package.RequiresInnoValidation) { Confirm-LenovoInnoInstaller -Path $workspace.InputPath }
+				try {
 				$arguments = $package.ExtractCommand.Replace('%PACKAGEPATH%', "`"$($workspace.OutputPath)`"", [StringComparison]::OrdinalIgnoreCase)
 				if ($null -ne $ProgressQueue) {
 					$ProgressQueue.Enqueue(@{ Identifier = $Identifier; Status = "$index/$($packages.Count) Extracting $($package.Title)" })
@@ -1306,14 +1296,35 @@ function Save-LenovoDriverPackages {
 				$validation = Test-DriverExtractionOutput -Path $workspace.OutputPath -RequireInf `
 					-AllowProvisioningPackage:(-not $package.RequiresInfClassification) -ComponentName $workspace.ComponentName
 				$outputPath = $workspace.OutputPath
+				}
+				catch [OperationCanceledException] { throw }
+				catch {
+					Confirm-DriverOperationActive -Context $DriverOperationContext
+					$_.Exception.Data['DriverFailureStage'] = 'Extraction'
+					throw
+				}
 			}
 			if ($WindowsRelease -eq 11) {
 				$package.InfMetadata = Get-LenovoDriverInfMetadata -Path $outputPath -WindowsArch $WindowsArch -WindowsBuild $target.Build -ProvisioningPackageCount $validation.PpkgCount
 			}
+			$usablePackages.Add($package)
+			}
+			catch {
+				if ($null -eq $package.Workspace) { throw }
+				$FailedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $IgnoreDriverDownloadErrors `
+					-Workspace $package.Workspace -Make Lenovo -Model $Identifier -DriverName $package.Title -Source $package.Url `
+					-ValidationParameters @{ RequireInf = $true; AllowProvisioningPackage = -not $package.RequiresInfClassification }))
+				if (Remove-DriverExtractionWorkspace -Workspace $package.Workspace) {
+					$null = $workspaces.Remove($package.Workspace)
+					$package.Workspace = $null
+				}
+			}
 		}
-		$selected = if ($WindowsRelease -eq 11) { @(Select-LenovoDriverPackages -Packages $packages) } else { $packages }
+		if ($usablePackages.Count -eq 0) { throw "No usable drivers remain for Lenovo model '$Identifier'." }
+		$selected = if ($WindowsRelease -eq 11) { @(Select-LenovoDriverPackages -Packages $usablePackages.ToArray()) } else { $usablePackages.ToArray() }
+		if ($selected.Count -eq 0) { throw "No usable drivers were selected for Lenovo model '$Identifier'." }
 		$selectedKeys = [Collections.Generic.HashSet[string]]::new([string[]]@($selected | ForEach-Object Key), [StringComparer]::OrdinalIgnoreCase)
-		foreach ($package in $packages) {
+		foreach ($package in $usablePackages) {
 			if ($null -ne $package.Workspace -and -not $selectedKeys.Contains($package.Key)) {
 				$null = $discarded.Add($package.Workspace.PackageId)
 			}
@@ -1332,6 +1343,7 @@ function Save-LenovoDriverPackages {
 			Publish-DriverExtractionContent -Workspace $workspace -RequireInf -AllowProvisioningPackage:(-not $package.RequiresInfClassification)
 		}
 		WriteLog "Lenovo '$MachineType': published or reused $($selected.Count) selected packages from $($packages.Count) candidates."
+		return [pscustomobject]@{ SuccessfulPackageCount = $selected.Count; FailedDrivers = $FailedDrivers.ToArray() }
 	}
 	catch {
 		WriteLog "Lenovo driver selection/download failed for '$MachineType': $($_.Exception.Message)"

@@ -822,6 +822,27 @@ function Initialize-DynamicUIElements {
     # Add other sortable columns with left-aligned headers
     Add-SortableColumn -gridView $driverModelsGridView -header "Make" -binding "Make" -width 100 -headerHorizontalAlignment Left
     Add-SortableColumn -gridView $driverModelsGridView -header "Model" -binding "Model" -width 200 -headerHorizontalAlignment Left
+	$ignoreDriverColumn = [System.Windows.Controls.GridViewColumn]::new()
+	$ignoreDriverHeader = [System.Windows.Controls.GridViewColumnHeader]::new()
+	$ignoreDriverHeader.Content = 'Ignore Errors'
+	$ignoreDriverHeader.Tag = 'IgnoreDriverDownloadErrors'
+	$ignoreDriverHeader.HorizontalContentAlignment = [System.Windows.HorizontalAlignment]::Left
+	$ignoreDriverToolTip = 'Continue with verified drivers if individual packages fail. Missing drivers can affect boot, networking, or input. At least one usable package must remain.'
+	$ignoreDriverHeader.ToolTip = $ignoreDriverToolTip
+	$ignoreDriverColumn.Header = $ignoreDriverHeader
+	$ignoreDriverColumn.Width = 240
+	$ignoreDriverTemplate = [System.Windows.DataTemplate]::new()
+	$ignoreDriverCheckFactory = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.CheckBox])
+	$ignoreDriverCheckFactory.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+	$ignoreDriverCheckFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+	$ignoreDriverCheckFactory.SetValue([System.Windows.FrameworkElement]::ToolTipProperty, $ignoreDriverToolTip)
+	$ignoreDriverBinding = [System.Windows.Data.Binding]::new('IgnoreDriverDownloadErrors')
+	$ignoreDriverBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+	$ignoreDriverBinding.UpdateSourceTrigger = [System.Windows.Data.UpdateSourceTrigger]::PropertyChanged
+	$ignoreDriverCheckFactory.SetBinding([System.Windows.Controls.Primitives.ToggleButton]::IsCheckedProperty, $ignoreDriverBinding)
+	$ignoreDriverTemplate.VisualTree = $ignoreDriverCheckFactory
+	$ignoreDriverColumn.CellTemplate = $ignoreDriverTemplate
+	$driverModelsGridView.Columns.Add($ignoreDriverColumn)
     Add-SortableColumn -gridView $driverModelsGridView -header "Status" -binding "DownloadStatus" -width 150 -headerHorizontalAlignment Left
     $State.Controls.lstDriverModels.AddHandler(
         [System.Windows.Controls.GridViewColumnHeader]::ClickEvent,
@@ -840,7 +861,7 @@ function Initialize-DynamicUIElements {
     )
 
     # Keep driver model columns sized to the current visible content.
-    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels -FixedColumnIndexes @(0)
+    Enable-ListViewColumnAutoResize -ListView $State.Controls.lstDriverModels -FixedColumnIndexes @(0, 3)
 
     # Winget Search ListView setup
     $wingetGridView = New-Object System.Windows.Controls.GridView

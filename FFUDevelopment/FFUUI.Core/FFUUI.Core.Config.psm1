@@ -2172,6 +2172,7 @@ function Import-ConfigSupplementalAssets {
                                 }
                                 $driverObj = [PSCustomObject]@{
                                     IsSelected     = $true
+									IgnoreDriverDownloadErrors = Get-DriverIgnoreDownloadErrors -DriverItem $modelEntry
                                     Make           = $makeName
                                     Model          = $displayModel
                                     DownloadStatus = $downloadStatus

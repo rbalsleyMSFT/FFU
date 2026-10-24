@@ -76,9 +76,10 @@ function Get-DriverDisplayName {
     )
 
     $makeName = $DriverItem.Make
+	$ignoreErrors = Get-DriverIgnoreDownloadErrors -DriverItem $DriverItem
     switch ($makeName) {
         'Microsoft' {
-            $modelObject = @{ Name = $DriverItem.Model }
+            $modelObject = @{ Name = $DriverItem.Model; IgnoreDriverDownloadErrors = $ignoreErrors }
             if ($DriverItem.PSObject.Properties['Link'] -and -not [string]::IsNullOrWhiteSpace($DriverItem.Link)) {
                 $modelObject.Link = $DriverItem.Link
             }
@@ -90,7 +91,7 @@ function Get-DriverDisplayName {
             if ([string]::IsNullOrWhiteSpace($baseName)) {
                 $baseName = $DriverItem.Model
             }
-            $modelObject = @{ Name = $baseName }
+            $modelObject = @{ Name = $baseName; IgnoreDriverDownloadErrors = $ignoreErrors }
             if (-not [string]::IsNullOrWhiteSpace($systemId)) {
                 $modelObject.SystemId = $systemId
             }
@@ -105,7 +106,7 @@ function Get-DriverDisplayName {
                 $baseName = $DriverItem.Model
             }
             $systemId = if ($DriverItem.PSObject.Properties['SystemId']) { $DriverItem.SystemId } else { $null }
-            $modelObject = @{ Name = $baseName.Trim() }
+            $modelObject = @{ Name = $baseName.Trim(); IgnoreDriverDownloadErrors = $ignoreErrors }
             if (-not [string]::IsNullOrWhiteSpace($systemId)) {
                 $modelObject.SystemId = $systemId
             }
@@ -121,6 +122,7 @@ function Get-DriverDisplayName {
             return @{
                 Name        = $baseName
                 MachineType = $machineType
+				IgnoreDriverDownloadErrors = $ignoreErrors
             }
         }
                 default {
@@ -300,6 +302,7 @@ function ConvertTo-StandardizedDriverModel {
 
     $output = [PSCustomObject]@{
         IsSelected     = $false
+		IgnoreDriverDownloadErrors = $false
         Make           = $Make
         Model          = $modelDisplay
         Link           = $link
@@ -493,6 +496,7 @@ function Import-DriversJson {
                     }
         
                     $normalizedName = $importedModelNameFromObject
+					$ignoreDriverDownloadErrors = Get-DriverIgnoreDownloadErrors -DriverItem $importedModelObject
                     $skipModel = $false
                     switch ($makeName) {
                         'Lenovo' {
@@ -581,6 +585,7 @@ function Import-DriversJson {
 
                     if ($null -ne $existingModel) {
                         $existingModel.IsSelected = $true
+						$existingModel | Add-Member -NotePropertyName IgnoreDriverDownloadErrors -NotePropertyValue $ignoreDriverDownloadErrors -Force
                         $existingModel.DownloadStatus = "Imported"
                         $existingModel.Model = $importedModelNameFromObject
                     
@@ -663,6 +668,7 @@ function Import-DriversJson {
 
                         $newDriverModel = [PSCustomObject]@{
                             IsSelected     = $true
+							IgnoreDriverDownloadErrors = $ignoreDriverDownloadErrors
                             Make           = $makeName
                             Model          = $importedModelNameFromObject
                             Link           = $importedLink
@@ -979,9 +985,11 @@ function Invoke-DownloadSelectedDrivers {
     $overallSuccess = $true
     $successfullyDownloaded = [System.Collections.Generic.List[PSCustomObject]]::new()
     $failedDownloads = [System.Collections.Generic.List[PSCustomObject]]::new()
+	$ignoredDriverFailures = [Collections.Generic.List[object]]::new()
+	$driverResults = @($parallelResults | Where-Object { $_ -is [hashtable] })
 
     # Check the results from the parallel processing tasks
-    if ($null -ne $parallelResults) {
+    if ($driverResults.Count -gt 0) {
         # Create a lookup from the original selected drivers to retain full metadata for mapping.
         $driverLookup = @{}
         foreach ($driver in $selectedDrivers) {
@@ -991,7 +999,7 @@ function Invoke-DownloadSelectedDrivers {
         }
     
         # Filter for objects that could be results, avoiding stray log strings
-        foreach ($result in ($parallelResults | Where-Object { $_ -is [hashtable] })) {
+        foreach ($result in $driverResults) {
             if ($null -eq $result) { continue }
 
             # The result from Invoke-ParallelProcessing is a hashtable.
@@ -999,6 +1007,9 @@ function Invoke-DownloadSelectedDrivers {
             $modelName = $result['Identifier']
             $resultCode = $result['ResultCode']
             $driverPath = $result['DriverPath']
+			if ($result.ContainsKey('FailedDrivers') -and $null -ne $result['FailedDrivers']) {
+				foreach ($failure in @($result['FailedDrivers'])) { $ignoredDriverFailures.Add($failure) }
+			}
 
             if ([string]::IsNullOrWhiteSpace($modelName)) {
                 WriteLog "Could not determine model name from result object: $($result | ConvertTo-Json -Compress -Depth 3)"
@@ -1065,6 +1076,15 @@ function Invoke-DownloadSelectedDrivers {
             }
         }
     }
+	else {
+		$overallSuccess = $false
+		$failedDownloads.Add([pscustomobject]@{ Model = 'Selected models'; Status = 'Driver processing returned no results. Check the log for details.' })
+	}
+	if ($ignoredDriverFailures.Count -gt 0) {
+		WriteLog "WARNING: $(Get-DriverFailureSummary -FailedDrivers $ignoredDriverFailures.ToArray())"
+		$warningMessage = Get-DriverFailureSummary -FailedDrivers $ignoredDriverFailures.ToArray() -Concise
+		$warningMessage += "`n`nSee the log for error details:`n$($State.LogFilePath)"
+	}
 
     # Update the driver mapping JSON if there are any successful downloads
     if ($successfullyDownloaded.Count -gt 0) {
@@ -1120,25 +1140,30 @@ function Invoke-DownloadSelectedDrivers {
 
     $State.Controls.pbOverallProgress.Visibility = 'Collapsed'
     $Button.IsEnabled = $true
-    if ($overallSuccess) {
+    if ($overallSuccess -and $ignoredDriverFailures.Count -eq 0) {
         $State.Controls.txtStatus.Text = "All selected driver downloads processed."
         Show-FFUDialog -Owner $State.Window -Message "All selected driver downloads processed. Check status column for details." -Title "Download Process Finished" -Icon Information | Out-Null
     }
+	elseif ($overallSuccess) {
+		$State.Controls.txtStatus.Text = 'Driver downloads completed with warnings. Review the skipped drivers.'
+		Show-FFUDialog -Owner $State.Window -Message $warningMessage -Title 'Driver Downloads Completed with Warnings' -Icon Warning | Out-Null
+	}
     else {
         $State.Controls.txtStatus.Text = "Driver download failed. Resolve the errors and try again."
         $messageLines = [System.Collections.Generic.List[string]]::new()
         if ($failedDownloads.Count -gt 0) {
             $messageLines.Add("Driver download failed for:")
-            foreach ($item in ($failedDownloads | Select-Object -First 5)) {
+            foreach ($item in $failedDownloads) {
                 $messageLines.Add("- $($item.Model): $($item.Status)")
-            }
-            if ($failedDownloads.Count -gt 5) {
-                $messageLines.Add("...see the log for additional failures.")
             }
         }
         else {
             $messageLines.Add("One or more driver downloads failed. Check the log for details.")
         }
+		if ($ignoredDriverFailures.Count -gt 0) {
+			$messageLines.Add('')
+			$messageLines.Add($warningMessage)
+		}
         Show-FFUDialog -Owner $State.Window -Message ($messageLines -join [System.Environment]::NewLine) -Title "Driver Download Failed" -Icon Error | Out-Null
     }
 }

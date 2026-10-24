@@ -62,6 +62,7 @@ function Save-LenovoDriversTask {
     if ($sanitizedIdentifier -ne $identifier) { WriteLog "Sanitized model identifier: '$identifier' -> '$sanitizedIdentifier'" }
     $status = "Starting..."
     $success = $false
+	$failedDrivers = [Collections.Generic.List[object]]::new()
     
     # Define paths
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $Make
@@ -74,6 +75,7 @@ function Save-LenovoDriversTask {
 	$modelMutex = $null
 	$modelExisted = $true
     try {
+		$ignoreErrors = Get-DriverIgnoreDownloadErrors -DriverItem $DriverItemData
 		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
 		$modelExisted = Test-Path -LiteralPath $modelPath
 		$retryModel = Test-DriverModelIncomplete -ModelPath $modelPath
@@ -92,7 +94,7 @@ function Save-LenovoDriversTask {
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    $null = Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+					if (-not (Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop)) { throw 'Driver folder compression failed. See the FFU log.' }
                     $existingDriver.Status = "Compression successful"
                     $existingDriver.DriverPath = $wimRelativePath
                     $existingDriver.Success = $true
@@ -115,10 +117,10 @@ function Save-LenovoDriversTask {
         if (-not (Test-Path -Path $modelPath)) { New-Item -Path $modelPath -ItemType Directory -Force | Out-Null }
 		$status = 'Selecting drivers...'
 		if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-		Save-LenovoDriverPackages -MachineType $machineType -ModelPath $modelPath -DriversFolder $makeDriversPath `
+		$null = Save-LenovoDriverPackages -MachineType $machineType -ModelPath $modelPath -DriversFolder $makeDriversPath `
 			-WindowsRelease $WindowsRelease -WindowsArch $WindowsArch -WindowsVersion $WindowsVersion `
 			-Identifier $identifier -DriverOperationContext $DriverOperationContext -ProgressQueue $ProgressQueue `
-			-RetryIncomplete:$retryModel -RenameLiteonFolders
+			-RetryIncomplete:$retryModel -RenameLiteonFolders -IgnoreDriverDownloadErrors $ignoreErrors -FailedDrivers $failedDrivers
 		Set-DriverModelDownloadState -ModelPath $modelPath -State Complete -Context $DriverOperationContext
         
         # --- Compress to WIM if requested (after all drivers processed) ---
@@ -127,11 +129,11 @@ function Save-LenovoDriversTask {
             if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
             $wimFileName = "$($sanitizedIdentifier).wim" # Use sanitized identifier for filename
             $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName
-            $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
             WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
             try {
                 $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $identifier -WimDescription $identifier -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                 if ($compressResult) {
+					$driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName
                     WriteLog "Compression successful for '$identifier'."
                     $status = "Completed & Compressed"
                 }
@@ -149,6 +151,7 @@ function Save-LenovoDriversTask {
             $status = "Completed" 
         }
         # --- End Compression ---
+		if ($failedDrivers.Count -gt 0) { $status += " with warnings ($($failedDrivers.Count) skipped)" }
         
         $success = $true # Mark success as download/extract was okay
         
@@ -159,7 +162,7 @@ function Save-LenovoDriversTask {
         $success = $false
 		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $identifier }
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
-        return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null }
+        return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $null; FailedDrivers = $failedDrivers.ToArray() }
     }
     finally {
 		if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
@@ -169,7 +172,7 @@ function Save-LenovoDriversTask {
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $status }
 
     # Return the final status
-    return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $driverRelativePath }
+    return [PSCustomObject]@{ Identifier = $identifier; Status = $status; Success = $success; DriverPath = $driverRelativePath; FailedDrivers = $failedDrivers.ToArray() }
 }
 
 Export-ModuleMember -Function *

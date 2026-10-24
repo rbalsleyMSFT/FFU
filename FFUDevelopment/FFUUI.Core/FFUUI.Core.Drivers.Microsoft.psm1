@@ -48,6 +48,7 @@ function Save-MicrosoftDriversTask {
     $driverRelativePath = Join-Path -Path $make -ChildPath $modelName # Relative path for the driver folder
     $status = "Getting download link..." # Initial local status
     $success = $false
+	$failedDrivers = [Collections.Generic.List[object]]::new()
     $sanitizedModelName = ConvertTo-SafeName -Name $modelName
     if ($sanitizedModelName -ne $modelName) { WriteLog "Sanitized model name: '$modelName' -> '$sanitizedModelName'" }
     $makeDriversPath = Join-Path -Path $DriversFolder -ChildPath $make
@@ -59,6 +60,7 @@ function Save-MicrosoftDriversTask {
 	$modelMutex = $null
 	$modelExisted = $true
     try {
+		$ignoreErrors = Get-DriverIgnoreDownloadErrors -DriverItem $DriverItemData
 		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelPath -Context $DriverOperationContext
 		$modelExisted = Test-Path -LiteralPath $modelPath
         $existingDriver = Test-ExistingDriver -Make $make -Model $sanitizedModelName -DriversFolder $DriversFolder -Identifier $modelName -ProgressQueue $ProgressQueue
@@ -77,7 +79,7 @@ function Save-MicrosoftDriversTask {
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status "Compressing existing..." }
                 try {
-                    $null = Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $modelName -WimDescription "Drivers for $modelName" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+					if (-not (Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $modelName -WimDescription "Drivers for $modelName" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop)) { throw 'Driver folder compression failed. See the FFU log.' }
                     $existingDriver.Status = "Compression successful"
                     $existingDriver.DriverPath = $wimRelativePath
                     $existingDriver.Success = $true
@@ -269,6 +271,7 @@ function Save-MicrosoftDriversTask {
 
                 ### DOWNLOAD
                 $filePath = Join-Path -Path $makeDriversPath -ChildPath ($fileName)
+				$contentType = Get-SurfaceDriverContentType -FileName $fileName
 				$driverWorkspace = New-DriverExtractionWorkspace -Context $DriverOperationContext -DriversFolder $DriversFolder -FileName $fileName -FinalPath $modelPath -CachePath $filePath -ComponentName "$modelName | $fileName" -AllowShortName -RetainInstallerOnFailure
 				try {
 				WriteLog "Downloading $modelName driver file to '$($driverWorkspace.InputPath)'."
@@ -276,7 +279,6 @@ function Save-MicrosoftDriversTask {
                 WriteLog "Download complete"
 
                 $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
-				$contentType = Get-SurfaceDriverContentType -FileName $fileName
 
                 ### EXTRACT
                 if ($fileExtension -eq ".msi") {
@@ -290,7 +292,12 @@ function Save-MicrosoftDriversTask {
                     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
                     WriteLog "Extracting ZIP file to '$($driverWorkspace.OutputPath)'."
                     $ProgressPreference = 'SilentlyContinue'
-					Expand-Archive -LiteralPath $driverWorkspace.InputPath -DestinationPath $driverWorkspace.OutputPath -Force -ErrorAction Stop
+					try { $null = Expand-Archive -LiteralPath $driverWorkspace.InputPath -DestinationPath $driverWorkspace.OutputPath -Force -ErrorAction Stop }
+					catch {
+						$zipException = [Exception]::new("ZIP extraction failed for '$fileName': $($_.Exception.Message) (error: $($_.FullyQualifiedErrorId)).", $_.Exception)
+						$zipException.Data['DriverFailureStage'] = 'Extraction'
+						throw $zipException
+					}
                     $ProgressPreference = 'Continue'
                     WriteLog "Extraction complete"
                 }
@@ -299,6 +306,12 @@ function Save-MicrosoftDriversTask {
                     throw "Unsupported file type: $fileExtension"
                 }
 				Publish-DriverExtractionContent -Workspace $driverWorkspace -RequireInf -AllowProvisioningPackage -ContentType $contentType
+				}
+				catch {
+					$failedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $ignoreErrors `
+						-Workspace $driverWorkspace -Make $make -Model $modelName -DriverName $fileName -Source $downloadLink `
+						-ValidationParameters @{ RequireInf = $true; AllowProvisioningPackage = $true; ContentType = $contentType }))
+					throw [Exception]::new("No usable drivers remain for Microsoft model '$modelName'. $($_.Exception.Message)", $_.Exception)
 				}
 				finally {
 					$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
@@ -312,12 +325,12 @@ function Save-MicrosoftDriversTask {
                     $wimFileName = "$($modelName).wim"
                     # Corrected WIM path: WIM file should be next to the model folder, not inside it.
                     $destinationWimPath = Join-Path -Path $makeDriversPath -ChildPath $wimFileName
-                    $driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName # Update relative path to the WIM file
                     WriteLog "Compressing '$modelPath' to '$destinationWimPath'..."
                     try {
                         # Use the function from the imported common module
                         $compressResult = Compress-DriverFolderToWim -SourceFolderPath $modelPath -DestinationWimPath $destinationWimPath -WimName $modelName -WimDescription $modelName -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
                         if ($compressResult) {
+							$driverRelativePath = Join-Path -Path $make -ChildPath $wimFileName
                             WriteLog "Compression successful for '$modelName'."
                             $status = "Completed & Compressed"
                         }
@@ -353,14 +366,14 @@ function Save-MicrosoftDriversTask {
         }
     }
     catch {
-        $status = "Error: $($_.Exception.Message.Split('.')[0])" # Shorten error message
+        $status = "Error: $($_.Exception.Message)"
         WriteLog "Error saving Microsoft drivers for $($modelName): $($_.Exception.Message)"
         $success = $false
 		if (-not $modelExisted) { Remove-DriverModelFolder -DriversFolder $DriversFolder -TargetFolder $modelPath -Description $modelName }
         # Enqueue the error status before returning
         if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
         # Ensure return object is created even on error
-        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $null }
+        return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $null; FailedDrivers = $failedDrivers.ToArray() }
     }
 	finally {
 		if ($null -ne $modelMutex) { $modelMutex.ReleaseMutex(); $modelMutex.Dispose() }
@@ -370,7 +383,7 @@ function Save-MicrosoftDriversTask {
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $modelName -Status $status }
     
     # Return the final status (this is still used by Receive-Job for final confirmation)
-    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $driverRelativePath }
+    return [PSCustomObject]@{ Model = $modelName; Status = $status; Success = $success; DriverPath = $driverRelativePath; FailedDrivers = $failedDrivers.ToArray() }
 }
 
 Export-ModuleMember -Function *

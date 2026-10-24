@@ -152,6 +152,8 @@ function Save-HPDriversTask {
     $driverRelativePath = Join-Path -Path $make -ChildPath $sanitizedModelName # Relative path for the driver folder
     $finalStatus = "" # Initialize final status
     $successState = $true # Assume success unless an operation fails
+	$failedDrivers = [Collections.Generic.List[object]]::new()
+	$successfulPackageCount = 0
 
     if (-not (Test-Path -Path $DriversFolder -PathType Container)) {
         WriteLog "Creating Drivers folder: $DriversFolder"
@@ -167,6 +169,7 @@ function Save-HPDriversTask {
 	$modelMutex = $null
 	$modelExisted = $true
     try {
+		$ignoreErrors = Get-DriverIgnoreDownloadErrors -DriverItem $DriverItemData
 		$modelMutex = Get-DriverPublicationMutex -FinalPath $modelSpecificFolder -Context $DriverOperationContext
 		$modelExisted = Test-Path -LiteralPath $modelSpecificFolder
 		$retryModel = Test-DriverModelIncomplete -ModelPath $modelSpecificFolder
@@ -185,7 +188,7 @@ function Save-HPDriversTask {
                 WriteLog "Attempting compression of existing folder '$sourceFolderPath' to '$wimFilePath'."
                 if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status "Compressing existing..." }
                 try {
-                    $null = Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+					if (-not (Compress-DriverFolderToWim -SourceFolderPath $sourceFolderPath -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop)) { throw 'Driver folder compression failed. See the FFU log.' }
                     $existingDriver.Status = "Compression successful"
                     $existingDriver.DriverPath = $wimRelativePath
                     $existingDriver.Success = $true
@@ -268,7 +271,7 @@ function Save-HPDriversTask {
             WriteLog "$progressMsg URL: $driverUrl"
 
             if (-not $retryModel -and (Test-Path -Path $extractFolder)) {
-				try { $null = Test-DriverExtractionOutput -Path $extractFolder -ComponentName "$identifier | $driverName $version"; continue }
+				try { $null = Test-DriverExtractionOutput -Path $extractFolder -ComponentName "$identifier | $driverName $version"; $successfulPackageCount++; continue }
 				catch { WriteLog "Re-extracting incomplete HP package '$driverName': $($_.Exception.Message)" }
             }
             if (-not (Test-Path -Path $downloadFolder)) {
@@ -284,12 +287,18 @@ function Save-HPDriversTask {
 			WriteLog "Running HP Driver Extraction Command: $($driverWorkspace.InputPath) $arguments"
 			$null = Expand-HPDriverPackage -Workspace $driverWorkspace -ArgumentList $arguments
 			Publish-DriverExtractionContent -Workspace $driverWorkspace
+			$successfulPackageCount++
+			}
+			catch {
+				$failedDrivers.Add((Resolve-DriverPackageFailure -ErrorRecord $_ -IgnoreErrors $ignoreErrors `
+					-Workspace $driverWorkspace -Make $make -Model $identifier -DriverName $driverName -Source $driverUrl))
 			}
 			finally {
 				$null = Remove-DriverExtractionWorkspace -Workspace $driverWorkspace
 			}
         }
 
+		if ($successfulPackageCount -eq 0) { throw "No usable drivers remain for HP model '$identifier'." }
 		Set-DriverModelDownloadState -ModelPath $modelSpecificFolder -State Complete -Context $DriverOperationContext
         
         $finalStatus = "Completed" 
@@ -298,7 +307,7 @@ function Save-HPDriversTask {
             $wimFilePath = Join-Path -Path $hpDriversBaseFolder -ChildPath "$($identifier).wim"
             WriteLog "Compressing '$modelSpecificFolder' to '$wimFilePath'..."
             try {
-                $null = Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop
+				if (-not (Compress-DriverFolderToWim -SourceFolderPath $modelSpecificFolder -DestinationWimPath $wimFilePath -WimName $identifier -WimDescription "Drivers for $identifier" -PreserveSource:$PreserveSourceOnCompress -ErrorAction Stop)) { throw 'Driver folder compression failed. See the FFU log.' }
                 WriteLog "Compression successful for '$identifier'."
                 $finalStatus = "Completed & Compressed"
                 $driverRelativePath = Join-Path -Path $make -ChildPath "$($identifier).wim" # Update relative path to the WIM
@@ -308,6 +317,7 @@ function Save-HPDriversTask {
                 $finalStatus = "Completed (Compression Failed)"
             }
         }
+		if ($failedDrivers.Count -gt 0) { $finalStatus += " with warnings ($($failedDrivers.Count) skipped)" }
         $successState = $true
     }
     catch {
@@ -323,7 +333,7 @@ function Save-HPDriversTask {
 	}
             
     if ($null -ne $ProgressQueue) { Invoke-ProgressUpdate -ProgressQueue $ProgressQueue -Identifier $identifier -Status $finalStatus }
-    return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $successState; DriverPath = $driverRelativePath }
+    return [PSCustomObject]@{ Identifier = $identifier; Status = $finalStatus; Success = $successState; DriverPath = $driverRelativePath; FailedDrivers = $failedDrivers.ToArray() }
 }
 
 Export-ModuleMember -Function *

@@ -113,7 +113,8 @@ Below is an example of `Drivers.json`:
       {
         "Name": "Dell Pro Max Desktops Dell Pro Max Micro FCM2250,Dell Pro Max Micro XE FCM2250",
         "CabUrl": "https://downloads.dell.com/FOLDER13898125M/1/Dell_Pro_Max_Desktops_0D14.cab",
-        "SystemId": "0D14"
+        "SystemId": "0D14",
+        "IgnoreDriverDownloadErrors": false
       }
     ]
   },
@@ -144,9 +145,23 @@ Import Drivers.json allows you to import a previously saved Drivers.json file. T
 
 Download Selected will download the selected models to the Drivers Folder path (default `.\FFUDevelopment\Drivers`). Drivers will download to the `\FFUDevelopment\Drivers\Make\Model` folder. Download selected also interacts with the **Compress Driver Model Folder to WIM** checkbox which will download and compress the drivers to WIM.
 
-If you've previously downloaded a driver model and want to compress it to a WIM, you can check he **Compress Driver Model Folder to WIM** checkbox and click **Download Selected** again. This will skip the download and compress the driver folder to a WIM file.
+If you've previously downloaded a complete driver model and want to compress it to a WIM, you can check the **Compress Driver Model Folder to WIM** checkbox and click **Download Selected** again. This will skip the download and compress the driver folder to a WIM file. Incomplete models are retried first.
 
 Download Selected leverages BITS and the BITS Priority can be controlled by the **BITS Priority** drop down on the **Build** tab. If driver downloads via the UI feel slow, change BITS Priority to Foreground to speed them up.
+
+## Ignore Errors
+
+Check **Ignore Errors** for a model to continue past a driver that might be failing. By default, a driver download or extraction failure will hard fail and prevent downloading the rest of the drivers for that model. This works around that hard failure.
+
+FFU Builder keeps verified drivers and shows **Completed with warnings**. The model still fails if no usable packages remain. Catalog and publishing errors still stop processing.
+
+Use this option only if you can accept missing drivers. Review skipped drivers in the warning dialog after **Download Selected**, or in the PowerShell console during a build. The FFU log (either FFUDevelopment_UI.log or FFUDevelopment.log) contains full error details.
+
+The setting is saved per model in `Drivers.json` as `IgnoreDriverDownloadErrors`. Set it to `true` without quotation marks to enable it. When set to `false` or an omitted property keeps the original hard failure behavior.
+
+For CLI downloads using the legacy `-Make` and `-Model` properties, add `-IgnoreDriverDownloadErrors $true`. Models loaded through `-DriversJsonPath` use their saved setting instead.
+
+A successful download with **Ignore Errors** marks the model complete even when drivers were skipped.
 
 ## Clear List
 
