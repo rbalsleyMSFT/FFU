@@ -3937,7 +3937,7 @@ function Add-BootFiles {
     }
 
     WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`" using ADK BCDBoot at `"$bcdBootPath`"..."
-    Invoke-Process $bcdBootPath "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType" | Out-Null
+    Invoke-Process $bcdBootPath "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType /offline" | Out-Null
     WriteLog "Done."
 }
 
