@@ -19,7 +19,7 @@ The UI allows you to download the drivers prior to build and/or create a `Driver
 
 This is the location where drivers are downloaded to, or where you'll manually copy drivers to. The default is `.\FFUDevelopment\Drivers`
 
-## Drivers temporary download/extraction path
+## Drivers temporary download path
 
 This is the temporary folder used to download and extract driver packages and catalogs before copying the verified drivers to your **Drivers Folder**. Enter the folder path or click **Browse...** to select it. The path is saved with your build configuration and is also available as the `-DriversTempPath` command-line parameter.
 
@@ -85,7 +85,7 @@ You can multi-select different models within the same make, or mix and match dif
 
 ### Download and extraction folders
 
-Long driver filenames and nested folders can exceed the [Windows path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation). FFU Builder uses a shorter folder structure under **Drivers temporary download/extraction path** during extraction to help stay within that limit, then copies the verified drivers to your **Drivers Folder**.
+Long driver filenames and nested folders can exceed the [Windows path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation). FFU Builder uses a shorter folder structure under **Drivers temporary download path** during extraction to help stay within that limit, then copies the verified drivers to your **Drivers Folder**.
 
 Each driver operation and package has its own 12-character ID. For example:
 

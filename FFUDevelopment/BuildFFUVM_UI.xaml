@@ -788,7 +788,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <!-- Drivers Folder -->
                                         <RowDefinition Height="Auto"/>
-                                        <!-- Drivers temporary download/extraction path -->
+                                        <!-- Drivers temporary download path -->
                                         <RowDefinition Height="Auto"/>
                                         <!-- PE Drivers Folder -->
                                         <RowDefinition Height="Auto"/>
@@ -833,7 +833,7 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="1" Margin="0,0,0,20">
-                                        <TextBlock Text="Drivers temporary download/extraction path" VerticalAlignment="Center" ToolTip="Temporary driver download/extraction folder on a local NTFS/ReFS drive. Use a path without whitespace and at most 41 characters." Margin="0,0,0,8"/>
+                                        <TextBlock Text="Drivers temporary download path" VerticalAlignment="Center" ToolTip="Temporary driver download/extraction folder on a local NTFS/ReFS drive. Use a path without whitespace and at most 41 characters." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
