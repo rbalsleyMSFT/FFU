@@ -120,6 +120,9 @@ Optional data partitions to create after the Recovery partition. Each item suppo
 .PARAMETER DriversFolder
 Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers.
 
+.PARAMETER DriversTempPath
+Temporary driver download/extraction folder. Defaults to FFUDrv at the root of the local DriversFolder drive, or the system drive for network paths. Use a local NTFS/ReFS folder without whitespace and at most 41 characters.
+
 .PARAMETER DriversJsonPath
 Path to a JSON file that specifies which drivers to download.
 
@@ -484,6 +487,7 @@ param(
     [bool]$RemoveDownloadedESD = $true,
     [bool]$RemoveApps = $true,
     [string]$DriversFolder,
+	[string]$DriversTempPath,
     [string]$PEDriversFolder,
     [bool]$CleanupDrivers = $true,
     [string]$UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
@@ -1064,6 +1068,14 @@ $refreshAppsIsoForLtscCu = $false
 # Set the log path for the common logger
 Set-CommonCoreLogPath -Path $LogFile
 Set-BitsTransferPriority -Priority $BitsPriority
+
+if ($ExportConfigFile -and [string]::IsNullOrWhiteSpace($DriversTempPath)) {
+	try { $DriversTempPath = Get-DriverWorkspaceDefaultRoot -DriversFolder $DriversFolder }
+	catch {
+		WriteLog "Invalid drivers temporary download/extraction path: $($_.Exception.Message)"
+		throw
+	}
+}
 
 #FUNCTIONS
 
@@ -6093,7 +6105,7 @@ function Remove-InProgressItems {
     param([string]$FFUDevelopmentPath)
 	$driverRunManifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
 	if ($null -ne $driverRunManifest -and $driverRunManifest.RunStartUtc) {
-		Remove-DriverDownloadOperation -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc -Cancel
+		Remove-DriverDownloadOperation -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc -Cancel -DriversTempPath $DriversTempPath
 	}
     $sessionInprog = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'inprogress'
     if (-not (Test-Path $sessionInprog)) { return }
@@ -6335,7 +6347,7 @@ function Cleanup-CurrentRunDownloads {
     param([string]$FFUDevelopmentPath)
     $manifest = Get-CurrentRunManifest -FFUDevelopmentPath $FFUDevelopmentPath
     if ($null -eq $manifest) { WriteLog "No current run manifest; skipping current-run cleanup."; return }
-	Remove-DriverDownloadOperation -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $manifest.RunStartUtc -Cancel
+	Remove-DriverDownloadOperation -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $manifest.RunStartUtc -Cancel -DriversTempPath $DriversTempPath
     $runStart = [datetime]::Parse($manifest.RunStartUtc)
 
     # Remove tracked file download targets for this run.
@@ -7169,7 +7181,7 @@ if ($driversJsonPath -and (Test-Path $driversJsonPath) -and ($InstallDrivers -or
 		if ($null -eq $driverRunManifest -or -not $driverRunManifest.RunStartUtc) {
 			throw 'Driver downloads require the current build-run manifest for owned workspace cleanup.'
 		}
-		$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc
+		$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc -DriversTempPath $DriversTempPath
         $taskArguments = @{
 			DriverOperationContext   = $driverOperationContext
             DriversFolder            = $DriversFolder
@@ -7353,7 +7365,7 @@ elseif (($Make -and $Model) -and ($InstallDrivers -or $CopyDrivers)) {
 	if ($null -eq $driverRunManifest -or -not $driverRunManifest.RunStartUtc) {
 		throw 'Driver downloads require the current build-run manifest for owned workspace cleanup.'
 	}
-	$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc
+	$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -RunStartUtc $driverRunManifest.RunStartUtc -DriversTempPath $DriversTempPath
 	$singleModelFailures = [Collections.Generic.List[object]]::new()
 	$driverFailureArguments = @{ IgnoreDriverDownloadErrors = $IgnoreDriverDownloadErrors; FailedDrivers = $singleModelFailures }
     try {

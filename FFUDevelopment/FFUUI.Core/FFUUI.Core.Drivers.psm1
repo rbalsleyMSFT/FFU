@@ -213,30 +213,41 @@ function Get-DriverDisplayName {
         throw "Windows Release not selected for $SelectedMake."
     }
 
-    switch ($SelectedMake) {
-        'Microsoft' {
-            $rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent -DriversFolder $localDriversFolder
-        }
-        'Dell' {
-            $rawModels = Get-DellDriversModelList -WindowsRelease $localDriverWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake
-        }
-        'HP' {
-            $rawModels = Get-HPDriversModelList -DriversFolder $localDriversFolder -Make $SelectedMake
-        }
-        'Lenovo' {
-            $modelSearchTerm = Show-FFUDialog -Owner $State.Window -Message "Enter Lenovo Model Name or Machine Type (e.g., T480 or 20L5):" -Title "Lenovo Model Search" -InputText
-            if ([string]::IsNullOrWhiteSpace($modelSearchTerm)) {
-                # User cancelled or entered nothing
-                return @()
-            }
-            $State.Controls.txtStatus.Text = "Searching Lenovo models for '$modelSearchTerm'..."
-            $rawModels = Get-LenovoDriversModelList -ModelSearchTerm $modelSearchTerm -Headers $Headers -UserAgent $UserAgent
-        }
-        default {
-            Show-FFUDialog -Owner $State.Window -Message "Selected Make '$SelectedMake' is not supported for automatic model retrieval." -Title "Unsupported Make" -Icon Warning | Out-Null
-            return @()
-        }
-    }
+	$driverOperationContext = $null
+	try {
+		if ($SelectedMake -in @('Dell', 'HP')) {
+			$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $State.FFUDevelopmentPath -DriversFolder $localDriversFolder -DriversTempPath $State.Controls.txtDriversTempPath.Text
+		}
+		switch ($SelectedMake) {
+			'Microsoft' {
+				$rawModels = Get-MicrosoftDriversModelList -Headers $Headers -UserAgent $UserAgent -DriversFolder $localDriversFolder
+			}
+			'Dell' {
+				$rawModels = Get-DellDriversModelList -WindowsRelease $localDriverWindowsRelease -DriversFolder $localDriversFolder -Make $SelectedMake -DriverOperationContext $driverOperationContext
+			}
+			'HP' {
+				$rawModels = Get-HPDriversModelList -DriversFolder $localDriversFolder -Make $SelectedMake -DriverOperationContext $driverOperationContext
+			}
+			'Lenovo' {
+				$modelSearchTerm = Show-FFUDialog -Owner $State.Window -Message "Enter Lenovo Model Name or Machine Type (e.g., T480 or 20L5):" -Title "Lenovo Model Search" -InputText
+				if ([string]::IsNullOrWhiteSpace($modelSearchTerm)) {
+					return @()
+				}
+				$State.Controls.txtStatus.Text = "Searching Lenovo models for '$modelSearchTerm'..."
+				$rawModels = Get-LenovoDriversModelList -ModelSearchTerm $modelSearchTerm -Headers $Headers -UserAgent $UserAgent
+			}
+			default {
+				Show-FFUDialog -Owner $State.Window -Message "Selected Make '$SelectedMake' is not supported for automatic model retrieval." -Title "Unsupported Make" -Icon Warning | Out-Null
+				return @()
+			}
+		}
+	}
+	finally {
+		if ($null -ne $driverOperationContext) {
+			try { Remove-DriverDownloadOperation -Context $driverOperationContext }
+			catch { WriteLog "Driver model catalog cleanup failed; workspace retained: $($_.Exception.Message)" }
+		}
+	}
 
     if ($null -ne $rawModels) {
         foreach ($rawModel in $rawModels) {
@@ -872,6 +883,7 @@ function Invoke-DownloadSelectedDrivers {
         return
     }
     $localDriversFolder = $State.Controls.txtDriversFolder.Text
+	$localDriversTempPath = $State.Controls.txtDriversTempPath.Text
     $localWindowsRelease = $State.Controls.cmbWindowsRelease.SelectedItem.Value
     $localWindowsReleaseDisplay = $State.Controls.cmbWindowsRelease.SelectedItem.Display
     $localWindowsSku = if ($null -ne $State.Controls.cmbWindowsSKU.SelectedItem) { [string]$State.Controls.cmbWindowsSKU.SelectedItem } else { $null }
@@ -890,6 +902,11 @@ function Invoke-DownloadSelectedDrivers {
 
     $State.Controls.txtStatus.Text = "Processing all selected drivers..."
     WriteLog "Processing all selected drivers: $($selectedDrivers.Model -join ', ')"
+
+	$driverOperationContext = $null
+	try {
+		$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $State.FFUDevelopmentPath -DriversFolder $localDriversFolder -DriversTempPath $localDriversTempPath
+		$State.Data.driverOperationContext = $driverOperationContext
 
     # Pre-process Dell Catalog if needed, so it's not done in parallel
     if ($selectedDrivers | Where-Object { $_.Make -eq 'Dell' }) {
@@ -920,7 +937,7 @@ function Invoke-DownloadSelectedDrivers {
                 if (Test-Path -Path $dellCabFile) { Remove-Item -Path $dellCabFile -Force -ErrorAction SilentlyContinue }
                 if (Test-Path -Path $dellCatalogXML) { Remove-Item -Path $dellCatalogXML -Force -ErrorAction SilentlyContinue }
 
-				Expand-DriverCatalog -Source $catalogUrl -CabPath $dellCabFile -XmlPath $dellCatalogXML -ForceDownload
+				Expand-DriverCatalog -Source $catalogUrl -CabPath $dellCabFile -XmlPath $dellCatalogXML -DriverOperationContext $driverOperationContext -ForceDownload
                 WriteLog "Dell Catalog prepared successfully."
             }
         }
@@ -946,10 +963,6 @@ function Invoke-DownloadSelectedDrivers {
         PreserveSourceOnCompress = $preserveSource
     }
 
-	$driverOperationContext = $null
-	try {
-		$driverOperationContext = New-DriverOperationContext -FFUDevelopmentPath $State.FFUDevelopmentPath -DriversFolder $localDriversFolder
-		$State.Data.driverOperationContext = $driverOperationContext
 		$taskArguments['DriverOperationContext'] = $driverOperationContext
     $parallelResults = Invoke-ParallelProcessing -ItemsToProcess $selectedDrivers `
         -ListViewControl $State.Controls.lstDriverModels `

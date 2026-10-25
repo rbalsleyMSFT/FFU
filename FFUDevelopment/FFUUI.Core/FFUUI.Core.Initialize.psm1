@@ -379,6 +379,7 @@ function Initialize-UIControls {
     $State.Controls.btnBrowseFFUCaptureLocation = $window.FindName('btnBrowseFFUCaptureLocation')
     $State.Controls.btnBrowseOfficePath = $window.FindName('btnBrowseOfficePath')
     $State.Controls.btnBrowseDriversFolder = $window.FindName('btnBrowseDriversFolder')
+	$State.Controls.btnBrowseDriversTempPath = $window.FindName('btnBrowseDriversTempPath')
     $State.Controls.btnBrowsePEDriversFolder = $window.FindName('btnBrowsePEDriversFolder')
     $State.Controls.txtAppName = $window.FindName('txtAppName')
     $State.Controls.txtAppCommandLine = $window.FindName('txtAppCommandLine')
@@ -479,6 +480,7 @@ function Initialize-UIControls {
     $State.Controls.txtOfficeConfigXMLFilePath = $window.FindName('txtOfficeConfigXMLFilePath')
     $State.Controls.btnBrowseOfficeConfigXMLFile = $window.FindName('btnBrowseOfficeConfigXMLFile')
     $State.Controls.txtDriversFolder = $window.FindName('txtDriversFolder')
+	$State.Controls.txtDriversTempPath = $window.FindName('txtDriversTempPath')
     $State.Controls.txtPEDriversFolder = $window.FindName('txtPEDriversFolder')
     $State.Controls.chkCopyPEDrivers = $window.FindName('chkCopyPEDrivers')
     $State.Controls.chkUseDriversAsPEDrivers = $window.FindName('chkUseDriversAsPEDrivers')
@@ -714,6 +716,7 @@ function Initialize-UIDefaults {
 
     # Drivers tab defaults from General Defaults
     $State.Controls.txtDriversFolder.Text = $State.Defaults.generalDefaults.DriversFolder
+	$State.Controls.txtDriversTempPath.Text = $State.Defaults.generalDefaults.DriversTempPath
     $State.Controls.txtPEDriversFolder.Text = $State.Defaults.generalDefaults.PEDriversFolder
     $State.Controls.txtDriversJsonPath.Text = $State.Defaults.generalDefaults.DriversJsonPath
     $State.Controls.chkDownloadDrivers.IsChecked = $State.Defaults.generalDefaults.DownloadDrivers

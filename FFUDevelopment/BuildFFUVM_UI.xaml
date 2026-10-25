@@ -788,6 +788,8 @@
                                         <RowDefinition Height="Auto"/>
                                         <!-- Drivers Folder -->
                                         <RowDefinition Height="Auto"/>
+                                        <!-- Drivers temporary download/extraction path -->
+                                        <RowDefinition Height="Auto"/>
                                         <!-- PE Drivers Folder -->
                                         <RowDefinition Height="Auto"/>
                                         <!-- Drivers.json Path -->
@@ -830,8 +832,20 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <!-- Row 1: PE Drivers Folder -->
                                     <StackPanel Grid.Row="1" Margin="0,0,0,20">
+                                        <TextBlock Text="Drivers temporary download/extraction path" VerticalAlignment="Center" ToolTip="Temporary driver download/extraction folder on a local NTFS/ReFS drive. Use a path without whitespace and at most 41 characters." Margin="0,0,0,8"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="txtDriversTempPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Temporary driver download/extraction folder on a local NTFS/ReFS drive. Use a path without whitespace and at most 41 characters. Default is FFUDrv at the root of the local drivers drive, or the system drive for network folders."/>
+                                            <Button x:Name="btnBrowseDriversTempPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <!-- Row 2: PE Drivers Folder -->
+                                    <StackPanel Grid.Row="2" Margin="0,0,0,20">
                                         <TextBlock Text="PE Drivers Folder:" VerticalAlignment="Center" ToolTip="Path to the PE drivers folder. Default is $FFUDevelopmentPath\PEDrivers." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -843,8 +857,8 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <!-- Row 2: Drivers.json Path -->
-                                    <StackPanel Grid.Row="2" Margin="0,0,0,20">
+                                    <!-- Row 3: Drivers.json Path -->
+                                    <StackPanel Grid.Row="3" Margin="0,0,0,20">
                                         <TextBlock Text="Drivers.json Path:" VerticalAlignment="Center" ToolTip="Path to the Drivers.json file. Default is $FFUDevelopmentPath\Drivers\Drivers.json." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -856,23 +870,23 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <!-- Row 3: Download Drivers Checkbox -->
-                                    <StackPanel Grid.Row="3" Margin="0,0,0,8">
+                                    <!-- Row 4: Download Drivers Checkbox -->
+                                    <StackPanel Grid.Row="4" Margin="0,0,0,8">
                                         <CheckBox x:Name="chkDownloadDrivers" Content="Download Drivers" Margin="0" VerticalAlignment="Center" ToolTip="Download the drivers and put them in the Drivers folder."/>
                                     </StackPanel>
 
-                                    <!-- Row 4: Make Section (Indented) -->
-                                    <StackPanel x:Name="spMakeSection" Grid.Row="4" Visibility="Collapsed" Margin="24,0,0,20">
+                                    <!-- Row 5: Make Section (Indented) -->
+                                    <StackPanel x:Name="spMakeSection" Grid.Row="5" Visibility="Collapsed" Margin="24,0,0,20">
                                         <TextBlock Text="Make:" Margin="0,0,0,8" ToolTip="Make of the device to download drivers. Accepted values are: 'Microsoft', 'Dell', 'HP', 'Lenovo'."/>
                                         <ComboBox x:Name="cmbMake" Margin="0" HorizontalAlignment="Left" Width="200"/>
                                         <!-- Model TextBox is removed from here, filtering will be done below -->
                                     </StackPanel>
 
-                                    <!-- Row 5: Get Models Button (Indented) -->
-                                    <Button x:Name="btnGetModels" Grid.Row="5" Content="Get Models" Margin="24,0,0,20" HorizontalAlignment="Left" ToolTip="Retrieve available models for the selected Make." Visibility="Collapsed" Padding="12,4"/>
+                                    <!-- Row 6: Get Models Button (Indented) -->
+                                    <Button x:Name="btnGetModels" Grid.Row="6" Content="Get Models" Margin="24,0,0,20" HorizontalAlignment="Left" ToolTip="Retrieve available models for the selected Make." Visibility="Collapsed" Padding="12,4"/>
 
-                                    <!-- Row 6: Model Filter Section (Indented) -->
-                                    <StackPanel x:Name="spModelFilterSection" Grid.Row="6" Visibility="Collapsed" Margin="24,0,0,20">
+                                    <!-- Row 7: Model Filter Section (Indented) -->
+                                    <StackPanel x:Name="spModelFilterSection" Grid.Row="7" Visibility="Collapsed" Margin="24,0,0,20">
                                         <TextBlock Text="Model Filter" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -884,35 +898,35 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <!-- Row 7: Driver Models ListView (Indented) -->
-                                    <ListView x:Name="lstDriverModels" Grid.Row="7" Margin="24,0,0,20" Height="300" Visibility="Collapsed" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                    <!-- Row 8: Driver Models ListView (Indented) -->
+                                    <ListView x:Name="lstDriverModels" Grid.Row="8" Margin="24,0,0,20" Height="300" Visibility="Collapsed" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                                     </ListView>
 
-                                    <!-- Row 8: Driver Action Buttons (Indented) -->
-                                    <StackPanel x:Name="spDriverActionButtons" Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Left" Margin="24,0,0,20" Visibility="Collapsed">
+                                    <!-- Row 9: Driver Action Buttons (Indented) -->
+                                    <StackPanel x:Name="spDriverActionButtons" Grid.Row="9" Orientation="Horizontal" HorizontalAlignment="Left" Margin="24,0,0,20" Visibility="Collapsed">
                                         <Button x:Name="btnSaveDriversJson" Content="Save Drivers.json" Padding="12,4" Margin="0,0,8,0" ToolTip="Save selected drivers to a JSON file (Not Implemented)"/>
                                         <Button x:Name="btnImportDriversJson" Content="Import Drivers.json" Padding="12,4" Margin="0,0,8,0" ToolTip="Import drivers from a JSON file (Not Implemented)"/>
                                         <Button x:Name="btnDownloadSelectedDrivers" Content="Download Selected" Padding="12,4" Margin="0,0,8,0" ToolTip="Download all selected drivers"/>
                                         <Button x:Name="btnClearDriverList" Content="Clear List" Padding="12,4" ToolTip="Clear all drivers from the list (Not Implemented)"/>
                                     </StackPanel>
 
-                                    <!-- Row 9: Install Drivers to FFU -->
-                                    <StackPanel Grid.Row="9" Margin="0,0,0,8">
+                                    <!-- Row 10: Install Drivers to FFU -->
+                                    <StackPanel Grid.Row="10" Margin="0,0,0,8">
                                         <CheckBox x:Name="chkInstallDrivers" Content="Install Drivers to FFU" Margin="0" VerticalAlignment="Center" ToolTip="Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to $true. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU."/>
                                     </StackPanel>
 
-                                    <!-- Row 10: Copy Drivers to USB -->
-                                    <StackPanel Grid.Row="10" Margin="0,0,0,8">
+                                    <!-- Row 11: Copy Drivers to USB -->
+                                    <StackPanel Grid.Row="11" Margin="0,0,0,8">
                                         <CheckBox x:Name="chkCopyDrivers" Content="Copy Drivers to USB drive" Margin="0" VerticalAlignment="Center" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is $false."/>
                                     </StackPanel>
 
-                                    <!-- Row 11: Compress Driver Model Folder to WIM -->
-                                    <StackPanel Grid.Row="11" Margin="0,0,0,8">
+                                    <!-- Row 12: Compress Driver Model Folder to WIM -->
+                                    <StackPanel Grid.Row="12" Margin="0,0,0,8">
                                         <CheckBox x:Name="chkCompressDriversToWIM" Content="Compress Driver Model Folder to WIM" Margin="0" VerticalAlignment="Center" ToolTip="When set to $true, will compress each downloaded driver model folder into a separate WIM file within the Drivers folder. This is useful with Copy Drivers to USB drive."/>
                                     </StackPanel>
 
-                                    <!-- Row 12: PE Driver Options (UseDriversAsPEDrivers is a dependent sub-option) -->
-                                    <StackPanel Grid.Row="12" Margin="0">
+                                    <!-- Row 13: PE Driver Options (UseDriversAsPEDrivers is a dependent sub-option) -->
+                                    <StackPanel Grid.Row="13" Margin="0">
                                         <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
                                         <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="24,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
                                     </StackPanel>

@@ -32,6 +32,52 @@ function Get-DriverWorkspaceVolume {
 	return $volume
 }
 
+function Get-DriverWorkspaceDefaultRoot {
+	param([Parameter(Mandatory)][string]$DriversFolder)
+
+	$volume = Get-DriverWorkspaceVolume -Path $DriversFolder
+	return "$($volume.DriveLetter):\FFUDrv"
+}
+
+function Resolve-DriverWorkspaceRoot {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)][string]$DriversFolder,
+		[string]$DriversTempPath
+	)
+
+	if ([string]::IsNullOrWhiteSpace($DriversTempPath)) {
+		$DriversTempPath = Get-DriverWorkspaceDefaultRoot -DriversFolder $DriversFolder
+	}
+	if (-not [IO.Path]::IsPathFullyQualified($DriversTempPath) -or $DriversTempPath -notmatch '^[A-Za-z]:\\') {
+		throw "Drivers temporary download/extraction path must be an absolute local folder path: '$DriversTempPath'."
+	}
+	$root = [IO.Path]::GetFullPath($DriversTempPath).TrimEnd('\')
+	if ($root -notmatch '^[A-Za-z]:\\.' -or $root -match '\s' -or $root.Length -gt 41) {
+		throw "Drivers temporary download/extraction path must be a folder below a drive root, contain no whitespace, and be at most 41 characters: '$root'."
+	}
+	foreach ($part in $root.Substring(3).Split('\')) {
+		if ($part.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0 -or $part.EndsWith('.')) {
+			throw "Invalid folder name in drivers temporary download/extraction path: '$root'."
+		}
+	}
+	$drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($root))
+	if (-not $drive.IsReady -or $drive.DriveType -eq [IO.DriveType]::Network -or $drive.DriveFormat -notin @('NTFS', 'ReFS')) {
+		throw "Drivers temporary download/extraction path needs a local NTFS/ReFS volume with a drive letter: '$root'."
+	}
+	$currentPath = $root
+	while (-not [string]::IsNullOrWhiteSpace($currentPath)) {
+		if (Test-Path -LiteralPath $currentPath -ErrorAction Stop) {
+			$item = Get-Item -LiteralPath $currentPath -Force -ErrorAction Stop
+			if (-not $item.PSIsContainer -or $item.Attributes -band [IO.FileAttributes]::ReparsePoint -or $item.PSDrive.DisplayRoot -like '\\*') {
+				throw "Refusing a file, network location, or reparse point in drivers temporary download/extraction path: '$currentPath'."
+			}
+		}
+		$currentPath = Split-Path -Path $currentPath -Parent
+	}
+	return $root
+}
+
 function Confirm-DriverOperationActive {
 	param([Parameter(Mandatory)][pscustomobject]$Context)
 
@@ -45,15 +91,20 @@ function New-DriverOperationContext {
 	param(
 		[Parameter(Mandatory)][string]$FFUDevelopmentPath,
 		[Parameter(Mandatory)][string]$DriversFolder,
-		[string]$RunStartUtc
+		[string]$RunStartUtc,
+		[string]$DriversTempPath
 	)
 
-	$volume = Get-DriverWorkspaceVolume -Path $DriversFolder
+	try { $root = Resolve-DriverWorkspaceRoot -DriversFolder $DriversFolder -DriversTempPath $DriversTempPath }
+	catch {
+		WriteLog "Invalid drivers temporary download/extraction path: $($_.Exception.Message)"
+		throw
+	}
 	$operationId = $null
 	$ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-	$root = "$($volume.DriveLetter):\FFUDrv"
 	$operationPath = $null
-	$mutex = [Threading.Mutex]::new($false, "Global\FFUDriverWorkspaceRoot_$($volume.DriveLetter)")
+	$driveLetter = [IO.Path]::GetPathRoot($root).Substring(0, 1).ToUpperInvariant()
+	$mutex = [Threading.Mutex]::new($false, "Global\FFUDriverWorkspaceRoot_$driveLetter")
 	$locked = $false
 	$created = $false
 	$rootCreated = $false
@@ -128,10 +179,11 @@ function Confirm-DriverOperationIdentity {
 	param([Parameter(Mandatory)][pscustomobject]$Context)
 
 	if ($Context.OperationId -cnotmatch '^[a-f0-9]{12}$' -or
-		$Context.WorkspaceRoot -notmatch '^[A-Za-z]:\\FFUDrv$' -or
 		$Context.OwnerSid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
 		throw 'Invalid driver workspace ownership.'
 	}
+	$root = Resolve-DriverWorkspaceRoot -DriversFolder $Context.DriversFolder -DriversTempPath $Context.WorkspaceRoot
+	if ($Context.WorkspaceRoot -ne $root) { throw 'Invalid driver workspace root.' }
 	$operationPath = Join-Path $Context.WorkspaceRoot $Context.OperationId
 	if ($Context.OperationPath -ne $operationPath -or $Context.CancelPath -ne (Join-Path $operationPath 'cancelled')) {
 		throw 'Driver operation paths do not match their owner.'
@@ -148,7 +200,7 @@ function Confirm-DriverOperationIdentity {
 			throw "Refusing a reparse point in driver ownership: $markerPath"
 		}
 		$marker = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop
-		foreach ($property in @('OperationId', 'OwnerSid', 'OwnerPid', 'OwnerStartUtc', 'StartedUtc', 'FFUDevelopmentPath', 'DriversFolder', 'RunStartUtc')) {
+		foreach ($property in @('OperationId', 'OwnerSid', 'OwnerPid', 'OwnerStartUtc', 'StartedUtc', 'FFUDevelopmentPath', 'DriversFolder', 'RunStartUtc', 'WorkspaceRoot', 'OperationPath', 'CancelPath')) {
 			if ($marker.$property -ne $Context.$property) { throw "Driver operation ownership does not match: $operationPath" }
 		}
 	}
@@ -1769,7 +1821,7 @@ function Remove-DriverWorkspaceRoot {
 	[CmdletBinding()]
 	param([Parameter(Mandatory)][string]$Path)
 
-	$driveLetter = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path)).Substring(0, 1)
+	$driveLetter = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($Path)).Substring(0, 1).ToUpperInvariant()
 	$mutex = [Threading.Mutex]::new($false, "Global\FFUDriverWorkspaceRoot_$driveLetter")
 	$locked = $false
 	try {
@@ -1805,7 +1857,8 @@ function Remove-DriverDownloadOperation {
 		[string]$DriversFolder,
 		[string]$RunStartUtc,
 		[switch]$Cancel,
-		[switch]$CancelOnly
+		[switch]$CancelOnly,
+		[string]$DriversTempPath
 	)
 
 	if ($CancelOnly -and -not $Cancel) { throw 'CancelOnly requires an explicit cancellation request.' }
@@ -1814,8 +1867,7 @@ function Remove-DriverDownloadOperation {
 			[string]::IsNullOrWhiteSpace($DriversFolder)) {
 			throw 'Driver cleanup needs an explicit operation or build-run identity.'
 		}
-		$volume = Get-DriverWorkspaceVolume -Path $DriversFolder
-		$root = "$($volume.DriveLetter):\FFUDrv"
+		$root = Resolve-DriverWorkspaceRoot -DriversFolder $DriversFolder -DriversTempPath $DriversTempPath
 		if (Test-Path -LiteralPath $root) {
 			if ((Get-Item -LiteralPath $root -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint) {
 				throw "Refusing cleanup through a reparse point: $root"
@@ -3165,6 +3217,8 @@ function Get-LenovoPSREFToken {
 # --------------------------------------------------------------------------
 
 Export-ModuleMember -Function `
+	Get-DriverWorkspaceDefaultRoot, `
+	Resolve-DriverWorkspaceRoot, `
 	Get-DriverIgnoreDownloadErrors, `
 	Get-DriverDownloadHttpStatus, `
 	Resolve-DriverPackageFailure, `

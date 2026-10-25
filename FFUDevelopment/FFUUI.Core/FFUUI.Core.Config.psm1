@@ -57,6 +57,7 @@ function Get-UIConfig {
         AdditionalDataPartitions       = @(Get-AdditionalDataPartitionConfigRows -State $State)
         DownloadDrivers                = $State.Controls.chkDownloadDrivers.IsChecked
         DriversFolder                  = $State.Controls.txtDriversFolder.Text
+		DriversTempPath                 = $State.Controls.txtDriversTempPath.Text
         DriversJsonPath                = $State.Controls.txtDriversJsonPath.Text
         EnableVMNetworking             = $State.Controls.chkEnableVMNetworking.IsChecked
         FFUCaptureLocation             = $State.Controls.txtFFUCaptureLocation.Text
@@ -1573,6 +1574,11 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'chkCopyDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyDrivers' -State $State
     # Set-UIValue -ControlName 'cmbMake' -PropertyName 'SelectedItem' -ConfigObject $ConfigContent -ConfigKey 'Make' -State $State
     Set-UIValue -ControlName 'txtDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversFolder' -State $State
+	Set-UIValue -ControlName 'txtDriversTempPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversTempPath' -State $State
+	$driversTempPathProperty = $ConfigContent.PSObject.Properties['DriversTempPath']
+	if ($null -eq $driversTempPathProperty -or [string]::IsNullOrWhiteSpace([string]$driversTempPathProperty.Value)) {
+		$State.Controls.txtDriversTempPath.Text = Get-DriverWorkspaceDefaultRoot -DriversFolder $State.Controls.txtDriversFolder.Text
+	}
     Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'PEDriversFolder' -State $State
     Set-UIValue -ControlName 'txtDriversJsonPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversJsonPath' -State $State
     Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPEDrivers' -State $State

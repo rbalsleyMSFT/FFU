@@ -19,6 +19,14 @@ The UI allows you to download the drivers prior to build and/or create a `Driver
 
 This is the location where drivers are downloaded to, or where you'll manually copy drivers to. The default is `.\FFUDevelopment\Drivers`
 
+## Drivers temporary download/extraction path
+
+This is the temporary folder used to download and extract driver packages and catalogs before copying the verified drivers to your **Drivers Folder**. Enter the folder path or click **Browse...** to select it. The path is saved with your build configuration and is also available as the `-DriversTempPath` command-line parameter.
+
+The default is `FFUDrv` at the root of the local drive containing your **Drivers Folder** (for example, `C:\FFUDrv`). Network driver folders use the system drive for temporary files. 
+
+Use a folder on a local NTFS or ReFS drive with a drive letter. The path must not contain whitespace and must be at most 41 characters long. Do not select a drive root or a folder reached through a junction or symbolic link. These limits keep the temporary extraction paths short enough for the supported driver installers.FFU Builder creates the folder when needed and removes it when finished.
+
 ## PE Drivers Folder
 
 Path to the folder containing drivers to be injected into the WinPE deployment media. Default is `.\FFUDevelopment\PEDrivers`.
@@ -77,7 +85,7 @@ You can multi-select different models within the same make, or mix and match dif
 
 ### Download and extraction folders
 
-Long driver filenames and nested folders can exceed the [Windows path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation). FFU Builder uses a shorter temporary folder structure under `FFUDrv` during extraction to help stay within that limit, then copies the verified drivers to your **Drivers Folder**.
+Long driver filenames and nested folders can exceed the [Windows path limit](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation). FFU Builder uses a shorter folder structure under **Drivers temporary download/extraction path** during extraction to help stay within that limit, then copies the verified drivers to your **Drivers Folder**.
 
 Each driver operation and package has its own 12-character ID. For example:
 
@@ -88,9 +96,9 @@ C:\FFUDrv\736382af9b53\bb49f5e67b81\
     d\  Diagnostic logs
 ```
 
-By default, `FFUDrv` is created at the root of the drive containing `FFUDevelopment` (e.g `C:\FFUDrv`). If you choose a **Drivers Folder** on another local drive, `FFUDrv` uses that drive instead. Temporary package folders are removed after processing.
+The example uses the default temporary path. A custom path uses the same operation and package folder structure. Temporary package folders are removed after processing.
 
-FFU Builder also removes `FFUDrv` after the last driver operation completes, fails, or is cancelled. This applies to UI downloads and command-line builds/downloads. The folder is kept while another operation is using it or files remain that cleanup cannot remove, such as an extraction log that cannot be saved. Cleanup errors are recorded in the FFU log.
+FFU Builder also removes the temporary root after the last driver operation completes, fails, or is cancelled. This applies to UI downloads and command-line builds/downloads. The folder is kept while another operation is using it or files remain that cleanup cannot remove, such as an extraction log that cannot be saved. Cleanup errors are recorded in the FFU log.
 
 ## Save Drivers.json
 

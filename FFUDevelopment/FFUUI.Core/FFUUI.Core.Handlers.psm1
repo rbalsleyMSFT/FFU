@@ -1740,6 +1740,16 @@ function Register-EventHandlers {
             }
         })
 
+	$State.Controls.btnBrowseDriversTempPath.Add_Click({
+			param($eventSource, $routedEventArgs)
+			$window = [System.Windows.Window]::GetWindow($eventSource)
+			$localState = $window.Tag
+			$selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Drivers Temporary Download/Extraction Folder" -InitialDirectory $localState.Controls.txtDriversTempPath.Text
+			if ($selectedPath) {
+				$localState.Controls.txtDriversTempPath.Text = $selectedPath
+			}
+		})
+
     $State.Controls.btnBrowsePEDriversFolder.Add_Click({
             param($eventSource, $routedEventArgs)
             $window = [System.Windows.Window]::GetWindow($eventSource)

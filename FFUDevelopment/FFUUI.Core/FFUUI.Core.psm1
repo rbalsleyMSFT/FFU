@@ -186,6 +186,7 @@ function Get-GeneralDefaults {
         OfficeConfigXMLFilePath        = ""
         # Drivers Tab Defaults
         DriversFolder                  = $driversPath
+		DriversTempPath                 = Get-DriverWorkspaceDefaultRoot -DriversFolder $driversPath
         PEDriversFolder                = $peDriversPath
         DriversJsonPath                = $driversJsonPath
         DownloadDrivers                = $false

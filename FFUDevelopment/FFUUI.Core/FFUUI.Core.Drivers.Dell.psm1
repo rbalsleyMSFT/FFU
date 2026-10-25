@@ -14,12 +14,13 @@ function Get-DellDriversModelList {
         [Parameter(Mandatory = $true)]
         [string]$DriversFolder,
         [Parameter(Mandatory = $true)]
-        [string]$Make
+        [string]$Make,
+		[pscustomobject]$DriverOperationContext
     )
 
     # Client pathway (<=11) uses CatalogIndexPC to build full Brand Model (SystemID) strings.
     if ($WindowsRelease -le 11) {
-        $dellModels = Get-DellClientModels -CatalogIndexXmlPath (Get-DellCatalogIndex -DriversFolder $DriversFolder)
+        $dellModels = Get-DellClientModels -CatalogIndexXmlPath (Get-DellCatalogIndex -DriversFolder $DriversFolder -DriverOperationContext $DriverOperationContext)
         $final = [System.Collections.Generic.List[pscustomobject]]::new()
         foreach ($m in $dellModels) {
             $final.Add([pscustomobject]@{
@@ -56,7 +57,7 @@ function Get-DellDriversModelList {
     if ($download) {
         if (Test-Path $dellCabFile) { Remove-Item $dellCabFile -Force -ErrorAction SilentlyContinue }
         if (Test-Path $dellCatalogXML) { Remove-Item $dellCatalogXML -Force -ErrorAction SilentlyContinue }
-		Expand-DriverCatalog -Source $catalogUrl -CabPath $dellCabFile -XmlPath $dellCatalogXML -ForceDownload
+		Expand-DriverCatalog -Source $catalogUrl -CabPath $dellCabFile -XmlPath $dellCatalogXML -DriverOperationContext $DriverOperationContext -ForceDownload
     }
 
     if (-not (Test-Path $dellCatalogXML)) { throw "Dell server catalog XML missing: $dellCatalogXML" }

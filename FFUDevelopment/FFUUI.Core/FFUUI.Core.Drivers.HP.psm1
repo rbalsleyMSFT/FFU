@@ -17,7 +17,8 @@ function Get-HPDriversModelList {
         [Parameter(Mandatory = $true)]
         [string]$DriversFolder,
         [Parameter(Mandatory = $true)]
-        [string]$Make # Expected to be 'HP'
+		[string]$Make,
+		[pscustomobject]$DriverOperationContext
     )
 
     WriteLog "Getting HP driver model list..."
@@ -38,7 +39,7 @@ function Get-HPDriversModelList {
         if (-not (Test-Path -Path $platformListCab) -or ((Get-Date) - (Get-Item $platformListCab).LastWriteTime).TotalDays -gt 7) {
             WriteLog "Downloading $platformListUrl to $platformListCab"
             # Use the private helper function for download with retry
-			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -ForceDownload -KeepCab
+			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -DriverOperationContext $DriverOperationContext -ForceDownload -KeepCab
             WriteLog "PlatformList.cab download complete."
         }
         else {
@@ -49,7 +50,7 @@ function Get-HPDriversModelList {
         if (-not (Test-Path -Path $platformListXml)) {
             WriteLog "Expanding $platformListCab to $platformListXml"
             # Use the private helper function for process invocation
-			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -KeepCab
+			Expand-DriverCatalog -Source $platformListUrl -CabPath $platformListCab -XmlPath $platformListXml -DriverOperationContext $DriverOperationContext -KeepCab
             WriteLog "PlatformList.xml extraction complete."
         }
         else {
