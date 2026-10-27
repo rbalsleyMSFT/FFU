@@ -339,7 +339,7 @@
                                     <!-- Disk Layout -->
                                     <Expander Header="Disk Layout" Margin="0,0,0,20" IsExpanded="True">
                                         <StackPanel Margin="0,10,0,0">
-                                            <TextBlock Text="FFU Builder defaults to using a 50GB VHDX. Below you can modify the disk size, add additional data/primary partitions, change the drive letters, and set the partition sizes for the Windows, Recovery, and data partitions. The total of the partition sizes must be less than or equal to the Disk Size. The Recovery partition will auto-size based on the size of WinRE.wim from the Windows media with additional buffer as per Microsoft recommendations. You can adjust the size of the recovery partition if needed (not recommended).&#x0a;&#x0a;You can only reorder the additional data partitions." TextWrapping="Wrap" Margin="0,0,0,16"/>
+                                            <TextBlock Text="FFU Builder defaults to using a 50GB VHDX. Below you can modify the disk size, add additional data/primary partitions, change the drive letters, and set the partition sizes for the Windows, Recovery, and data partitions. The total of the partition sizes must be less than or equal to the Disk Size. Recovery is sized from WinRE.wim with a minimum of 990 MiB and at least 250 MiB of free space. A fixed Recovery size must meet the same requirements.&#x0a;&#x0a;You can only reorder the additional data partitions." TextWrapping="Wrap" Margin="0,0,0,16"/>
                                             <TextBlock Text="Disk Size (GB)" Margin="0,0,0,8" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
                                             <TextBox x:Name="txtDiskSize" Width="160" HorizontalAlignment="Left" Text="50" Margin="0,0,0,16" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
 
@@ -925,10 +925,12 @@
                                         <CheckBox x:Name="chkCompressDriversToWIM" Content="Compress Driver Model Folder to WIM" Margin="0" VerticalAlignment="Center" ToolTip="When set to $true, will compress each downloaded driver model folder into a separate WIM file within the Drivers folder. This is useful with Copy Drivers to USB drive."/>
                                     </StackPanel>
 
-                                    <!-- Row 13: PE Driver Options (UseDriversAsPEDrivers is a dependent sub-option) -->
+                                    <!-- Row 13: PE Driver Options -->
                                     <StackPanel Grid.Row="13" Margin="0">
                                         <CheckBox x:Name="chkCopyPEDrivers" Content="Copy PE Drivers" Margin="0,0,0,8" VerticalAlignment="Center" ToolTip="When set to $true, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is $false."/>
-                                        <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="24,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
+                                        <CheckBox x:Name="chkUseDriversAsPEDrivers" Content="Use Drivers Folder as PE Drivers Source" Margin="24,0,0,8" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="When set to $true (and Copy PE Drivers is also checked), bypasses the PE Drivers Folder path and instead scans the Drivers folder to gather only required WinPE drivers. Hidden unless Copy PE Drivers is checked."/>
+                                        <CheckBox x:Name="chkAddPEDriversToWinRE" Content="Add PE Drivers to WinRE" Margin="24,0,0,8" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Add the selected PE drivers to the Windows Recovery Environment image."/>
+                                        <CheckBox x:Name="chkCacheWinREInVHDX" Content="Cache WinRE.wim in VHDX" Margin="24,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Save the WinRE image with PE drivers in the VHDX cache when Allow VHDX Caching is enabled."/>
                                     </StackPanel>
                                 </Grid>
                             </ScrollViewer>

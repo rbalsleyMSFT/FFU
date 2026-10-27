@@ -12,6 +12,9 @@ This script creates a Windows 10/11 FFU and USB drive to help quickly get a Wind
 .PARAMETER AdditionalFFUFiles
 Array of full file paths to existing FFU files that should also be copied to the deployment USB when -CopyAdditionalFFUFiles is set to $true.
 
+.PARAMETER AddPEDriversToWinRE
+When set to $true with -CopyPEDrivers, adds the selected PE drivers to WinRE.wim. Default is $false.
+
 .PARAMETER AllowExternalHardDiskMedia
 When set to $true, will allow the use of media identified as External Hard Disk media via WMI class Win32_DiskDrive. Default is not defined.
 
@@ -29,6 +32,9 @@ BITS transfer priority used for downloads. Accepted values are 'Foreground', 'Hi
 
 .PARAMETER BuildUSBDrive
 When set to $true, will partition and format a USB drive and copy the captured FFU to the drive. 
+
+.PARAMETER CacheWinREInVHDX
+When set to $true with -AddPEDriversToWinRE and -AllowVHDXCaching, saves the serviced WinRE image in the VHDX cache. Default is $false.
 
 .PARAMETER Cleanup
 Switch to run cleanup-only mode. When specified, the script performs cleanup and exits without starting a new build.
@@ -109,7 +115,7 @@ Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic
 Fixed size of the Windows partition in bytes. Leave as 0 to let Windows use the space remaining after Recovery and fixed-size data partitions are reserved.
 
 .PARAMETER RecoveryPartitionSize
-Optional fixed size of the Recovery partition in bytes. Leave as 0 to calculate the Recovery partition size from winre.wim plus buffer space.
+Optional fixed size of the Recovery partition in bytes. Leave as 0 to calculate the size from winre.wim and the required buffer. The minimum is 990 MiB.
 
 .PARAMETER CreateRecoveryPartition
 When set to $false, skips creating the Windows Recovery partition. Default is $true.
@@ -456,6 +462,8 @@ param(
     [bool]$CopyDrivers,
     [bool]$CopyPEDrivers,
     [bool]$UseDriversAsPEDrivers,
+	[bool]$AddPEDriversToWinRE = $false,
+	[bool]$CacheWinREInVHDX = $false,
     [bool]$RemoveFFU,
     [bool]$CopyAdditionalFFUFiles,
     [string[]]$AdditionalFFUFiles,
@@ -3306,6 +3314,30 @@ function Resize-OSPartitionForDataPartitions {
 
     return Get-Partition -DiskNumber $OsPartition.DiskNumber -PartitionNumber $OsPartition.PartitionNumber -ErrorAction Stop
 }
+function Get-RecoveryPartitionSize {
+	param(
+		[uint64]$WinREImageSize,
+		[uint64]$ConfiguredSize = 0
+	)
+
+	if ($ConfiguredSize -gt 0) {
+		if ($ConfiguredSize -lt 990MB) {
+			throw "The fixed Recovery partition size must be at least 990 MiB."
+		}
+		if ($WinREImageSize -gt 0 -and $ConfiguredSize -lt ($WinREImageSize + 250MB)) {
+			throw "The fixed Recovery partition is too small for WinRE and 250 MiB of free space."
+		}
+		$size = $ConfiguredSize
+	}
+	else {
+		if ($WinREImageSize -eq 0) {
+			throw 'Cannot calculate the Recovery partition size because WinRE.wim was not found.'
+		}
+		$size = [math]::Max([uint64]990MB, [uint64]($WinREImageSize + 250MB + 32MB))
+	}
+	return [uint64]([math]::Ceiling($size / 4096) * 4096)
+}
+
 #Add Recovery partition
 function New-RecoveryPartition {
     param(
@@ -3316,7 +3348,8 @@ function New-RecoveryPartition {
         [uint64]$RecoveryPartitionSize = 0,
         [string]$DriveLetter = 'R',
         [ciminstance]$DataPartition,
-        [bool]$OsPartitionUsesMaximumSize = $true
+		[bool]$OsPartitionUsesMaximumSize = $true,
+		[string]$WinREImagePath
     )
 
     WriteLog "Creating empty Recovery partition (to be filled on first boot automatically)..."
@@ -3325,32 +3358,15 @@ function New-RecoveryPartition {
     $recoveryPartition = $null
 
     try {
-        if ($RecoveryPartitionSize -gt 0) {
-            $calculatedRecoverySize = $RecoveryPartitionSize
-            WriteLog "Using configured Recovery partition size in bytes: $calculatedRecoverySize"
+		if ([string]::IsNullOrWhiteSpace($WinREImagePath)) {
+			$WinREImagePath = "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim"
         }
-        else {
-            $winReWim = Get-ChildItem "$($OsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim" -Attributes Hidden -ErrorAction SilentlyContinue
-
-            if (($null -ne $winReWim) -and ($winReWim.Count -eq 1)) {
-                # Wim size + 100MB is minimum WinRE partition size.
-                # NTFS and other partitioning size differences account for about 17MB of space that's unavailable.
-                # Adding 32MB as a buffer to ensure there's enough space to account for NTFS file system overhead.
-                # Adding 250MB as per recommendations from
-                # https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions?view=windows-11#recovery-tools-partition
-                $calculatedRecoverySize = $winReWim.Length + 250MB + 32MB
-
-                WriteLog "Calculated space needed for recovery in bytes: $calculatedRecoverySize"
-            }
-            else {
-                WriteLog "No WinRE.WIM found in the OS partition under \Windows\System32\Recovery."
-                WriteLog "Skipping creating the Recovery partition."
-                WriteLog "If a Recovery partition is desired, please re-run the script setting the -RecoveryPartitionSize flag as appropriate."
-            }
-        }
+		$winReWim = Get-Item -LiteralPath $WinREImagePath -Force -ErrorAction SilentlyContinue
+		$winReSize = if ($null -ne $winReWim) { [uint64]$winReWim.Length } else { [uint64]0 }
+		$calculatedRecoverySize = Get-RecoveryPartitionSize -WinREImageSize $winReSize -ConfiguredSize $RecoveryPartitionSize
+		WriteLog "Calculated Recovery partition size in bytes: $calculatedRecoverySize"
 
         if ($calculatedRecoverySize -gt 0) {
-            $calculatedRecoverySize = [uint64]([math]::Ceiling($calculatedRecoverySize / 4096) * 4096)
             WriteLog "Aligned Recovery partition size in bytes: $calculatedRecoverySize"
             $recoveryPartitionReserveSize = $calculatedRecoverySize + 1MB
             WriteLog "Recovery partition reserve size in bytes: $recoveryPartitionReserveSize"
@@ -3410,6 +3426,12 @@ function New-RecoveryPartition {
 
             $partition | Format-Volume -FileSystem NTFS -Confirm:$false -Force -NewFileSystemLabel 'Recovery' -ErrorAction Stop | Out-Null
             $recoveryPartition = Get-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -ErrorAction Stop
+			if ($winReSize -gt 0) {
+				$recoveryVolume = $recoveryPartition | Get-Volume -ErrorAction Stop
+				if ([uint64]$recoveryVolume.SizeRemaining -lt ($winReSize + 250MB)) {
+					throw "The Recovery partition cannot hold WinRE and leave 250 MiB free. Increase RecoveryPartitionSize or disk capacity."
+				}
+			}
 
             WriteLog "Done. Recovery partition at drive $($recoveryPartition.DriveLetter):"
         }
@@ -3420,6 +3442,115 @@ function New-RecoveryPartition {
     }
 
     return $recoveryPartition
+}
+
+function Get-WinREImagePath {
+	param(
+		[Parameter(Mandatory = $true)][object]$Layout
+	)
+
+	if ($null -ne $Layout.RecoveryPartition -and $Layout.RecoveryPartition.DriveLetter) {
+		$recoveryImage = "$($Layout.RecoveryPartition.DriveLetter):\Recovery\WindowsRE\Winre.wim"
+		if (Test-Path -LiteralPath $recoveryImage -PathType Leaf) { return $recoveryImage }
+	}
+	$windowsImage = "$($Layout.WindowsPartition.DriveLetter):\Windows\System32\Recovery\Winre.wim"
+	if (Test-Path -LiteralPath $windowsImage -PathType Leaf) { return $windowsImage }
+	return $null
+}
+
+function Test-RecoveryPartitionEmpty {
+	param([Parameter(Mandatory = $true)][object]$Partition)
+
+	if ([string]::IsNullOrWhiteSpace([string]$Partition.DriveLetter)) {
+		throw "Cannot check whether partition $($Partition.PartitionNumber) is empty without a drive letter."
+	}
+	$root = "$($Partition.DriveLetter):\"
+	$content = @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop |
+		Where-Object { $_.Name -ne 'System Volume Information' })
+	return ($content.Count -eq 0)
+}
+
+function Set-RecoveryPartitionCapacity {
+	param(
+		[Parameter(Mandatory = $true)][string]$VhdxPath,
+		[Parameter(Mandatory = $true)][object]$Layout,
+		[Parameter(Mandatory = $true)][string]$WinREImagePath,
+		[uint64]$ConfiguredRecoverySize = 0,
+		[uint64]$ConfiguredOSSize = 0,
+		[object[]]$DataPartitions = @()
+	)
+
+	if ($null -eq $Layout.RecoveryPartition) { return $Layout }
+	$vhd = Get-VHD -Path $VhdxPath -ErrorAction Stop
+	if (-not $vhd.Attached -or $vhd.DiskNumber -ne $Layout.Disk.Number) {
+		throw 'Recovery partition changes are restricted to the mounted working VHDX.'
+	}
+	$image = Get-Item -LiteralPath $WinREImagePath -Force -ErrorAction Stop
+	[uint64]$imageSize = $image.Length
+	[uint64]$requiredSize = Get-RecoveryPartitionSize -WinREImageSize $imageSize -ConfiguredSize $ConfiguredRecoverySize
+	$recovery = $Layout.RecoveryPartition
+	$volume = $recovery | Get-Volume -ErrorAction Stop
+	$existingImagePath = "$($recovery.DriveLetter):\Recovery\WindowsRE\Winre.wim"
+	[uint64]$existingImageSize = 0
+	if (Test-Path -LiteralPath $existingImagePath -PathType Leaf) {
+		$existingImageSize = (Get-Item -LiteralPath $existingImagePath -Force -ErrorAction Stop).Length
+	}
+	[int64]$freeAfterImage = [int64]$volume.SizeRemaining + [int64]$existingImageSize - [int64]$imageSize
+	if ($recovery.Size -ge $requiredSize -and $freeAfterImage -ge 250MB) { return $Layout }
+
+	if ($ConfiguredRecoverySize -gt 0) {
+		throw "The fixed Recovery partition cannot hold WinRE and leave 250 MiB free. Increase RecoveryPartitionSize."
+	}
+	[uint64]$additionalSpace = if ($freeAfterImage -lt 250MB) { [uint64](250MB - $freeAfterImage + 1MB) } else { [uint64]0 }
+	[uint64]$targetSize = [math]::Max($requiredSize, [uint64]($recovery.Size + $additionalSpace))
+	$targetSize = [uint64]([math]::Ceiling($targetSize / 4096) * 4096)
+	$supported = $recovery | Get-PartitionSupportedSize -ErrorAction Stop
+	if ($targetSize -le $supported.SizeMax) {
+		WriteLog "Expanding the working Recovery partition to $targetSize bytes."
+		$recovery | Resize-Partition -Size $targetSize -ErrorAction Stop | Out-Null
+	}
+	else {
+		$partitionsToRecreate = @($Layout.RecoveryPartition) + @($Layout.DataPartitions | ForEach-Object { $_.Partition })
+		foreach ($partition in $partitionsToRecreate) {
+			if (-not (Test-RecoveryPartitionEmpty -Partition $partition)) {
+				throw "Cannot resize Recovery without moving nonempty partition $($partition.PartitionNumber). Increase the Recovery size and rebuild."
+			}
+		}
+		foreach ($partition in @($partitionsToRecreate | Sort-Object PartitionNumber -Descending)) {
+			Remove-Partition -DiskNumber $Layout.Disk.Number -PartitionNumber $partition.PartitionNumber -Confirm:$false -ErrorAction Stop
+		}
+		$windowsPartition = Get-Partition -DiskNumber $Layout.Disk.Number -PartitionNumber $Layout.WindowsPartition.PartitionNumber -ErrorAction Stop
+		if ($ConfiguredOSSize -eq 0) {
+			[uint64]$growth = $targetSize - [uint64]$recovery.Size + 1MB
+			if ($windowsPartition.Size -le $growth) {
+				throw 'The Windows partition is too small to reserve additional Recovery space.'
+			}
+			$newWindowsSize = [uint64]([math]::Floor(($windowsPartition.Size - $growth) / 4096) * 4096)
+			$windowsSupported = $windowsPartition | Get-PartitionSupportedSize -ErrorAction Stop
+			if ($newWindowsSize -lt $windowsSupported.SizeMin) {
+				throw 'The Windows partition cannot be shrunk enough to resize Recovery. Increase the VHDX size.'
+			}
+			$windowsPartition | Resize-Partition -Size $newWindowsSize -ErrorAction Stop | Out-Null
+			$windowsPartition = Get-Partition -DiskNumber $Layout.Disk.Number -PartitionNumber $windowsPartition.PartitionNumber -ErrorAction Stop
+		}
+		$disk = Get-Disk -Number $Layout.Disk.Number -ErrorAction Stop
+		New-RecoveryPartition -VhdxDisk $disk -OsPartition $windowsPartition -RecoveryPartitionSize $targetSize -DriveLetter ([string]$recovery.DriveLetter) -OsPartitionUsesMaximumSize $false -WinREImagePath $WinREImagePath | Out-Null
+		foreach ($dataPartition in $DataPartitions) {
+			New-DataPartition -VhdxDisk $disk -DataPartition $dataPartition | Out-Null
+		}
+	}
+	$disk = Get-Disk -Number $Layout.Disk.Number -ErrorAction Stop
+	$updatedLayout = Resolve-VhdxPartitionLayout -Disk $disk -CreateRecoveryPartition $true -AdditionalDataPartitions $DataPartitions
+	$updatedVolume = $updatedLayout.RecoveryPartition | Get-Volume -ErrorAction Stop
+	$updatedExistingSize = 0
+	if (Test-Path -LiteralPath $existingImagePath -PathType Leaf) {
+		$updatedExistingSize = (Get-Item -LiteralPath $existingImagePath -Force -ErrorAction Stop).Length
+	}
+	if (($updatedLayout.RecoveryPartition.Size -lt $requiredSize) -or
+		([int64]$updatedVolume.SizeRemaining + [int64]$updatedExistingSize - [int64]$imageSize -lt 250MB)) {
+		throw 'Recovery partition resizing did not leave the required 250 MiB free.'
+	}
+	return $updatedLayout
 }
 #Add Data partition
 function New-DataPartition {
@@ -4235,7 +4366,9 @@ function Invoke-DismDriverInjectionWithSubstLoop {
         [string]$ImagePath,
 
         [Parameter(Mandatory = $true)]
-        [string]$DriverRoot
+		[string]$DriverRoot,
+
+		[switch]$Strict
     )
 
     # Resolve input paths
@@ -4244,9 +4377,11 @@ function Invoke-DismDriverInjectionWithSubstLoop {
 
     # Discover INF files under the driver root
     WriteLog "Scanning for INF files under: $resolvedDriverRoot"
-    $infFiles = Get-ChildItem -Path $resolvedDriverRoot -Filter '*.inf' -File -Recurse -ErrorAction SilentlyContinue
+	$scanErrorAction = if ($Strict) { 'Stop' } else { 'SilentlyContinue' }
+	$infFiles = Get-ChildItem -Path $resolvedDriverRoot -Filter '*.inf' -File -Recurse -Force:$Strict -ErrorAction $scanErrorAction
     if ($null -eq $infFiles -or $infFiles.Count -eq 0) {
         WriteLog "No INF files found under: $resolvedDriverRoot"
+		if ($Strict) { throw "No INF files found under: $resolvedDriverRoot" }
         return
     }
 
@@ -4271,6 +4406,7 @@ function Invoke-DismDriverInjectionWithSubstLoop {
 
         if ($candidateDir.Length -gt $substTargetMaxLength) {
             WriteLog "Warning: Skipping INF folder due to SUBST length limit (len=$($candidateDir.Length)): $candidateDir"
+			if ($Strict) { throw "Driver folder exceeds the SUBST path length limit: $candidateDir" }
             continue
         }
 
@@ -4317,11 +4453,13 @@ function Invoke-DismDriverInjectionWithSubstLoop {
     foreach ($infDir in $infDirs) {
         $currentIndex++
         $escapedPath = $infDir -replace '"', '""'
+		$mappingCreated = $false
 
         try {
             WriteLog "[$currentIndex/$($infDirs.Count)] Mapping '$infDir' to $driveName with SUBST."
             $mapArgs = "/c subst $driveName `"$escapedPath`""
-            Invoke-Process -FilePath cmd.exe -ArgumentList $mapArgs | Out-Null
+			Invoke-Process -FilePath cmd.exe -ArgumentList $mapArgs -CheckExitCode | Out-Null
+			$mappingCreated = $true
 
             # Inject drivers (do not use \\?\ with DISM)
             $dismArgs = @(
@@ -4332,20 +4470,24 @@ function Invoke-DismDriverInjectionWithSubstLoop {
             )
 
             WriteLog "dism.exe $($dismArgs -join ' ')"
-            Invoke-Process -FilePath dism.exe -ArgumentList $dismArgs | Out-Null
+			Invoke-Process -FilePath dism.exe -ArgumentList $dismArgs -CheckExitCode:$Strict | Out-Null
         }
         catch {
             WriteLog "Warning: Driver injection failed for '$infDir': $($_.Exception.Message)"
+			if ($Strict) { throw }
         }
         finally {
-            try {
-                WriteLog "Removing SUBST drive $driveName"
-                $unmapArgs = "/c subst $driveName /d"
-                Invoke-Process -FilePath cmd.exe -ArgumentList $unmapArgs | Out-Null
-            }
-            catch {
-                WriteLog "Warning: Failed removing SUBST drive $($driveName): $($_.Exception.Message)"
-            }
+			if ($mappingCreated) {
+				try {
+					WriteLog "Removing SUBST drive $driveName"
+					$unmapArgs = "/c subst $driveName /d"
+					Invoke-Process -FilePath cmd.exe -ArgumentList $unmapArgs -CheckExitCode | Out-Null
+				}
+				catch {
+					WriteLog "Warning: Failed removing SUBST drive $($driveName): $($_.Exception.Message)"
+					if ($Strict) { throw }
+				}
+			}
         }
     }
 
@@ -4357,7 +4499,8 @@ function Copy-Drivers {
         [Parameter()]
         [string]$Path,
         [Parameter()]
-        [string]$Output
+		[string]$Output,
+		[switch]$Strict
     )
     # Find more information about device classes here:
     # https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
@@ -4374,12 +4517,16 @@ function Copy-Drivers {
     WriteLog "Copying PE drivers from '$Path' to '$Output' (WindowsArch: $WindowsArch)"
     if (-not (Test-Path -Path $Path)) {
         WriteLog "ERROR: Drivers source path not found: $Path"
+		if ($Strict) { throw "Drivers source path not found: $Path" }
         return
     }
     [void](New-Item -Path $Output -ItemType Directory -Force)
     
-    $driverSourcePath = $Path
-    $pathLength = $Path.Length
+	$driverSourcePath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+	if ($driverSourcePath.Length -gt [IO.Path]::GetPathRoot($driverSourcePath).Length) {
+		$driverSourcePath = $driverSourcePath.TrimEnd('\')
+	}
+	$pathLength = $driverSourcePath.Length
     
     # Determine common arch-specific SourceDisksFiles section names
     # Many INFs use 'amd64' rather than 'x64' for 64-bit paths (e.g. SourceDisksFiles.amd64)
@@ -4390,8 +4537,12 @@ function Copy-Drivers {
     elseif ($WindowsArch -eq 'arm64') {
         $sourceDisksFileSections += "SourceDisksFiles.arm64"
     }
+	elseif ($Strict -and $WindowsArch -eq 'x86') {
+		$sourceDisksFileSections += "SourceDisksFiles.x86"
+	}
     
-    $infFiles = Get-ChildItem -Path $Path -Recurse -Filter "*.inf"
+	$scanErrorAction = if ($Strict) { 'Stop' } else { $ErrorActionPreference }
+	$infFiles = Get-ChildItem -LiteralPath $driverSourcePath -Recurse -Filter "*.inf" -Force:$Strict -ErrorAction $scanErrorAction
     WriteLog "Found $($infFiles.Count) INF files under: $driverSourcePath"
     
     $matchedInfCount = 0
@@ -4402,10 +4553,15 @@ function Copy-Drivers {
     for ($i = 0; $i -lt $infFiles.Count; $i++) {
         $infFullName = $infFiles[$i].FullName
         # Add long path prefix to handle long paths
-        $longInfFullName = "\\?\$infFullName"
+		$longInfFullName = if ($infFullName.StartsWith('\\')) {
+			'\\?\UNC\' + $infFullName.TrimStart('\')
+		}
+		else {
+			"\\?\$infFullName"
+		}
         $infPath = Split-Path -Path $infFullName
         $childPath = $infPath.Substring($pathLength).TrimStart('\')
-        $targetPath = Join-Path -Path $Output -ChildPath $childPath
+		$targetPath = if ([string]::IsNullOrEmpty($childPath)) { $Output } else { Join-Path -Path $Output -ChildPath $childPath }
     
         # Log the INF files found
         WriteLog "Examining PE driver INF ($($i + 1)/$($infFiles.Count)): $infFullName"
@@ -4464,23 +4620,38 @@ function Copy-Drivers {
         }
     
         # Copy the catalog file (if specified)
-        $CatalogFileName = Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName "Catalogfile"
-        if (-not [string]::IsNullOrWhiteSpace($CatalogFileName)) {
-            $catalogSource = Join-Path -Path $infPath -ChildPath $CatalogFileName
-            if (Test-Path -Path $catalogSource) {
-                try {
-                    Copy-Item -LiteralPath "$catalogSource" -Destination "$targetPath" -Force -ErrorAction Stop
-                    $copiedFileCount++
-                    WriteLog "Copied: $catalogSource -> $targetPath"
+		$catalogNames = @((Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName "Catalogfile"))
+		if ($Strict) {
+			$catalogNames += Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName 'CatalogFile.NT'
+			if ($WindowsArch -eq 'x64') {
+				$catalogNames += Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName 'CatalogFile.NTamd64'
+			}
+			elseif ($WindowsArch -eq 'arm64') {
+				$catalogNames += Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName 'CatalogFile.NTarm64'
+			}
+			elseif ($WindowsArch -eq 'x86') {
+				$catalogNames += Get-PrivateProfileString -FileName $longInfFullName -SectionName "version" -KeyName 'CatalogFile.NTx86'
+			}
+		}
+		$catalogNames = @($catalogNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+		if ($catalogNames.Count -gt 0) {
+			foreach ($catalogFileName in $catalogNames) {
+				$catalogSource = Join-Path -Path $infPath -ChildPath $catalogFileName
+				if (Test-Path -Path $catalogSource) {
+					try {
+						Copy-Item -LiteralPath "$catalogSource" -Destination "$targetPath" -Force -ErrorAction Stop
+						$copiedFileCount++
+						WriteLog "Copied: $catalogSource -> $targetPath"
+					}
+					catch {
+						$errorCount++
+						WriteLog "ERROR: Failed to copy catalog '$catalogSource' to '$targetPath': $($_.Exception.Message)"
+					}
                 }
-                catch {
+				else {
                     $errorCount++
-                    WriteLog "ERROR: Failed to copy catalog '$catalogSource' to '$targetPath': $($_.Exception.Message)"
+					WriteLog "ERROR: Catalog file not found: $catalogSource (INF: $infFullName)"
                 }
-            }
-            else {
-                $errorCount++
-                WriteLog "ERROR: Catalog file not found: $catalogSource (INF: $infFullName)"
             }
         }
         else {
@@ -4546,6 +4717,352 @@ function Copy-Drivers {
     
     # Final summary
     WriteLog "PE driver copy summary: INF total=$($infFiles.Count) matched=$matchedInfCount skipped=$skippedInfCount filesCopied=$copiedFileCount errors=$errorCount"
+	if ($Strict -and ($matchedInfCount -eq 0 -or $errorCount -gt 0)) {
+		throw "Unable to prepare the PE driver bundle: matched INF files=$matchedInfCount, copy errors=$errorCount. Check the build log."
+	}
+}
+
+function Test-PEDriverSource {
+	param([Parameter(Mandatory = $true)][string]$Path)
+
+	if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+	return (@(Get-ChildItem -LiteralPath $Path -Filter '*.inf' -File -Recurse -Force -ErrorAction Stop).Count -gt 0)
+}
+
+function Get-PEDriverBundleHash {
+	param([Parameter(Mandatory = $true)][string]$DriverRoot)
+
+	$root = (Resolve-Path -LiteralPath $DriverRoot -ErrorAction Stop).Path.TrimEnd('\')
+	$files = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction Stop)
+	if (@($files | Where-Object { $_.Extension -ieq '.inf' }).Count -eq 0) {
+		throw "No INF files were found in the PE driver bundle at $root."
+	}
+
+	$entries = [System.Collections.Generic.List[string]]::new()
+	foreach ($file in $files) {
+		$relativePath = [System.IO.Path]::GetRelativePath($root, $file.FullName).Replace('\', '/').ToLowerInvariant()
+		$fileHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+		$entries.Add("$($relativePath.Length):$relativePath`:$fileHash")
+	}
+	$sortedEntries = $entries.ToArray()
+	[Array]::Sort($sortedEntries, [StringComparer]::Ordinal)
+	$manifest = [Text.Encoding]::UTF8.GetBytes(($sortedEntries -join "`n"))
+	return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($manifest)).ToLowerInvariant()
+}
+
+function Confirm-PEDriverBundle {
+	param(
+		[Parameter(Mandatory = $true)][string]$DriverRoot,
+		[Parameter(Mandatory = $true)][string]$ExpectedHash
+	)
+
+	$actualHash = Get-PEDriverBundleHash -DriverRoot $DriverRoot
+	if ($actualHash -ine $ExpectedHash) {
+		throw 'The prepared PE driver bundle changed during the build. Start a new build.'
+	}
+}
+
+function Get-WinRECacheKind {
+	param(
+		[Parameter(Mandatory = $true)][object]$CacheItem,
+		[bool]$AddDrivers,
+		[string]$DriverHash,
+		[string]$TargetArchitecture
+	)
+
+	$architectureProperty = $CacheItem.PSObject.Properties['WindowsArch']
+	if ($null -ne $architectureProperty -and [string]$architectureProperty.Value -ine $TargetArchitecture) {
+		return 'Incompatible'
+	}
+	$hashProperty = $CacheItem.PSObject.Properties['winreDriverBundleHash']
+	if ($null -eq $hashProperty) { return 'Base' }
+	$cachedHash = [string]$hashProperty.Value
+	if ($cachedHash -notmatch '^[0-9a-fA-F]{64}$') { return 'Incompatible' }
+	if (-not $AddDrivers -or $cachedHash -ine $DriverHash) { return 'Incompatible' }
+	if ($null -eq $architectureProperty) { return 'Incompatible' }
+	return 'Serviced'
+}
+
+function New-VhdxCacheMetadata {
+	param(
+		[string]$VhdxFileName,
+		[uint32]$LogicalSectorSizeBytes,
+		[uint64]$Disksize,
+		[bool]$CreateRecoveryPartition,
+		[uint32]$PartitionLayoutSignatureVersion,
+		[string]$PartitionLayoutSignature,
+		[string]$WindowsSKU,
+		[string]$WindowsRelease,
+		[string]$WindowsVersion,
+		[string]$OptionalFeatures,
+		[object[]]$IncludedUpdates,
+		[bool]$IncludeWinRE,
+		[string]$DriverHash,
+		[string]$WindowsArch
+	)
+
+	$metadata = [ordered]@{
+		VhdxFileName = $VhdxFileName
+		LogicalSectorSizeBytes = $LogicalSectorSizeBytes
+		Disksize = $Disksize
+		CreateRecoveryPartition = $CreateRecoveryPartition
+		PartitionLayoutSignatureVersion = $PartitionLayoutSignatureVersion
+		PartitionLayoutSignature = $PartitionLayoutSignature
+		WindowsSKU = $WindowsSKU
+		WindowsRelease = $WindowsRelease
+		WindowsVersion = $WindowsVersion
+		WindowsArch = $WindowsArch
+		OptionalFeatures = $OptionalFeatures
+		IncludedUpdates = @($IncludedUpdates | Where-Object { $null -ne $_ })
+	}
+	if ($IncludeWinRE) {
+		if ($DriverHash -notmatch '^[0-9a-fA-F]{64}$' -or [string]::IsNullOrWhiteSpace($WindowsArch)) {
+			throw 'A valid PE driver bundle hash and Windows architecture are required for a WinRE cache.'
+		}
+		$metadata['winreDriverBundleHash'] = $DriverHash.ToLowerInvariant()
+	}
+	return $metadata
+}
+
+function New-PEDriverBundle {
+	param(
+		[Parameter(Mandatory = $true)][string]$Destination,
+		[Parameter(Mandatory = $true)][string]$Source,
+		[bool]$UseDriversFolder
+	)
+
+	New-Item -ItemType Directory -Path $Destination -ErrorAction Stop | Out-Null
+	try {
+		if ($UseDriversFolder) {
+			Copy-Drivers -Path $Source -Output $Destination -Strict
+		}
+		else {
+			if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
+				throw "PE drivers folder not found: $Source"
+			}
+			Get-ChildItem -LiteralPath $Source -Force -ErrorAction Stop | Copy-Item -Destination $Destination -Recurse -Force -ErrorAction Stop
+		}
+		$hash = Get-PEDriverBundleHash -DriverRoot $Destination
+		WriteLog "Prepared PE driver bundle with SHA-256 $hash."
+		return $hash
+	}
+	catch {
+		$preparationError = $_
+		try {
+			if (Test-Path -LiteralPath $Destination -PathType Container) {
+				Remove-Item -LiteralPath $Destination -Recurse -Force -ErrorAction Stop
+			}
+		}
+		catch {
+			WriteLog "Failed to clean PE driver bundle '$Destination' after '$($preparationError.Exception.Message)': $($_.Exception.Message)"
+			throw
+		}
+		throw $preparationError
+	}
+}
+
+function Test-PEDriversInMountedImage {
+	param(
+		[Parameter(Mandatory = $true)][string]$ImagePath,
+		[Parameter(Mandatory = $true)][string]$DriverRoot
+	)
+
+	$expected = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+	foreach ($inf in @(Get-ChildItem -LiteralPath $DriverRoot -Filter '*.inf' -File -Recurse -Force -ErrorAction Stop)) {
+		$hash = (Get-FileHash -LiteralPath $inf.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+		[void]$expected.Add("$($inf.Name)|$hash")
+	}
+	if ($expected.Count -eq 0) { throw "No INF files were found in $DriverRoot." }
+	$repository = Join-Path $ImagePath 'Windows\System32\DriverStore\FileRepository'
+	if (-not (Test-Path -LiteralPath $repository -PathType Container)) { return $false }
+	$names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+	foreach ($entry in $expected) { [void]$names.Add(($entry -split '\|', 2)[0]) }
+	foreach ($inf in @(Get-ChildItem -LiteralPath $repository -Filter '*.inf' -File -Recurse -Force -ErrorAction Stop)) {
+		if ($names.Contains($inf.Name)) {
+			$hash = (Get-FileHash -LiteralPath $inf.FullName -Algorithm SHA256 -ErrorAction Stop).Hash
+			[void]$expected.Remove("$($inf.Name)|$hash")
+		}
+	}
+	return ($expected.Count -eq 0)
+}
+
+function Test-WinREDriverBundle {
+	param(
+		[Parameter(Mandatory = $true)][string]$ImagePath,
+		[Parameter(Mandatory = $true)][string]$DriverRoot,
+		[Parameter(Mandatory = $true)][string]$Workspace,
+		[Parameter(Mandatory = $true)][string]$TargetArchitecture,
+		[Parameter(Mandatory = $true)][string]$ExpectedDriverHash
+	)
+
+	$mountPath = Join-Path $Workspace ("verify-" + [guid]::NewGuid().ToString('N'))
+	New-Item -ItemType Directory -Path $mountPath -ErrorAction Stop | Out-Null
+	$mounted = $false
+	try {
+		Confirm-PEDriverBundle -DriverRoot $DriverRoot -ExpectedHash $ExpectedDriverHash
+		Mount-WindowsImage -ImagePath $ImagePath -Index 1 -Path $mountPath -ReadOnly -ErrorAction Stop | Out-Null
+		$mounted = $true
+		[void]$script:winREMountedPaths.Add($mountPath)
+		$kernelPath = Join-Path $mountPath 'Windows\System32\ntoskrnl.exe'
+		if (-not (Test-Path -LiteralPath $kernelPath -PathType Leaf)) {
+			throw "Cannot determine the architecture of WinRE image: $ImagePath"
+		}
+		$imageArchitecture = Get-PEArchitecture -FilePath $kernelPath
+		if ($imageArchitecture -ine $TargetArchitecture) {
+			throw "WinRE architecture '$imageArchitecture' does not match the requested architecture '$TargetArchitecture'."
+		}
+		return (Test-PEDriversInMountedImage -ImagePath $mountPath -DriverRoot $DriverRoot)
+	}
+	finally {
+		if ($mounted) {
+			Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop | Out-Null
+			[void]$script:winREMountedPaths.Remove($mountPath)
+		}
+		if (Test-Path -LiteralPath $mountPath -PathType Container) {
+			Remove-Item -LiteralPath $mountPath -Force -ErrorAction Stop
+		}
+	}
+}
+
+function New-ServicedWinREImage {
+	param(
+		[Parameter(Mandatory = $true)][string]$ImagePath,
+		[Parameter(Mandatory = $true)][string]$DriverRoot,
+		[Parameter(Mandatory = $true)][string]$Workspace,
+		[Parameter(Mandatory = $true)][string]$TargetArchitecture,
+		[Parameter(Mandatory = $true)][string]$ExpectedDriverHash
+	)
+
+	if (-not (Test-Path -LiteralPath $ImagePath -PathType Leaf)) {
+		throw "WinRE image not found: $ImagePath"
+	}
+	$operationId = [guid]::NewGuid().ToString('N')
+	$workingImage = Join-Path $Workspace "winre-$operationId.wim"
+	$mountPath = Join-Path $Workspace "mount-$operationId"
+	Copy-Item -LiteralPath $ImagePath -Destination $workingImage -Force -ErrorAction Stop
+	[IO.File]::SetAttributes($workingImage, [IO.FileAttributes]::Normal)
+	New-Item -ItemType Directory -Path $mountPath -ErrorAction Stop | Out-Null
+	$mounted = $false
+	try {
+		Confirm-PEDriverBundle -DriverRoot $DriverRoot -ExpectedHash $ExpectedDriverHash
+		Mount-WindowsImage -ImagePath $workingImage -Index 1 -Path $mountPath -ErrorAction Stop | Out-Null
+		$mounted = $true
+		[void]$script:winREMountedPaths.Add($mountPath)
+		$kernelPath = Join-Path $mountPath 'Windows\System32\ntoskrnl.exe'
+		if (-not (Test-Path -LiteralPath $kernelPath -PathType Leaf)) {
+			throw "Cannot determine the architecture of WinRE image: $ImagePath"
+		}
+		$imageArchitecture = Get-PEArchitecture -FilePath $kernelPath
+		if ($imageArchitecture -ine $TargetArchitecture) {
+			throw "WinRE architecture '$imageArchitecture' does not match the requested architecture '$TargetArchitecture'."
+		}
+		Invoke-DismDriverInjectionWithSubstLoop -ImagePath $mountPath -DriverRoot $DriverRoot -Strict
+		Confirm-PEDriverBundle -DriverRoot $DriverRoot -ExpectedHash $ExpectedDriverHash
+		if (-not (Test-PEDriversInMountedImage -ImagePath $mountPath -DriverRoot $DriverRoot)) {
+			throw 'One or more PE driver packages are missing from the serviced WinRE driver store.'
+		}
+		Dismount-WindowsImage -Path $mountPath -Save -ErrorAction Stop | Out-Null
+		$mounted = $false
+		[void]$script:winREMountedPaths.Remove($mountPath)
+		return $workingImage
+	}
+	finally {
+		if ($mounted) {
+			Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop | Out-Null
+			[void]$script:winREMountedPaths.Remove($mountPath)
+		}
+		if (Test-Path -LiteralPath $mountPath -PathType Container) {
+			Remove-Item -LiteralPath $mountPath -Force -ErrorAction Stop
+		}
+	}
+}
+
+function Set-WinREImage {
+	param(
+		[Parameter(Mandatory = $true)][string]$Destination,
+		[Parameter(Mandatory = $true)][string]$ServicedImage
+	)
+
+	$original = Get-Item -LiteralPath $Destination -Force -ErrorAction Stop
+	$attributes = $original.Attributes
+	try {
+		[IO.File]::SetAttributes($Destination, [IO.FileAttributes]::Normal)
+		Copy-Item -LiteralPath $ServicedImage -Destination $Destination -Force -ErrorAction Stop
+	}
+	finally {
+		if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+			[IO.File]::SetAttributes($Destination, $attributes)
+		}
+	}
+}
+
+function Remove-WinREWorkspace {
+	param(
+		[string]$Workspace,
+		[Collections.Generic.HashSet[string]]$MountedPaths,
+		[string]$DriverBundlePath
+	)
+
+	try {
+		if (-not [string]::IsNullOrWhiteSpace($Workspace)) {
+			foreach ($mountPath in @($MountedPaths)) {
+				try {
+					Dismount-WindowsImage -Path $mountPath -Discard -ErrorAction Stop | Out-Null
+					[void]$MountedPaths.Remove($mountPath)
+				}
+				catch {
+					WriteLog "Failed to discard the WinRE mount at '$mountPath': $($_.Exception.Message). Workspace retained at $Workspace."
+					throw
+				}
+			}
+			if (Test-Path -LiteralPath $Workspace -PathType Container) {
+				Remove-Item -LiteralPath $Workspace -Recurse -Force -ErrorAction Stop
+			}
+		}
+	}
+	finally {
+		if (-not [string]::IsNullOrWhiteSpace($DriverBundlePath) -and (Test-Path -LiteralPath $DriverBundlePath -PathType Container)) {
+			Remove-Item -LiteralPath $DriverBundlePath -Recurse -Force -ErrorAction Stop
+		}
+	}
+}
+
+function Remove-PreservedPEDriverSources {
+	param([Parameter(Mandatory = $true)][string]$SourceRoot)
+
+	if (-not (Test-Path -LiteralPath $SourceRoot -PathType Container)) {
+		WriteLog "Drivers folder $SourceRoot not found during deferred cleanup."
+		return
+	}
+	try {
+		$makeDirectories = @(Get-ChildItem -LiteralPath $SourceRoot -Directory -ErrorAction Stop)
+	}
+	catch {
+		WriteLog "Warning: Unable to inspect preserved driver folders in '$SourceRoot': $($_.Exception.Message)"
+		return
+	}
+	foreach ($makeDir in $makeDirectories) {
+		try {
+			$modelDirectories = @(Get-ChildItem -LiteralPath $makeDir.FullName -Directory -ErrorAction Stop)
+		}
+		catch {
+			WriteLog "Warning: Unable to inspect preserved driver folders in '$($makeDir.FullName)': $($_.Exception.Message)"
+			continue
+		}
+		foreach ($modelDir in $modelDirectories) {
+			$markerFile = Join-Path $modelDir.FullName '__PreservedForPEDrivers.txt'
+			$wimPath = Join-Path $makeDir.FullName ($modelDir.Name + '.wim')
+			if ((Test-Path -LiteralPath $markerFile -PathType Leaf) -and (Test-Path -LiteralPath $wimPath -PathType Leaf)) {
+				WriteLog "Removing preserved driver folder: $($modelDir.FullName) (WIM located at $wimPath)"
+				try {
+					Remove-Item -LiteralPath $modelDir.FullName -Recurse -Force -ErrorAction Stop
+				}
+				catch {
+					WriteLog "Warning: Failed to remove preserved driver folder '$($modelDir.FullName)': $($_.Exception.Message)"
+				}
+			}
+		}
+	}
 }
 
 function New-PEMedia {
@@ -4609,7 +5126,16 @@ function New-PEMedia {
     WriteLog 'Copy complete'
     #If $CopyPEDrivers = $true, add drivers to WinPE media using dism
     if ($CopyPEDrivers) {
-        if ($UseDriversAsPEDrivers) {
+		$driverRoot = $PEDriversFolder
+		if ($AddPEDriversToWinRE) {
+			$driverRoot = $peDriverBundlePath
+			if (-not (Test-Path -LiteralPath $driverRoot -PathType Container)) {
+				throw "The prepared PE driver bundle is missing: $driverRoot"
+			}
+			Confirm-PEDriverBundle -DriverRoot $driverRoot -ExpectedHash $winREDriverBundleHash
+			WriteLog "Using the prepared PE driver bundle: $driverRoot"
+		}
+		elseif ($UseDriversAsPEDrivers) {
             WriteLog "UseDriversAsPEDrivers is set. Building WinPE driver set from Drivers folder (bypassing PEDrivers folder contents)."
             if (Test-Path -Path $PEDriversFolder) {
                 try {
@@ -4639,7 +5165,7 @@ function New-PEMedia {
             $WinPEMount = "$WinPEFFUPath\Mount"
 
             # Inject drivers using deep SUBST mapping (reuse one drive letter and loop each INF folder)
-            Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $PEDriversFolder
+			Invoke-DismDriverInjectionWithSubstLoop -ImagePath $WinPEMount -DriverRoot $driverRoot
         }
         catch {
             WriteLog 'Some drivers failed to be added. This can be expected. Continuing.'
@@ -4671,40 +5197,9 @@ function New-PEMedia {
     WriteLog "Cleaning up $WinPEFFUPath"
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
-    # Deferred cleanup of preserved driver model folders (only after WinPE Deploy media is created)
+	# Deferred cleanup of preserved driver model folders
     if ($UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim -and $CopyPEDrivers) {
-        WriteLog "Beginning deferred cleanup of preserved driver model folders (UseDriversAsPEDrivers + compression scenario)."
-        $removedCount = 0
-        $skippedCount = 0
-        if (Test-Path -Path $DriversFolder) {
-            Get-ChildItem -Path $DriversFolder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                $makeDir = $_.FullName
-                Get-ChildItem -Path $makeDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-                    $modelDir = $_.FullName
-                    $markerFile = Join-Path -Path $modelDir -ChildPath '__PreservedForPEDrivers.txt'
-                    $leaf = Split-Path -Path $modelDir -Leaf
-                    $wimPath = Join-Path -Path $makeDir -ChildPath ($leaf + '.wim')
-                    if ((Test-Path -Path $markerFile -PathType Leaf) -and (Test-Path -Path $wimPath -PathType Leaf)) {
-                        try {
-                            WriteLog "Removing preserved driver folder: $modelDir (WIM located at $wimPath)"
-                            Remove-Item -Path $modelDir -Recurse -Force -ErrorAction Stop
-                            $removedCount++
-                        }
-                        catch {
-                            WriteLog "Warning: Failed to remove preserved folder $modelDir : $($_.Exception.Message)"
-                            $skippedCount++
-                        }
-                    }
-                    else {
-                        $skippedCount++
-                    }
-                }
-            }
-            WriteLog "Deferred driver cleanup complete. Removed: $removedCount; Skipped: $skippedCount"
-        }
-        else {
-            WriteLog "Drivers folder $DriversFolder not found during deferred cleanup."
-        }
+		Remove-PreservedPEDriverSources -SourceRoot $DriversFolder
     }
 }
 
@@ -5773,7 +6268,7 @@ function Get-FFUEnvironment {
     $sessionDir = Join-Path $FFUDevelopmentPath '.session'
     if (Test-Path -Path $sessionDir) {
         WriteLog 'Removing .session folder'
-        Remove-Item -Path $sessionDir -Recurse -Force -ErrorAction SilentlyContinue
+		Remove-Item -LiteralPath $sessionDir -Recurse -Force -ErrorAction Stop
         WriteLog 'Removal complete'
     }
     WriteLog 'Removing dirty.txt file'
@@ -5946,9 +6441,9 @@ function New-RunSession {
         $sessionDir = Join-Path $FFUDevelopmentPath '.session'
         $backupDir = Join-Path $sessionDir 'backups'
         $inprogDir = Join-Path $sessionDir 'inprogress'
-        if (-not (Test-Path $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null }
-        if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
-        if (-not (Test-Path $inprogDir)) { New-Item -ItemType Directory -Path $inprogDir -Force | Out-Null }
+		if (-not (Test-Path -LiteralPath $sessionDir)) { New-Item -ItemType Directory -Path $sessionDir -Force -ErrorAction Stop | Out-Null }
+		if (-not (Test-Path -LiteralPath $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force -ErrorAction Stop | Out-Null }
+		if (-not (Test-Path -LiteralPath $inprogDir)) { New-Item -ItemType Directory -Path $inprogDir -Force -ErrorAction Stop | Out-Null }
 
         $manifest = [ordered]@{
             SchemaVersion    = 2
@@ -5963,7 +6458,7 @@ function New-RunSession {
             $driverMapPath = Join-Path $DriversFolder 'DriverMapping.json'
             if (Test-Path $driverMapPath) {
                 $backup = Join-Path $backupDir 'DriverMapping.json'
-                Copy-Item -Path $driverMapPath -Destination $backup -Force
+				Copy-Item -LiteralPath $driverMapPath -Destination $backup -Force -ErrorAction Stop
                 $manifest.JsonBackups += @{ Path = $driverMapPath; Backup = $backup }
                 WriteLog "Backed up DriverMapping.json to $backup"
             }
@@ -5985,17 +6480,20 @@ function New-RunSession {
         }
 
         $manifestPath = Join-Path $sessionDir 'currentRun.json'
-        $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding UTF8
+		$manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding UTF8 -ErrorAction Stop
         WriteLog "Run session initialized at $sessionDir"
     }
     catch {
         WriteLog "New-RunSession failed: $($_.Exception.Message)"
+		throw
     }
 }
 function Get-CurrentRunManifest {
     param([string]$FFUDevelopmentPath)
     $manifestPath = Join-Path $FFUDevelopmentPath '.session\currentRun.json'
-    if (Test-Path $manifestPath) { return (Get-Content $manifestPath -Raw | ConvertFrom-Json -DateKind String) }
+	if (Test-Path -LiteralPath $manifestPath -PathType Leaf -ErrorAction Stop) {
+		return (Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop)
+	}
     return $null
 }
 function Save-RunManifest {
@@ -6725,7 +7223,6 @@ if ($Cleanup) {
 }
 
 WriteLog 'Begin Logging'
-New-RunSession -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -OrchestrationPath $orchestrationPath
 Set-Progress -Percentage 1 -Message "FFU build process started..."
 
 ####### Generate Config File #######
@@ -6766,6 +7263,18 @@ Set-Progress -Percentage 2 -Message "Validating parameters..."
 
 #Set build partition drive letters and validate they are available for use; this is required before any build steps that require drive access to ensure the expected drive letters are reserved and to fail fast if there are conflicts.
 try {
+	if ($AddPEDriversToWinRE -and -not $CopyPEDrivers) {
+		throw 'AddPEDriversToWinRE requires CopyPEDrivers.'
+	}
+	if ($CacheWinREInVHDX -and -not $AddPEDriversToWinRE) {
+		throw 'CacheWinREInVHDX requires AddPEDriversToWinRE.'
+	}
+	if ($CacheWinREInVHDX -and -not $AllowVHDXCaching) {
+		WriteLog 'CacheWinREInVHDX is selected, but AllowVHDXCaching is false; WinRE will not be cached.'
+	}
+	if ($CreateRecoveryPartition -and $RecoveryPartitionSize -gt 0 -and $RecoveryPartitionSize -lt 990MB) {
+		throw 'RecoveryPartitionSize must be at least 990 MiB.'
+	}
     $normalizedAdditionalDataPartitions = @(ConvertTo-NormalizedDataPartitions -DataPartitions $AdditionalDataPartitions)
     $configureDeployedDataPartitionDriveLetters = $normalizedAdditionalDataPartitions.Count -gt 0
     $enforceBuildVmDataPartitionDriveLetters = $InstallApps -and $configureDeployedDataPartitionDriveLetters
@@ -6843,7 +7352,8 @@ if ($CopyPEDrivers) {
             $driverSourceAvailable = $true
             WriteLog "Make/Model ($Make / $Model) specified; drivers will be downloaded for WinPE."
         }
-        elseif ((Test-Path -Path $DriversFolder) -and ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -ge 1MB)) {
+		elseif (($AddPEDriversToWinRE -and (Test-PEDriverSource -Path $DriversFolder)) -or
+			(-not $AddPEDriversToWinRE -and (Test-Path -Path $DriversFolder) -and ((Get-ChildItem -Path $DriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -ge 1MB))) {
             $driverSourceAvailable = $true
             WriteLog "Drivers folder contains existing content; will reuse for WinPE."
         }
@@ -6859,7 +7369,13 @@ if ($CopyPEDrivers) {
             WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
             throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is missing"
         }
-        if ((Get-ChildItem -Path $PEDriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB) {
+		$peSourceIsEmpty = if ($AddPEDriversToWinRE) {
+			-not (Test-PEDriverSource -Path $PEDriversFolder)
+		}
+		else {
+			(Get-ChildItem -Path $PEDriversFolder -Recurse | Measure-Object -Property Length -Sum).Sum -lt 1MB
+		}
+		if ($peSourceIsEmpty) {
             WriteLog "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
             throw "-CopyPEDrivers is set to `$true, but the $PEDriversFolder folder is empty"
         }
@@ -7013,7 +7529,8 @@ If (Test-Path -Path "$FFUDevelopmentPath\dirty.txt") {
 }
 WriteLog 'Creating dirty.txt file'
 $dirtyFilePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'dirty.txt'
-New-Item -Path $dirtyFilePath -ItemType "file" | Out-Null
+New-Item -Path $dirtyFilePath -ItemType "file" -ErrorAction Stop | Out-Null
+New-RunSession -FFUDevelopmentPath $FFUDevelopmentPath -DriversFolder $DriversFolder -OrchestrationPath $orchestrationPath
 
 # Early CLI prompt for additional FFUs (only if enabled and not provided)
 if ($BuildUSBDrive -and $CopyAdditionalFFUFiles -and ((-not $AdditionalFFUFiles) -or ($AdditionalFFUFiles.Count -eq 0))) {
@@ -7916,8 +8433,39 @@ if ($InstallApps) {
 	}
 }
 
+# Prepare one immutable bundle before looking for a VHDX cache.
+$winREWorkspace = $null
+$peDriverBundlePath = $null
+$winREDriverBundleHash = $null
+$script:winREMountedPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+try {
+if ($AddPEDriversToWinRE) {
+	$winRESessionRoot = Join-Path $FFUDevelopmentPath '.session'
+	if (-not (Test-Path -LiteralPath $winRESessionRoot -PathType Container)) {
+		throw "Build session folder not found: $winRESessionRoot"
+	}
+	$winRESessionRoot = (Resolve-Path -LiteralPath $winRESessionRoot -ErrorAction Stop).Path
+	$workspaceId = [guid]::NewGuid().ToString('N')
+	$newWinREWorkspace = Join-Path $winRESessionRoot "WinRE-$workspaceId"
+	$newPEDriverBundlePath = Join-Path $winRESessionRoot "PEDrivers-$workspaceId"
+	if (Test-Path -LiteralPath $newWinREWorkspace) {
+		throw "WinRE workspace already exists: $newWinREWorkspace"
+	}
+	New-Item -ItemType Directory -Path $newWinREWorkspace -ErrorAction Stop | Out-Null
+	$winREWorkspace = (Resolve-Path -LiteralPath $newWinREWorkspace -ErrorAction Stop).Path
+	$peSource = if ($UseDriversAsPEDrivers) { $DriversFolder } else { $PEDriversFolder }
+	WriteLog "Preparing shared PE driver bundle at $newPEDriverBundlePath"
+	$winREDriverBundleHash = New-PEDriverBundle -Destination $newPEDriverBundlePath -Source $peSource -UseDriversFolder $UseDriversAsPEDrivers
+	$peDriverBundlePath = $newPEDriverBundlePath
+}
+
 #Create VHDX
 $windowsIsoMountedByBuild = $false
+$cachedVHDXFileFound = $false
+$cachedWinREIncluded = $false
+$pendingWinREImage = $null
+$cacheServicedFromBase = $false
+$workingVhdxOwned = $false
 try {
     Set-Progress -Percentage 11 -Message "Checking for required Windows Updates..."
     $requiredUpdates = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -8104,6 +8652,7 @@ try {
                 $requiredUpdateFileNames = @($requiredUpdateFileNames | Where-Object { $_ } | Sort-Object -Unique)
             }
 
+			$baseCacheItem = $null
             foreach ($vhdxJson in $vhdxJsons) {
                 try {
                     WriteLog "Processing $($vhdxJson.FullName)"
@@ -8124,6 +8673,16 @@ try {
                     if ([uint32]$vhdxCacheItem.PartitionLayoutSignatureVersion -ne $partitionLayoutSignatureVersion) { WriteLog "PartitionLayoutSignatureVersion mismatch (cached: $($vhdxCacheItem.PartitionLayoutSignatureVersion), current: $partitionLayoutSignatureVersion), continuing"; continue }
                     if ($vhdxCacheItem.PSObject.Properties.Name -notcontains 'PartitionLayoutSignature') { WriteLog 'PartitionLayoutSignature missing in cached config, continuing'; continue }
                     if ($vhdxCacheItem.PartitionLayoutSignature -ne $partitionLayoutSignature) { WriteLog 'PartitionLayoutSignature mismatch, continuing'; continue }
+					$winRECacheKind = Get-WinRECacheKind -CacheItem $vhdxCacheItem -AddDrivers $AddPEDriversToWinRE -DriverHash $winREDriverBundleHash -TargetArchitecture $WindowsArch
+					if ($winRECacheKind -eq 'Incompatible') { WriteLog 'WinRE driver bundle or architecture mismatch, continuing'; continue }
+					$cachedFileName = [string]$vhdxCacheItem.VhdxFileName
+					if ([string]::IsNullOrWhiteSpace($cachedFileName) -or
+						$cachedFileName -ne [IO.Path]::GetFileName($cachedFileName) -or
+						[IO.Path]::GetExtension($cachedFileName) -ine '.vhdx' -or
+						-not (Test-Path -LiteralPath (Join-Path $VHDXCacheFolder $cachedFileName) -PathType Leaf)) {
+						WriteLog 'Cached VHDX file is missing, continuing'
+						continue
+					}
 
                     $cachedUpdateNames = @()
                     if ($vhdxCacheItem.IncludedUpdates -and $vhdxCacheItem.IncludedUpdates.Count -gt 0) {
@@ -8147,15 +8706,25 @@ try {
                         continue
                     }
 
-                    WriteLog "Found cached VHDX file $vhdxCacheFolder\$($vhdxCacheItem.VhdxFileName) with matching parameters and included updates"
-                    $cachedVHDXFileFound = $true
-                    $cachedVHDXInfo = $vhdxCacheItem
-                    break
+					if ($winRECacheKind -eq 'Serviced') {
+						$cachedVHDXFileFound = $true
+						$cachedWinREIncluded = $true
+						$cachedVHDXInfo = $vhdxCacheItem
+						break
+					}
+					if ($null -eq $baseCacheItem) { $baseCacheItem = $vhdxCacheItem }
                 }
                 catch {
                     WriteLog "Reading $vhdxJson Failed with error $_"
                 }
             }
+			if (-not $cachedVHDXFileFound -and $null -ne $baseCacheItem) {
+				$cachedVHDXFileFound = $true
+				$cachedVHDXInfo = $baseCacheItem
+			}
+			if ($cachedVHDXFileFound) {
+				WriteLog "Found matching cached VHDX $($cachedVHDXInfo.VhdxFileName); WinRE drivers included: $cachedWinREIncluded"
+			}
         }
     }
 
@@ -8441,6 +9010,10 @@ try {
             }
         }
 
+		if (Test-Path -LiteralPath $VHDXPath) {
+			throw "The working VHDX already exists: $VHDXPath"
+		}
+		$workingVhdxOwned = $true
         $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
         $createdSystemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk -DriveLetter $SystemPartitionDriveLetter
@@ -8456,18 +9029,18 @@ try {
         $osPartitionDriveLetter = $osPartitionObject.DriveLetter
         $WindowsPartition = $osPartitionDriveLetter + ':\'
 
-        if ($CreateRecoveryPartition) {
-            $recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartitionObject -RecoveryPartitionSize $RecoveryPartitionSize -DriveLetter $RecoveryPartitionDriveLetter -OsPartitionUsesMaximumSize ($OSPartitionSize -le 0)
+		if (-not $AddPEDriversToWinRE) {
+			if ($CreateRecoveryPartition) {
+				$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartitionObject -RecoveryPartitionSize $RecoveryPartitionSize -DriveLetter $RecoveryPartitionDriveLetter -OsPartitionUsesMaximumSize ($OSPartitionSize -le 0)
+			}
+			else {
+				WriteLog 'CreateRecoveryPartition is false. Skipping Windows Recovery partition creation.'
+			}
+			foreach ($additionalDataPartition in $normalizedAdditionalDataPartitions) {
+				New-DataPartition -VhdxDisk $vhdxDisk -DataPartition $additionalDataPartition | Out-Null
+			}
+			WriteLog 'All necessary partitions created.'
         }
-        else {
-            WriteLog 'CreateRecoveryPartition is false. Skipping Windows Recovery partition creation.'
-        }
-
-        foreach ($additionalDataPartition in $normalizedAdditionalDataPartitions) {
-            New-DataPartition -VhdxDisk $vhdxDisk -DataPartition $additionalDataPartition | Out-Null
-        }
-
-        WriteLog 'All necessary partitions created.'
 
         Add-BootFiles -OsPartitionDriveLetter $osPartitionDriveLetter -SystemPartitionDriveLetter $createdSystemPartitionDriveLetter -AdkPath $adkPath -WindowsArch $WindowsArch
     
@@ -8573,6 +9146,27 @@ try {
         If ($OptionalFeatures) {
             $Source = Join-Path (Split-Path $wimpath) 'sxs'
             Enable-WindowsFeaturesByName -FeatureNames $OptionalFeatures -Source $Source
+		}
+		if ($AddPEDriversToWinRE) {
+			$windowsWinREPath = Join-Path $WindowsPartition 'Windows\System32\Recovery\Winre.wim'
+			$servicedWinREImage = New-ServicedWinREImage -ImagePath $windowsWinREPath -DriverRoot $peDriverBundlePath -Workspace $winREWorkspace -TargetArchitecture $WindowsArch -ExpectedDriverHash $winREDriverBundleHash
+			if ($AllowVHDXCaching -and -not $CacheWinREInVHDX) {
+				$pendingWinREImage = $servicedWinREImage
+			}
+			else {
+				Set-WinREImage -Destination $windowsWinREPath -ServicedImage $servicedWinREImage
+				$cachedWinREIncluded = $true
+			}
+			if ($CreateRecoveryPartition) {
+				$recoveryPartition = New-RecoveryPartition -VhdxDisk $vhdxDisk -OsPartition $osPartitionObject -RecoveryPartitionSize $RecoveryPartitionSize -DriveLetter $RecoveryPartitionDriveLetter -OsPartitionUsesMaximumSize ($OSPartitionSize -le 0)
+			}
+			else {
+				WriteLog 'CreateRecoveryPartition is false. WinRE remains in the Windows partition.'
+			}
+			foreach ($additionalDataPartition in $normalizedAdditionalDataPartitions) {
+				New-DataPartition -VhdxDisk $vhdxDisk -DataPartition $additionalDataPartition | Out-Null
+			}
+			WriteLog 'All necessary partitions created.'
         }
 		If ($windowsIsoMountedByBuild) {
 			Dismount-WindowsIsoSource -ImagePath $ISOPath
@@ -8596,8 +9190,17 @@ try {
         WriteLog 'Using cached VHDX file to speed up build process'
         WriteLog "VHDX file is: $($cachedVHDXInfo.VhdxFileName)"
 
-        Robocopy.exe $($VHDXCacheFolder) $($VMPath) $($cachedVHDXInfo.VhdxFileName) /E /COPY:DAT /R:5 /W:5 /J | Out-Null
+		New-Item -ItemType Directory -Path $VMPath -Force -ErrorAction Stop | Out-Null
+		$cacheSource = Join-Path $VHDXCacheFolder $cachedVHDXInfo.VhdxFileName
         $VHDXPath = Join-Path $($VMPath) $($cachedVHDXInfo.VhdxFileName)
+		if ([IO.Path]::GetFullPath($cacheSource) -ieq [IO.Path]::GetFullPath($VHDXPath)) {
+			throw 'The working VHDX path must differ from the cached VHDX path.'
+		}
+		if (Test-Path -LiteralPath $VHDXPath) {
+			throw "The working VHDX already exists: $VHDXPath"
+		}
+		$workingVhdxOwned = $true
+		Copy-Item -LiteralPath $cacheSource -Destination $VHDXPath -ErrorAction Stop
 
         $vhdxDisk = Get-VHD -Path $VHDXPath | Mount-VHD -Passthru | Get-Disk
         $partitionLayout = Resolve-VhdxPartitionLayout -Disk $vhdxDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
@@ -8608,6 +9211,34 @@ try {
 
     }
 
+	$partitionLayout = Resolve-VhdxPartitionLayout -Disk $vhdxDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+	$partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+	$currentWinREImage = Get-WinREImagePath -Layout $partitionLayout
+	if ($AddPEDriversToWinRE -and [string]::IsNullOrWhiteSpace($currentWinREImage)) {
+		throw 'WinRE.wim was not found in the Windows or Recovery partition.'
+	}
+	if ($AddPEDriversToWinRE -and $cachedVHDXFileFound -and -not $cachedWinREIncluded) {
+		$servicedWinREImage = New-ServicedWinREImage -ImagePath $currentWinREImage -DriverRoot $peDriverBundlePath -Workspace $winREWorkspace -TargetArchitecture $WindowsArch -ExpectedDriverHash $winREDriverBundleHash
+		Set-WinREImage -Destination $currentWinREImage -ServicedImage $servicedWinREImage
+		$cachedWinREIncluded = $true
+		$cacheServicedFromBase = $true
+	}
+	elseif ($AddPEDriversToWinRE -and $cachedVHDXFileFound -and $cachedWinREIncluded) {
+		if (-not (Test-WinREDriverBundle -ImagePath $currentWinREImage -DriverRoot $peDriverBundlePath -Workspace $winREWorkspace -TargetArchitecture $WindowsArch -ExpectedDriverHash $winREDriverBundleHash)) {
+			throw 'The cached WinRE image does not contain the PE driver bundle recorded in its cache configuration.'
+		}
+	}
+	if ($CreateRecoveryPartition -and -not [string]::IsNullOrWhiteSpace($currentWinREImage)) {
+		$partitionLayout = Set-RecoveryPartitionCapacity -VhdxPath $VHDXPath -Layout $partitionLayout -WinREImagePath $currentWinREImage -ConfiguredRecoverySize $RecoveryPartitionSize -ConfiguredOSSize $OSPartitionSize -DataPartitions $normalizedAdditionalDataPartitions
+	}
+	elseif ($CreateRecoveryPartition) {
+		WriteLog 'WinRE.wim was not found; Recovery image capacity cannot be verified.'
+	}
+	if ($AddPEDriversToWinRE) {
+		$imageForVerification = if ($null -ne $pendingWinREImage) { $pendingWinREImage } else { $currentWinREImage }
+		$preBootWinREHash = (Get-FileHash -LiteralPath $imageForVerification -Algorithm SHA256 -ErrorAction Stop).Hash
+	}
+
     #Set Product key
     If ($ProductKey) {
         WriteLog "Setting Windows Product Key"
@@ -8615,17 +9246,12 @@ try {
     }
 
     Set-Progress -Percentage 40 -Message "Finalizing VHDX..."
-    if ($AllowVHDXCaching -and !$cachedVHDXFileFound) {
+	if ($AllowVHDXCaching -and (-not $cachedVHDXFileFound -or ($cacheServicedFromBase -and $CacheWinREInVHDX))) {
         WriteLog 'Caching VHDX file'
 
         # Run full VHDX optimization after servicing/cleanup and before cache copy
         WriteLog 'Optimizing VHDX before copying to cache dir'
         Optimize-FFUCaptureDrive -VhdxPath $VHDXPath -EnableVolumeRetrim $true -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-
-        WriteLog 'Copying to cache dir'
-
-        #Assuming there are now name collisons
-        Robocopy.exe $($VMPath) $($VHDXCacheFolder) $("$VMName.vhdx") /E /COPY:DAT /R:5 /W:5 /J | Out-Null
 
         #Only create new instance if not created during patching
         if ($null -eq $cachedVHDXInfo) {
@@ -8638,34 +9264,80 @@ try {
                 }
             }
         }
-        $cachedVHDXInfo.VhdxFileName = $("$VMName.vhdx")
-        $cachedVHDXInfo.LogicalSectorSizeBytes = $LogicalSectorSizeBytes
-        $cachedVHDXInfo.Disksize = $Disksize
-        $cachedVHDXInfo.CreateRecoveryPartition = $CreateRecoveryPartition
-        $cachedVHDXInfo.PartitionLayoutSignatureVersion = $partitionLayoutSignatureVersion
-        $cachedVHDXInfo.PartitionLayoutSignature = $partitionLayoutSignature
-        $cachedVHDXInfo.WindowsSKU = $WindowsSKU
-        $cachedVHDXInfo.WindowsRelease = $WindowsRelease
-        $cachedVHDXInfo.WindowsVersion = $WindowsVersion
-        $cachedVHDXInfo.OptionalFeatures = $OptionalFeatures
-        
-        $cachedVHDXInfo | ConvertTo-Json | Out-File -FilePath ("{0}\{1}_config.json" -f $($VHDXCacheFolder), $VMName)
-        WriteLog "Cached VHDX file $("$VMName.vhdx")"
+		New-Item -ItemType Directory -Path $VHDXCacheFolder -Force -ErrorAction Stop | Out-Null
+		$cacheId = "$VMName-$([guid]::NewGuid().ToString('N'))"
+		$cacheFileName = "$cacheId.vhdx"
+		$cacheFile = Join-Path $VHDXCacheFolder $cacheFileName
+		$cacheConfig = Join-Path $VHDXCacheFolder "${cacheId}_config.json"
+		$temporaryCacheFile = "$cacheFile.tmp"
+		$temporaryCacheConfig = "$cacheConfig.tmp"
+		foreach ($cachePath in @($cacheFile, $cacheConfig, $temporaryCacheFile, $temporaryCacheConfig)) {
+			if (Test-Path -LiteralPath $cachePath) { throw "Cache destination already exists: $cachePath" }
+		}
+		$includeWinREInCache = $cachedWinREIncluded -and $AddPEDriversToWinRE -and $CacheWinREInVHDX
+		if ($includeWinREInCache) {
+			Confirm-PEDriverBundle -DriverRoot $peDriverBundlePath -ExpectedHash $winREDriverBundleHash
+		}
+		$cacheMetadata = New-VhdxCacheMetadata -VhdxFileName $cacheFileName -LogicalSectorSizeBytes $LogicalSectorSizeBytes -Disksize $Disksize -CreateRecoveryPartition $CreateRecoveryPartition -PartitionLayoutSignatureVersion $partitionLayoutSignatureVersion -PartitionLayoutSignature $partitionLayoutSignature -WindowsSKU $WindowsSKU -WindowsRelease $WindowsRelease -WindowsVersion $WindowsVersion -OptionalFeatures $OptionalFeatures -IncludedUpdates @($cachedVHDXInfo.IncludedUpdates) -IncludeWinRE $includeWinREInCache -DriverHash $winREDriverBundleHash -WindowsArch $WindowsArch
+		$cacheFilePublished = $false
+		try {
+			Copy-Item -LiteralPath $VHDXPath -Destination $temporaryCacheFile -ErrorAction Stop
+			$cacheMetadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporaryCacheConfig -Encoding UTF8 -ErrorAction Stop
+			Move-Item -LiteralPath $temporaryCacheFile -Destination $cacheFile -ErrorAction Stop
+			$cacheFilePublished = $true
+			Move-Item -LiteralPath $temporaryCacheConfig -Destination $cacheConfig -ErrorAction Stop
+		}
+		catch {
+			if ($cacheFilePublished -and -not (Test-Path -LiteralPath $cacheConfig -PathType Leaf)) {
+				Remove-Item -LiteralPath $cacheFile -Force -ErrorAction Stop
+			}
+			throw
+		}
+		finally {
+			foreach ($temporaryPath in @($temporaryCacheFile, $temporaryCacheConfig)) {
+				if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+					Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction Stop
+				}
+			}
+		}
+		WriteLog "Cached VHDX file $cacheFileName"
 
-        #Remount the VHDX file if $installapps is false so the VHDX can be captured to an FFU
-        If (-not $InstallApps) {
-            Mount-Vhd -Path $VHDXPath
+		if ($null -ne $pendingWinREImage) {
+			$vhdxDisk = Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop | Get-Disk
+			$partitionLayout = Resolve-VhdxPartitionLayout -Disk $vhdxDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+			$partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+			$currentWinREImage = Get-WinREImagePath -Layout $partitionLayout
+			if ([string]::IsNullOrWhiteSpace($currentWinREImage)) { throw 'WinRE.wim was not found after caching the base VHDX.' }
+			Set-WinREImage -Destination $currentWinREImage -ServicedImage $pendingWinREImage
+			if ($CreateRecoveryPartition) {
+				$partitionLayout = Set-RecoveryPartitionCapacity -VhdxPath $VHDXPath -Layout $partitionLayout -WinREImagePath $currentWinREImage -ConfiguredRecoverySize $RecoveryPartitionSize -ConfiguredOSSize $OSPartitionSize -DataPartitions $normalizedAdditionalDataPartitions
+			}
+			$cachedWinREIncluded = $true
+		}
+		elseif (-not $InstallApps) {
+			Mount-Vhd -Path $VHDXPath -ErrorAction Stop
         }
     } 
 }
 catch {
+	$buildError = $_
     Write-Host 'Creating VHDX Failed'
     WriteLog "Creating VHDX Failed with error $_"
-    WriteLog "Dismounting $VHDXPath"
-    Dismount-ScratchVhdx -VhdxPath $VHDXPath
-    WriteLog "Removing $VMPath"
-    Remove-Item -Path $VMPath -Force -Recurse | Out-Null
-    WriteLog 'Removal complete'
+	if ($workingVhdxOwned -and (Test-Path -LiteralPath $VHDXPath -PathType Leaf)) {
+		try {
+			$failedVhd = Get-VHD -Path $VHDXPath -ErrorAction Stop
+			if ($failedVhd.Attached) { Dismount-ScratchVhdx -VhdxPath $VHDXPath }
+		}
+		catch {
+			WriteLog "Unable to dismount the working VHDX during cleanup: $($_.Exception.Message)"
+		}
+		try {
+			Remove-Item -LiteralPath $VHDXPath -Force -ErrorAction Stop
+		}
+		catch {
+			WriteLog "Unable to remove the working VHDX during cleanup: $($_.Exception.Message)"
+		}
+	}
 	If ($windowsIsoMountedByBuild) {
 		Dismount-WindowsIsoSource -ImagePath $ISOPath
 		$windowsIsoMountedByBuild = $false
@@ -8681,7 +9353,7 @@ catch {
             WriteLog "Keeping downloaded ESD file $wimPath"
         }
     }
-    throw $_
+	throw $buildError
     
 }
 
@@ -8946,6 +9618,33 @@ try {
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
+		if ($AddPEDriversToWinRE -or $CreateRecoveryPartition) {
+			$vhdMeta = Get-VHD -Path $VHDXPath -ErrorAction Stop
+			$disk = if ($vhdMeta.Attached) { Get-Disk -Number $vhdMeta.DiskNumber -ErrorAction Stop } else { Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop | Get-Disk }
+			$partitionLayout = Resolve-VhdxPartitionLayout -Disk $disk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+			$partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+			$finalWinREImage = Get-WinREImagePath -Layout $partitionLayout
+			if ([string]::IsNullOrWhiteSpace($finalWinREImage)) {
+				if ($AddPEDriversToWinRE) { throw 'WinRE.wim was not found after the build VM shut down.' }
+				WriteLog 'WinRE.wim was not found after the build VM shut down; Recovery image capacity cannot be verified.'
+			}
+			else {
+				if ($AddPEDriversToWinRE) {
+					$finalWinREHash = (Get-FileHash -LiteralPath $finalWinREImage -Algorithm SHA256 -ErrorAction Stop).Hash
+					if ($finalWinREHash -ne $preBootWinREHash -and -not (Test-WinREDriverBundle -ImagePath $finalWinREImage -DriverRoot $peDriverBundlePath -Workspace $winREWorkspace -TargetArchitecture $WindowsArch -ExpectedDriverHash $winREDriverBundleHash)) {
+						WriteLog 'WinRE changed in the build VM and no longer contains the selected PE drivers. Servicing it again.'
+						$finalServicedWinRE = New-ServicedWinREImage -ImagePath $finalWinREImage -DriverRoot $peDriverBundlePath -Workspace $winREWorkspace -TargetArchitecture $WindowsArch -ExpectedDriverHash $winREDriverBundleHash
+						if ($CreateRecoveryPartition) {
+							$partitionLayout = Set-RecoveryPartitionCapacity -VhdxPath $VHDXPath -Layout $partitionLayout -WinREImagePath $finalServicedWinRE -ConfiguredRecoverySize $RecoveryPartitionSize -ConfiguredOSSize $OSPartitionSize -DataPartitions $normalizedAdditionalDataPartitions
+						}
+						Set-WinREImage -Destination $finalWinREImage -ServicedImage $finalServicedWinRE
+					}
+				}
+				if ($CreateRecoveryPartition) {
+					$partitionLayout = Set-RecoveryPartitionCapacity -VhdxPath $VHDXPath -Layout $partitionLayout -WinREImagePath $finalWinREImage -ConfiguredRecoverySize $RecoveryPartitionSize -ConfiguredOSSize $OSPartitionSize -DataPartitions $normalizedAdditionalDataPartitions
+				}
+			}
+		}
         if ($enforceBuildVmDataPartitionDriveLetters) {
             $vhdMeta = Get-VHD -Path $VHDXPath
             if ($vhdMeta.Attached) {
@@ -9035,6 +9734,9 @@ If ($CreateDeploymentMedia) {
     
     }
 }
+elseif ($AddPEDriversToWinRE -and $UseDriversAsPEDrivers -and $CompressDownloadedDriversToWim) {
+	Remove-PreservedPEDriverSources -SourceRoot $DriversFolder
+}
 If ($BuildUSBDrive) {
     Set-Progress -Percentage 95 -Message "Building USB drive..."
     try {
@@ -9107,6 +9809,7 @@ else {
     Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value $LongPathsEnabled
 }
 
+Remove-WinREWorkspace -Workspace $winREWorkspace -MountedPaths $script:winREMountedPaths -DriverBundlePath $peDriverBundlePath
 #Clean up dirty.txt file
 $dirtyFilePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'dirty.txt'
 Remove-Item -Path $dirtyFilePath -Force | out-null
@@ -9139,3 +9842,7 @@ if ($VerbosePreference -ne 'Continue') {
 }
 WriteLog 'Script complete'
 WriteLog $runTimeFormatted
+}
+finally {
+	Remove-WinREWorkspace -Workspace $winREWorkspace -MountedPaths $script:winREMountedPaths -DriverBundlePath $peDriverBundlePath
+}

@@ -257,13 +257,18 @@ Controls the `-AllowVHDXCaching` parameter. When enabled, FFU Builder caches the
 
 A cached VHDX is reused only when the cache metadata matches your current build inputs, including:
 
-- Windows release, version, and SKU
+- Windows release, version, SKU, architecture
 - Logical sector size (512 vs 4096)
 - Optional features selection
 - The exact set of update payload file names downloaded for that run (SSU/CU/.NET/etc.)
 - Disk size, Recovery layout, and the ordered data-partition name, label, file system, size, and **Fill Remaining** settings
+- The PE driver bundle hash when a cached VHDX contains drivers added to WinRE
 
 System, Windows, Recovery, and data drive letters do not affect cache matching. The per-data-partition **Persist Drive Letter** setting also does not affect matching. On a cache hit, FFU Builder copies the cached base and applies the current host build letters only to that working copy.
+
+When **Add PE Drivers to WinRE** is enabled, FFU Builder can use a matching standard VHDX cache and add the drivers to its working copy. If **Cache WinRE.wim in VHDX** is also enabled, the serviced WinRE is saved in a separate cache with a `winreDriverBundleHash` value. A matching driver-serviced cache can be reused even when the WinRE cache option is cleared. A driver-serviced cache is not used when **Add PE Drivers to WinRE** is cleared.
+
+Older matching caches remain eligible. FFU Builder checks the Recovery partition on the working copy and adjusts it when needed to meet the current size requirements.
 
 Cache metadata from the earlier drive-letter-aware schema is skipped rather than migrated or deleted. The first build after this change may create one replacement cache. Remove older VHDX and config pairs manually after confirming the replacement is usable.
 

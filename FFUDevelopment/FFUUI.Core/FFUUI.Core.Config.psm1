@@ -36,6 +36,8 @@ function Get-UIConfig {
         CopyOfficeConfigXML            = $State.Controls.chkCopyOfficeConfigXML.IsChecked
         CopyPEDrivers                  = $State.Controls.chkCopyPEDrivers.IsChecked
         UseDriversAsPEDrivers          = $State.Controls.chkUseDriversAsPEDrivers.IsChecked
+		AddPEDriversToWinRE            = $State.Controls.chkAddPEDriversToWinRE.IsChecked
+		CacheWinREInVHDX               = $State.Controls.chkCacheWinREInVHDX.IsChecked
         CopyPPKG                       = $State.Controls.chkCopyPPKG.IsChecked
         CopyUnattend                   = $State.Controls.chkCopyUnattend.IsChecked
         DeviceNamingMode               = Get-ConfiguredDeviceNamingMode -State $State
@@ -909,8 +911,16 @@ function Test-DiskLayoutConfiguration {
     if ($Config.OSPartitionSize -gt 0) {
         $fixedPartitionSizeBytes += [uint64]$Config.OSPartitionSize
     }
-    if ([bool]$Config.CreateRecoveryPartition -and $Config.RecoveryPartitionSize -gt 0) {
-        $fixedPartitionSizeBytes += [uint64]$Config.RecoveryPartitionSize
+	if ([bool]$Config.CreateRecoveryPartition) {
+		if ($Config.RecoveryPartitionSize -gt 0) {
+			if ([uint64]$Config.RecoveryPartitionSize -lt 990MB) {
+				$errors.Add('Recovery Partition Size must be at least 990 MiB.')
+			}
+			$fixedPartitionSizeBytes += [uint64]$Config.RecoveryPartitionSize
+		}
+		else {
+			$fixedPartitionSizeBytes += 990MB
+		}
     }
     foreach ($dataPartition in $dataPartitions) {
         if ($dataPartition.FillRemaining) { continue }
@@ -1357,6 +1367,20 @@ function Select-VMSwitchFromConfig {
     }
 }
 
+function Set-PEDriverConfig {
+	param(
+		[Parameter(Mandatory = $true)][psobject]$ConfigContent,
+		[Parameter(Mandatory = $true)][psobject]$State
+	)
+
+	$State.Controls.chkAddPEDriversToWinRE.IsChecked = $false
+	$State.Controls.chkCacheWinREInVHDX.IsChecked = $false
+	Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPEDrivers' -State $State
+	Set-UIValue -ControlName 'chkUseDriversAsPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UseDriversAsPEDrivers' -State $State
+	Set-UIValue -ControlName 'chkAddPEDriversToWinRE' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'AddPEDriversToWinRE' -State $State
+	Set-UIValue -ControlName 'chkCacheWinREInVHDX' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CacheWinREInVHDX' -State $State
+}
+
 function Update-UIFromConfig {
     param(
         [Parameter(Mandatory = $true)]
@@ -1581,8 +1605,7 @@ function Update-UIFromConfig {
 	}
     Set-UIValue -ControlName 'txtPEDriversFolder' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'PEDriversFolder' -State $State
     Set-UIValue -ControlName 'txtDriversJsonPath' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'DriversJsonPath' -State $State
-    Set-UIValue -ControlName 'chkCopyPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CopyPEDrivers' -State $State
-    Set-UIValue -ControlName 'chkUseDriversAsPEDrivers' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'UseDriversAsPEDrivers' -State $State
+	Set-PEDriverConfig -ConfigContent $ConfigContent -State $State
     Set-UIValue -ControlName 'chkCompressDriversToWIM' -PropertyName 'IsChecked' -ConfigObject $ConfigContent -ConfigKey 'CompressDownloadedDriversToWim' -State $State
 
     # Updates tab

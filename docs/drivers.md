@@ -229,11 +229,33 @@ This eliminates the need to maintain a separate, manually curated `PEDrivers` fo
 
 > Note
 >
-> If the PE Drivers folder already contains content when using this option, it will be cleared before the new driver set is copied in.
+> For deployment media builds without **Add PE Drivers to WinRE**, the PE Drivers folder is cleared before the new driver set is copied in. When **Add PE Drivers to WinRE** is selected, FFU Builder prepares a temporary driver bundle instead.
 >
-> Some drivers may fail to be added during injection, which is expected behavior and can be safely ignored.
+> Some drivers may fail to be added to deployment WinPE during injection. WinRE servicing stops the build if a selected driver cannot be added.
 >
 > Network adapters are not included when using the drivers folder as PE drivers source, so if you're using WDS or another network-based solution to copy your FFU and you've modified ApplyFFU.ps1, it's best to not use the **Use Drivers Folder as PE Driver Source** option and just copy in your required PE Drivers to the PE Drivers folder.
+
+### Add PE Drivers to WinRE
+
+Select **Add PE Drivers to WinRE** to add the PE driver bundle to the Windows Recovery Environment image in the FFU. This option uses the PE Drivers folder by default. When **Use Drivers Folder as PE Drivers Source** is also selected, WinRE uses the same filtered driver set as deployment WinPE.
+
+During the build, FFU Builder stages the shared driver bundle in `.session\PEDrivers-<id>` and keeps temporary WinRE image files in a separate `.session\WinRE-<id>` folder. The folders are removed during build cleanup.
+
+FFU Builder adds the drivers after servicing Windows and sizes the Recovery partition for the resulting WinRE image. The build stops if WinRE is missing or a selected driver cannot be added. If the Recovery partition is removed, the script services the WinRE image in the Windows partition; Windows recovery still needs to be configured for the deployed device.
+
+If deployment media contains a custom `WinRE\winre.wim`, the deployment script uses that image instead of the one in the FFU. Add the required drivers to the custom image separately.
+
+### Cache WinRE.wim in VHDX
+
+Select **Cache WinRE.wim in VHDX** to save the serviced WinRE image in the VHDX cache. **Allow VHDX Caching** must also be enabled. FFU Builder records a SHA-256 fingerprint of the PE driver bundle as `winreDriverBundleHash` in the matching cache configuration.
+
+When this option is cleared, FFU Builder can still reuse a matching standard VHDX cache that contains Windows updates and optional features. It adds the PE drivers to the working copy. A previously cached WinRE image with the same driver bundle can also be reused, but a new driver-serviced cache is not saved.
+
+For example:
+
+```powershell
+.\BuildFFUVM.ps1 -CopyPEDrivers $true -AddPEDriversToWinRE $true -AllowVHDXCaching $true -CacheWinREInVHDX $true
+```
 
 ## DriverMapping.json
 

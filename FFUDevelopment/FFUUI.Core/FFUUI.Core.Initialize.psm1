@@ -484,6 +484,8 @@ function Initialize-UIControls {
     $State.Controls.txtPEDriversFolder = $window.FindName('txtPEDriversFolder')
     $State.Controls.chkCopyPEDrivers = $window.FindName('chkCopyPEDrivers')
     $State.Controls.chkUseDriversAsPEDrivers = $window.FindName('chkUseDriversAsPEDrivers')
+	$State.Controls.chkAddPEDriversToWinRE = $window.FindName('chkAddPEDriversToWinRE')
+	$State.Controls.chkCacheWinREInVHDX = $window.FindName('chkCacheWinREInVHDX')
     $State.Controls.chkUpdateLatestCU = $window.FindName('chkUpdateLatestCU')
     $State.Controls.chkUpdateLatestNet = $window.FindName('chkUpdateLatestNet')
     $State.Controls.chkUpdateLatestDefender = $window.FindName('chkUpdateLatestDefender')
@@ -724,6 +726,8 @@ function Initialize-UIDefaults {
     $State.Controls.chkCopyDrivers.IsChecked = $State.Defaults.generalDefaults.CopyDrivers
     $State.Controls.chkCopyPEDrivers.IsChecked = $State.Defaults.generalDefaults.CopyPEDrivers
     $State.Controls.chkUseDriversAsPEDrivers.IsChecked = $State.Defaults.generalDefaults.UseDriversAsPEDrivers
+	$State.Controls.chkAddPEDriversToWinRE.IsChecked = $State.Defaults.generalDefaults.AddPEDriversToWinRE
+	$State.Controls.chkCacheWinREInVHDX.IsChecked = $State.Defaults.generalDefaults.CacheWinREInVHDX
     $State.Controls.chkCompressDriversToWIM.IsChecked = $State.Defaults.generalDefaults.CompressDownloadedDriversToWim
 
     # Drivers tab UI logic

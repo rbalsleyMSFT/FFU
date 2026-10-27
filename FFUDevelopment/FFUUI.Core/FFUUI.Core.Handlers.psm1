@@ -1728,6 +1728,10 @@ function Register-EventHandlers {
     $State.Controls.chkCopyPEDrivers.Add_Unchecked($driverCheckboxHandler)
     $State.Controls.chkUseDriversAsPEDrivers.Add_Checked($driverCheckboxHandler)
     $State.Controls.chkUseDriversAsPEDrivers.Add_Unchecked($driverCheckboxHandler)
+	$State.Controls.chkAddPEDriversToWinRE.Add_Checked($driverCheckboxHandler)
+	$State.Controls.chkAddPEDriversToWinRE.Add_Unchecked($driverCheckboxHandler)
+	$State.Controls.chkCacheWinREInVHDX.Add_Checked($driverCheckboxHandler)
+	$State.Controls.chkCacheWinREInVHDX.Add_Unchecked($driverCheckboxHandler)
 
     $State.Controls.btnBrowseDriversFolder.Add_Click({
             param($eventSource, $routedEventArgs)

@@ -45,13 +45,15 @@ Configures the VHDX size and the build-time partition layout used for the captur
 
 **Disk Size (GB)** sets the virtual hard disk size for the VM. Default is a 50GB dynamic disk. Increase this when the image needs more space for Windows, apps, updates, or data partitions.
 
-The partition list shows the build order: System, MSR, Windows, Recovery, and optional data partitions. System, Windows, and Recovery have editable build-time drive letters. Defaults are `S`, `W`, and `R`. The MSR row is display-only, fixed at 16MB, and does not use a drive letter.
+The partition list shows the final order: System, MSR, Windows, Recovery, and optional data partitions. System, Windows, and Recovery have editable build-time drive letters. Defaults are `S`, `W`, and `R`. The MSR row is display-only, fixed at 16MB, and does not use a drive letter.
 
 The System, Windows, and Recovery selections are host-side build letters only. Installed Windows uses `C:` for its Windows partition, while System and Recovery normally have no letter. The deployment script discovers these partitions from the applied disk instead of relying on the build letters.
 
 Leave the Windows size blank to let Windows use the space remaining after Recovery and fixed-size data partitions are reserved. This allows you to give a data partition a fixed size while Windows uses the rest of the VHDX. If a data partition will use **Fill Remaining**, give Windows a fixed size first because only one partition can fill the remaining space.
 
-Use the Recovery size only when you need a fixed Recovery partition size. Leave it blank to let the build calculate the Recovery size from `winre.wim` plus buffer space.
+Use the Recovery size only when you need a fixed Recovery partition size. Leave it blank to calculate the size from `winre.wim` plus 250 MiB of free space and 32 MiB for file-system overhead. Recovery is at least 990 MiB. A fixed size must also meet the minimum and leave at least 250 MiB free after the WinRE image. Increase the fixed size or disk size if the build reports that WinRE does not fit.
+
+When **Add PE Drivers to WinRE** is selected, the build sizes the final Recovery partition after the drivers are added. On a VHDX cache hit, the build adjusts the working copy if its Recovery partition is too small. It stops if the layout cannot be changed without moving nonempty data.
 
 The Recovery partition can be removed by selecting its row checkbox and using **Remove Selected**. Use **Restore Recovery** to add it back before saving or building. Removing Recovery saves `CreateRecoveryPartition` as `false` in the generated config.
 

@@ -46,12 +46,15 @@ graph TD
     H -- No --> M;
     P --> Q;
     Q -- Yes --> R;
-    X --> Y;
-    Q -- No --> Y{"-AllowVHDXCaching?"};
+    X --> YA;
+    Q -- No --> YA{"-AddPEDriversToWinRE?"};
+    YA -- Yes --> YB[Prepare and hash PE driver bundle];
+    YA -- No --> Y;
+    YB --> Y{"-AllowVHDXCaching?"};
 
     subgraph "VHDX Management"
         Y -- Yes --> Z[Check for matching cached VHDX];
-        Z --> AA{Cache Hit?};
+        Z --> AA{Compatible base or matching WinRE cache?};
         AA -- Yes --> AB[Use Cached VHDX];
         AA -- No --> AC[Create New VHDX];
         Y -- No --> AC;
@@ -69,8 +72,11 @@ graph TD
             AI -- No --> AK;
             AK --> AL{"Optional Features specified?"};
             AL -- Yes --> AM[Enable Optional Features];
-            AL -- No --> AN[Finalize VHDX Setup];
-            AM --> AN;
+            AL -- No --> AW{"-AddPEDriversToWinRE?"};
+            AM --> AW;
+            AW -- Yes --> AX[Service WinRE and size Recovery];
+            AW -- No --> AN;
+            AX --> AN[Finalize VHDX Setup];
             AN --> AO{"-AllowVHDXCaching?"};
             AO -- Yes --> AP[Optimize and Copy VHDX to Cache];
             AO -- No --> AQ[Continue];
@@ -78,8 +84,9 @@ graph TD
         end
     end
     
-    AB --> BA;
-    AQ --> BA{"-InstallApps?"};
+    AB --> AZ[Service WinRE if needed and validate Recovery];
+    AQ --> AZ;
+    AZ --> BA{"-InstallApps?"};
 
     subgraph "FFU Creation"
         subgraph "VM-Based Capture (-InstallApps)"
@@ -108,9 +115,11 @@ graph TD
         BN -- Yes --> BO[Optimize FFU using DISM];
         BN -- No --> BP[Continue];
         BO --> BP;
-        BP --> BQ{"-BuildUSBDrive?"};
-        BQ -- Yes --> BR[Create WinPE Deployment Media];
-        BR --> BS["Partition USB Drive(s)"];
+        BP --> BQ0{"-CreateDeploymentMedia?"};
+        BQ0 -- Yes --> BR[Create WinPE Deployment Media];
+        BQ0 -- No --> BQ;
+        BR --> BQ{"-BuildUSBDrive?"};
+        BQ -- Yes --> BS["Partition USB Drive(s)"];
         BS --> BT[Copy FFU, Deploy scripts & other assets to USB];
         BQ -- No --> BU[Continue];
         BT --> BU;
