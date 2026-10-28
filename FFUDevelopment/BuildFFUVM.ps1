@@ -4110,8 +4110,7 @@ function Add-BootFiles {
         [string]$FirmwareType = 'UEFI'
     )
 
-    # Use the ADK copy of BCDBoot so the boot binaries come from the validated ADK toolset
-    # instead of the local OS installation, which can differ based on Secure Boot servicing state.
+	# Use ADK BCDBoot with offline selection instead of the host Secure Boot state.
     $bcdBootArchitecture = if ($WindowsArch -ieq 'arm64') { 'arm64' } else { 'amd64' }
     $bcdBootPath = Join-Path $AdkPath "Assessment and Deployment Kit\Deployment Tools\$bcdBootArchitecture\BCDBoot\bcdboot.exe"
 
@@ -4120,7 +4119,7 @@ function Add-BootFiles {
     }
 
     WriteLog "Adding boot files for `"$($OsPartitionDriveLetter):\Windows`" to System partition `"$($SystemPartitionDriveLetter):`" using ADK BCDBoot at `"$bcdBootPath`"..."
-    Invoke-Process $bcdBootPath "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType /offline" | Out-Null
+	Invoke-Process $bcdBootPath "$($OsPartitionDriveLetter):\Windows /S $($SystemPartitionDriveLetter): /F $FirmwareType /offline" -CheckExitCode | Out-Null
     WriteLog "Done."
 }
 
@@ -9213,6 +9212,11 @@ try {
 
 	$partitionLayout = Resolve-VhdxPartitionLayout -Disk $vhdxDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
 	$partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+	# Refresh boot files after offline updates before caching the VHDX.
+	if (-not $cachedVHDXFileFound -and ($UpdateLatestCU -or $UpdateLatestNet -or $UpdatePreviewCU)) {
+		WriteLog 'Refreshing boot files for the serviced Windows image.'
+		Add-BootFiles -OsPartitionDriveLetter $partitionLayout.WindowsPartition.DriveLetter -SystemPartitionDriveLetter $partitionLayout.SystemPartition.DriveLetter -AdkPath $adkPath -WindowsArch $WindowsArch
+	}
 	$currentWinREImage = Get-WinREImagePath -Layout $partitionLayout
 	if ($AddPEDriversToWinRE -and [string]::IsNullOrWhiteSpace($currentWinREImage)) {
 		throw 'WinRE.wim was not found in the Windows or Recovery partition.'
