@@ -4155,6 +4155,619 @@ function Dismount-ScratchVhdx {
     }
 }
 
+function New-FFUDeviceEncryptionException {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$Message,
+		[System.Exception]$InnerException
+	)
+
+	$failure = [System.InvalidOperationException]::new($Message, $InnerException)
+	$failure.Data['FFUDeviceEncryptionFailure'] = $true
+	return $failure
+}
+
+function Get-FFUDeviceEncryptionValue {
+	param([Microsoft.Win32.RegistryKey]$Key)
+
+	if ($null -eq $Key -or @($Key.GetValueNames()) -notcontains 'PreventDeviceEncryption') {
+		return [pscustomobject]@{ Exists = $false; Kind = $null; Data = $null }
+	}
+
+	$kind = $Key.GetValueKind('PreventDeviceEncryption')
+	$data = $Key.GetValue('PreventDeviceEncryption', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+	switch ([string]$kind) {
+		'Binary' { $data = [Convert]::ToBase64String([byte[]]$data) }
+		'MultiString' { $data = @([string[]]$data) }
+		{ $_ -in @('String', 'ExpandString', 'DWord', 'QWord') } { }
+		default { throw "Cannot preserve PreventDeviceEncryption registry type '$kind'." }
+	}
+	return [pscustomobject]@{ Exists = $true; Kind = [string]$kind; Data = $data }
+}
+
+function Test-FFUDeviceEncryptionValue {
+	param([object]$Left, [object]$Right)
+
+	if ([bool]$Left.Exists -ne [bool]$Right.Exists) { return $false }
+	if (-not $Left.Exists) { return $true }
+	if ([string]$Left.Kind -ne [string]$Right.Kind) { return $false }
+	$leftData = ConvertTo-Json -InputObject $Left.Data -Compress -Depth 10
+	$rightData = ConvertTo-Json -InputObject $Right.Data -Compress -Depth 10
+	return $leftData -ceq $rightData
+}
+
+function Get-FFUOfflineDeviceEncryptionState {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.Win32.RegistryKey]$SystemHive
+	)
+
+	# Offline SYSTEM hives do not have the live CurrentControlSet alias.
+	$controlSets = @($SystemHive.GetSubKeyNames() | Where-Object { $_ -match '^ControlSet\d{3}$' } | Sort-Object)
+	if ($controlSets.Count -eq 0) { throw 'The offline SYSTEM hive has no control sets.' }
+	$selectKey = $SystemHive.OpenSubKey('Select')
+	if ($null -eq $selectKey) { throw 'The offline SYSTEM hive has no Select key.' }
+	try {
+		$defaultIndex = $selectKey.GetValue('Default', $null)
+	}
+	finally {
+		$selectKey.Dispose()
+	}
+	if ($null -eq $defaultIndex -or [int]$defaultIndex -lt 1 -or [int]$defaultIndex -gt 999) {
+		throw 'The offline SYSTEM hive has no valid default control set.'
+	}
+	$defaultControlSet = 'ControlSet{0:000}' -f [int]$defaultIndex
+	if ($defaultControlSet -notin $controlSets) {
+		throw "The offline default control set '$defaultControlSet' was not found."
+	}
+
+	$records = foreach ($controlSet in $controlSets) {
+		$key = $SystemHive.OpenSubKey("$controlSet\Control\BitLocker")
+		try {
+			[pscustomobject]@{
+				Name       = $controlSet
+				KeyExisted = $null -ne $key
+				Value      = Get-FFUDeviceEncryptionValue -Key $key
+			}
+		}
+		finally {
+			if ($null -ne $key) { $key.Dispose() }
+		}
+	}
+	return [pscustomobject]@{
+		DefaultControlSet = $defaultControlSet
+		ControlSets       = @($records)
+	}
+}
+
+function Set-FFUOriginalDeviceEncryptionValue {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.Win32.RegistryKey]$SystemHive,
+		[Parameter(Mandatory = $true)]
+		[object]$Record
+	)
+
+	$control = $SystemHive.OpenSubKey("$($Record.Name)\Control", $true)
+	if ($null -eq $control) { throw "The control key for '$($Record.Name)' was not found." }
+	$key = $null
+	try {
+		$key = $control.OpenSubKey('BitLocker', $true)
+		if ($Record.Value.Exists) {
+			if ($null -eq $key) { $key = $control.CreateSubKey('BitLocker', $true) }
+			if ($null -eq $key) { throw "Unable to open the BitLocker key for '$($Record.Name)'." }
+			$kind = [Microsoft.Win32.RegistryValueKind]$Record.Value.Kind
+			$data = switch ([string]$Record.Value.Kind) {
+				'Binary' { ,([Convert]::FromBase64String([string]$Record.Value.Data)) }
+				'MultiString' { ,([string[]]@($Record.Value.Data)) }
+				'DWord' { [int]$Record.Value.Data }
+				'QWord' { [long]$Record.Value.Data }
+				{ $_ -in @('String', 'ExpandString') } { [string]$Record.Value.Data }
+				default { throw "Cannot restore PreventDeviceEncryption registry type '$($Record.Value.Kind)'." }
+			}
+			$key.SetValue('PreventDeviceEncryption', $data, $kind)
+		}
+		elseif ($null -ne $key) {
+			$key.DeleteValue('PreventDeviceEncryption', $false)
+			if (-not $Record.KeyExisted -and $key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0) {
+				$key.Dispose()
+				$key = $null
+				$control.DeleteSubKey('BitLocker', $false)
+			}
+		}
+	}
+	finally {
+		if ($null -ne $key) { $key.Dispose() }
+		$control.Dispose()
+	}
+}
+
+function Set-FFUBuildDeviceEncryptionPolicy {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.Win32.RegistryKey]$SystemHive,
+		[Parameter(Mandatory = $true)]
+		[string]$StatePath,
+		[Parameter(Mandatory = $true)]
+		[string]$VhdxPath,
+		[Parameter(Mandatory = $true)]
+		[string]$WindowsPartitionGuid
+	)
+
+	$partitionGuid = [guid]::Empty
+	if (-not [guid]::TryParse($WindowsPartitionGuid, [ref]$partitionGuid) -or $partitionGuid -eq [guid]::Empty) {
+		throw 'The Windows partition GUID is missing or invalid.'
+	}
+	$snapshot = Get-FFUOfflineDeviceEncryptionState -SystemHive $SystemHive
+	$state = [pscustomobject]@{
+		SchemaVersion        = 1
+		VhdxPath             = [IO.Path]::GetFullPath($VhdxPath)
+		WindowsPartitionGuid = [string]$partitionGuid
+		DefaultControlSet    = $snapshot.DefaultControlSet
+		ControlSets          = $snapshot.ControlSets
+	}
+	$json = ConvertTo-Json -InputObject $state -Depth 10
+	$stream = [IO.File]::Open($StatePath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+	try {
+		$bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+		$stream.Write($bytes, 0, $bytes.Length)
+		$stream.Flush($true)
+	}
+	finally {
+		$stream.Dispose()
+	}
+
+	$applied = [Collections.Generic.List[object]]::new()
+	try {
+		foreach ($record in $state.ControlSets) {
+			$control = $SystemHive.OpenSubKey("$($record.Name)\Control", $true)
+			if ($null -eq $control) { throw "The control key for '$($record.Name)' was not found." }
+			$key = $null
+			try {
+				$key = $control.CreateSubKey('BitLocker', $true)
+				if ($null -eq $key) { throw "Unable to open the BitLocker key for '$($record.Name)'." }
+				$applied.Add($record)
+				$key.SetValue('PreventDeviceEncryption', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
+			}
+			finally {
+				if ($null -ne $key) { $key.Dispose() }
+				$control.Dispose()
+			}
+		}
+	}
+	catch {
+		$failure = $_
+		$rollbackFailure = $null
+		for ($index = $applied.Count - 1; $index -ge 0; $index--) {
+			try {
+				Set-FFUOriginalDeviceEncryptionValue -SystemHive $SystemHive -Record $applied[$index]
+			}
+			catch {
+				$rollbackFailure = $_.Exception.Message
+			}
+		}
+		if ($null -ne $rollbackFailure) {
+			throw (New-FFUDeviceEncryptionException -Message "Failed to set the temporary device-encryption policy: $($failure.Exception.Message). Rollback also failed: $rollbackFailure" -InnerException $failure.Exception)
+		}
+		Remove-Item -LiteralPath $StatePath -Force -ErrorAction Stop
+		throw (New-FFUDeviceEncryptionException -Message "Failed to set the temporary device-encryption policy: $($failure.Exception.Message)" -InnerException $failure.Exception)
+	}
+}
+
+function Restore-FFUBuildDeviceEncryptionPolicy {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.Win32.RegistryKey]$SystemHive,
+		[Parameter(Mandatory = $true)]
+		[string]$StatePath,
+		[Parameter(Mandatory = $true)]
+		[string]$VhdxPath,
+		[Parameter(Mandatory = $true)]
+		[string]$WindowsPartitionGuid
+	)
+
+	$partitionGuid = [guid]::Empty
+	if (-not [guid]::TryParse($WindowsPartitionGuid, [ref]$partitionGuid) -or $partitionGuid -eq [guid]::Empty) {
+		throw 'The Windows partition GUID is missing or invalid.'
+	}
+	$state = Get-Content -LiteralPath $StatePath -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop
+	if ($state.SchemaVersion -ne 1 -or
+		[IO.Path]::GetFullPath([string]$state.VhdxPath) -ine [IO.Path]::GetFullPath($VhdxPath) -or
+		[guid]$state.WindowsPartitionGuid -ne $partitionGuid) {
+		throw 'The saved device-encryption policy does not belong to this working VHDX and Windows partition.'
+	}
+	$records = @($state.ControlSets)
+	if ($records.Count -eq 0) { throw 'The saved device-encryption policy has no control sets.' }
+	$current = Get-FFUOfflineDeviceEncryptionState -SystemHive $SystemHive
+	$originalNames = @($records | ForEach-Object { [string]$_.Name })
+	if (@($originalNames | Where-Object { $_ -notmatch '^ControlSet\d{3}$' }).Count -gt 0 -or
+		@($originalNames | Select-Object -Unique).Count -ne $originalNames.Count -or
+		[string]$state.DefaultControlSet -notin $originalNames) {
+		throw 'The saved device-encryption control sets are invalid.'
+	}
+	foreach ($record in $records) {
+		$match = @($current.ControlSets | Where-Object Name -eq $record.Name)
+		if ($match.Count -ne 1 -or -not $match[0].Value.Exists -or $match[0].Value.Kind -ne 'DWord' -or [int]$match[0].Value.Data -ne 1) {
+			throw "The temporary device-encryption setting in '$($record.Name)' changed during the build; the original policy was not restored."
+		}
+	}
+
+	$newSets = @($current.ControlSets | Where-Object Name -notin $originalNames)
+	$additionalRecords = @()
+	if ($newSets.Count -gt 0) {
+		$defaultRecords = @($records | Where-Object Name -eq $state.DefaultControlSet)
+		if ($defaultRecords.Count -ne 1) { throw 'The saved default control set is unavailable.' }
+		$baseline = $defaultRecords[0]
+		foreach ($record in $records) {
+			if (-not (Test-FFUDeviceEncryptionValue -Left $record.Value -Right $baseline.Value)) {
+				throw 'A control set was added during the build, but the original device-encryption settings differ between control sets.'
+			}
+		}
+		foreach ($newSet in $newSets) {
+			$isTemporary = $newSet.Value.Exists -and $newSet.Value.Kind -eq 'DWord' -and [int]$newSet.Value.Data -eq 1
+			if (-not $isTemporary -and -not (Test-FFUDeviceEncryptionValue -Left $newSet.Value -Right $baseline.Value)) {
+				throw "The device-encryption setting in new control set '$($newSet.Name)' cannot be restored safely."
+			}
+			if ($isTemporary) {
+				$additionalRecords += [pscustomobject]@{
+					Name       = $newSet.Name
+					KeyExisted = $true
+					Value      = $baseline.Value
+				}
+			}
+		}
+	}
+
+	foreach ($record in @($records) + @($additionalRecords)) {
+		Set-FFUOriginalDeviceEncryptionValue -SystemHive $SystemHive -Record $record
+	}
+	foreach ($record in @($records) + @($additionalRecords)) {
+		$key = $SystemHive.OpenSubKey("$($record.Name)\Control\BitLocker")
+		try {
+			$restored = Get-FFUDeviceEncryptionValue -Key $key
+			if (-not (Test-FFUDeviceEncryptionValue -Left $record.Value -Right $restored)) {
+				throw "The original device-encryption setting in '$($record.Name)' could not be verified."
+			}
+		}
+		finally {
+			if ($null -ne $key) { $key.Dispose() }
+		}
+	}
+}
+
+function Close-FFUOfflineSystemHive {
+	param(
+		[Parameter(Mandatory = $true)]
+		[object]$Hive
+	)
+
+	if ($null -ne $Hive.Root) {
+		$Hive.Root.Dispose()
+		$Hive.Root = $null
+	}
+	$registryPath = "HKLM:\$($Hive.Name)"
+	if (Test-Path -LiteralPath $registryPath -ErrorAction Stop) {
+		$registryTool = Join-Path $env:SystemRoot 'System32\reg.exe'
+		Invoke-Process -FilePath $registryTool -ArgumentList @('unload', "HKLM\$($Hive.Name)") -CheckExitCode | Out-Null
+		if (Test-Path -LiteralPath $registryPath -ErrorAction Stop) {
+			throw "The offline SYSTEM hive '$($Hive.Name)' is still loaded."
+		}
+	}
+	if (Test-Path -LiteralPath $Hive.MarkerPath -PathType Leaf -ErrorAction Stop) {
+		Remove-Item -LiteralPath $Hive.MarkerPath -Force -ErrorAction Stop
+	}
+}
+
+function Open-FFUOfflineSystemHive {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$SystemHivePath,
+		[Parameter(Mandatory = $true)]
+		[string]$FFUDevelopmentPath
+	)
+
+	if (-not (Test-Path -LiteralPath $SystemHivePath -PathType Leaf -ErrorAction Stop)) {
+		throw (New-FFUDeviceEncryptionException -Message "The working image SYSTEM hive was not found: $SystemHivePath")
+	}
+	$sessionDirectory = Join-Path $FFUDevelopmentPath '.session'
+	if (-not (Test-Path -LiteralPath $sessionDirectory -PathType Container -ErrorAction Stop)) {
+		throw (New-FFUDeviceEncryptionException -Message 'The current build session is unavailable for tracking the offline SYSTEM hive.')
+	}
+	$markerDirectory = Join-Path $sessionDirectory 'offline-registry-hives'
+	New-Item -ItemType Directory -Path $markerDirectory -Force -ErrorAction Stop | Out-Null
+	$hiveName = 'FFU_DeviceEnc_' + [guid]::NewGuid().ToString('N')
+	$markerPath = Join-Path $markerDirectory "$hiveName.json"
+	$hive = [pscustomobject]@{
+		Name       = $hiveName
+		MarkerPath = $markerPath
+		Root       = $null
+	}
+	if (Test-Path -LiteralPath "HKLM:\$hiveName" -ErrorAction Stop) {
+		throw (New-FFUDeviceEncryptionException -Message "The temporary registry key '$hiveName' already exists.")
+	}
+	$marker = [ordered]@{
+		HiveName = $hiveName
+		HivePath = [IO.Path]::GetFullPath($SystemHivePath)
+	}
+	# Record ownership before loading so interrupted-run cleanup can unload this hive.
+	$marker | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $markerPath -Encoding UTF8 -ErrorAction Stop
+
+	$loadAttempted = $false
+	try {
+		if (Test-Path -LiteralPath "HKLM:\$hiveName" -ErrorAction Stop) {
+			throw "The temporary registry key '$hiveName' already exists."
+		}
+		$registryTool = Join-Path $env:SystemRoot 'System32\reg.exe'
+		$loadAttempted = $true
+		Invoke-Process -FilePath $registryTool -ArgumentList @('load', "HKLM\$hiveName", "`"$SystemHivePath`"") -CheckExitCode | Out-Null
+		$hive.Root = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($hiveName, $true)
+		if ($null -eq $hive.Root) { throw "Unable to open the loaded offline SYSTEM hive '$hiveName'." }
+		return $hive
+	}
+	catch {
+		$failure = $_
+		$cleanupFailure = $null
+		try {
+			if ($loadAttempted) { Close-FFUOfflineSystemHive -Hive $hive }
+			else { Remove-Item -LiteralPath $markerPath -Force -ErrorAction Stop }
+		}
+		catch { $cleanupFailure = $_.Exception.Message }
+		if ($null -ne $cleanupFailure) {
+			throw (New-FFUDeviceEncryptionException -Message "Unable to load the working image SYSTEM hive: $($failure.Exception.Message). Hive cleanup also failed: $cleanupFailure" -InnerException $failure.Exception)
+		}
+		throw (New-FFUDeviceEncryptionException -Message "Unable to load the working image SYSTEM hive: $($failure.Exception.Message)" -InnerException $failure.Exception)
+	}
+}
+
+function Invoke-FFUOfflineSystemHive {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$SystemHivePath,
+		[Parameter(Mandatory = $true)]
+		[string]$FFUDevelopmentPath,
+		[Parameter(Mandatory = $true)]
+		[scriptblock]$Action,
+		[object[]]$ActionArguments = @()
+	)
+
+	$hive = $null
+	$failure = $null
+	$cleanupFailure = $null
+	$result = $null
+	try {
+		$hive = Open-FFUOfflineSystemHive -SystemHivePath $SystemHivePath -FFUDevelopmentPath $FFUDevelopmentPath
+		$result = & $Action $hive.Root @ActionArguments
+	}
+	catch {
+		$failure = $_
+	}
+	finally {
+		if ($null -ne $hive) {
+			try { Close-FFUOfflineSystemHive -Hive $hive }
+			catch { $cleanupFailure = $_.Exception.Message }
+		}
+	}
+	if ($null -ne $cleanupFailure) {
+		$details = if ($null -ne $failure) { "$($failure.Exception.Message). " } else { '' }
+		$inner = if ($null -ne $failure) { $failure.Exception } else { $null }
+		throw (New-FFUDeviceEncryptionException -Message "${details}Unable to unload the working image SYSTEM hive: $cleanupFailure" -InnerException $inner)
+	}
+	if ($null -ne $failure) {
+		throw (New-FFUDeviceEncryptionException -Message "Working image device-encryption policy failed: $($failure.Exception.Message)" -InnerException $failure.Exception)
+	}
+	return $result
+}
+
+function Clear-FFUOfflineSystemHives {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$FFUDevelopmentPath
+	)
+
+	$markerDirectory = Join-Path $FFUDevelopmentPath '.session\offline-registry-hives'
+	if (-not (Test-Path -LiteralPath $markerDirectory -PathType Container -ErrorAction Stop)) { return }
+	foreach ($markerFile in @(Get-ChildItem -LiteralPath $markerDirectory -Filter '*.json' -File -ErrorAction Stop)) {
+		$marker = Get-Content -LiteralPath $markerFile.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop
+		if ([string]$marker.HiveName -cnotmatch '^FFU_DeviceEnc_[0-9a-f]{32}$' -or $markerFile.BaseName -cne [string]$marker.HiveName) {
+			throw (New-FFUDeviceEncryptionException -Message "Invalid offline registry-hive marker: $($markerFile.FullName)")
+		}
+		$hive = [pscustomobject]@{ Name = [string]$marker.HiveName; MarkerPath = $markerFile.FullName; Root = $null }
+		try {
+			Close-FFUOfflineSystemHive -Hive $hive
+			WriteLog "Removed offline registry hive from the previous build: $($marker.HiveName)"
+		}
+		catch {
+			throw (New-FFUDeviceEncryptionException -Message "Unable to clean up offline registry hive '$($marker.HiveName)': $($_.Exception.Message)" -InnerException $_.Exception)
+		}
+	}
+}
+
+function Open-FFURawDisk {
+	param(
+		[Parameter(Mandatory = $true)]
+		[object]$Disk
+	)
+
+	$diskPath = '\\.\PhysicalDrive{0}' -f $Disk.Number
+	return [IO.FileStream]::new($diskPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+}
+
+function Get-FFUPartitionBootSignature {
+	param(
+		[Parameter(Mandatory = $true)]
+		[IO.Stream]$DiskStream,
+		[Parameter(Mandatory = $true)]
+		[long]$Offset,
+		[Parameter(Mandatory = $true)]
+		[int]$LogicalSectorSize
+	)
+
+	if ($LogicalSectorSize -notin @(512, 4096) -or $Offset -lt 0 -or ($Offset % $LogicalSectorSize) -ne 0) {
+		throw "Unsupported partition offset or logical sector size: offset=$Offset, sector size=$LogicalSectorSize."
+	}
+	$null = $DiskStream.Seek($Offset, [IO.SeekOrigin]::Begin)
+	$sector = [byte[]]::new($LogicalSectorSize)
+	$read = 0
+	while ($read -lt $sector.Length) {
+		$count = $DiskStream.Read($sector, $read, $sector.Length - $read)
+		if ($count -eq 0) { throw "Unable to read the partition boot sector at offset $Offset." }
+		$read += $count
+	}
+	return [Text.Encoding]::ASCII.GetString($sector, 3, 8)
+}
+
+function Confirm-FFUDiskUnencrypted {
+	param(
+		[Parameter(Mandatory = $true)]
+		[object]$Disk
+	)
+
+	$stream = $null
+	$failure = $null
+	$cleanupFailure = $null
+	$checked = 0
+	try {
+		if ($null -eq $Disk.PSObject.Properties['Number'] -or $null -eq $Disk.Number -or
+			$null -eq $Disk.PSObject.Properties['LogicalSectorSize'] -or $Disk.LogicalSectorSize -notin @(512, 4096)) {
+			throw 'The working VHDX disk number or logical sector size could not be verified.'
+		}
+		$partitions = @(Get-Partition -DiskNumber $Disk.Number -ErrorAction Stop | Sort-Object PartitionNumber)
+		if ($partitions.Count -eq 0) { throw "No partitions were found on working VHDX disk $($Disk.Number)." }
+		try {
+			$encryptableVolumes = @(Get-CimInstance -Namespace 'root\cimv2\Security\MicrosoftVolumeEncryption' -ClassName Win32_EncryptableVolume -ErrorAction Stop)
+		}
+		catch {
+			throw "Unable to query the Windows BitLocker status provider. Run FFU Builder as administrator and ensure BitLocker management components are available on the host. $($_.Exception.Message)"
+		}
+		$stream = Open-FFURawDisk -Disk $Disk
+		$systemType = '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
+		$msrType = '{e3c9e316-0b5c-4db8-817d-f92df00215ae}'
+		$dataType = '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
+		$recoveryType = '{de94bba4-06d1-4d40-a16a-bfd50179d6ac}'
+		foreach ($partition in $partitions) {
+			if ($null -eq $partition.DiskNumber -or $partition.DiskNumber -ne $Disk.Number) {
+				throw "A partition could not be matched to working VHDX disk $($Disk.Number)."
+			}
+			$partitionType = ([string]$partition.GptType).ToLowerInvariant()
+			if ($partitionType -eq $msrType) { continue }
+			if ($partitionType -notin @($systemType, $dataType, $recoveryType)) {
+				throw "Cannot verify unsupported partition type '$partitionType' on working VHDX disk $($Disk.Number), partition $($partition.PartitionNumber)."
+			}
+			$signature = Get-FFUPartitionBootSignature -DiskStream $stream -Offset ([long]$partition.Offset) -LogicalSectorSize ([int]$Disk.LogicalSectorSize)
+			if ($signature -eq '-FVE-FS-') {
+				throw "BitLocker encryption was found on working VHDX disk $($Disk.Number), partition $($partition.PartitionNumber). Decrypt the image or rebuild its cache before capturing."
+			}
+			$volumes = @(Get-Volume -Partition $partition -ErrorAction Stop)
+			if ($volumes.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$volumes[0].Path)) {
+				throw "Unable to identify the volume on working VHDX disk $($Disk.Number), partition $($partition.PartitionNumber)."
+			}
+			$volume = $volumes[0]
+			$volumePath = ([string]$volume.Path).TrimEnd('\')
+			$matches = @($encryptableVolumes | Where-Object {
+				-not [string]::IsNullOrWhiteSpace([string]$_.DeviceID) -and
+				([string]$_.DeviceID).TrimEnd('\') -ieq $volumePath
+			})
+			# The BitLocker provider omits EFI and Recovery partitions.
+			if ($matches.Count -eq 0 -and $partitionType -eq $systemType -and $volume.FileSystem -ieq 'FAT32') {
+				$checked++
+				continue
+			}
+			if ($matches.Count -eq 0 -and $partitionType -eq $recoveryType -and $volume.FileSystem -ieq 'NTFS' -and $signature -eq 'NTFS    ') {
+				$checked++
+				continue
+			}
+			if ($matches.Count -ne 1) {
+				throw "Unable to determine BitLocker status for working VHDX disk $($Disk.Number), partition $($partition.PartitionNumber), volume '$volumePath'."
+			}
+			$status = Invoke-CimMethod -InputObject $matches[0] -MethodName GetConversionStatus -Arguments @{ PrecisionFactor = [uint32]0 } -ErrorAction Stop
+			if ([uint32]$status.ReturnValue -ne 0) {
+				$code = '0x{0:X8}' -f [uint32]$status.ReturnValue
+				throw "Unable to determine BitLocker conversion status for working VHDX disk $($Disk.Number), partition $($partition.PartitionNumber): $code."
+			}
+			if ([uint32]$status.ConversionStatus -ne 0) {
+				throw "Working VHDX disk $($Disk.Number), partition $($partition.PartitionNumber) is not fully decrypted (BitLocker conversion status $($status.ConversionStatus)). Decrypt the image or rebuild its cache before capturing."
+			}
+			$checked++
+		}
+		if ($checked -eq 0) { throw "No volumes were available to verify on working VHDX disk $($Disk.Number)." }
+	}
+	catch {
+		$failure = $_
+	}
+	finally {
+		if ($null -ne $stream) {
+			try { $stream.Dispose() }
+			catch { $cleanupFailure = $_.Exception.Message }
+		}
+	}
+	if ($null -ne $cleanupFailure) {
+		$details = if ($null -ne $failure) { "$($failure.Exception.Message). " } else { '' }
+		$inner = if ($null -ne $failure) { $failure.Exception } else { $null }
+		$message = "FFU capture cannot proceed: ${details}Unable to close the working disk: $cleanupFailure"
+		WriteLog $message
+		throw (New-FFUDeviceEncryptionException -Message $message -InnerException $inner)
+	}
+	if ($null -ne $failure) {
+		$message = "FFU capture cannot proceed: $($failure.Exception.Message)"
+		WriteLog $message
+		throw (New-FFUDeviceEncryptionException -Message $message -InnerException $failure.Exception)
+	}
+	WriteLog "Verified $checked working VHDX volume(s) are not BitLocker-encrypted."
+}
+
+function Confirm-FFUVhdxUnencrypted {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$VhdxPath
+	)
+
+	$mountedHere = $false
+	$failure = $null
+	$cleanupFailure = $null
+	try {
+		$vhd = Get-VHD -Path $VhdxPath -ErrorAction Stop
+		if ($vhd.Attached) { throw "The working VHDX is already attached: $VhdxPath." }
+		$vhd = Mount-VHD -Path $VhdxPath -ReadOnly -NoDriveLetter -Passthru -ErrorAction Stop
+		$mountedHere = $true
+		if ($null -eq $vhd -or $null -eq $vhd.DiskNumber) {
+			throw 'The read-only working VHDX did not return a disk number.'
+		}
+		$disk = Get-Disk -Number $vhd.DiskNumber -ErrorAction Stop
+		if ($null -eq $disk -or -not $disk.IsReadOnly -or (Get-VHD -Path $VhdxPath -ErrorAction Stop).DiskNumber -ne $disk.Number) {
+			throw 'The read-only working VHDX attachment could not be verified.'
+		}
+		Confirm-FFUDiskUnencrypted -Disk $disk
+	}
+	catch {
+		$failure = $_
+	}
+	finally {
+		if ($mountedHere) {
+			try {
+				Dismount-VHD -Path $VhdxPath -ErrorAction Stop
+				if ((Get-VHD -Path $VhdxPath -ErrorAction Stop).Attached) {
+					throw "The working VHDX remains attached: $VhdxPath."
+				}
+			}
+			catch {
+				$cleanupFailure = $_.Exception.Message
+			}
+		}
+	}
+	if ($null -ne $cleanupFailure) {
+		$details = if ($null -ne $failure) { "$($failure.Exception.Message). " } else { '' }
+		$inner = if ($null -ne $failure) { $failure.Exception } else { $null }
+		$message = "${details}Unable to detach the read-only working VHDX: $cleanupFailure"
+		WriteLog $message
+		throw (New-FFUDeviceEncryptionException -Message $message -InnerException $inner)
+	}
+	if ($null -ne $failure) {
+		$message = "Unable to verify the working VHDX before capture: $($failure.Exception.Message)"
+		WriteLog $message
+		throw (New-FFUDeviceEncryptionException -Message $message -InnerException $failure.Exception)
+	}
+}
+
 function New-FFUVM {
     #Create new Gen2 VM
     $VM = New-VM -Name $VMName -Path $VMPath -MemoryStartupBytes $memory -VHDPath $VHDXPath -Generation 2
@@ -5299,6 +5912,7 @@ function Get-CaptureVhdContext {
     }
     WriteLog "VHDX mounted for capture on disk $($captureDisk.DiskNumber)"
 
+	Confirm-FFUDiskUnencrypted -Disk $captureDisk
     $partitionLayout = Resolve-VhdxPartitionLayout -Disk $captureDisk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $AdditionalDataPartitions
     $partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $AdditionalDataPartitions
     $captureOsPartition = $partitionLayout.WindowsPartition
@@ -6141,6 +6755,7 @@ Function New-DeploymentUSB {
 
 function Get-FFUEnvironment {
     WriteLog 'Dirty.txt file detected. Last run did not complete succesfully. Will clean environment'
+	Clear-FFUOfflineSystemHives -FFUDevelopmentPath $FFUDevelopmentPath
     try {
         Remove-InProgressItems -FFUDevelopmentPath $FFUDevelopmentPath
     }
@@ -9508,42 +10123,85 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
 
 #Inject unattend after caching so cached VHDX never contains audit-mode unattend
 if ($InstallApps) {
-    # Determine mount state and only mount if needed to avoid redundant mount/dismount cycles
-    $vhdMeta = Get-VHD -Path $VHDXPath
-    if ($vhdMeta.Attached) {
-        WriteLog 'VHDX already mounted; reusing existing mount for unattend injection'
-        $disk = Get-Disk -Number $vhdMeta.DiskNumber
-    }
-    else {
-        WriteLog 'Mounting VHDX to inject unattend for audit-mode boot'
-        $disk = Mount-VHD -Path $VHDXPath -Passthru | Get-Disk
-    }
-    $partitionLayout = Resolve-VhdxPartitionLayout -Disk $disk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-    $partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
-    $osPartition = $partitionLayout.WindowsPartition
-    $osPartitionDriveLetter = $osPartition.DriveLetter
-    WriteLog 'Copying unattend file to boot to audit mode'
-    New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force | Out-Null
-    $orchestrationBootstrapSourcePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'BuildFFUUnattend\Start-FFUOrchestration.ps1'
-    if (-not (Test-Path -Path $orchestrationBootstrapSourcePath -PathType Leaf)) {
-        throw "Orchestration bootstrap script not found at $orchestrationBootstrapSourcePath"
-    }
-    $orchestrationBootstrapTargetFolder = "$($osPartitionDriveLetter):\Windows\Setup\Scripts"
-    New-Item -Path $orchestrationBootstrapTargetFolder -ItemType Directory -Force | Out-Null
-    Copy-Item -Path $orchestrationBootstrapSourcePath -Destination (Join-Path -Path $orchestrationBootstrapTargetFolder -ChildPath 'Start-FFUOrchestration.ps1') -Force | Out-Null
-    if ($enforceBuildVmDataPartitionDriveLetters) {
-        $windowsPartitionRoot = "$($osPartitionDriveLetter):\"
-        $null = Add-FFUDataPartitionDriveLetterArtifacts -WindowsPartitionRoot $windowsPartitionRoot -Layout $partitionLayout -AdditionalDataPartitions $normalizedAdditionalDataPartitions -WindowsArch $WindowsArch -ManifestPurpose BuildVm -Optimize $Optimize -OptimizeFFUPartitionNumber $OptimizeFFUPartitionNumber -FFUDevelopmentPath $FFUDevelopmentPath
-    }
-    if ($WindowsArch -eq 'x64') {
-        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
-    }
-    else {
-        Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
-    }
-    WriteLog 'Copy completed'
-    # Always dismount so downstream VM creation logic has a clean starting point
-    Dismount-ScratchVhdx -VhdxPath $VHDXPath
+	$stageAttachmentOwned = $false
+	try {
+		if (-not $workingVhdxOwned) {
+			throw (New-FFUDeviceEncryptionException -Message 'The working VHDX is not owned by the current build.')
+		}
+		$vhdMeta = Get-VHD -Path $VHDXPath -ErrorAction Stop
+		if ($vhdMeta.Attached) {
+			$stageAttachmentOwned = $true
+			WriteLog 'VHDX already mounted; reusing existing mount for unattend injection'
+			if ($null -eq $vhdMeta.DiskNumber) { throw 'The attached working VHDX has no disk number.' }
+			$disk = Get-Disk -Number $vhdMeta.DiskNumber -ErrorAction Stop
+			Confirm-FFUDiskUnencrypted -Disk $disk
+		}
+		else {
+			Confirm-FFUVhdxUnencrypted -VhdxPath $VHDXPath
+			WriteLog 'Mounting VHDX to inject unattend for audit-mode boot'
+			$mountedVhd = Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop
+			$stageAttachmentOwned = $true
+			if ($null -eq $mountedVhd -or $null -eq $mountedVhd.DiskNumber) { throw 'The working VHDX has no disk number after mounting.' }
+			$disk = Get-Disk -Number $mountedVhd.DiskNumber -ErrorAction Stop
+		}
+		$partitionLayout = Resolve-VhdxPartitionLayout -Disk $disk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+		$partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+		$osPartition = $partitionLayout.WindowsPartition
+		$osPartitionDriveLetter = $osPartition.DriveLetter
+		$deviceEncryptionStatePath = Join-Path (Join-Path $FFUDevelopmentPath '.session') 'device-encryption-policy.json'
+		$systemHivePath = "$($osPartitionDriveLetter):\Windows\System32\Config\SYSTEM"
+		$partitionGuid = [string]$osPartition.Guid
+		Invoke-FFUOfflineSystemHive -SystemHivePath $systemHivePath -FFUDevelopmentPath $FFUDevelopmentPath -Action {
+			param($systemHive, $statePath, $workingVhdxPath, $windowsPartitionGuid)
+			Set-FFUBuildDeviceEncryptionPolicy -SystemHive $systemHive -StatePath $statePath -VhdxPath $workingVhdxPath -WindowsPartitionGuid $windowsPartitionGuid
+		} -ActionArguments @($deviceEncryptionStatePath, $VHDXPath, $partitionGuid) | Out-Null
+		WriteLog 'Temporarily prevented automatic device encryption in the build VM.'
+
+		WriteLog 'Copying unattend file to boot to audit mode'
+		New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force | Out-Null
+		$orchestrationBootstrapSourcePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'BuildFFUUnattend\Start-FFUOrchestration.ps1'
+		if (-not (Test-Path -Path $orchestrationBootstrapSourcePath -PathType Leaf)) {
+			throw "Orchestration bootstrap script not found at $orchestrationBootstrapSourcePath"
+		}
+		$orchestrationBootstrapTargetFolder = "$($osPartitionDriveLetter):\Windows\Setup\Scripts"
+		New-Item -Path $orchestrationBootstrapTargetFolder -ItemType Directory -Force | Out-Null
+		Copy-Item -Path $orchestrationBootstrapSourcePath -Destination (Join-Path -Path $orchestrationBootstrapTargetFolder -ChildPath 'Start-FFUOrchestration.ps1') -Force | Out-Null
+		if ($enforceBuildVmDataPartitionDriveLetters) {
+			$windowsPartitionRoot = "$($osPartitionDriveLetter):\"
+			$null = Add-FFUDataPartitionDriveLetterArtifacts -WindowsPartitionRoot $windowsPartitionRoot -Layout $partitionLayout -AdditionalDataPartitions $normalizedAdditionalDataPartitions -WindowsArch $WindowsArch -ManifestPurpose BuildVm -Optimize $Optimize -OptimizeFFUPartitionNumber $OptimizeFFUPartitionNumber -FFUDevelopmentPath $FFUDevelopmentPath
+		}
+		if ($WindowsArch -eq 'x64') {
+			Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_x64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+		}
+		else {
+			Copy-Item -Path "$FFUDevelopmentPath\BuildFFUUnattend\unattend_arm64.xml" -Destination "$($osPartitionDriveLetter):\Windows\Panther\Unattend\Unattend.xml" -Force | Out-Null
+		}
+		WriteLog 'Copy completed'
+		Dismount-ScratchVhdx -VhdxPath $VHDXPath
+		if ((Get-VHD -Path $VHDXPath -ErrorAction Stop).Attached) {
+			throw "The working VHDX remains attached: $VHDXPath."
+		}
+		$stageAttachmentOwned = $false
+	}
+	catch {
+		$stageFailure = $_
+		WriteLog "Preparing the build VM failed: $($stageFailure.Exception.Message)"
+		try {
+			if ($stageAttachmentOwned) {
+				$vhdMeta = Get-VHD -Path $VHDXPath -ErrorAction Stop
+				if ($vhdMeta.Attached) {
+					Dismount-ScratchVhdx -VhdxPath $VHDXPath
+					if ((Get-VHD -Path $VHDXPath -ErrorAction Stop).Attached) {
+						throw "The working VHDX remains attached: $VHDXPath."
+					}
+				}
+			}
+		}
+		catch {
+			throw (New-FFUDeviceEncryptionException -Message "$($stageFailure.Exception.Message). Unable to detach the working VHDX: $($_.Exception.Message)" -InnerException $stageFailure.Exception)
+		}
+		throw $stageFailure
+	}
 }
 elseif ($configureDeployedDataPartitionDriveLetters) {
     $vhdMeta = Get-VHD -Path $VHDXPath
@@ -9622,6 +10280,43 @@ try {
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
+		Confirm-FFUVhdxUnencrypted -VhdxPath $VHDXPath
+		$restoreAttachmentOwned = $false
+		try {
+			$mountedVhd = Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop
+			$restoreAttachmentOwned = $true
+			if ($null -eq $mountedVhd -or $null -eq $mountedVhd.DiskNumber) { throw 'The working VHDX has no disk number after mounting.' }
+			$disk = Get-Disk -Number $mountedVhd.DiskNumber -ErrorAction Stop
+			$partitionLayout = Resolve-VhdxPartitionLayout -Disk $disk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+			$partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
+			$osPartition = $partitionLayout.WindowsPartition
+			$systemHivePath = "$($osPartition.DriveLetter):\Windows\System32\Config\SYSTEM"
+			$partitionGuid = [string]$osPartition.Guid
+			Invoke-FFUOfflineSystemHive -SystemHivePath $systemHivePath -FFUDevelopmentPath $FFUDevelopmentPath -Action {
+				param($systemHive, $statePath, $workingVhdxPath, $windowsPartitionGuid)
+				Restore-FFUBuildDeviceEncryptionPolicy -SystemHive $systemHive -StatePath $statePath -VhdxPath $workingVhdxPath -WindowsPartitionGuid $windowsPartitionGuid
+			} -ActionArguments @($deviceEncryptionStatePath, $VHDXPath, $partitionGuid) | Out-Null
+			Remove-Item -LiteralPath $deviceEncryptionStatePath -Force -ErrorAction Stop
+			WriteLog 'Restored the original device-encryption policy in the working image.'
+		}
+		catch {
+			$restoreFailure = $_
+			$detachFailure = $null
+			try {
+				if ($restoreAttachmentOwned) {
+					$vhdMeta = Get-VHD -Path $VHDXPath -ErrorAction Stop
+					if ($vhdMeta.Attached) {
+						Dismount-ScratchVhdx -VhdxPath $VHDXPath
+						if ((Get-VHD -Path $VHDXPath -ErrorAction Stop).Attached) {
+							throw "The working VHDX remains attached: $VHDXPath."
+						}
+					}
+				}
+			}
+			catch { $detachFailure = $_.Exception.Message }
+			$details = if ($null -ne $detachFailure) { " Unable to detach the working VHDX: $detachFailure" } else { '' }
+			throw (New-FFUDeviceEncryptionException -Message "Unable to restore the original device-encryption policy: $($restoreFailure.Exception.Message).$details" -InnerException $restoreFailure.Exception)
+		}
 		if ($AddPEDriversToWinRE -or $CreateRecoveryPartition) {
 			$vhdMeta = Get-VHD -Path $VHDXPath -ErrorAction Stop
 			$disk = if ($vhdMeta.Attached) { Get-Disk -Number $vhdMeta.DiskNumber -ErrorAction Stop } else { Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop | Get-Disk }
@@ -9703,6 +10398,15 @@ try {
 Catch {
     Write-Host 'Capturing FFU file failed'
     Writelog "Capturing FFU file failed with error $_"
+	if ($_.Exception.Data['FFUDeviceEncryptionFailure']) {
+		if ($InstallApps) {
+			WriteLog 'Preserving the working image and build VM for investigation of the device-encryption failure.'
+		}
+		else {
+			WriteLog 'Preserving the working image for investigation of the device-encryption failure.'
+		}
+		throw
+	}
     If ($InstallApps) {
         Remove-FFUVM -VMName $VMName
     }

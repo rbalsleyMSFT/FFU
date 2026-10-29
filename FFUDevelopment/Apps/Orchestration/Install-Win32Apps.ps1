@@ -56,14 +56,10 @@ function Resolve-LegacyAppsMediaPath {
     $candidateExists = Test-Path -Path $candidatePath
 
     if ($literalExists) {
-        if ($candidateExists) {
-            Write-Warning "Both legacy Apps path '$Path' and Apps media path '$candidatePath' exist. Keeping literal path."
-        }
         return $Path
     }
 
     if ($candidateExists) {
-        Write-Host "Remapped legacy Apps path '$Path' to '$candidatePath'."
         return $candidatePath
     }
 

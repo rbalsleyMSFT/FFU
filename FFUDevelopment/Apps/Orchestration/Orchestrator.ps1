@@ -53,14 +53,10 @@ function Resolve-AppsMediaPath {
 
     $candidatePath = Join-Path -Path $appsRoot -ChildPath $Path.Substring(3)
     if (Test-Path -Path $Path) {
-        if (Test-Path -Path $candidatePath) {
-            Write-Warning "Both legacy Apps path '$Path' and Apps media path '$candidatePath' exist. Keeping literal path."
-        }
         return $Path
     }
 
     if (Test-Path -Path $candidatePath) {
-        Write-Host "Remapped legacy Apps path '$Path' to '$candidatePath'."
         return $candidatePath
     }
 
@@ -176,5 +172,4 @@ if (Test-Path -Path $sysprepScript) {
 } else {
     Write-Host "Run-Sysprep.ps1 not found!"
 }
-
 

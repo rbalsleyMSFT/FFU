@@ -92,6 +92,10 @@ The FFU Capture Location sets the `-FFUCaptureLocation` parameter that determine
 
 When apps are installed in a VM, the build still uses the VM for application installs and sysprep, but the actual FFU capture now happens on the host after the VHDX is optimized and remounted. That means completed images are written directly to this folder without creating a temporary SMB share, temporary local account, or capture ISO.
 
+FFU Builder temporarily prevents automatic device encryption in the build VM and restores the image's original setting after the VM shuts down. This applies to every Windows edition that uses a build VM. The temporary setting is applied to the working VHDX after any cache is created or copied, so it is not saved in the cache. The deployed image retains its original device-encryption setting.
+
+Before capture, FFU Builder checks the working disk for BitLocker encryption, including its Windows and data partitions. Microsoft does not support [capturing encrypted disks as FFUs](https://learn.microsoft.com/windows-hardware/manufacture/desktop/deploy-windows-using-full-flash-update--ffu). If a volume is encrypted, locked, or its status cannot be verified, the build stops and records the reason in the log. Decrypt the working image or rebuild an affected cache before trying again. If the BitLocker status provider is unavailable, run FFU Builder as administrator and ensure the host has the BitLocker management components available.
+
 Choose a path on fast storage with plenty of free space—the directory must be local to the host running `BuildFFUVM.ps1`, and large captures can easily exceed 25–30 GB. This location also feeds other options such as **Copy Additional FFU Files**, **Build USB Drive**, and **Remove FFU**, so keeping all finished images here keeps those workflows simple.
 
 ## Threads
