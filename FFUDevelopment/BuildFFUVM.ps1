@@ -5105,7 +5105,48 @@ function Invoke-DismDriverInjectionWithSubstLoop {
 
     WriteLog "Driver injection loop complete for $resolvedDriverRoot"
 }
-    
+
+function Test-InfSoftwareComponentOnly {
+	param(
+		[Parameter(Mandatory = $true)][string]$Path
+	)
+
+	# Returns $true when every hardware ID in the INF's model sections is a software component (SWC\...)
+	$sections = @{}
+	$currentSection = $null
+	foreach ($rawLine in (Get-Content -LiteralPath $Path -ErrorAction Stop)) {
+		$line = ($rawLine -split ';', 2)[0].Trim()
+		if ($line -match '^\[(.+)\]$') {
+			$currentSection = $matches[1].Trim()
+			if (-not $sections.ContainsKey($currentSection)) { $sections[$currentSection] = [System.Collections.Generic.List[string]]::new() }
+			continue
+		}
+		if ($null -ne $currentSection -and $line) { $sections[$currentSection].Add($line) }
+	}
+
+	$manufacturerKey = $sections.Keys | Where-Object { $_ -ieq 'Manufacturer' } | Select-Object -First 1
+	if ($null -eq $manufacturerKey) { return $false }
+
+	$hardwareIds = [System.Collections.Generic.List[string]]::new()
+	foreach ($entry in $sections[$manufacturerKey]) {
+		# %Mfg% = ModelsSection[, TargetOSVersion...]
+		$modelParts = @((($entry -split '=', 2)[-1]) -split ',' | ForEach-Object { $_.Trim() })
+		$modelBase = $modelParts[0]
+		$modelSectionNames = @($modelBase) + @($modelParts | Select-Object -Skip 1 | Where-Object { $_ } | ForEach-Object { "$modelBase.$_" })
+		foreach ($sectionName in $modelSectionNames) {
+			$sectionKey = $sections.Keys | Where-Object { $_ -ieq $sectionName } | Select-Object -First 1
+			if ($null -eq $sectionKey) { continue }
+			foreach ($modelLine in $sections[$sectionKey]) {
+				# %Desc% = InstallSection, HardwareId[, CompatibleId...]
+				$fields = @((($modelLine -split '=', 2)[-1]) -split ',' | Select-Object -Skip 1 | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+				foreach ($id in $fields) { $hardwareIds.Add($id) }
+			}
+		}
+	}
+
+	return ($hardwareIds.Count -gt 0 -and -not ($hardwareIds | Where-Object { $_ -notlike 'SWC\*' }))
+}
+
 function Copy-Drivers {
     param (
         [Parameter()]
@@ -5198,7 +5239,14 @@ function Copy-Drivers {
             $skippedInfCount++
             continue
         }
-    
+
+        # Skip INFs that only target software components (SWC\...). WinPE/WinRE can fail as DISM can reject them (e.g. Intel DTT kpe_apo_win.inf, 0x8007000d).
+        if (Test-InfSoftwareComponentOnly -Path $infFullName) {
+            WriteLog "Skipping PE driver INF that only targets software components (SWC\): $infFullName"
+            $skippedInfCount++
+            continue
+        }
+
         # Avoid drivers that reference keywords from the exclusion list to keep the total size small
         if (((Get-Content -Path $infFullName) -match $exclusionList).Length -ne 0) {
             WriteLog "Skipping PE driver INF due to exclusion match: $infFullName"
