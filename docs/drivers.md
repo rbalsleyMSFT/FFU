@@ -21,11 +21,13 @@ This is the location where drivers are downloaded to, or where you'll manually c
 
 ## Drivers temporary download path
 
-This is the temporary folder used to download and extract driver packages and catalogs before copying the verified drivers to your **Drivers Folder**. Enter the folder path or click **Browse...** to select it. The path is saved with your build configuration and is also available as the `-DriversTempPath` command-line parameter.
+This is the temporary folder used to download and extract driver packages and catalogs before copying the verified drivers to your **Drivers Folder**. It is also used to stage PE drivers and service WinRE when **Add PE Drivers to WinRE** is selected. Enter the folder path or click **Browse...** to select it. The path is saved with your build configuration and is also available as the `-DriversTempPath` command-line parameter.
 
 The default is `FFUDrv` at the root of the local drive containing your **Drivers Folder** (for example, `C:\FFUDrv`). Network driver folders use the system drive for temporary files. 
 
-Use a folder on a local NTFS or ReFS drive with a drive letter. The path must not contain whitespace and must be at most 41 characters long. Do not select a drive root or a folder reached through a junction or symbolic link. These limits keep the temporary extraction paths short enough for the supported driver installers.FFU Builder creates the folder when needed and removes it when finished.
+Use a folder on a local NTFS or ReFS drive with a drive letter. The path must not contain whitespace and must be at most 41 characters long. Do not select a drive root or a folder reached through a junction or symbolic link. These limits keep the temporary paths short enough for driver extraction and servicing. FFU Builder removes its temporary operation folders when finished and removes the root folder if it is empty.
+
+WinRE image mounts require an [NTFS drive](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dism/dismmountimage-function?view=windows-11). If the selected temporary folder is on ReFS, FFU Builder uses `FFUDrv` on the system drive for WinRE and records the location in the log. The system drive must be NTFS and have enough free space for the WinRE image and its mounted contents.
 
 ## PE Drivers Folder
 
@@ -239,9 +241,11 @@ This eliminates the need to maintain a separate, manually curated `PEDrivers` fo
 
 Select **Add PE Drivers to WinRE** to add the PE driver bundle to the Windows Recovery Environment image in the FFU. This option uses the PE Drivers folder by default. When **Use Drivers Folder as PE Drivers Source** is also selected, WinRE uses the same filtered driver set as deployment WinPE.
 
-During the build, FFU Builder stages the shared driver bundle in `.session\PEDrivers-<id>` and keeps temporary WinRE image files in a separate `.session\WinRE-<id>` folder. The folders are removed during build cleanup.
+During the build, FFU Builder stages the shared driver bundle and temporary WinRE image files in a short operation folder under **Drivers temporary download path**. The build session records the workspace so it can be recovered after an interrupted build.
 
 FFU Builder adds the drivers after servicing Windows and sizes the Recovery partition for the resulting WinRE image. The build stops if WinRE is missing or a selected driver cannot be added. If the Recovery partition is removed, the script services the WinRE image in the Windows partition; Windows recovery still needs to be configured for the deployed device.
+
+If WinRE servicing fails and the offline SetupAPI log is available, FFU Builder saves it as `WinRE-SetupAPI-<id>.log` in the FFU development folder. The build log records the saved path or an error if saving fails.
 
 If deployment media contains a custom `WinRE\winre.wim`, the deployment script uses that image instead of the one in the FFU. Add the required drivers to the custom image separately.
 

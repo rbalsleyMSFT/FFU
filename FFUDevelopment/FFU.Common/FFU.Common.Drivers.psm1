@@ -92,7 +92,8 @@ function New-DriverOperationContext {
 		[Parameter(Mandatory)][string]$FFUDevelopmentPath,
 		[Parameter(Mandatory)][string]$DriversFolder,
 		[string]$RunStartUtc,
-		[string]$DriversTempPath
+		[string]$DriversTempPath,
+		[ValidateSet('Download', 'WinRE')][string]$Purpose = 'Download'
 	)
 
 	try { $root = Resolve-DriverWorkspaceRoot -DriversFolder $DriversFolder -DriversTempPath $DriversTempPath }
@@ -108,7 +109,17 @@ function New-DriverOperationContext {
 	$locked = $false
 	$created = $false
 	$rootCreated = $false
+	$recordCreated = $false
+	$sessionRecordPath = $null
 	try {
+		if ($Purpose -eq 'WinRE') {
+			if ([string]::IsNullOrWhiteSpace($RunStartUtc)) { throw 'A WinRE workspace requires a build-run identity.' }
+			$sessionDirectory = Join-Path $FFUDevelopmentPath '.session'
+			$manifestPath = Join-Path $sessionDirectory 'currentRun.json'
+			$manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json -DateKind String -ErrorAction Stop
+			if ($manifest.RunStartUtc -ne $RunStartUtc) { throw 'The WinRE workspace does not match the current build run.' }
+			$sessionRecordPath = Join-Path $sessionDirectory 'WinREWorkspace.json'
+		}
 		try { $locked = $mutex.WaitOne() }
 		catch [Threading.AbandonedMutexException] {
 			$locked = $true
@@ -123,27 +134,38 @@ function New-DriverOperationContext {
 		}
 		for ($attempt = 0; $attempt -lt 5; $attempt++) {
 			$operationId = [guid]::NewGuid().ToString('N').Substring(0, 12)
-			$operationPath = Join-Path $root $operationId
+			$operationName = if ($Purpose -eq 'WinRE') { "wr-$operationId" } else { $operationId }
+			$operationPath = Join-Path $root $operationName
 			if (Test-Path -LiteralPath $operationPath -ErrorAction Stop) { continue }
+			$context = [pscustomobject]@{
+				OperationId = $operationId
+				OwnerSid = $ownerSid
+				OwnerPid = $PID
+				OwnerStartUtc = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o')
+				StartedUtc = [datetime]::UtcNow.ToString('o')
+				RunStartUtc = $RunStartUtc
+				FFUDevelopmentPath = [IO.Path]::GetFullPath($FFUDevelopmentPath)
+				DriversFolder = [IO.Path]::GetFullPath($DriversFolder)
+				WorkspaceRoot = $root
+				OperationPath = $operationPath
+				CancelPath = Join-Path $operationPath 'cancelled'
+			}
+			if ($Purpose -eq 'WinRE') {
+				$context | Add-Member -NotePropertyName Purpose -NotePropertyValue $Purpose
+				$record = [Text.Encoding]::UTF8.GetBytes(($context | ConvertTo-Json))
+				$recordStream = [IO.File]::Open($sessionRecordPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+				try {
+					$recordCreated = $true
+					$recordStream.Write($record, 0, $record.Length)
+				}
+				finally { $recordStream.Dispose() }
+			}
 			New-Item -Path $operationPath -ItemType Directory -ErrorAction Stop | Out-Null
 			$created = $true
 			break
 		}
 		if (-not $created) {
 			throw "Unable to find an unused driver operation folder under '$root' after 5 attempts."
-		}
-		$context = [pscustomobject]@{
-			OperationId = $operationId
-			OwnerSid = $ownerSid
-			OwnerPid = $PID
-			OwnerStartUtc = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToString('o')
-			StartedUtc = [datetime]::UtcNow.ToString('o')
-			RunStartUtc = $RunStartUtc
-			FFUDevelopmentPath = [IO.Path]::GetFullPath($FFUDevelopmentPath)
-			DriversFolder = [IO.Path]::GetFullPath($DriversFolder)
-			WorkspaceRoot = $root
-			OperationPath = $operationPath
-			CancelPath = Join-Path $operationPath 'cancelled'
 		}
 		$context | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $operationPath 'operation.json') -Encoding UTF8 -ErrorAction Stop
 		$context | Add-Member -NotePropertyMembers @{
@@ -167,6 +189,10 @@ function New-DriverOperationContext {
 			}
 			catch { WriteLog "Unable to clean the new driver operation '$operationPath': $($_.Exception.Message)" }
 		}
+		if ($recordCreated -and -not (Test-Path -LiteralPath $operationPath)) {
+			try { Remove-Item -LiteralPath $sessionRecordPath -Force -ErrorAction Stop }
+			catch { WriteLog "Unable to remove the WinRE workspace record '$sessionRecordPath': $($_.Exception.Message)" }
+		}
 		throw
 	}
 	finally {
@@ -178,13 +204,16 @@ function New-DriverOperationContext {
 function Confirm-DriverOperationIdentity {
 	param([Parameter(Mandatory)][pscustomobject]$Context)
 
+	$purpose = if ($null -eq $Context.PSObject.Properties['Purpose']) { 'Download' } else { [string]$Context.Purpose }
 	if ($Context.OperationId -cnotmatch '^[a-f0-9]{12}$' -or
-		$Context.OwnerSid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
+		$Context.OwnerSid -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or
+		$purpose -notin @('Download', 'WinRE')) {
 		throw 'Invalid driver workspace ownership.'
 	}
 	$root = Resolve-DriverWorkspaceRoot -DriversFolder $Context.DriversFolder -DriversTempPath $Context.WorkspaceRoot
 	if ($Context.WorkspaceRoot -ne $root) { throw 'Invalid driver workspace root.' }
-	$operationPath = Join-Path $Context.WorkspaceRoot $Context.OperationId
+	$operationName = if ($purpose -eq 'WinRE') { "wr-$($Context.OperationId)" } else { $Context.OperationId }
+	$operationPath = Join-Path $Context.WorkspaceRoot $operationName
 	if ($Context.OperationPath -ne $operationPath -or $Context.CancelPath -ne (Join-Path $operationPath 'cancelled')) {
 		throw 'Driver operation paths do not match their owner.'
 	}
@@ -203,6 +232,8 @@ function Confirm-DriverOperationIdentity {
 		foreach ($property in @('OperationId', 'OwnerSid', 'OwnerPid', 'OwnerStartUtc', 'StartedUtc', 'FFUDevelopmentPath', 'DriversFolder', 'RunStartUtc', 'WorkspaceRoot', 'OperationPath', 'CancelPath')) {
 			if ($marker.$property -ne $Context.$property) { throw "Driver operation ownership does not match: $operationPath" }
 		}
+		$markerPurpose = if ($null -eq $marker.PSObject.Properties['Purpose']) { 'Download' } else { [string]$marker.Purpose }
+		if ($markerPurpose -ne $purpose) { throw "Driver operation purpose does not match: $operationPath" }
 	}
 }
 
@@ -305,6 +336,9 @@ function New-DriverExtractionWorkspace {
 			$Context = New-DriverOperationContext -FFUDevelopmentPath (Split-Path $PSScriptRoot -Parent) -DriversFolder $DriversFolder
 		}
 		Confirm-DriverOperationIdentity -Context $Context
+		if ($null -ne $Context.PSObject.Properties['Purpose'] -and $Context.Purpose -eq 'WinRE') {
+			throw 'WinRE servicing operations cannot own extraction workspaces.'
+		}
 		Confirm-DriverOperationActive -Context $Context
 		Confirm-DriverDestinationPath -Context $Context -Path $FinalPath -AllowRoot
 		Confirm-DriverDestinationPath -Context $Context -Path $CachePath
@@ -3238,6 +3272,7 @@ Export-ModuleMember -Function `
 	Save-DriverExtractionLog, `
 	Remove-DriverExtractionWorkspace, `
 	Remove-DriverDownloadOperation, `
+	Confirm-DriverOperationIdentity, `
 	Confirm-DriverOperationActive, `
 	Get-DriverPublicationMutex, `
 	Set-DriverModelDownloadState, `

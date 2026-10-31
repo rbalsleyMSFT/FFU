@@ -1748,7 +1748,7 @@ function Register-EventHandlers {
 			param($eventSource, $routedEventArgs)
 			$window = [System.Windows.Window]::GetWindow($eventSource)
 			$localState = $window.Tag
-			$selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Drivers Temporary Download/Extraction Folder" -InitialDirectory $localState.Controls.txtDriversTempPath.Text
+			$selectedPath = Invoke-BrowseAction -Type 'Folder' -Title "Select Drivers Temporary Folder" -InitialDirectory $localState.Controls.txtDriversTempPath.Text
 			if ($selectedPath) {
 				$localState.Controls.txtDriversTempPath.Text = $selectedPath
 			}

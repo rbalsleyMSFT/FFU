@@ -54,7 +54,7 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -Disksize | uint64 | Disk Layout: Disk Size (GB) | Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk. |
 | -DriversFolder | string | Drivers Folder | Path to the drivers folder. Default is $FFUDevelopmentPath\Drivers. |
 | -DriversJsonPath | string | Drivers.json Path | Path to a JSON file that specifies which drivers to download. |
-| -DriversTempPath | string | Drivers temporary download path | Exact folder for temporary driver package and catalog downloads/extraction. Defaults to FFUDrv at the root of the local DriversFolder drive, or the system drive for network folders. Use a local NTFS/ReFS folder without whitespace and at most 41 characters. |
+| -DriversTempPath | string | Drivers temporary download path | Temporary folder for driver package and catalog downloads, extraction, and WinRE servicing. Defaults to FFUDrv at the root of the local DriversFolder drive, or the system drive for network folders. Use a local NTFS/ReFS folder without whitespace and at most 41 characters. WinRE uses FFUDrv on the system NTFS drive if the selected folder is on ReFS. |
 | -EnableVMNetworking | bool | Enable VM Networking (Experimental) | When set to $true, connects the build VM to the selected Hyper-V switch during provisioning. Default is $false because internet-connected Sysprep is experimental. |
 | -ExportConfigFile | string | Save Config File | Path to a JSON file to export the parameters used for the script. |
 | -FFUCaptureLocation | string | FFU Capture Location | Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU. |

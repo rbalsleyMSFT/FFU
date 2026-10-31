@@ -833,13 +833,13 @@
                                     </StackPanel>
 
                                     <StackPanel Grid.Row="1" Margin="0,0,0,20">
-                                        <TextBlock Text="Drivers temporary download path" VerticalAlignment="Center" ToolTip="Temporary driver download/extraction folder on a local NTFS/ReFS drive. Use a path without whitespace and at most 41 characters." Margin="0,0,0,8"/>
+                                        <TextBlock Text="Drivers temporary download path" VerticalAlignment="Center" ToolTip="Temporary folder for driver downloads, extraction, and WinRE servicing. Use a local NTFS/ReFS path without whitespace and at most 41 characters. WinRE uses the system NTFS drive if this path is on ReFS." Margin="0,0,0,8"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="txtDriversTempPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Temporary driver download/extraction folder on a local NTFS/ReFS drive. Use a path without whitespace and at most 41 characters. Default is FFUDrv at the root of the local drivers drive, or the system drive for network folders."/>
+                                            <TextBox x:Name="txtDriversTempPath" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip="Temporary folder for driver downloads, extraction, and WinRE servicing. Use a local NTFS/ReFS path without whitespace and at most 41 characters. Default is FFUDrv at the root of the local drivers drive, or the system drive for network folders. WinRE uses the system NTFS drive if this path is on ReFS."/>
                                             <Button x:Name="btnBrowseDriversTempPath" Grid.Column="1" Content="Browse..." Padding="12,4" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                         </Grid>
                                     </StackPanel>
