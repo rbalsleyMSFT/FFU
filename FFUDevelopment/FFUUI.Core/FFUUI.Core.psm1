@@ -973,39 +973,55 @@ function Get-FFUBuilderDiskSpaceStatus {
 
 # Function to evaluate the local Hyper-V installation state
 function Get-FFUBuilderHyperVStatus {
-    [CmdletBinding()]
-    param()
+	[CmdletBinding()]
+	param()
 
-    try {
-        $hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction Stop
-        switch ([string]$hyperVFeature.State) {
-            'Enabled' {
-                return [PSCustomObject]@{
-                    Level = 'Green'
-                    Message = 'Hyper-V is installed and ready.'
-                }
-            }
-            'EnablePending' {
-                return [PSCustomObject]@{
-                    Level = 'Yellow'
-                    Message = 'Hyper-V is installed, but a reboot is required before it is ready.'
-                }
-            }
-            default {
-                return [PSCustomObject]@{
-                    Level = 'Red'
-                    Message = "Hyper-V is not installed. Current feature state: $($hyperVFeature.State)."
-                }
-            }
-        }
-    }
-    catch {
-        WriteLog "Unable to determine Hyper-V installation state: $($_.Exception.Message)"
-        return [PSCustomObject]@{
-            Level = 'Red'
-            Message = 'Unable to determine the Hyper-V installation state.'
-        }
-    }
+	try {
+		$osInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+		if ($null -eq $osInfo -or [string]::IsNullOrWhiteSpace([string]$osInfo.Caption)) {
+			throw 'Windows operating system information did not include a caption.'
+		}
+
+		$isServer = $osInfo.Caption -match 'server'
+		if ($isServer) {
+			$hyperVFeature = Get-WindowsFeature -Name Hyper-V -ErrorAction Stop
+			$featureState = if ($null -ne $hyperVFeature) { [string]$hyperVFeature.InstallState } else { '' }
+			$installedState = 'Installed'
+		}
+		else {
+			$hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All -ErrorAction Stop
+			$featureState = if ($null -ne $hyperVFeature) { [string]$hyperVFeature.State } else { '' }
+			$installedState = 'Enabled'
+		}
+
+		if ([string]::IsNullOrWhiteSpace($featureState)) {
+			throw 'The Hyper-V feature query did not return an installation state.'
+		}
+
+		if ($featureState -eq $installedState) {
+			return [PSCustomObject]@{
+				Level = 'Green'
+				Message = 'Hyper-V is installed and ready.'
+			}
+		}
+		if (-not $isServer -and $featureState -eq 'EnablePending') {
+			return [PSCustomObject]@{
+				Level = 'Yellow'
+				Message = 'Hyper-V is installed, but a reboot is required before it is ready.'
+			}
+		}
+		return [PSCustomObject]@{
+			Level = 'Red'
+			Message = "Hyper-V is not installed. Current feature state: $featureState."
+		}
+	}
+	catch {
+		WriteLog "Unable to determine Hyper-V installation state: $($_.Exception.Message)"
+		return [PSCustomObject]@{
+			Level = 'Red'
+			Message = 'Unable to determine the Hyper-V installation state.'
+		}
+	}
 }
 
 # Function to update the Home page release status fields
