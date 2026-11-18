@@ -340,6 +340,37 @@ function Update-DeviceNamingControls {
     Update-UnattendSelectionControls -State $State
 }
 
+function Register-DiskLayoutSizingHandlers {
+	param([pscustomobject]$State)
+
+	$State.Controls.cmbLogicalSectorSize.Add_SelectionChanged({
+		param($eventSource, $selectionChangedEventArgs)
+		$localState = [System.Windows.Window]::GetWindow($eventSource).Tag
+		if ($null -eq $localState -or $localState.Flags['loadingDiskLayout'] -or $null -eq $eventSource.SelectedItem) { return }
+
+		Sync-DiskLayoutRowsToControls -State $localState
+		$localState.Data.systemPartitionSizeText = $null
+		Update-AdditionalDataPartitionsListView -State $localState
+	})
+
+	$State.Controls.txtDiskSize.Add_TextChanged({
+		param($eventSource, $textChangedEventArgs)
+		$localState = [System.Windows.Window]::GetWindow($eventSource).Tag
+		if ($null -ne $localState -and -not $localState.Flags['loadingDiskLayout']) {
+			Update-DiskLayoutCapacityStatus -State $localState
+		}
+	})
+
+	[System.Windows.Data.Binding]::AddSourceUpdatedHandler($State.Controls.lstDataPartitions, {
+			param($eventSource, $dataTransferEventArgs)
+			if ($dataTransferEventArgs.Property -ne [System.Windows.Controls.TextBox]::TextProperty) { return }
+			$localState = [System.Windows.Window]::GetWindow($eventSource).Tag
+			if ($null -ne $localState) {
+				Update-DiskLayoutCapacityStatus -State $localState
+			}
+		})
+}
+
 function Register-EventHandlers {
     param([PSCustomObject]$State)
     WriteLog "Registering UI event handlers..."
@@ -377,9 +408,6 @@ function Register-EventHandlers {
     # List of TextBox controls that require integer-only input
     $integerOnlyTextBoxes = @(
         $State.Controls.txtDiskSize,
-        $State.Controls.txtOSPartitionSizeGB,
-        $State.Controls.txtRecoveryPartitionSizeGB,
-        $State.Controls.txtDataPartitionSizeGB,
         $State.Controls.txtMemory,
         $State.Controls.txtProcessors,
         $State.Controls.txtThreads,
@@ -995,18 +1023,7 @@ function Register-EventHandlers {
             Update-VMNetworkingControls -State $localState
         })
 
-    $diskLayoutTextChangedHandler = {
-        param($eventSource, $textChangedEventArgs)
-        $window = [System.Windows.Window]::GetWindow($eventSource)
-        $localState = $window.Tag
-        Update-DiskLayoutCapacityStatus -State $localState
-    }
-
-    foreach ($diskLayoutTextBox in @($State.Controls.txtDiskSize, $State.Controls.txtOSPartitionSizeGB, $State.Controls.txtRecoveryPartitionSizeGB)) {
-        if ($null -ne $diskLayoutTextBox) {
-            $diskLayoutTextBox.Add_TextChanged($diskLayoutTextChangedHandler)
-        }
-    }
+	Register-DiskLayoutSizingHandlers -State $State
 
     $State.Controls.chkDataPartitionFillRemaining.Add_Checked({
             param($eventSource, $routedEventArgs)
@@ -1123,22 +1140,6 @@ function Register-EventHandlers {
             }
             Update-DiskLayoutActionButtonsState -State $localState
         })
-
-    $State.Controls.lstDataPartitions.AddHandler(
-        [System.Windows.UIElement]::LostKeyboardFocusEvent,
-        [System.Windows.Input.KeyboardFocusChangedEventHandler] {
-            param($eventSource, $focusChangedEventArgs)
-            $textBox = $focusChangedEventArgs.OriginalSource
-            if ($null -eq $textBox -or -not ($textBox -is [System.Windows.Controls.TextBox])) { return }
-
-            $partitionRow = $textBox.DataContext
-            if ($null -eq $partitionRow -or $null -eq $partitionRow.PSObject.Properties['PartitionType']) { return }
-
-            $window = [System.Windows.Window]::GetWindow($eventSource)
-            $localState = $window.Tag
-            Update-DiskLayoutCapacityStatus -State $localState
-        },
-        $true)
 
     # Persist custom VM switch name when user edits it while 'Other' is selected
     $State.Controls.txtCustomVMSwitchName.Add_LostFocus({

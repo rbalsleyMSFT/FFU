@@ -339,9 +339,9 @@
                                     <!-- Disk Layout -->
                                     <Expander Header="Disk Layout" Margin="0,0,0,20" IsExpanded="True">
                                         <StackPanel Margin="0,10,0,0">
-                                            <TextBlock Text="FFU Builder defaults to using a 50GB VHDX. Below you can modify the disk size, add additional data/primary partitions, change the drive letters, and set the partition sizes for the Windows, Recovery, and data partitions. The total of the partition sizes must be less than or equal to the Disk Size. Recovery is sized from WinRE.wim with a minimum of 990 MiB and at least 250 MiB of free space. A fixed Recovery size must meet the same requirements.&#x0a;&#x0a;You can only reorder the additional data partitions." TextWrapping="Wrap" Margin="0,0,0,16"/>
-                                            <TextBlock Text="Disk Size (GB)" Margin="0,0,0,8" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
-                                            <TextBox x:Name="txtDiskSize" Width="160" HorizontalAlignment="Left" Text="50" Margin="0,0,0,16" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk."/>
+                                            <TextBlock Text="Set partition sizes and build drive letters for the VHDX. The default disk size is 50 GiB. You can add and reorder data partitions. The total size of the partitions must fit on the disk.&#x0a;&#x0a;Leave the Recovery size blank to calculate it from WinRE.wim. Recovery must be at least 990 MiB and have at least 250 MiB of free space, even with a fixed size." TextWrapping="Wrap" Margin="0,0,0,16"/>
+                                            <TextBlock Text="Disk Size (GiB)" Margin="0,0,0,8" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50 GiB dynamic disk."/>
+                                            <TextBox x:Name="txtDiskSize" Width="160" HorizontalAlignment="Left" Text="50" Margin="0,0,0,16" ToolTip="Size of the virtual hard disk for the virtual machine. Default is a 50 GiB dynamic disk."/>
 
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
                                                 <Ellipse x:Name="ellipseDiskLayoutCapacityStatus" Width="14" Height="14" Fill="Gold" Margin="0,3,10,0" VerticalAlignment="Top"/>
@@ -356,7 +356,7 @@
                                                 <ComboBox x:Name="cmbWindowsPartitionDriveLetter" SelectedIndex="22"><ComboBoxItem Content="A"/><ComboBoxItem Content="B"/><ComboBoxItem Content="C"/><ComboBoxItem Content="D"/><ComboBoxItem Content="E"/><ComboBoxItem Content="F"/><ComboBoxItem Content="G"/><ComboBoxItem Content="H"/><ComboBoxItem Content="I"/><ComboBoxItem Content="J"/><ComboBoxItem Content="K"/><ComboBoxItem Content="L"/><ComboBoxItem Content="M"/><ComboBoxItem Content="N"/><ComboBoxItem Content="O"/><ComboBoxItem Content="P"/><ComboBoxItem Content="Q"/><ComboBoxItem Content="R"/><ComboBoxItem Content="S"/><ComboBoxItem Content="T"/><ComboBoxItem Content="U"/><ComboBoxItem Content="V"/><ComboBoxItem Content="W"/><ComboBoxItem Content="X"/><ComboBoxItem Content="Y"/><ComboBoxItem Content="Z"/></ComboBox>
                                                 <ComboBox x:Name="cmbRecoveryPartitionDriveLetter" SelectedIndex="17"><ComboBoxItem Content="A"/><ComboBoxItem Content="B"/><ComboBoxItem Content="C"/><ComboBoxItem Content="D"/><ComboBoxItem Content="E"/><ComboBoxItem Content="F"/><ComboBoxItem Content="G"/><ComboBoxItem Content="H"/><ComboBoxItem Content="I"/><ComboBoxItem Content="J"/><ComboBoxItem Content="K"/><ComboBoxItem Content="L"/><ComboBoxItem Content="M"/><ComboBoxItem Content="N"/><ComboBoxItem Content="O"/><ComboBoxItem Content="P"/><ComboBoxItem Content="Q"/><ComboBoxItem Content="R"/><ComboBoxItem Content="S"/><ComboBoxItem Content="T"/><ComboBoxItem Content="U"/><ComboBoxItem Content="V"/><ComboBoxItem Content="W"/><ComboBoxItem Content="X"/><ComboBoxItem Content="Y"/><ComboBoxItem Content="Z"/></ComboBox>
                                                 <TextBox x:Name="txtOSPartitionSizeGB"/>
-                                                <TextBox x:Name="txtRecoveryPartitionSizeGB"/>
+                                                <TextBox x:Name="txtRecoveryPartitionSizeMiB"/>
                                             </StackPanel>
 
                                             <TextBlock Text="Add Partition" FontWeight="SemiBold" Margin="0,0,0,8"/>
@@ -376,7 +376,7 @@
                                                 </Grid.RowDefinitions>
                                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Margin="0,0,8,8"/>
                                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="Drive Letter" Margin="0,0,8,8"/>
-                                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Size (GB)" Margin="0,0,8,8"/>
+                                                <TextBlock Grid.Row="0" Grid.Column="2" Text="Size (GiB)" Margin="0,0,8,8"/>
                                                 <TextBlock Grid.Row="0" Grid.Column="3" Text="Fill Remaining" Margin="0,0,8,8"/>
                                                 <TextBlock Grid.Row="0" Grid.Column="4" Text="Persist Drive Letter" Margin="0,0,8,8"/>
                                                 <TextBlock Grid.Row="0" Grid.Column="5" Text=" " Margin="0,0,0,8"/>
@@ -406,7 +406,7 @@
                                                     <ComboBoxItem Content="Y"/>
                                                     <ComboBoxItem Content="Z"/>
                                                 </ComboBox>
-                                                <TextBox x:Name="txtDataPartitionSizeGB" Grid.Row="1" Grid.Column="2" Margin="0,0,8,0" ToolTip="Data partition size in GB. Leave blank only when Fill Remaining is selected."/>
+                                                <TextBox x:Name="txtDataPartitionSizeGB" Grid.Row="1" Grid.Column="2" Margin="0,0,8,0" ToolTip="Data partition size in GiB. Leave blank only when Fill Remaining is selected."/>
                                                 <CheckBox x:Name="chkDataPartitionFillRemaining" Grid.Row="1" Grid.Column="3" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Use the remaining VHDX space for this data partition. Only one data partition can fill remaining space."/>
                                                 <CheckBox x:Name="chkDataPartitionPersistDriveLetter" Grid.Row="1" Grid.Column="4" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Use the configured letter on physical devices. If cleared, deployed Windows assigns the next available letter from D: upward. The build VM always uses the configured letter. FFU deployment USB letters may be shifted."/>
                                                 <Button x:Name="btnAddDataPartition" Grid.Row="1" Grid.Column="5" Content="Add Data Partition" Width="160" ToolTip="Add the configured data partition to the build configuration."/>
@@ -437,8 +437,9 @@
                                         </StackPanel>
                                     </Expander>
                                     <!-- Logical Sector Size -->
-                                    <TextBlock Text="Logical Sector Size" Margin="0,0,0,8" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512."/>
-                                    <ComboBox x:Name="cmbLogicalSectorSize" HorizontalAlignment="Left" ToolTip="Unit32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.">
+                                    <TextBlock Text="Logical Sector Size" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Changing the sector size resets the System partition to 260 MiB for 512-byte sectors or 300 MiB for 4096-byte sectors." TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                    <ComboBox x:Name="cmbLogicalSectorSize" HorizontalAlignment="Left" ToolTip="Logical sector size in bytes. Use 4096 for 4Kn drives. Default is 512.">
                                         <ComboBoxItem Content="512" IsSelected="True"/>
                                         <ComboBoxItem Content="4096"/>
                                     </ComboBox>

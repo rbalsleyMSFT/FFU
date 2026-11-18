@@ -43,9 +43,19 @@ Prefix for the generated VM. Default is _FFU.
 
 Configures the VHDX size and the build-time partition layout used for the captured FFU.
 
-**Disk Size (GB)** sets the virtual hard disk size for the VM. Default is a 50GB dynamic disk. Increase this when the image needs more space for Windows, apps, updates, or data partitions.
+**Disk Size (GiB)** sets the virtual hard disk size for the VM. Default is a 50 GiB dynamic disk. Increase this when the image needs more space for Windows, apps, updates, or data partitions.
 
-The partition list shows the final order: System, MSR, Windows, Recovery, and optional data partitions. System, Windows, and Recovery have editable build-time drive letters. Defaults are `S`, `W`, and `R`. The MSR row is display-only, fixed at 16MB, and does not use a drive letter.
+The partition list shows the final order: System, MSR, Windows, Recovery, and optional data partitions. System, Windows, and Recovery have editable build-time drive letters. Defaults are `S`, `W`, and `R`. The MSR does not use a drive letter.
+
+Enter sizes in the unit shown beside each field: MiB for System, MSR, and Recovery, and GiB for Windows and data partitions. 1 GiB equals 1,024 MiB. Saved configurations store sizes in bytes.
+
+| Partition | Default size | Minimum size |
+|---|---:|---:|
+| System (512-byte logical sectors) | 260 MiB | 200 MiB |
+| System (4096-byte logical sectors) | 300 MiB | 300 MiB |
+| MSR | 16 MiB | 16 MiB |
+
+You can edit both the System and MSR sizes. Each must be a whole multiple of the logical sector size in bytes. See [Microsoft's EFI System partition requirements](https://learn.microsoft.com/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions?view=windows-11#system-partition).
 
 The System, Windows, and Recovery selections are host-side build letters only. Installed Windows uses `C:` for its Windows partition, while System and Recovery normally have no letter. The deployment script discovers these partitions from the applied disk instead of relying on the build letters.
 
@@ -57,11 +67,11 @@ When **Add PE Drivers to WinRE** is selected, the build sizes the final Recovery
 
 The Recovery partition can be removed by selecting its row checkbox and using **Remove Selected**. Use **Restore Recovery** to add it back before saving or building. Removing Recovery saves `CreateRecoveryPartition` as `false` in the generated config.
 
-Each data partition has a name, a drive letter from `D:` through `Z:`, and either a size in GB or **Fill Remaining**. When FFU Builder installs applications in a build VM, the partition uses this configured letter before any application scripts run. Only one Windows or data partition can use **Fill Remaining**. Data partitions can be reordered with the arrow buttons. **Clear** removes only data partitions, not the base partition rows.
+Each data partition has a name, a drive letter from `D:` through `Z:`, and either a size in GiB or **Fill Remaining**. When FFU Builder installs applications in a build VM, the partition uses this configured letter before any application scripts run. Only one Windows or data partition can use **Fill Remaining**. Data partitions can be reordered with the arrow buttons. **Clear** removes only data partitions, not the base partition rows.
 
 When you provide a Windows ISO, Windows temporarily assigns the mounted ISO a host drive letter. If that letter is configured for a build partition, FFU Builder moves only the Windows ISO to another unused letter before creating the VHDX partitions. An ISO that does not conflict keeps its original mounted letter.
 
-Use **Reset to Default** to restore the System, MSR, Windows, and Recovery rows and remove all additional data partitions. The reset restores the default `S:`, `W:`, and `R:` build letters, makes Windows use **Fill Remaining**, and returns Recovery to automatic sizing. It does not change **Disk Size** or **Logical Sector Size**.
+Use **Reset to Default** to restore the System, MSR, Windows, and Recovery rows and remove all additional data partitions. The reset restores the default System and MSR sizes for the selected sector size and the default `S:`, `W:`, and `R:` drive letters. It makes Windows use **Fill Remaining** and returns Recovery to automatic sizing. It does not change **Disk Size** or **Logical Sector Size**.
 
 **Persist Drive Letter** is off by default and controls whether the configured letter is also required on a physical device. The build VM uses the configured letter whether or not this option is selected. When selected, FFU Builder requires the same letter when a deployed device enters the Windows `specialize` pass. When cleared, the partition receives the lowest available letter from `D:` upward in data-partition order.
 
@@ -73,7 +83,7 @@ The Apps ISO drive letter is discovered at runtime. If you create a data partiti
 
 ## Logical Sector Size
 
-Uint32 value of 512 or 4096. Useful for 4Kn drives or devices shipping with UFS drives. Default is 512.
+Choose 512 or 4096 bytes to match the target device. The default is 512. Changing the selection resets the System partition to the default for that sector size and keeps any custom MSR size. If the MSR size is not a whole multiple of the new sector size, adjust it before building. Loading a saved config restores its explicit sizes. Older configs without those settings use the defaults for their sector size.
 
 There is some error-handling in the script that will call out mismatch issues with logical sector size. Unfortunately you will need to create a new FFU with the correct logical sector size as you can't convert a previously created FFU. Most should be fine with 512, but lower-end devices that used to ship with eMMC drives have now shifted to using UFS.
 

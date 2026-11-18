@@ -426,4 +426,39 @@ function ConvertTo-SafeName {
     return $sanitized
 }
 
+function Resolve-FFUPartitionSizes {
+	[CmdletBinding()]
+	param(
+		[ValidateSet(512, 4096)][uint32]$LogicalSectorSizeBytes = 512,
+		[decimal]$SystemPartitionSize = 0,
+		[decimal]$MSRPartitionSize = 0
+	)
+
+	# Keep FFU's existing 512-byte default while enforcing the Windows EFI minimum for each sector size.
+	$systemMinimum = if ($LogicalSectorSizeBytes -eq 4096) { 300MB } else { 200MB }
+	if ($SystemPartitionSize -eq 0) {
+		$SystemPartitionSize = if ($LogicalSectorSizeBytes -eq 4096) { 300MB } else { 260MB }
+	}
+	if ($MSRPartitionSize -eq 0) {
+		$MSRPartitionSize = 16MB
+	}
+
+	foreach ($partition in @(
+		@{ Name = 'System'; Size = $SystemPartitionSize; Minimum = $systemMinimum },
+		@{ Name = 'MSR'; Size = $MSRPartitionSize; Minimum = 16MB }
+	)) {
+		if ($partition.Size -lt $partition.Minimum) {
+			throw "$($partition.Name) partition size must be at least $($partition.Minimum / 1MB) MiB."
+		}
+		if ($partition.Size -gt [long]::MaxValue -or $partition.Size % $LogicalSectorSizeBytes -ne 0) {
+			throw "$($partition.Name) partition size must be a whole multiple of $LogicalSectorSizeBytes bytes within the supported size range."
+		}
+	}
+
+	return @{
+		SystemPartitionSize = [uint64]$SystemPartitionSize
+		MSRPartitionSize    = [uint64]$MSRPartitionSize
+	}
+}
+
 Export-ModuleMember -Function *

@@ -456,7 +456,7 @@ function Initialize-UIControls {
     $State.Controls.cmbWindowsPartitionDriveLetter = $window.FindName('cmbWindowsPartitionDriveLetter')
     $State.Controls.cmbRecoveryPartitionDriveLetter = $window.FindName('cmbRecoveryPartitionDriveLetter')
     $State.Controls.txtOSPartitionSizeGB = $window.FindName('txtOSPartitionSizeGB')
-    $State.Controls.txtRecoveryPartitionSizeGB = $window.FindName('txtRecoveryPartitionSizeGB')
+	$State.Controls.txtRecoveryPartitionSizeMiB = $window.FindName('txtRecoveryPartitionSizeMiB')
     $State.Controls.ellipseDiskLayoutCapacityStatus = $window.FindName('ellipseDiskLayoutCapacityStatus')
     $State.Controls.txtDiskLayoutCapacityStatusValue = $window.FindName('txtDiskLayoutCapacityStatusValue')
     $State.Controls.txtDataPartitionName = $window.FindName('txtDataPartitionName')
@@ -1085,19 +1085,7 @@ function Initialize-DynamicUIElements {
     $driveLetterColumn.CellTemplate = $driveLetterTemplate
     $diskLayoutGridView.Columns.Add($driveLetterColumn)
 
-    $sizeColumn = New-Object System.Windows.Controls.GridViewColumn
-    $sizeColumn.Header = "Size (GB)"
-    $sizeColumn.Width = 120
-    $sizeTemplate = New-Object System.Windows.DataTemplate
-    $sizeFactory = New-Object System.Windows.FrameworkElementFactory([System.Windows.Controls.TextBox])
-    $sizeBinding = New-Object System.Windows.Data.Binding("SizeGB")
-    $sizeBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
-    $sizeBinding.UpdateSourceTrigger = [System.Windows.Data.UpdateSourceTrigger]::PropertyChanged
-    $sizeFactory.SetBinding([System.Windows.Controls.TextBox]::TextProperty, $sizeBinding)
-    $sizeFactory.SetBinding([System.Windows.Controls.Control]::IsEnabledProperty, (New-Object System.Windows.Data.Binding("CanEditSize")))
-    $sizeTemplate.VisualTree = $sizeFactory
-    $sizeColumn.CellTemplate = $sizeTemplate
-    $diskLayoutGridView.Columns.Add($sizeColumn)
+	$diskLayoutGridView.Columns.Add((New-DiskLayoutSizeColumn))
 
     $fillRemainingColumn = New-Object System.Windows.Controls.GridViewColumn
     $fillRemainingColumn.Header = "Fill Remaining"
@@ -1331,5 +1319,34 @@ function Initialize-DynamicUIElements {
     }
 }
 
+
+function New-DiskLayoutSizeColumn {
+	$sizeColumn = [System.Windows.Controls.GridViewColumn]::new()
+	$sizeColumn.Header = 'Size'
+	$sizeColumn.Width = 140
+	$sizeTemplate = [System.Windows.DataTemplate]::new()
+	$sizePanel = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.DockPanel])
+
+	$sizeUnitFactory = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.TextBlock])
+	$sizeUnitFactory.SetValue([System.Windows.Controls.DockPanel]::DockProperty, [System.Windows.Controls.Dock]::Right)
+	$sizeUnitFactory.SetValue([System.Windows.FrameworkElement]::MarginProperty, [System.Windows.Thickness]::new(8, 0, 0, 0))
+	$sizeUnitFactory.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+	$sizeUnitFactory.SetBinding([System.Windows.Controls.TextBlock]::TextProperty, [System.Windows.Data.Binding]::new('SizeUnit'))
+	$sizePanel.AppendChild($sizeUnitFactory)
+
+	$sizeFactory = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.TextBox])
+	$sizeBinding = [System.Windows.Data.Binding]::new('SizeText')
+	$sizeBinding.Mode = [System.Windows.Data.BindingMode]::TwoWay
+	$sizeBinding.UpdateSourceTrigger = [System.Windows.Data.UpdateSourceTrigger]::PropertyChanged
+	$sizeBinding.NotifyOnSourceUpdated = $true
+	$sizeFactory.SetBinding([System.Windows.Controls.TextBox]::TextProperty, $sizeBinding)
+	$sizeFactory.SetBinding([System.Windows.Controls.Control]::IsEnabledProperty, [System.Windows.Data.Binding]::new('CanEditSize'))
+	$sizeFactory.SetBinding([System.Windows.Automation.AutomationProperties]::NameProperty, [System.Windows.Data.Binding]::new('SizeEditorLabel'))
+	$sizePanel.AppendChild($sizeFactory)
+
+	$sizeTemplate.VisualTree = $sizePanel
+	$sizeColumn.CellTemplate = $sizeTemplate
+	return $sizeColumn
+}
 
 Export-ModuleMember -Function *
