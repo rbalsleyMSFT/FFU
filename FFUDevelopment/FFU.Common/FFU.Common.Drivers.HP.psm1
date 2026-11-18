@@ -110,34 +110,86 @@ function Get-HPDriverPackageMetadata {
 }
 
 function Get-HPDriverSupersedence {
-	param([hashtable]$Relationships, [string[]]$CandidateIds)
+	param(
+		[hashtable]$Relationships,
+		[string[]]$CandidateIds,
+		[Collections.Generic.HashSet[string]]$ActiveIds,
+		[string]$SystemId,
+		[switch]$LogRecovery
+	)
 
 	$resolved = @{}
-	$visiting = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-	function Get-HPPredecessors {
+	$indices = @{}
+	$pending = [Collections.Generic.Stack[string]]::new()
+	$onStack = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+	$sortedCandidates = @($CandidateIds | Sort-Object)
+	$recoveries = [Collections.Generic.List[string]]::new()
+
+	# Resolve strongly connected groups with Tarjan's algorithm. A group can reuse the
+	# already resolved predecessor sets of every edge leading out of it.
+	function Resolve-HPPredecessors {
 		param([string]$Id)
-		if ($visiting.Contains($Id)) { throw "Circular HP supersedence relationship involving '$Id'." }
-		if ($resolved.ContainsKey($Id)) { return ,$resolved[$Id] }
-		$null = $visiting.Add($Id)
-		$predecessors = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-		if ($Relationships.ContainsKey($Id)) {
-			foreach ($previousId in $Relationships[$Id]) {
-				$null = $predecessors.Add($previousId)
-				$predecessors.UnionWith((Get-HPPredecessors -Id $previousId))
+
+		$index = $indices.Count
+		$indices[$Id] = $index
+		$lowLink = $index
+		$pending.Push($Id)
+		$null = $onStack.Add($Id)
+		foreach ($previousId in $Relationships[$Id]) {
+			if (-not $indices.ContainsKey($previousId)) {
+				$lowLink = [Math]::Min($lowLink, (Resolve-HPPredecessors -Id $previousId))
+			}
+			elseif ($onStack.Contains($previousId)) {
+				$lowLink = [Math]::Min($lowLink, $indices[$previousId])
 			}
 		}
-		$null = $visiting.Remove($Id)
-		$resolved[$Id] = $predecessors
-		return ,$predecessors
+		if ($lowLink -ne $index) { return $lowLink }
+
+		$members = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		do {
+			$memberId = $pending.Pop()
+			$null = $onStack.Remove($memberId)
+			$null = $members.Add($memberId)
+		} until ($memberId -eq $Id)
+
+		if ($members.Count -gt 1 -or $Id -in $Relationships[$Id]) {
+			$memberIds = @($members | Sort-Object)
+			$memberText = $memberIds -join ', '
+			$cycleMessage = "Circular HP supersedence relationship for SystemID '$SystemId' ($memberText)"
+			$activeMembers = @($memberIds | Where-Object { $ActiveIds.Contains($_) })
+			if ($activeMembers.Count -gt 0) {
+				throw "${cycleMessage}: includes active catalog packages ($($activeMembers -join ', '))."
+			}
+			$replacements = @($sortedCandidates | Where-Object { $members.IsSubsetOf($Relationships[$_]) })
+			if ($replacements.Count -eq 0) {
+				throw "${cycleMessage}: no active driver directly replaces every package in the loop."
+			}
+			if ($replacements.Count -gt 1) {
+				throw "${cycleMessage}: multiple active drivers directly replace every package in the loop ($($replacements -join ', '))."
+			}
+			$recoveries.Add("Warning: Recovered HP supersedence loop for SystemID '$SystemId' ($memberText) with verified replacement '$($replacements[0])'.")
+		}
+
+		$predecessors = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		foreach ($memberId in $members) {
+			foreach ($previousId in $Relationships[$memberId]) {
+				$null = $predecessors.Add($previousId)
+				if (-not $members.Contains($previousId)) { $predecessors.UnionWith($resolved[$previousId]) }
+			}
+		}
+		foreach ($memberId in $members) { $resolved[$memberId] = $predecessors }
+		return $lowLink
 	}
 
 	$candidateSet = [Collections.Generic.HashSet[string]]::new([string[]]$CandidateIds, [StringComparer]::OrdinalIgnoreCase)
 	$supersededBy = @{}
-	foreach ($id in $CandidateIds | Sort-Object) {
-		foreach ($previousId in (Get-HPPredecessors -Id $id)) {
+	foreach ($id in $sortedCandidates) {
+		if (-not $indices.ContainsKey($id)) { $null = Resolve-HPPredecessors -Id $id }
+		foreach ($previousId in $resolved[$id]) {
 			if ($candidateSet.Contains($previousId)) { $supersededBy[$previousId] = $id }
 		}
 	}
+	if ($LogRecovery) { foreach ($message in $recoveries) { WriteLog $message } }
 	return $supersededBy
 }
 
@@ -157,6 +209,7 @@ function Get-HPLatestDriverUpdates {
 	try {
 		$candidates = @{}
 		$relationships = @{}
+		$activeIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 		foreach ($catalog in $catalogs) {
 			$cabPath = Join-Path $HPDriversFolder "$($catalog.Name).cab"
 			$xmlPath = Join-Path $HPDriversFolder "$($catalog.Name).xml"
@@ -175,7 +228,9 @@ function Get-HPLatestDriverUpdates {
 					foreach ($previousId in [regex]::Matches([string]$update.Supersedes, '(?i)\bsp\d+\b')) {
 						$null = $relationships[$id].Add($previousId.Value.ToLowerInvariant())
 					}
-					if ($update.ParentNode.LocalName -ne 'Solutions' -or $update.Category -notmatch '^Driver') { continue }
+					if ($update.ParentNode.LocalName -ne 'Solutions') { continue }
+					$null = $activeIds.Add($id)
+					if ($update.Category -notmatch '^Driver') { continue }
 					$driverCount++
 					foreach ($field in @('Name', 'Version', 'Url')) {
 						if ([string]::IsNullOrWhiteSpace([string]$update.$field)) { throw "HP package '$id' is missing '$field'." }
@@ -206,7 +261,10 @@ function Get-HPLatestDriverUpdates {
 		WriteLog "HP SystemID '$systemId': $($catalogs.Count) catalogs, $($candidates.Count) distinct driver candidates."
 
 		# Combine historical replacement links before resolving packages with overlapping component coverage.
-		$supersededBy = Get-HPDriverSupersedence -Relationships $relationships -CandidateIds @($candidates.Keys)
+		$supersedenceParams = @{
+			Relationships = $relationships; CandidateIds = @($candidates.Keys); ActiveIds = $activeIds; SystemId = $systemId
+		}
+		$supersededBy = Get-HPDriverSupersedence @supersedenceParams
 		$remaining = @($candidates.Values | Where-Object { -not $supersededBy.ContainsKey($_.Id) })
 		$groups = @($remaining | Group-Object {
 			(([string]$_.Update.Category).Trim() + '|' + (([string]$_.Update.Name).Trim() -replace '\s+', ' '))
@@ -222,7 +280,7 @@ function Get-HPLatestDriverUpdates {
 				foreach ($previousId in $details.Supersedes) { $null = $relationships[$candidate.Id].Add($previousId) }
 			}
 		}
-		$supersededBy = Get-HPDriverSupersedence -Relationships $relationships -CandidateIds @($candidates.Keys)
+		$supersededBy = Get-HPDriverSupersedence @supersedenceParams -LogRecovery
 		$selected = @{}
 		foreach ($id in $candidates.Keys) {
 			if ($supersededBy.ContainsKey($id)) {
