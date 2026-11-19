@@ -109,13 +109,7 @@ When set to $true, this will create WinPE deployment media for use when deployin
 Sets a custom FFU output name with placeholders. Allowed placeholders are: {WindowsRelease}, {WindowsVersion}, {WindowsArch}, {SKU}, {BuildDate}, {yyyy}, {MM}, {dd}, {H}, {hh}, {mm}, {tt}.
 
 .PARAMETER Disksize
-Size of the virtual hard disk for the virtual machine. Default is a 50 GiB dynamic disk.
-
-.PARAMETER SystemPartitionSize
-Optional EFI System partition size in bytes. Leave as 0 for 260 MiB with 512-byte logical sectors or 300 MiB with 4096-byte logical sectors. The minimums are 200 MiB and 300 MiB, respectively.
-
-.PARAMETER MSRPartitionSize
-Optional Microsoft Reserved partition size in bytes. Leave as 0 for the default of 16 MiB. An override must be at least 16 MiB.
+Size of the virtual hard disk for the virtual machine. Default is a 50GB dynamic disk.
 
 .PARAMETER OSPartitionSize
 Fixed size of the Windows partition in bytes. Leave as 0 to let Windows use the space remaining after Recovery and fixed-size data partitions are reserved.
@@ -385,8 +379,6 @@ param(
     [bool]$InstallDrivers,
     [uint64]$Memory = 4GB,
     [uint64]$Disksize = 50GB,
-	[decimal]$SystemPartitionSize = 0,
-	[decimal]$MSRPartitionSize = 0,
     [uint64]$OSPartitionSize = 0,
     [uint64]$RecoveryPartitionSize = 0,
     [bool]$CreateRecoveryPartition = $true,
@@ -917,7 +909,7 @@ if ($WindowsRelease -notin 10, 11 -and -not $ISOPath) {
 }
 
 #Class definition for vhdx cache
-$partitionLayoutSignatureVersion = 3
+$partitionLayoutSignatureVersion = 2
 
 class VhdxCacheUpdateItem {
     [string]$Name
@@ -3197,8 +3189,6 @@ function ConvertTo-NormalizedDataPartitions {
 }
 function Get-PartitionLayoutSignature {
     param(
-		[uint64]$SystemPartitionSize,
-		[uint64]$MSRPartitionSize,
         [uint64]$OSPartitionSize,
         [uint64]$RecoveryPartitionSize,
         [bool]$CreateRecoveryPartition = $true,
@@ -3209,7 +3199,7 @@ function Get-PartitionLayoutSignature {
             "$($_.Name)|$($_.Label)|$($_.FileSystem)|$($_.SizeBytes)|$($_.FillRemaining)"
         })
 
-	return "System=$SystemPartitionSize;MSR=$MSRPartitionSize;OS=$OSPartitionSize;CreateRecovery=$CreateRecoveryPartition;Recovery=$RecoveryPartitionSize;Data=$($dataPartitionSignatures -join ';')"
+    return "OS=$OSPartitionSize;CreateRecovery=$CreateRecoveryPartition;Recovery=$RecoveryPartitionSize;Data=$($dataPartitionSignatures -join ';')"
 }
 #Add System Partition
 function New-SystemPartition {
@@ -3217,14 +3207,13 @@ function New-SystemPartition {
         [Parameter(Mandatory = $true)]
         [ciminstance]$VhdxDisk,
         [string]$DriveLetter = 'S',
-		[Parameter(Mandatory = $true)]
-		[uint64]$SystemPartitionSize
+        [uint64]$SystemPartitionSize = 260MB
     )
 
     WriteLog "Creating System partition..."
 
-	$sysPartition = $VhdxDisk | New-Partition -DriveLetter $DriveLetter -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden -ErrorAction Stop
-	$sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System" -ErrorAction Stop | Out-Null
+    $sysPartition = $VhdxDisk | New-Partition -DriveLetter $DriveLetter -Size $SystemPartitionSize -GptType "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}" -IsHidden 
+    $sysPartition | Format-Volume -FileSystem FAT32 -Force -NewFileSystemLabel "System" | Out-Null
 
     WriteLog 'Done.'
     return [string]$sysPartition.DriveLetter
@@ -3233,16 +3222,17 @@ function New-SystemPartition {
 function New-MSRPartition {
     param(
         [Parameter(Mandatory = $true)]
-		[ciminstance]$VhdxDisk,
-		[Parameter(Mandatory = $true)]
-		[uint64]$MSRPartitionSize
+        [ciminstance]$VhdxDisk
     )
 
     WriteLog "Creating MSR partition..."
 
-	$VhdxDisk | New-Partition -Size $MSRPartitionSize -GptType "{e3c9e316-0b5c-4db8-817d-f92df00215ae}" -IsHidden -ErrorAction Stop | Out-Null
+    # $toReturn = $VhdxDisk | New-Partition -AssignDriveLetter -Size 16MB -GptType "{e3c9e316-0b5c-4db8-817d-f92df00215ae}" -IsHidden | Out-Null
+    $toReturn = $VhdxDisk | New-Partition -Size 16MB -GptType "{e3c9e316-0b5c-4db8-817d-f92df00215ae}" -IsHidden | Out-Null
 
     WriteLog "Done."
+
+    return $toReturn
 }
 #Add OS Partition
 function New-OSPartition {
@@ -5293,45 +5283,49 @@ function Copy-Drivers {
             WriteLog "WARNING: No CatalogFile entry found in INF: $infFullName"
         }
     
+        # Map each disk ID to its folder from SourceDisksNames (diskid = description[,tag-or-cab[,unused[,path]]]).
+        # Arch-specific sections are read after the generic one so they take precedence.
+        $diskPaths = @{}
+        foreach ($sectionName in $sourceDisksFileSections) {
+            $diskNames = Get-PrivateProfileSection -FileName $longInfFullName -SectionName ($sectionName -replace '^SourceDisksFiles', 'SourceDisksNames')
+            foreach ($diskId in $diskNames.Keys) {
+                $diskFields = @((($diskNames[$diskId] -split ';', 2)[0]) -split ',')
+                $diskPaths[$diskId.Trim()] = if ($diskFields.Count -ge 4) { $diskFields[3].Trim().Trim('"').Trim('\') } else { '' }
+            }
+        }
+
         # Copy all files referenced by SourceDisksFiles sections
         foreach ($sectionName in $sourceDisksFileSections) {
             $sourceDiskFiles = Get-PrivateProfileSection -FileName $longInfFullName -SectionName $sectionName
             if ($sourceDiskFiles.Count -eq 0) {
                 continue
             }
-    
+
             WriteLog "Copying files from INF section [$sectionName] ($($sourceDiskFiles.Count) entries)"
-    
-            foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
-                # Determine if the file lives in a subfolder relative to the INF path
-                $rawValue = $sourceDiskFiles[$sourceDiskFile]
-                $subdir = ""
-    
-                if (($null -ne $rawValue) -and ($rawValue.Contains(","))) {
-                    $splitParts = $rawValue -split ","
-                    if ($splitParts.Count -ge 2) {
-                        $subdir = $splitParts[1]
-                    }
-                }
-    
-                if ([string]::IsNullOrWhiteSpace($subdir)) {
-                    $subdir = ""
-                }
-    
-                # Build source and destination paths
-                if ([string]::IsNullOrEmpty($subdir)) {
+
+            foreach ($sourceDiskFileKey in $sourceDiskFiles.Keys) {
+                $sourceDiskFile = $sourceDiskFileKey.Trim()
+
+                # filename = diskid[,subdir][,size]; the file lives under the disk's path plus the optional subdir, relative to the INF
+                $fileFields = @((($sourceDiskFiles[$sourceDiskFileKey] -split ';', 2)[0]) -split ',' | ForEach-Object { $_.Trim().Trim('"') })
+                $diskPath = $diskPaths[$fileFields[0]]
+                $subdir = if ($fileFields.Count -ge 2) { $fileFields[1].Trim('\') } else { '' }
+                $relativeFolder = (@($diskPath, $subdir) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join '\'
+
+                # Build source and destination paths, keeping the same relative layout so DISM can resolve the files
+                if ([string]::IsNullOrEmpty($relativeFolder)) {
                     $sourceFilePath = Join-Path -Path $infPath -ChildPath $sourceDiskFile
                     $destinationFolder = $targetPath
                 }
                 else {
-                    $sourceFolder = Join-Path -Path $infPath -ChildPath $subdir
+                    $sourceFolder = Join-Path -Path $infPath -ChildPath $relativeFolder
                     $sourceFilePath = Join-Path -Path $sourceFolder -ChildPath $sourceDiskFile
-                    $destinationFolder = Join-Path -Path $targetPath -ChildPath $subdir
+                    $destinationFolder = Join-Path -Path $targetPath -ChildPath $relativeFolder
                     [void](New-Item -Path $destinationFolder -ItemType Directory -Force)
                 }
-    
+
                 # Copy with logging and error handling
-                if (Test-Path -Path $sourceFilePath) {
+                if (Test-Path -LiteralPath $sourceFilePath) {
                     try {
                         Copy-Item -LiteralPath "$sourceFilePath" -Destination "$destinationFolder" -Force -ErrorAction Stop
                         $copiedFileCount++
@@ -8148,17 +8142,6 @@ try {
         throw 'RecoveryPartitionSize must be at least 990 MiB.'
     }
     $normalizedAdditionalDataPartitions = @(ConvertTo-NormalizedDataPartitions -DataPartitions $AdditionalDataPartitions)
-	$bootPartitionSizes = Resolve-FFUPartitionSizes -LogicalSectorSizeBytes $LogicalSectorSizeBytes -SystemPartitionSize $SystemPartitionSize -MSRPartitionSize $MSRPartitionSize
-	[decimal]$fixedPartitionSizeBytes = [decimal]$bootPartitionSizes.SystemPartitionSize + $bootPartitionSizes.MSRPartitionSize + $OSPartitionSize
-	if ($CreateRecoveryPartition) {
-		$fixedPartitionSizeBytes += [Math]::Max([uint64]990MB, $RecoveryPartitionSize)
-	}
-	foreach ($dataPartition in $normalizedAdditionalDataPartitions) {
-		if (-not $dataPartition.FillRemaining) { $fixedPartitionSizeBytes += $dataPartition.SizeBytes }
-	}
-	if ($Disksize -eq 0 -or $fixedPartitionSizeBytes -gt $Disksize) {
-		throw "The partition sizes require $fixedPartitionSizeBytes bytes, exceeding the configured disk size of $Disksize bytes. Increase Disksize or reduce the partition sizes."
-	}
     $configureDeployedDataPartitionDriveLetters = $normalizedAdditionalDataPartitions.Count -gt 0
     $enforceBuildVmDataPartitionDriveLetters = $InstallApps -and $configureDeployedDataPartitionDriveLetters
     $fillRemainingPartitionCount = if ($OSPartitionSize -le 0) { 1 } else { 0 }
@@ -8166,7 +8149,7 @@ try {
     if ($fillRemainingPartitionCount -gt 1) {
         throw 'Only one Windows or data partition can fill remaining disk space. Set a fixed Windows partition size before using FillRemaining on a data partition.'
     }
-	$partitionLayoutSignature = Get-PartitionLayoutSignature @bootPartitionSizes -OSPartitionSize $OSPartitionSize -RecoveryPartitionSize $RecoveryPartitionSize -CreateRecoveryPartition $CreateRecoveryPartition -DataPartitions $normalizedAdditionalDataPartitions
+    $partitionLayoutSignature = Get-PartitionLayoutSignature -OSPartitionSize $OSPartitionSize -RecoveryPartitionSize $RecoveryPartitionSize -CreateRecoveryPartition $CreateRecoveryPartition -DataPartitions $normalizedAdditionalDataPartitions
 
     $partitionDriveLetters = Get-NormalizedPartitionDriveLetters -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions -ValidateAvailable
     $SystemPartitionDriveLetter = $partitionDriveLetters.SystemPartitionDriveLetter
@@ -9894,9 +9877,9 @@ try {
             $workingVhdxOwned = $true
             $vhdxDisk = New-ScratchVhdx -VhdxPath $VHDXPath -SizeBytes $disksize -LogicalSectorSizeBytes $LogicalSectorSizeBytes
 
-			$createdSystemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk -DriveLetter $SystemPartitionDriveLetter -SystemPartitionSize $bootPartitionSizes.SystemPartitionSize
+            $createdSystemPartitionDriveLetter = New-SystemPartition -VhdxDisk $vhdxDisk -DriveLetter $SystemPartitionDriveLetter
     
-			New-MSRPartition -VhdxDisk $vhdxDisk -MSRPartitionSize $bootPartitionSizes.MSRPartitionSize
+            New-MSRPartition -VhdxDisk $vhdxDisk
     
             Set-Progress -Percentage 16 -Message "Applying base Windows image to VHDX..."
             $osPartition = New-OSPartition -VhdxDisk $vhdxDisk -OSPartitionSize $OSPartitionSize -WimPath $WimPath -WimIndex $index -DriveLetter $WindowsPartitionDriveLetter
