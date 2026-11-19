@@ -4884,8 +4884,9 @@ function Get-PrivateProfileSection {
     $charsCopied = 0
 
     while ($true) {
-        $buffer = [byte[]]::new($bufferSize)
-        $charsCopied = [Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
+		# The native API counts UTF-16 characters, not bytes.
+		$buffer = [byte[]]::new($bufferSize * 2)
+		$charsCopied = [Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $bufferSize, $FileName)
 
         # No section found or no content
         if ($charsCopied -eq 0) {
@@ -4917,6 +4918,34 @@ function Get-PrivateProfileSection {
     return $hashTable
 }
     
+function Split-InfFields {
+	param([string]$Value)
+
+	# Consume quoted text and string tokens before looking for separators or comments.
+	$fields = [Collections.Generic.List[string]]::new()
+	$fieldStart = 0
+	$valueEnd = $Value.Length
+	foreach ($token in [regex]::Matches($Value, '"(?:[^"]|"")*"|%%|%[^%]+%|[,;]')) {
+		if ($token.Value -eq ';') {
+			$valueEnd = $token.Index
+			break
+		}
+		if ($token.Value -eq ',') {
+			$fields.Add($Value.Substring($fieldStart, $token.Index - $fieldStart))
+			$fieldStart = $token.Index + 1
+		}
+	}
+	$fields.Add($Value.Substring($fieldStart, $valueEnd - $fieldStart))
+
+	foreach ($rawField in $fields) {
+		$field = $rawField.Trim()
+		if ($field.Length -ge 2 -and $field.StartsWith('"') -and $field.EndsWith('"')) {
+			$field = $field.Substring(1, $field.Length - 2).Replace('""', '"')
+		}
+		$field
+	}
+}
+
 function Get-AvailableDriveLetter {
     param(
         [string[]]$ExcludedDriveLetters = @()
@@ -5293,12 +5322,16 @@ function Copy-Drivers {
             WriteLog "WARNING: No CatalogFile entry found in INF: $infFullName"
         }
     
-        # Expand %strings% in INF paths (e.g. FwImage\%LNL%) from the INF [Strings] section; unknown tokens are left as-is
-        $infStringEvaluator = [System.Text.RegularExpressions.MatchEvaluator] {
-            param($match)
-            $value = Get-PrivateProfileString -FileName $longInfFullName -SectionName 'Strings' -KeyName $match.Groups[1].Value
-            if ([string]::IsNullOrWhiteSpace($value)) { $match.Value } else { $value.Trim().Trim('"') }
-        }
+		# Read raw string values so quoted delimiters and trailing comments stay distinguishable.
+		$infStrings = Get-PrivateProfileSection -FileName $longInfFullName -SectionName 'Strings'
+		$infStringPattern = '%%|%([^%]+)%'
+		$infStringEvaluator = [System.Text.RegularExpressions.MatchEvaluator] {
+			param($match)
+			if ($match.Value -eq '%%') { return '%' }
+			$value = $infStrings[$match.Groups[1].Value]
+			if ($null -eq $value) { return $match.Value }
+			return @(Split-InfFields -Value $value)[0]
+		}
 
         # Map each disk ID to its folder from SourceDisksNames (diskid = description[,tag-or-cab[,unused[,path]]]).
         # Arch-specific sections are read after the generic one so they take precedence.
@@ -5306,13 +5339,18 @@ function Copy-Drivers {
         foreach ($sectionName in $sourceDisksFileSections) {
             $diskNames = Get-PrivateProfileSection -FileName $longInfFullName -SectionName ($sectionName -replace '^SourceDisksFiles', 'SourceDisksNames')
             foreach ($diskId in $diskNames.Keys) {
-                $diskFields = @((($diskNames[$diskId] -split ';', 2)[0]) -split ',')
-                $diskPaths[$diskId.Trim()] = if ($diskFields.Count -ge 4) { [regex]::Replace($diskFields[3].Trim().Trim('"'), '%([^%]+)%', $infStringEvaluator).Trim('\') } else { '' }
+				$diskFields = @(Split-InfFields -Value $diskNames[$diskId])
+				$diskPaths[$diskId.Trim()] = if ($diskFields.Count -ge 4) {
+					[regex]::Replace($diskFields[3], $infStringPattern, $infStringEvaluator).Trim('\')
+				}
+				else { '' }
             }
         }
 
-        # Copy all files referenced by SourceDisksFiles sections
-        foreach ($sectionName in $sourceDisksFileSections) {
+		# Prefer architecture-specific entries, falling back to the generic section per filename.
+		$selectedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		for ($sectionIndex = $sourceDisksFileSections.Count - 1; $sectionIndex -ge 0; $sectionIndex--) {
+			$sectionName = $sourceDisksFileSections[$sectionIndex]
             $sourceDiskFiles = Get-PrivateProfileSection -FileName $longInfFullName -SectionName $sectionName
             if ($sourceDiskFiles.Count -eq 0) {
                 continue
@@ -5321,12 +5359,16 @@ function Copy-Drivers {
             WriteLog "Copying files from INF section [$sectionName] ($($sourceDiskFiles.Count) entries)"
 
             foreach ($sourceDiskFileKey in $sourceDiskFiles.Keys) {
-                $sourceDiskFile = $sourceDiskFileKey.Trim()
+				$sourceDiskFile = $sourceDiskFileKey.Trim().Trim('"')
+				if (-not $selectedFiles.Add($sourceDiskFile)) { continue }
 
                 # filename = diskid[,subdir][,size]; the file lives under the disk's path plus the optional subdir, relative to the INF
-                $fileFields = @((($sourceDiskFiles[$sourceDiskFileKey] -split ';', 2)[0]) -split ',' | ForEach-Object { $_.Trim().Trim('"') })
+				$fileFields = @(Split-InfFields -Value $sourceDiskFiles[$sourceDiskFileKey])
                 $diskPath = $diskPaths[$fileFields[0]]
-                $subdir = if ($fileFields.Count -ge 2) { [regex]::Replace($fileFields[1], '%([^%]+)%', $infStringEvaluator).Trim('\') } else { '' }
+				$subdir = if ($fileFields.Count -ge 2) {
+					[regex]::Replace($fileFields[1], $infStringPattern, $infStringEvaluator).Trim('\')
+				}
+				else { '' }
                 $relativeFolder = (@($diskPath, $subdir) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join '\'
 
                 # Build source and destination paths, keeping the same relative layout so DISM can resolve the files
