@@ -5293,6 +5293,13 @@ function Copy-Drivers {
             WriteLog "WARNING: No CatalogFile entry found in INF: $infFullName"
         }
     
+        # Expand %strings% in INF paths (e.g. FwImage\%LNL%) from the INF [Strings] section; unknown tokens are left as-is
+        $infStringEvaluator = [System.Text.RegularExpressions.MatchEvaluator] {
+            param($match)
+            $value = Get-PrivateProfileString -FileName $longInfFullName -SectionName 'Strings' -KeyName $match.Groups[1].Value
+            if ([string]::IsNullOrWhiteSpace($value)) { $match.Value } else { $value.Trim().Trim('"') }
+        }
+
         # Map each disk ID to its folder from SourceDisksNames (diskid = description[,tag-or-cab[,unused[,path]]]).
         # Arch-specific sections are read after the generic one so they take precedence.
         $diskPaths = @{}
@@ -5300,7 +5307,7 @@ function Copy-Drivers {
             $diskNames = Get-PrivateProfileSection -FileName $longInfFullName -SectionName ($sectionName -replace '^SourceDisksFiles', 'SourceDisksNames')
             foreach ($diskId in $diskNames.Keys) {
                 $diskFields = @((($diskNames[$diskId] -split ';', 2)[0]) -split ',')
-                $diskPaths[$diskId.Trim()] = if ($diskFields.Count -ge 4) { $diskFields[3].Trim().Trim('"').Trim('\') } else { '' }
+                $diskPaths[$diskId.Trim()] = if ($diskFields.Count -ge 4) { [regex]::Replace($diskFields[3].Trim().Trim('"'), '%([^%]+)%', $infStringEvaluator).Trim('\') } else { '' }
             }
         }
 
@@ -5319,7 +5326,7 @@ function Copy-Drivers {
                 # filename = diskid[,subdir][,size]; the file lives under the disk's path plus the optional subdir, relative to the INF
                 $fileFields = @((($sourceDiskFiles[$sourceDiskFileKey] -split ';', 2)[0]) -split ',' | ForEach-Object { $_.Trim().Trim('"') })
                 $diskPath = $diskPaths[$fileFields[0]]
-                $subdir = if ($fileFields.Count -ge 2) { $fileFields[1].Trim('\') } else { '' }
+                $subdir = if ($fileFields.Count -ge 2) { [regex]::Replace($fileFields[1], '%([^%]+)%', $infStringEvaluator).Trim('\') } else { '' }
                 $relativeFolder = (@($diskPath, $subdir) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join '\'
 
                 # Build source and destination paths, keeping the same relative layout so DISM can resolve the files
