@@ -4884,8 +4884,9 @@ function Get-PrivateProfileSection {
     $charsCopied = 0
 
     while ($true) {
-        $buffer = [byte[]]::new($bufferSize)
-        $charsCopied = [Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $buffer.Length, $FileName)
+		# The native API counts UTF-16 characters, not bytes.
+		$buffer = [byte[]]::new($bufferSize * 2)
+		$charsCopied = [Win32.Kernel32]::GetPrivateProfileSection($SectionName, $buffer, $bufferSize, $FileName)
 
         # No section found or no content
         if ($charsCopied -eq 0) {
@@ -4917,6 +4918,34 @@ function Get-PrivateProfileSection {
     return $hashTable
 }
     
+function Split-InfFields {
+	param([string]$Value)
+
+	# Consume quoted text and string tokens before looking for separators or comments.
+	$fields = [Collections.Generic.List[string]]::new()
+	$fieldStart = 0
+	$valueEnd = $Value.Length
+	foreach ($token in [regex]::Matches($Value, '"(?:[^"]|"")*"|%%|%[^%]+%|[,;]')) {
+		if ($token.Value -eq ';') {
+			$valueEnd = $token.Index
+			break
+		}
+		if ($token.Value -eq ',') {
+			$fields.Add($Value.Substring($fieldStart, $token.Index - $fieldStart))
+			$fieldStart = $token.Index + 1
+		}
+	}
+	$fields.Add($Value.Substring($fieldStart, $valueEnd - $fieldStart))
+
+	foreach ($rawField in $fields) {
+		$field = $rawField.Trim()
+		if ($field.Length -ge 2 -and $field.StartsWith('"') -and $field.EndsWith('"')) {
+			$field = $field.Substring(1, $field.Length - 2).Replace('""', '"')
+		}
+		$field
+	}
+}
+
 function Get-AvailableDriveLetter {
     param(
         [string[]]$ExcludedDriveLetters = @()
@@ -5293,45 +5322,69 @@ function Copy-Drivers {
             WriteLog "WARNING: No CatalogFile entry found in INF: $infFullName"
         }
     
-        # Copy all files referenced by SourceDisksFiles sections
+		# Read raw string values so quoted delimiters and trailing comments stay distinguishable.
+		$infStrings = Get-PrivateProfileSection -FileName $longInfFullName -SectionName 'Strings'
+		$infStringPattern = '%%|%([^%]+)%'
+		$infStringEvaluator = [System.Text.RegularExpressions.MatchEvaluator] {
+			param($match)
+			if ($match.Value -eq '%%') { return '%' }
+			$value = $infStrings[$match.Groups[1].Value]
+			if ($null -eq $value) { return $match.Value }
+			return @(Split-InfFields -Value $value)[0]
+		}
+
+        # Map each disk ID to its folder from SourceDisksNames (diskid = description[,tag-or-cab[,unused[,path]]]).
+        # Arch-specific sections are read after the generic one so they take precedence.
+        $diskPaths = @{}
         foreach ($sectionName in $sourceDisksFileSections) {
+            $diskNames = Get-PrivateProfileSection -FileName $longInfFullName -SectionName ($sectionName -replace '^SourceDisksFiles', 'SourceDisksNames')
+            foreach ($diskId in $diskNames.Keys) {
+				$diskFields = @(Split-InfFields -Value $diskNames[$diskId])
+				$diskPaths[$diskId.Trim()] = if ($diskFields.Count -ge 4) {
+					[regex]::Replace($diskFields[3], $infStringPattern, $infStringEvaluator).Trim('\')
+				}
+				else { '' }
+            }
+        }
+
+		# Prefer architecture-specific entries, falling back to the generic section per filename.
+		$selectedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+		for ($sectionIndex = $sourceDisksFileSections.Count - 1; $sectionIndex -ge 0; $sectionIndex--) {
+			$sectionName = $sourceDisksFileSections[$sectionIndex]
             $sourceDiskFiles = Get-PrivateProfileSection -FileName $longInfFullName -SectionName $sectionName
             if ($sourceDiskFiles.Count -eq 0) {
                 continue
             }
-    
+
             WriteLog "Copying files from INF section [$sectionName] ($($sourceDiskFiles.Count) entries)"
-    
-            foreach ($sourceDiskFile in $sourceDiskFiles.Keys) {
-                # Determine if the file lives in a subfolder relative to the INF path
-                $rawValue = $sourceDiskFiles[$sourceDiskFile]
-                $subdir = ""
-    
-                if (($null -ne $rawValue) -and ($rawValue.Contains(","))) {
-                    $splitParts = $rawValue -split ","
-                    if ($splitParts.Count -ge 2) {
-                        $subdir = $splitParts[1]
-                    }
-                }
-    
-                if ([string]::IsNullOrWhiteSpace($subdir)) {
-                    $subdir = ""
-                }
-    
-                # Build source and destination paths
-                if ([string]::IsNullOrEmpty($subdir)) {
+
+            foreach ($sourceDiskFileKey in $sourceDiskFiles.Keys) {
+				$sourceDiskFile = $sourceDiskFileKey.Trim().Trim('"')
+				if (-not $selectedFiles.Add($sourceDiskFile)) { continue }
+
+                # filename = diskid[,subdir][,size]; the file lives under the disk's path plus the optional subdir, relative to the INF
+				$fileFields = @(Split-InfFields -Value $sourceDiskFiles[$sourceDiskFileKey])
+                $diskPath = $diskPaths[$fileFields[0]]
+				$subdir = if ($fileFields.Count -ge 2) {
+					[regex]::Replace($fileFields[1], $infStringPattern, $infStringEvaluator).Trim('\')
+				}
+				else { '' }
+                $relativeFolder = (@($diskPath, $subdir) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join '\'
+
+                # Build source and destination paths, keeping the same relative layout so DISM can resolve the files
+                if ([string]::IsNullOrEmpty($relativeFolder)) {
                     $sourceFilePath = Join-Path -Path $infPath -ChildPath $sourceDiskFile
                     $destinationFolder = $targetPath
                 }
                 else {
-                    $sourceFolder = Join-Path -Path $infPath -ChildPath $subdir
+                    $sourceFolder = Join-Path -Path $infPath -ChildPath $relativeFolder
                     $sourceFilePath = Join-Path -Path $sourceFolder -ChildPath $sourceDiskFile
-                    $destinationFolder = Join-Path -Path $targetPath -ChildPath $subdir
+                    $destinationFolder = Join-Path -Path $targetPath -ChildPath $relativeFolder
                     [void](New-Item -Path $destinationFolder -ItemType Directory -Force)
                 }
-    
+
                 # Copy with logging and error handling
-                if (Test-Path -Path $sourceFilePath) {
+                if (Test-Path -LiteralPath $sourceFilePath) {
                     try {
                         Copy-Item -LiteralPath "$sourceFilePath" -Destination "$destinationFolder" -Force -ErrorAction Stop
                         $copiedFileCount++
