@@ -475,6 +475,7 @@ function Initialize-UIControls {
     $State.Controls.btnMoveDataPartitionBottom = $window.FindName('btnMoveDataPartitionBottom')
     $State.Controls.lstDataPartitions = $window.FindName('lstDataPartitions')
     $State.Controls.cmbLogicalSectorSize = $window.FindName('cmbLogicalSectorSize')
+    $State.Controls.txtVMTimeoutMinutes = $window.FindName('txtVMTimeoutMinutes')
     $State.Controls.txtProductKey = $window.FindName('txtProductKey')
     $State.Controls.txtOfficePath = $window.FindName('txtOfficePath')
     $State.Controls.txtOfficeConfigXMLFilePath = $window.FindName('txtOfficeConfigXMLFilePath')
@@ -673,6 +674,7 @@ function Initialize-UIDefaults {
     $State.Controls.txtOSPartitionSizeGB.Clear()
     $State.Data.createRecoveryPartition = $true
     $State.Controls.cmbLogicalSectorSize.SelectedItem = ($State.Controls.cmbLogicalSectorSize.Items | Where-Object { $_.Content -eq $State.Defaults.generalDefaults.LogicalSectorSize.ToString() })
+    $State.Controls.txtVMTimeoutMinutes.Text = [string]$State.Defaults.generalDefaults.VMTimeoutMinutes
    
     # Populate Windows Release, Version, and SKU comboboxes
     # Initialize Windows settings combos based on media source mode

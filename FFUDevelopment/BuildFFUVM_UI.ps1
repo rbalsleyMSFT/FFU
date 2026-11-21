@@ -602,6 +602,7 @@ $script:uiState.Controls.btnRun.Add_Click({
                 FilePath         = $pwshPath
                 ArgumentList     = $pwshArgs
                 WorkingDirectory = $config.FFUDevelopmentPath
+                Environment      = @{ FFU_BUILD_UI_LOG_PATH = $script:uiState.LogFilePath }
                 PassThru         = $true
             }
             if ($Host.Name -eq 'ConsoleHost') {

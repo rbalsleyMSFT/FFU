@@ -148,17 +148,16 @@ function Resolve-FFUAppsMediaRoot {
 }
 
 function Get-SysprepRetryCount {
-    if (-not (Test-Path -Path $sysprepRetryStatePath)) {
+    if (-not (Test-Path -LiteralPath $sysprepRetryStatePath -ErrorAction Stop)) {
         return 0
     }
 
-    try {
-        $retryCount = [int](Get-Content -Path $sysprepRetryStatePath -Raw -ErrorAction Stop).Trim()
-        return $retryCount
+    $retryCount = 0
+    $savedRetryCount = Get-Content -LiteralPath $sysprepRetryStatePath -Raw -ErrorAction Stop
+    if (-not [int]::TryParse($savedRetryCount, [ref]$retryCount) -or $retryCount -lt 0) {
+        throw "Invalid Sysprep retry count in '$sysprepRetryStatePath'."
     }
-    catch {
-        return 0
-    }
+    return $retryCount
 }
 
 function Set-SysprepRetryCount {
@@ -168,8 +167,8 @@ function Set-SysprepRetryCount {
     )
 
     $retryStateFolder = Split-Path -Path $sysprepRetryStatePath -Parent
-    New-Item -Path $retryStateFolder -ItemType Directory -Force | Out-Null
-    Set-Content -Path $sysprepRetryStatePath -Value ([string]$RetryCount) -Encoding ASCII -Force
+    New-Item -Path $retryStateFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
+    Set-Content -LiteralPath $sysprepRetryStatePath -Value ([string]$RetryCount) -Encoding ASCII -Force -ErrorAction Stop
 }
 
 function Clear-SysprepRetryResume {
@@ -299,9 +298,6 @@ function New-SysprepRetryLauncher {
     $retryScript = @'
 $ErrorActionPreference = 'Stop'
 
-$logPath = 'C:\Windows\Temp\FFUSysprepRetry.log'
-Start-Transcript -Path $logPath -Append -Force | Out-Null
-
 function Disable-AuditModeSysprepStartup {
     $startupRegistryPaths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
@@ -328,7 +324,7 @@ function Disable-AuditModeSysprepStartup {
     }
 }
 
-try {
+& (Join-Path $PSScriptRoot 'Invoke-FFUBuildVmStage.ps1') -Stage 'Sysprep retry' -LogPath 'C:\Windows\Temp\FFUSysprepRetry.log' -Action {
     Write-Host 'Starting FFU sysprep retry.'
     Disable-AuditModeSysprepStartup
 
@@ -410,13 +406,6 @@ try {
     Write-Host "Launching sysprep script: $sysprepScript"
     & $sysprepScript
 }
-catch {
-    Write-Error "FFU sysprep retry failed: $($_.Exception.Message)"
-    throw
-}
-finally {
-    Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
-}
 '@
 
     Set-Content -Path $sysprepRetryScriptPath -Value $retryScript -Encoding ASCII -Force
@@ -438,20 +427,46 @@ function Restart-SysprepRetry {
         [Parameter(Mandatory)]
         [string]$Reason,
 
+        [Parameter(Mandatory)]
+        [int]$RetryCount,
+
         [string[]]$PendingRebootReasons
     )
 
-    $retryCount = Get-SysprepRetryCount
-    if ($retryCount -ge $maxSysprepRebootRetries) {
+    if ($RetryCount -ge $maxSysprepRebootRetries) {
         return $false
     }
 
-    Set-SysprepRetryCount -RetryCount ($retryCount + 1)
-    Register-SysprepRetryResume
     Write-Host $Reason
     Write-PendingRebootReasons -PendingRebootReasons $PendingRebootReasons
+
+    # Let TrustedInstaller reach its idle stop before requesting the retry reboot.
+    $trustedInstallerTimeout = [TimeSpan]::FromMinutes(5)
+    $statusUpdateInterval = [TimeSpan]::FromSeconds(5)
+    $trustedInstaller = Get-Service -Name 'TrustedInstaller' -ErrorAction Stop
+    $waitTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($trustedInstaller.Status -ne 'Stopped') {
+        $elapsed = $waitTimer.Elapsed
+        $remaining = $trustedInstallerTimeout - $elapsed
+        if ($remaining -le [TimeSpan]::Zero) {
+            throw "TrustedInstaller did not stop on its own within $($trustedInstallerTimeout.TotalSeconds) seconds. No Sysprep retry reboot was requested."
+        }
+
+        Write-Host ('TrustedInstaller status: {0} ({1:F1}s elapsed). Restarting as soon as it stops on its own.' -f $trustedInstaller.Status, $elapsed.TotalSeconds)
+        $waitInterval = if ($remaining -lt $statusUpdateInterval) { $remaining } else { $statusUpdateInterval }
+        try {
+            $trustedInstaller.WaitForStatus('Stopped', $waitInterval)
+        }
+        catch [System.ServiceProcess.TimeoutException] {
+            continue
+        }
+    }
+    Write-Host ('TrustedInstaller is stopped after {0:F1} seconds.' -f $waitTimer.Elapsed.TotalSeconds)
+
+    Set-SysprepRetryCount -RetryCount ($RetryCount + 1)
+    Register-SysprepRetryResume
     Write-Host 'Restarting now. Sysprep will resume during the next Audit mode logon.'
-    Restart-Computer -Force -ErrorAction Stop
+    Restart-Computer -ErrorAction Stop
     return $true
 }
 
@@ -539,32 +554,45 @@ if (Test-Path -Path $unattendOnAppsIso) {
     $sysprepArguments += "/unattend:$unattendOnAppsIso"
 }
 
-$pendingRebootReasons = @(Get-PendingRebootReasons)
-if ($pendingRebootReasons.Count -gt 0) {
-    if (Restart-SysprepRetry -Reason 'Pending reboot detected immediately before sysprep. Restarting before continuing sysprep...' -PendingRebootReasons $pendingRebootReasons) {
+$retryCount = $null
+$pendingRebootReasons = @()
+$sysprepExitCode = $null
+try {
+    $retryCount = Get-SysprepRetryCount
+    $pendingRebootReasons = @(Get-PendingRebootReasons)
+    if ($pendingRebootReasons.Count -gt 0) {
+        if (Restart-SysprepRetry -RetryCount $retryCount -Reason 'Pending reboot detected immediately before Sysprep.' -PendingRebootReasons $pendingRebootReasons) {
+            return
+        }
+
+        throw "Pending reboot is still detected after $retryCount Sysprep retry reboot(s). Sysprep cannot continue."
+    }
+
+    Clear-SysprepRetryResume
+
+    Disable-AuditModeSysprepStartup
+    Stop-SysprepProcess
+    $sysprepExitCode = Invoke-SysprepProcess -ArgumentList $sysprepArguments
+
+    if (0 -eq $sysprepExitCode) {
+        Clear-SysprepRetryState
         return
     }
 
-    Clear-SysprepRetryState
-    throw "Pending reboot is still detected after $maxSysprepRebootRetries sysprep retry reboot(s). Sysprep cannot continue."
-}
-
-Clear-SysprepRetryResume
-
-Disable-AuditModeSysprepStartup
-Stop-SysprepProcess
-$sysprepExitCode = Invoke-SysprepProcess -ArgumentList $sysprepArguments
-
-if (0 -eq $sysprepExitCode) {
-    Clear-SysprepRetryState
-    return
-}
-
-if (Test-SysprepPendingRebootFailure) {
-    if (Restart-SysprepRetry -Reason 'Sysprep reported a pending-reboot condition. Restarting and retrying sysprep once...' -PendingRebootReasons (Get-PendingRebootReasons)) {
-        return
+    if (Test-SysprepPendingRebootFailure) {
+        $pendingRebootReasons = @(Get-PendingRebootReasons)
+        if (Restart-SysprepRetry -RetryCount $retryCount -Reason 'Sysprep reported a pending-reboot condition.' -PendingRebootReasons $pendingRebootReasons) {
+            return
+        }
     }
-}
 
-Clear-SysprepRetryState
-throw "Sysprep failed with exit code $sysprepExitCode. Review C:\Windows\System32\Sysprep\Panther\setuperr.log and setupact.log."
+    throw "Sysprep failed with exit code $sysprepExitCode. Review C:\Windows\System32\Sysprep\Panther\setuperr.log and setupact.log."
+}
+catch {
+    $_.Exception.Data['FFUSysprepFailure'] = $true
+    $_.Exception.Data['FFUSysprepRetryCount'] = $retryCount
+    $_.Exception.Data['FFUPendingRebootReasons'] = $pendingRebootReasons
+    $_.Exception.Data['FFUSysprepExitCode'] = $sysprepExitCode
+    Clear-SysprepRetryState
+    throw
+}

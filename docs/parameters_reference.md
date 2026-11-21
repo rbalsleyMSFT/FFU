@@ -110,6 +110,7 @@ This table lists all top-level parameters in BuildFFUVM.ps1.
 | -UserAppListPath | string | Application Path (derived UserAppList.json) | Path to a JSON file containing a list of user-defined applications to install. Default is $FFUDevelopmentPath\Apps\UserAppList.json. |
 | -VMLocation | string | VM Location | Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to. |
 | -VMSwitchName | string | VM Switch Name + Custom VM Switch Name (when Other selected) | Name of the Hyper-V virtual switch used when -EnableVMNetworking is set to $true. |
+| -VMTimeoutMinutes | positive integer | VM Timeout | Maximum time in minutes to monitor the build VM after it starts. Default is 180. Does not apply to VHDX-only builds. |
 | -WindowsArch | string | Windows Architecture | String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'. |
 | -WindowsPartitionDriveLetter | string | Disk Layout: Windows Drive Letter | Drive letter used for the Windows partition while building the FFU VHDX. Default is W. |
 | -WindowsLang | string | Windows Language | String value in language-region format (e.g., 'en-us'). This is used to identify which language of media to download. Default is 'en-us'. |

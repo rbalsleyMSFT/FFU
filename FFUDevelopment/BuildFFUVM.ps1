@@ -294,6 +294,9 @@ Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets cr
 .PARAMETER VMSwitchName
 Name of the Hyper-V virtual switch used when -EnableVMNetworking is set to $true. Provide it only if the VM needs network connectivity during provisioning.
 
+.PARAMETER VMTimeoutMinutes
+Maximum time in whole minutes to monitor the build VM after it starts. Default is 180. Does not apply to VHDX-only builds.
+
 .PARAMETER WindowsArch
 String value of 'x86', 'x64', or 'arm64'. This is used to identify which architecture of Windows to download. Default is 'x64'.
 
@@ -533,7 +536,8 @@ param(
     [string]$orchestrationPath,
     [bool]$UpdateADK = $true,
     [bool]$CleanupCurrentRunDownloads = $false,
-    [switch]$Cleanup
+    [switch]$Cleanup,
+    [object]$VMTimeoutMinutes = 180
 )
 $ProgressPreference = 'SilentlyContinue'
 $version = '2609.1'
@@ -565,6 +569,11 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
     # Iterate through the keys in the config data
     foreach ($key in $keys) {
         $value = $configdata.$key
+
+        if ($key -eq 'VMTimeoutMinutes') {
+            if (-not $PSBoundParameters.ContainsKey($key)) { $VMTimeoutMinutes = $value }
+            continue
+        }
 
         $valueIsEmptyString = ($value -is [string]) -and [string]::IsNullOrEmpty($value)
         $valueIsEmptyArray = ($value -is [System.Array]) -and ($value.Count -eq 0)
@@ -599,6 +608,8 @@ if ($ConfigFile -and (Test-Path -Path $ConfigFile)) {
         }
     }
 }
+
+$VMTimeoutMinutes = ConvertTo-FFUVMTimeoutMinutes -Value $VMTimeoutMinutes
 
 function Get-UnattendSourcePath {
     param(
@@ -4055,6 +4066,229 @@ function Test-FFUDataPartitionDriveLetterAuditResult {
     WriteLog 'Validated build VM data partition drive-letter enforcement and removed audit result files.'
 }
 
+function Wait-FFUBuildVmShutdown {
+    param(
+        [guid]$VMId,
+        [string]$VMName,
+        [int]$TimeoutMinutes
+    )
+
+    $timeout = [TimeSpan]::FromMinutes($TimeoutMinutes)
+    $pollInterval = [TimeSpan]::FromSeconds(10)
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $buildVm = Get-VM -Id $VMId -ErrorAction Stop
+        if ($null -eq $buildVm) {
+            throw 'Hyper-V did not return the build VM.'
+        }
+        if ($buildVm.State -eq 'Off') {
+            WriteLog "Build VM '$VMName' shut down."
+            return
+        }
+
+        $elapsed = $timer.Elapsed
+        $remaining = $timeout - $elapsed
+        if ($remaining -le [TimeSpan]::Zero) {
+            throw "VM Timeout: the VM did not shut down within $TimeoutMinutes minutes (last state: $($buildVm.State))."
+        }
+
+        $elapsedTime = '{0:00}:{1:00}' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+        WriteLog "Waiting for build VM '$VMName' to shut down (state: $($buildVm.State); $elapsedTime elapsed; timeout: $TimeoutMinutes minutes)."
+        $delay = if ($remaining -lt $pollInterval) { $remaining } else { $pollInterval }
+        Start-Sleep -Duration $delay
+    }
+}
+
+function Assert-FFUBuildVmCaptureReady {
+    param([string]$WindowsPartitionRoot)
+
+    $markerPath = Join-Path $WindowsPartitionRoot 'Windows\Temp\FFUBuildVmFailure.json'
+    $marker = $null
+    try { $marker = Get-Item -LiteralPath $markerPath -Force -ErrorAction Stop }
+    catch [System.Management.Automation.ItemNotFoundException] {
+        # A successful run has no failure marker.
+    }
+    if ($null -ne $marker) {
+        try {
+            $failure = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ($failure -isnot [pscustomobject] -or $failure.Stage -isnot [string] -or $failure.Message -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($failure.Stage) -or [string]::IsNullOrWhiteSpace($failure.Message)) {
+                throw 'Expected a failure stage and message.'
+            }
+        }
+        catch {
+            throw "The guest failure marker '$markerPath' could not be read: $($_.Exception.Message)"
+        }
+
+        foreach ($reason in $failure.PendingRebootReasons) {
+            WriteLog "Build VM pending reboot reason: $reason"
+        }
+        $retryCount = $failure.RetryCount ?? 'unknown'
+        $failureMessage = $failure.Message -replace '\s*\r?\n\s*', ' '
+        throw "The guest failed during $($failure.Stage): $failureMessage (Sysprep retry reboots: $retryCount)."
+    }
+
+    $statePath = Join-Path $WindowsPartitionRoot 'Windows\Setup\State\State.ini'
+    $inStateSection = $false
+    $foundStateSection = $false
+    $imageStates = @(foreach ($line in (Get-Content -LiteralPath $statePath -ErrorAction Stop)) {
+        if ($line -match '^\s*\[') {
+            $inStateSection = $line -match '^\s*\[State\]\s*$'
+            if ($inStateSection) {
+                if ($foundStateSection) { throw "Duplicate [State] section in '$statePath'." }
+                $foundStateSection = $true
+            }
+        }
+        elseif ($inStateSection -and $line -match '^\s*ImageState\b') {
+            if ($line -notmatch '^\s*ImageState\s*=\s*(?:"(?<state>[A-Z0-9_]+)"|(?<state>[A-Z0-9_]+))\s*$') {
+                throw "Malformed ImageState entry in '$statePath'."
+            }
+            $Matches['state']
+        }
+    })
+    if ($imageStates.Count -ne 1) {
+        throw "Expected one ImageState entry in the [State] section of '$statePath'; found $($imageStates.Count)."
+    }
+    if ($imageStates[0] -ne 'IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE') {
+        throw "The image was not generalized for OOBE. ImageState is '$($imageStates[0])'; expected IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE."
+    }
+    WriteLog "Verified build VM ImageState: $($imageStates[0])."
+}
+
+function Save-FFUBuildDismLog {
+	param(
+		[string]$LogDirectory,
+		[string]$Destination,
+		[Parameter(Mandatory)][datetime]$BuildStartTime
+	)
+
+	$logPath = Join-Path $LogDirectory 'dism.log'
+	$archivePaths = @()
+	try {
+		if (Test-Path -LiteralPath $LogDirectory -PathType Container -ErrorAction Stop) {
+			$archivePaths = @(Get-ChildItem -LiteralPath $LogDirectory -Filter 'dism_*.log' -File -Force -ErrorAction Stop |
+				Where-Object { $_.Name -match '^dism_[0-9]{4}(?:-[0-9]{2}){5}\.log$' } |
+				Sort-Object LastWriteTimeUtc, Name | Select-Object -ExpandProperty FullName)
+		}
+	}
+	catch {
+		WriteLog "Warning: Could not list host DISM archives in '$LogDirectory': $($_.Exception.Message)"
+	}
+
+	# DISM records local timestamps to the second. Keep continuation lines with their entry.
+	$startTimestamp = $BuildStartTime.ToString('yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+	$timestampPattern = '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?=(?:\.[0-9]+)?,)'
+	$fileShare = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+	$writer = $null
+	try {
+		foreach ($sourcePath in ($archivePaths + $logPath)) {
+			$reader = $null
+			try {
+				if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf -ErrorAction Stop)) { continue }
+				$reader = [IO.StreamReader]::new([IO.File]::Open($sourcePath, 'Open', 'Read', $fileShare))
+				$includeEntry = $false
+				while ($null -ne ($line = $reader.ReadLine())) {
+					if ($line -match $timestampPattern) {
+						$includeEntry = [string]::CompareOrdinal($Matches[0], $startTimestamp) -ge 0
+					}
+					if ($includeEntry) {
+						if ($null -eq $writer) { $writer = [IO.StreamWriter]::new($Destination) }
+						$writer.WriteLine($line)
+					}
+				}
+			}
+			catch {
+				WriteLog "Warning: Could not collect host DISM log entries from '$sourcePath': $($_.Exception.Message)"
+			}
+			finally {
+				if ($null -ne $reader) { $reader.Dispose() }
+			}
+		}
+	}
+	finally {
+		if ($null -ne $writer) { $writer.Dispose() }
+	}
+	if ($null -eq $writer) {
+		WriteLog "No host DISM log entries at or after $startTimestamp were available."
+	}
+}
+
+function Save-FFUBuildVmDiagnostics {
+    param(
+        [string]$Destination,
+        [string]$HostLogPath,
+        [Parameter(Mandatory)][datetime]$BuildStartTime,
+        [string]$HostUiLogPath,
+        [string]$WindowsPartitionRoot
+    )
+
+    New-Item -Path $Destination -ItemType Directory -Force -ErrorAction Stop | Out-Null
+    try {
+        $hostDismLogDirectory = Join-Path $env:SystemRoot 'Logs\DISM'
+        Save-FFUBuildDismLog -LogDirectory $hostDismLogDirectory -Destination (Join-Path $Destination 'dism.log') -BuildStartTime $BuildStartTime
+    }
+    catch {
+        WriteLog "Warning: Could not save the host DISM log excerpt: $($_.Exception.Message)"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HostUiLogPath)) {
+        try {
+            Copy-Item -LiteralPath $HostUiLogPath -Destination (Join-Path $Destination 'FFUDevelopment_UI.log') -Force -ErrorAction Stop
+        }
+        catch {
+            WriteLog "Warning: Could not copy the host UI log '$HostUiLogPath': $($_.Exception.Message)"
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($WindowsPartitionRoot)) {
+        WriteLog 'Guest logs were not copied because the stopped VM Windows partition was not available.'
+    }
+    else {
+        $guestLogPaths = @(
+            'Windows\Temp\FFUBuildVmFailure.json',
+            'Windows\Temp\FFUOrchestrationBootstrap.log',
+            'Windows\Temp\FFUSysprepRetry.log',
+            'Windows\Temp\FFUDataPartitionDriveLetters.log',
+            'Windows\Setup\Scripts\FFUDL\Audit.failure',
+            'Windows\Setup\State\State.ini',
+            'Windows\Panther\setupact.log',
+            'Windows\Panther\setuperr.log',
+            'Windows\Panther\UnattendGC\setupact.log',
+            'Windows\Panther\UnattendGC\setuperr.log',
+            'Windows\System32\Sysprep\Panther\setupact.log',
+            'Windows\System32\Sysprep\Panther\setuperr.log',
+            'Windows\System32\winevt\Logs\System.evtx',
+            'Windows\System32\winevt\Logs\Setup.evtx',
+            'Windows\System32\winevt\Logs\Application.evtx',
+            'Windows\Logs\CBS\CBS.log'
+        )
+        try {
+            $cbsDirectory = Join-Path $WindowsPartitionRoot 'Windows\Logs\CBS'
+            if (Test-Path -LiteralPath $cbsDirectory -PathType Container -ErrorAction Stop) {
+                $guestLogPaths += @(Get-ChildItem -LiteralPath $cbsDirectory -Filter 'CbsPersist_*' -File -ErrorAction Stop |
+                    Where-Object Extension -in '.cab', '.log' | Sort-Object LastWriteTimeUtc -Descending |
+                    Select-Object -First 2 | ForEach-Object { "Windows\Logs\CBS\$($_.Name)" })
+            }
+        }
+        catch {
+            WriteLog "Warning: Could not list the build VM's CBS archives: $($_.Exception.Message)"
+        }
+        foreach ($relativePath in $guestLogPaths) {
+            try {
+                $source = Join-Path $WindowsPartitionRoot $relativePath
+                if (Test-Path -LiteralPath $source -PathType Leaf -ErrorAction Stop) {
+                    $target = Join-Path $Destination $relativePath
+                    New-Item -Path (Split-Path -Parent $target) -ItemType Directory -Force -ErrorAction Stop | Out-Null
+                    Copy-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop
+                }
+            }
+            catch {
+                WriteLog "Warning: Could not copy '$relativePath' from the build VM: $($_.Exception.Message)"
+            }
+        }
+    }
+    Copy-Item -LiteralPath $HostLogPath -Destination (Join-Path $Destination 'FFUDevelopment.log') -Force -ErrorAction Stop
+}
+
 function Get-FFUOptimizePartitionNumber {
     param(
         [Parameter(Mandatory = $true)]
@@ -4813,7 +5047,7 @@ function New-FFUVM {
     Set-VM -Name $VMName -AutomaticCheckpointsEnabled $false -StaticMemory
 
     #Configure TPM
-    New-HgsGuardian -Name $VMName -GenerateCertificates
+    New-HgsGuardian -Name $VMName -GenerateCertificates | Out-Null
     $owner = get-hgsguardian -Name $VMName
     $kp = New-HgsKeyProtector -Owner $owner -AllowUntrustedRoot
     Set-VMKeyProtector -VMName $VMName -KeyProtector $kp.RawData
@@ -10476,13 +10710,16 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
 
             WriteLog 'Copying unattend file to boot to audit mode'
             New-Item -Path "$($osPartitionDriveLetter):\Windows\Panther\Unattend" -ItemType Directory -Force | Out-Null
-            $orchestrationBootstrapSourcePath = Join-Path -Path $FFUDevelopmentPath -ChildPath 'BuildFFUUnattend\Start-FFUOrchestration.ps1'
-            if (-not (Test-Path -Path $orchestrationBootstrapSourcePath -PathType Leaf)) {
-                throw "Orchestration bootstrap script not found at $orchestrationBootstrapSourcePath"
-            }
             $orchestrationBootstrapTargetFolder = "$($osPartitionDriveLetter):\Windows\Setup\Scripts"
-            New-Item -Path $orchestrationBootstrapTargetFolder -ItemType Directory -Force | Out-Null
-            Copy-Item -Path $orchestrationBootstrapSourcePath -Destination (Join-Path -Path $orchestrationBootstrapTargetFolder -ChildPath 'Start-FFUOrchestration.ps1') -Force | Out-Null
+            New-Item -Path $orchestrationBootstrapTargetFolder -ItemType Directory -Force -ErrorAction Stop | Out-Null
+            foreach ($buildVmScript in 'Start-FFUOrchestration.ps1', 'Invoke-FFUBuildVmStage.ps1') {
+                $sourcePath = Join-Path $FFUDevelopmentPath "BuildFFUUnattend\$buildVmScript"
+                Copy-Item -LiteralPath $sourcePath -Destination $orchestrationBootstrapTargetFolder -Force -ErrorAction Stop
+            }
+            $staleBuildVmFailure = "$($osPartitionDriveLetter):\Windows\Temp\FFUBuildVmFailure.json"
+            if (Test-Path -LiteralPath $staleBuildVmFailure -ErrorAction Stop) {
+                Remove-Item -LiteralPath $staleBuildVmFailure -Force -ErrorAction Stop
+            }
             if ($enforceBuildVmDataPartitionDriveLetters) {
                 $windowsPartitionRoot = "$($osPartitionDriveLetter):\"
                 $null = Add-FFUDataPartitionDriveLetterArtifacts -WindowsPartitionRoot $windowsPartitionRoot -Layout $partitionLayout -AdditionalDataPartitions $normalizedAdditionalDataPartitions -WindowsArch $WindowsArch -ManifestPurpose BuildVm -Optimize $Optimize -OptimizeFFUPartitionNumber $OptimizeFFUPartitionNumber -FFUDevelopmentPath $FFUDevelopmentPath
@@ -10590,16 +10827,13 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
         WriteLog "Shortened Windows SKU: $shortenedWindowsSKU"
         #Check if VM is done provisioning
         If ($InstallApps) {
-            Set-Progress -Percentage 50 -Message "Installing applications in VM; please wait for VM to shut down..."
-            do {
-                $FFUVM = Get-VM -Name $FFUVM.Name
-                Start-Sleep -Seconds 10
-                WriteLog 'Waiting for VM to shutdown'
-            } while ($FFUVM.State -ne 'Off')
-            WriteLog 'VM Shutdown'
-            Confirm-FFUVhdxUnencrypted -VhdxPath $VHDXPath
+            Set-Progress -Percentage 50 -Message "Waiting for the build VM to finish provisioning and shut down..."
             $restoreAttachmentOwned = $false
+            $buildVmCaptureReady = $false
+            $buildVmWindowsRoot = $null
             try {
+                Wait-FFUBuildVmShutdown -VMId $FFUVM.VMId -VMName $VMName -TimeoutMinutes $VMTimeoutMinutes
+                Confirm-FFUVhdxUnencrypted -VhdxPath $VHDXPath
                 $mountedVhd = Mount-VHD -Path $VHDXPath -Passthru -ErrorAction Stop
                 $restoreAttachmentOwned = $true
                 if ($null -eq $mountedVhd -or $null -eq $mountedVhd.DiskNumber) { throw 'The working VHDX has no disk number after mounting.' }
@@ -10607,7 +10841,15 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
                 $partitionLayout = Resolve-VhdxPartitionLayout -Disk $disk -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
                 $partitionLayout = Set-VhdxBuildPartitionDriveLetters -Layout $partitionLayout -SystemPartitionDriveLetter $SystemPartitionDriveLetter -WindowsPartitionDriveLetter $WindowsPartitionDriveLetter -RecoveryPartitionDriveLetter $RecoveryPartitionDriveLetter -CreateRecoveryPartition $CreateRecoveryPartition -AdditionalDataPartitions $normalizedAdditionalDataPartitions
                 $osPartition = $partitionLayout.WindowsPartition
-                $systemHivePath = "$($osPartition.DriveLetter):\Windows\System32\Config\SYSTEM"
+                $buildVmWindowsRoot = "$($osPartition.DriveLetter):\"
+                Assert-FFUBuildVmCaptureReady -WindowsPartitionRoot $buildVmWindowsRoot
+                $buildVmStageScript = Join-Path $buildVmWindowsRoot 'Windows\Setup\Scripts\Invoke-FFUBuildVmStage.ps1'
+                if (Test-Path -LiteralPath $buildVmStageScript -ErrorAction Stop) {
+                    Remove-Item -LiteralPath $buildVmStageScript -Force -ErrorAction Stop
+                }
+                $buildVmCaptureReady = $true
+
+                $systemHivePath = Join-Path $buildVmWindowsRoot 'Windows\System32\Config\SYSTEM'
                 $partitionGuid = [string]$osPartition.Guid
                 Invoke-FFUOfflineSystemHive -SystemHivePath $systemHivePath -FFUDevelopmentPath $FFUDevelopmentPath -Action {
                     param($systemHive, $statePath, $workingVhdxPath, $windowsPartitionGuid)
@@ -10618,6 +10860,17 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
             }
             catch {
                 $restoreFailure = $_
+                if (-not $buildVmCaptureReady) {
+                    $diagnosticsPath = Join-Path $FFUDevelopmentPath "Diagnostics\BuildVM\$VMName"
+                    $failureMessage = "Build VM '$VMName' was not captured: $($restoreFailure.Exception.Message) Preserving the VM and '$VHDXPath'. Diagnostics: '$diagnosticsPath'."
+                    WriteLog "ERROR: $failureMessage"
+                    try {
+                        Save-FFUBuildVmDiagnostics -Destination $diagnosticsPath -HostLogPath $LogFile -BuildStartTime $startTime -HostUiLogPath $env:FFU_BUILD_UI_LOG_PATH -WindowsPartitionRoot $buildVmWindowsRoot
+                    }
+                    catch {
+                        WriteLog "Warning: Could not fully save the build VM diagnostics: $($_.Exception.Message)"
+                    }
+                }
                 $detachFailure = $null
                 try {
                     if ($restoreAttachmentOwned) {
@@ -10632,6 +10885,12 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
                 }
                 catch { $detachFailure = $_.Exception.Message }
                 $details = if ($null -ne $detachFailure) { " Unable to detach the working VHDX: $detachFailure" } else { '' }
+                if (-not $buildVmCaptureReady) {
+                    if ($details) { WriteLog "Warning:$details" }
+                    $failure = [InvalidOperationException]::new("$failureMessage$details", $restoreFailure.Exception)
+                    $failure.Data['FFUBuildVmFailure'] = $true
+                    throw $failure
+                }
                 throw (New-FFUDeviceEncryptionException -Message "Unable to restore the original device-encryption policy: $($restoreFailure.Exception.Message).$details" -InnerException $restoreFailure.Exception)
             }
             if ($AddPEDriversToWinRE -or $CreateRecoveryPartition) {
@@ -10713,6 +10972,7 @@ throw "LTSC CU install failed with WUSA exit code `$wusaExitCode."
         }    
     }
     Catch {
+        if ($_.Exception.Data['FFUBuildVmFailure']) { throw }
         Write-Host 'Capturing FFU file failed'
         Writelog "Capturing FFU file failed with error $_"
         if ($_.Exception.Data['FFUDeviceEncryptionFailure']) {

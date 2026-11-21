@@ -87,4 +87,10 @@ Choose 512 or 4096 bytes to match the target device. The default is 512. Changin
 
 There is some error-handling in the script that will call out mismatch issues with logical sector size. Unfortunately you will need to create a new FFU with the correct logical sector size as you can't convert a previously created FFU. Most should be fine with 512, but lower-end devices that used to ship with eMMC drives have now shifted to using UFS.
 
+## VM Timeout
+
+Controls the `-VMTimeoutMinutes` parameter. Enter a positive whole number of minutes. The default is 180 minutes (3 hours).
+
+FFU Builder monitors the build VM after it starts, including Windows setup, app installation, and Sysprep. It continues as soon as the VM shuts down and captures only if Sysprep generalized the image for OOBE. If the VM hasn't shut down by the limit, the build fails without capturing. Increase the value for builds that need more time. This setting doesn't apply to VHDX-only builds.
+
 {% include page_nav.html %}

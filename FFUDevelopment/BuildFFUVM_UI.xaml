@@ -443,6 +443,8 @@
                                         <ComboBoxItem Content="512" IsSelected="True"/>
                                         <ComboBoxItem Content="4096"/>
                                     </ComboBox>
+                                    <TextBlock Text="VM Timeout" Margin="0,20,0,8"/>
+                                    <TextBox x:Name="txtVMTimeoutMinutes" HorizontalAlignment="Stretch" ToolTip="How long FFU Builder will monitor the VM before failing. Increase this value if your VM build lasts longer than the default value. Default is 180 minutes (3 hours)"/>
                                 </StackPanel>
                             </ScrollViewer>
 

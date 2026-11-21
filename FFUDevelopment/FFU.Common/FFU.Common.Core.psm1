@@ -461,4 +461,16 @@ function Resolve-FFUPartitionSizes {
 	}
 }
 
+function ConvertTo-FFUVMTimeoutMinutes {
+	param([object]$Value)
+
+	$minutes = 0
+	if (($Value -is [string] -or $Value -is [ValueType]) -and
+		[int]::TryParse(([string]$Value).Trim(), [Globalization.NumberStyles]::None, [Globalization.CultureInfo]::InvariantCulture, [ref]$minutes) -and $minutes -gt 0) {
+		return $minutes
+	}
+
+	throw 'VM Timeout (VMTimeoutMinutes) must be a positive whole number of minutes.'
+}
+
 Export-ModuleMember -Function *

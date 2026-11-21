@@ -1,9 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$logPath = 'C:\Windows\Temp\FFUOrchestrationBootstrap.log'
-Start-Transcript -Path $logPath -Append -Force | Out-Null
-
-try {
+& (Join-Path $PSScriptRoot 'Invoke-FFUBuildVmStage.ps1') -Stage 'Orchestration' -LogPath 'C:\Windows\Temp\FFUOrchestrationBootstrap.log' -Action {
     Write-Host "---------------------------------------------------" -ForegroundColor Yellow
     Write-Host "             FFU Builder Orchestrator              " -ForegroundColor Yellow
     Write-Host "---------------------------------------------------" -ForegroundColor Yellow
@@ -16,8 +13,6 @@ try {
         & 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -NoProfile -ExecutionPolicy Bypass -File $driveLetterScriptPath -ManifestPath $driveLetterManifestPath -Phase Audit
         $driveLetterExitCode = $LASTEXITCODE
         if ($driveLetterExitCode -ne 0) {
-            Write-Error "Data partition drive-letter enforcement failed with exit code $driveLetterExitCode. Shutting down the build VM."
-            Stop-Computer -Force
             throw "Data partition drive-letter enforcement failed with exit code $driveLetterExitCode."
         }
         Write-Host 'Configured data partition drive letters are ready.'
@@ -54,11 +49,4 @@ try {
     Write-Host "Launching orchestrator: $orchestratorPath"
     & $orchestratorPath
     Write-Host 'FFU orchestrator completed.'
-}
-catch {
-    Write-Error "FFU orchestration bootstrap failed: $($_.Exception.Message)"
-    throw
-}
-finally {
-    Stop-Transcript | Out-Null
 }

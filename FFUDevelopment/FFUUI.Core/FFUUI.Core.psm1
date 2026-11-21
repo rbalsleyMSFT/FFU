@@ -163,6 +163,7 @@ function Get-GeneralDefaults {
         WindowsPartitionDriveLetter    = 'W'
         RecoveryPartitionDriveLetter   = 'R'
         LogicalSectorSize              = 512
+        VMTimeoutMinutes               = 180
         # Updates Tab Defaults
         UpdateLatestCU                 = $true
         UpdateLatestNet                = $true

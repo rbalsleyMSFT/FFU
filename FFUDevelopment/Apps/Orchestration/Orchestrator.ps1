@@ -170,6 +170,6 @@ if (Test-Path -Path $sysprepScript) {
     # Run script and wait for it to finish
     & $sysprepScript
 } else {
-    Write-Host "Run-Sysprep.ps1 not found!"
+    throw "Required Sysprep script was not found at '$sysprepScript'."
 }
 

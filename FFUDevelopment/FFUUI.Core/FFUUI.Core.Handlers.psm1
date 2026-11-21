@@ -410,6 +410,7 @@ function Register-EventHandlers {
         $State.Controls.txtDiskSize,
         $State.Controls.txtMemory,
         $State.Controls.txtProcessors,
+        $State.Controls.txtVMTimeoutMinutes,
         $State.Controls.txtThreads,
         $State.Controls.txtMaxUSBDrives
     )

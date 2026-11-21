@@ -57,6 +57,7 @@ function Get-UIConfig {
 		DriversTempPath                 = $State.Controls.txtDriversTempPath.Text
         DriversJsonPath                = $State.Controls.txtDriversJsonPath.Text
         EnableVMNetworking             = $State.Controls.chkEnableVMNetworking.IsChecked
+        VMTimeoutMinutes               = ConvertTo-FFUVMTimeoutMinutes -Value $State.Controls.txtVMTimeoutMinutes.Text
         FFUCaptureLocation             = $State.Controls.txtFFUCaptureLocation.Text
         FFUDevelopmentPath             = $State.Controls.txtFFUDevPath.Text
         FFUPrefix                      = $State.Controls.txtVMNamePrefix.Text
@@ -1463,6 +1464,14 @@ function Update-UIFromConfig {
         [psobject]$State
     )
 
+    $vmTimeoutProperty = $ConfigContent.PSObject.Properties['VMTimeoutMinutes']
+    $vmTimeoutMinutes = if ($null -eq $vmTimeoutProperty) {
+        $State.Defaults.generalDefaults.VMTimeoutMinutes
+    }
+    else {
+        ConvertTo-FFUVMTimeoutMinutes -Value $vmTimeoutProperty.Value
+    }
+
     WriteLog "Applying loaded configuration to the UI."
 
     # Apply theme mode from config (must be done before other controls load for proper styling)
@@ -1555,6 +1564,7 @@ function Update-UIFromConfig {
     Set-UIValue -ControlName 'txtProcessors' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'Processors' -State $State
     Set-UIValue -ControlName 'txtVMLocation' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'VMLocation' -State $State
     Set-UIValue -ControlName 'txtVMNamePrefix' -PropertyName 'Text' -ConfigObject $ConfigContent -ConfigKey 'FFUPrefix' -State $State
+    $State.Controls.txtVMTimeoutMinutes.Text = [string]$vmTimeoutMinutes
 	Set-DiskLayoutConfig -State $State -ConfigContent $ConfigContent
     $State.Controls.spVMNetworkingSettings.IsEnabled = $true -eq $State.Controls.chkEnableVMNetworking.IsChecked
     if (-not ($true -eq $State.Controls.chkEnableVMNetworking.IsChecked)) {
