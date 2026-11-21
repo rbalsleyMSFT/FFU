@@ -438,8 +438,10 @@
                                     </Expander>
                                     <!-- Logical Sector Size -->
                                     <TextBlock Text="Logical Sector Size" Margin="0,0,0,8"/>
-                                    <TextBlock Text="Changing the sector size resets the System partition to 260 MiB for 512-byte sectors or 300 MiB for 4096-byte sectors." TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                    <ComboBox x:Name="cmbLogicalSectorSize" HorizontalAlignment="Left" ToolTip="Logical sector size in bytes. Use 4096 for 4Kn drives. Default is 512.">
+                                    <ComboBox x:Name="cmbLogicalSectorSize" HorizontalAlignment="Left">
+                                        <ComboBox.ToolTip>
+                                            <TextBlock Text="Logical sector size in bytes. Use 4096 for 4Kn drives. Default is 512.&#x0a;&#x0a;Changing the sector size resets the System partition to 260 MiB for 512-byte sectors or 300 MiB for 4096-byte sectors." TextWrapping="Wrap" MaxWidth="400"/>
+                                        </ComboBox.ToolTip>
                                         <ComboBoxItem Content="512" IsSelected="True"/>
                                         <ComboBoxItem Content="4096"/>
                                     </ComboBox>
